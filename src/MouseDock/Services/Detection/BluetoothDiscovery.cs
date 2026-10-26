@@ -164,19 +164,50 @@ namespace MouseDock.Services.Detection
                     if (sink.Any(d => string.Equals(d.Name, info.Name, StringComparison.OrdinalIgnoreCase)))
                         continue;
 
+                    // 耳机：走 HFP 的 Apple 扩展（AT+IPHONEACCEV）读电量。
+                    // HFP 通道被 Windows 占用时连不上，直接返回 -1，不影响其它设备。
+                    int hfpLevel = -1;
+                    if (kind == Models.DeviceKind.Headset && !string.IsNullOrWhiteSpace(info.Name))
+                    {
+                        try { hfpLevel = HfpBattery.TryRead(info.Name, 5200); } catch { }
+
+                        // 第二选择：厂商私有 RFCOMM 服务（配置过协议就直接读）
+                        if (hfpLevel < 0)
+                        {
+                            try { hfpLevel = VendorBt.TryRead(info.Name); } catch { }
+                        }
+
+                        // 都没有 → 这台设备第一次出现时，后台自动跑一次协议探测并记住结果
+                        if (hfpLevel < 0 && !VendorBt.AlreadyProbed(info.Name))
+                        {
+                            string devName = info.Name;
+                            _ = Task.Run(() =>
+                            {
+                                try
+                                {
+                                    int v = VendorBt.AutoLearnAsync(devName, Trace).GetAwaiter().GetResult();
+                                    Trace($"[自动识别] {devName} 结果 " + (v >= 0 ? v + "%" : "未知"));
+                                }
+                                catch (Exception ex) { Trace("[自动识别] 异常 " + ex.GetType().Name); }
+                            });
+                        }
+                    }
+
                     sink.Add(new DetectedDevice
                     {
                         Id = "bt-" + device.BluetoothAddress.ToString("X"),
                         Name = string.IsNullOrWhiteSpace(info.Name) ? "蓝牙设备" : info.Name,
                         Kind = kind,
                         Transport = "蓝牙",
-                        Level = -1,                       // 经典蓝牙（A2DP/HFP）Windows 不对外给电量
+                        Level = hfpLevel,
                         Connected = true,
                         Detail = device.BluetoothAddress.ToString("X12"),
                         PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name),
-                        Note = kind == Models.DeviceKind.Headset
-                            ? "经典蓝牙音频链路（A2DP/HFP），Windows 不对外提供电量"
-                            : "经典蓝牙 HID：只有设备另走 BLE 电池服务时才能读到电量"
+                        Note = hfpLevel >= 0
+                            ? "HFP 扩展上报（AT+IPHONEACCEV）"
+                            : (kind == Models.DeviceKind.Headset
+                                ? "HFP 通道被 Windows 免提占用，读不到电量（禁用免提节点后可读）"
+                                : "经典蓝牙 HID：只有设备另走 BLE 电池服务时才能读到电量")
                     });
                 }
                 catch { }

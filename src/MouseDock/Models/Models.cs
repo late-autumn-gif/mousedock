@@ -20,6 +20,7 @@ namespace MouseDock.Models
         private bool _charging;
         private bool _connected = true;
         private bool _selected = true;
+        private bool _stale;
 
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string Name { get; set; } = "";
@@ -75,6 +76,21 @@ namespace MouseDock.Models
         public string LevelText => !_connected ? "--" : (_level >= 0 ? _level + "%" : "—");
 
         public double LevelFraction => _level >= 0 ? Math.Clamp(_level, 0, 100) / 100.0 : 0;
+
+        /// <summary>数值来自上一次成功读取（设备休眠/通道忙），显示时降透明度表示「不是刚刚的读数」。</summary>
+        public bool IsStale
+        {
+            get => _stale;
+            set
+            {
+                if (_stale == value) return;
+                _stale = value;
+                Raise(nameof(IsStale));
+                Raise(nameof(ValueOpacity));
+            }
+        }
+
+        public double ValueOpacity => _stale ? 0.45 : 1.0;
 
         /// <summary>迷你格用的短文案：有电量为 86%，否则明确写「未知」。</summary>
         public string MiniText => !_connected ? "离线" : (_level >= 0 ? _level + "%" : "未知");

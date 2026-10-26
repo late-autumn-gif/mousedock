@@ -3,7 +3,14 @@
 > Windows 桌面外设电量面板 —— 2.4G / 蓝牙 / 有线自动识别，电量实时刷新。
 > 不联网、不上传、无遥测；读不到电量就显示 `—`，绝不编数字。
 
-![面板](docs/screenshots/dock.png)
+<p align="center">
+  <img src="docs/screenshots/dock.png" width="420" alt="卡片面板" />
+  <img src="docs/screenshots/mini.png" width="180" alt="迷你视图" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="300" alt="设置面板" />
+</p>
 
 ## 特性
 

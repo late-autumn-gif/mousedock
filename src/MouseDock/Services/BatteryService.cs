@@ -298,6 +298,9 @@ namespace MouseDock.Services
         private IBatterySource _source;
         private readonly List<DeviceInfo> _mirror = new List<DeviceInfo>();
         private readonly Dictionary<string, int> _misses = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> _absent = new Dictionary<string, int>();
+        private readonly Dictionary<string, (int Level, DateTime At)> _lastKnown = new Dictionary<string, (int, DateTime)>();
+        private int _refreshSeconds = 5;
 
         public ObservableCollection<DeviceInfo> Devices { get; } = new ObservableCollection<DeviceInfo>();
 
@@ -308,7 +311,8 @@ namespace MouseDock.Services
         public BatteryService(AppSettings settings)
         {
             _source = CreateSource(settings);
-            _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Math.Max(5, settings.RefreshSeconds)) };
+            _refreshSeconds = Math.Max(5, settings.RefreshSeconds);
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_refreshSeconds) };
             _timer.Tick += (_, __) => Poll();
             _timer.Start();
             Poll();
@@ -325,7 +329,8 @@ namespace MouseDock.Services
                 Devices.Clear();
                 SourceChanged?.Invoke(this, EventArgs.Empty);
             }
-            _timer.Interval = TimeSpan.FromSeconds(Math.Max(5, settings.RefreshSeconds));
+            _refreshSeconds = Math.Max(5, settings.RefreshSeconds);
+            _timer.Interval = TimeSpan.FromSeconds(_refreshSeconds);
             Poll();
         }
 
@@ -375,19 +380,33 @@ namespace MouseDock.Services
                 // 保留上一次的有效读数，避免百分比闪成「—」；连续 6 次读不到再清零
                 if (existing != null && incoming.Level < 0 && existing.Level >= 0)
                 {
+                    // 设备休眠 / 通道忙：一直沿用上一次成功的读数，只标记为「旧值」，
+                    // 这样鼠标静止十秒、几分钟都不会突然变成 —
                     int misses;
                     _misses.TryGetValue(incoming.Id, out misses);
                     misses++;
                     _misses[incoming.Id] = misses;
-                    if (misses <= 6) incoming.Level = existing.Level;
+                    incoming.Level = existing.Level;
+                    incoming.IsStale = misses > 2;      // 连续 3 次（约 15 秒）没刷新就转半透明
                 }
                 else if (incoming.Level >= 0)
                 {
                     _misses[incoming.Id] = 0;
+                    incoming.IsStale = false;
+                    _lastKnown[incoming.Id] = (incoming.Level, DateTime.UtcNow);
                 }
+
+                _absent[incoming.Id] = 0;
 
                 if (existing == null)
                 {
+                    // 短暂掉线后重新出现：如果几分钟内读过，先用旧值顶上，避免界面闪成 —
+                    if (incoming.Level < 0 && _lastKnown.TryGetValue(incoming.Id, out var last)
+                        && (DateTime.UtcNow - last.At).TotalMinutes < 10)
+                    {
+                        incoming.Level = last.Level;
+                        incoming.IsStale = true;
+                    }
                     _mirror.Add(incoming);
                     Devices.Add(incoming);
                     continue;
@@ -410,9 +429,23 @@ namespace MouseDock.Services
             for (int i = Devices.Count - 1; i >= 0; i--)
             {
                 if (alive.Contains(Devices[i].Id)) continue;
+
+                // 单轮没出现不算拔掉（USB 枚举偶发失败），连续 3 轮（约 15 秒）才移除
+                int missTimes;
+                _absent.TryGetValue(Devices[i].Id, out missTimes);
+                missTimes++;
+                _absent[Devices[i].Id] = missTimes;
+                if (missTimes < 3) continue;
                 _mirror.Remove(Devices[i]);
                 Devices.RemoveAt(i);
             }
+
+            // 还一次都没读到的设备：先用 1 秒间隔快速重试（抓鼠标醒着的那一瞬间），
+            // 全部拿到过有效值后回到用户设置的间隔
+            bool needFast = Devices.Any(d => d.Level < 0 && !_lastKnown.ContainsKey(d.Id));
+            var target = needFast ? TimeSpan.FromSeconds(1)
+                                  : TimeSpan.FromSeconds(Math.Max(5, _refreshSeconds));
+            if (_timer.Interval != target) _timer.Interval = target;
 
             Refreshed?.Invoke(this, EventArgs.Empty);
         }

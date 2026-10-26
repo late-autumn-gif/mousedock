@@ -109,6 +109,26 @@ namespace MouseDock
                 return;
             }
 
+            if (e.Args.Contains("--vendorbt"))
+            {
+                AttachConsole(-1);
+                string hint2 = e.Args.Length > 1 && !e.Args[1].StartsWith("--") ? e.Args[1] : "Air Plus";
+                string report = Services.Detection.VendorBt.ProbeAsync(hint2, 2000).GetAwaiter().GetResult();
+                Console.WriteLine(report);
+                Shutdown();
+                return;
+            }
+
+            if (e.Args.Contains("--hfpbat"))
+            {
+                AttachConsole(-1);
+                string hint = e.Args.Length > 1 && !e.Args[1].StartsWith("--") ? e.Args[1] : "Air Plus";
+                int v = Services.Detection.HfpBattery.TryRead(hint, 8000, Console.WriteLine);
+                Console.WriteLine("RESULT " + (v >= 0 ? v + "%" : "读取失败"));
+                Shutdown();
+                return;
+            }
+
             if (e.Args.Contains("--battery"))
             {
                 AttachConsole(-1);
