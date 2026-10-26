@@ -1,0 +1,45 @@
+# 构建产物
+dist/
+bin/
+obj/
+publish/
+
+# 开发期抓包与截图
+usbcapture/
+*.pcap
+*.etl
+video-analysis/
+docs/shots/
+docs/*.png.tmp
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 个人环境备份与诊断输出
+backup/
+docs/*.log
+docs/*.txt
+docs/shots/
+probe-winrt/bin/
+probe-winrt/obj/
+samples/
+# 第三方安装包与一次性调试脚本
+tools/usbpcap/
+tools/capture2.ps1
+tools/capture3.ps1
+tools/capture-now.ps1
+tools/capture-after-reboot.ps1
+tools/probe-usbpcap.ps1
+tools/wpr-usb.ps1
+tools/hfp-ag.ps1
+tools/hfp-takeover.ps1
+tools/parse-pcap.ps1
+tools/parse-pcap2.ps1

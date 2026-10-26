@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore src/MouseDock/MouseDock.csproj
+
+      - name: Build
+        run: dotnet build src/MouseDock/MouseDock.csproj -c Release --no-restore
+
+      - name: Publish (self-contained single file)
+        run: >
+          dotnet publish src/MouseDock/MouseDock.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+          -p:EnableCompressionInSingleFile=true
+          -o dist
+
+      - name: Hash
+        run: |
+          $h = (Get-FileHash dist\MouseDock.exe -Algorithm SHA256).Hash
+          "SHA256=$h" | Tee-Object -FilePath dist\SHA256.txt
+          Write-Output "::notice title=SHA256::$h"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MouseDock-win-x64
+          path: |
+            dist/MouseDock.exe
+            dist/SHA256.txt

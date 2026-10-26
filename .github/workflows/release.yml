@@ -1,0 +1,64 @@
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: >
+          dotnet publish src/MouseDock/MouseDock.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+          -p:EnableCompressionInSingleFile=true
+          -o dist
+
+      # ── 可选：代码签名 ────────────────────────────────────────────
+      # 未配置证书时这步会被跳过，产物仍可发布（用户会看到 SmartScreen 提示）。
+      # 申请免费 OSS 签名见 docs/SIGNING.md。
+      #
+      # - name: Sign (SignPath)
+      #   if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      #   uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+      #     project-slug: mousedock
+      #     signing-policy-slug: release-signing
+      #     artifact-configuration-slug: exe
+      #     wait-for-completion: true
+      #     output-artifact-directory: signed
+      #
+      # - name: Use signed exe
+      #   if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      #   run: Copy-Item signed\MouseDock.exe dist\MouseDock.exe -Force
+
+      - name: Hash
+        run: |
+          $h = (Get-FileHash dist\MouseDock.exe -Algorithm SHA256).Hash
+          "SHA256: $h" | Out-File -Encoding utf8 dist\SHA256.txt
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/MouseDock.exe
+            dist/SHA256.txt
+          generate_release_notes: true
+          body: |
+            > 未签名的构建会让 SmartScreen 显示「未知发布者」。校验方法见 SHA256.txt。
+            > 杀软误报请附源码链接提交厂商复核，步骤见 docs/SIGNING.md。

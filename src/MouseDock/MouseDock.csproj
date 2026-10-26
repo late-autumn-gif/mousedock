@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>MouseDock</AssemblyName>
+    <RootNamespace>MouseDock</RootNamespace>
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <Company>MouseDock</Company>
+    <Product>MouseDock</Product>
+    <Description>Windows 桌面外设电量面板：2.4G / 蓝牙 / 有线自动识别与实时电量</Description>
+    <Copyright>MIT License</Copyright>
+    <RepositoryUrl>https://github.com/late-autumn-gif/MouseDock</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\*.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

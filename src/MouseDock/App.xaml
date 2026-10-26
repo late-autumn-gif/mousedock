@@ -1,0 +1,10 @@
+<Application x:Class="MouseDock.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI" />
+        </Style>
+    </Application.Resources>
+</Application>
