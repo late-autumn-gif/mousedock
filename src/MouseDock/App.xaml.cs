@@ -47,7 +47,7 @@ namespace MouseDock
             _mutex = new Mutex(true, "MouseDock.SingleInstance", out bool isNew);
             if (!isNew && !e.Args.Contains("--shot"))
             {
-                // 已有实例常驻后台：发唤醒信号让它显示面板，本实例随即退出
+                // 已有实例常驻后台：发唤醒信号让它显示面板，本实例随即退出。
                 try
                 {
                     if (EventWaitHandle.TryOpenExisting("MouseDock.ShowPanel", out var wake))
@@ -62,6 +62,10 @@ namespace MouseDock
             }
 
             Settings = SettingsStore.Load();
+
+            // Provider 选择已从界面撤掉，统一走自动检测；
+            // 旧 settings.json 里残留的 "json"/"demo"/"hid" 会让面板显示假数据，这里强制覆盖。
+            Settings.Provider = "auto";
 
             // 常驻唤醒通道：其它实例（快捷方式/托盘）唤起面板
             _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "MouseDock.ShowPanel");
@@ -124,7 +128,7 @@ namespace MouseDock
                 AttachConsole(-1);
                 string hint = e.Args.Length > 1 && !e.Args[1].StartsWith("--") ? e.Args[1] : "Air Plus";
                 int v = Services.Detection.HfpBattery.TryRead(hint, 8000, Console.WriteLine);
-                Console.WriteLine("RESULT " + (v >= 0 ? v + "%" : "读取失败"));
+                Console.WriteLine("RESULT " + (v >= 0 ? v + "%" : "璇诲彇澶辫触"));
                 Shutdown();
                 return;
             }
@@ -137,10 +141,10 @@ namespace MouseDock
                 {
                     int v = Services.Detection.VendorProtocol.TryReadBattery(0x089D, 0x062F);
                     if (v >= 0) { ok++; Console.WriteLine($"  {i + 1}: {v}%"); }
-                    else Console.WriteLine($"  {i + 1}: 失败");
+                    else Console.WriteLine($"  {i + 1}: 澶辫触");
                     System.Threading.Thread.Sleep(400);
                 }
-                Console.WriteLine($"成功 {ok}/{n}");
+                Console.WriteLine($"鎴愬姛 {ok}/{n}");
                 Shutdown();
                 return;
             }
@@ -161,6 +165,7 @@ namespace MouseDock
 
             BuildWindows();
             BuildTray();
+            StartLowBatteryWatcher();
             ApplyTheme(false);
             SaveSettings();
 
@@ -172,14 +177,9 @@ namespace MouseDock
         {
             string assets = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets");
             CharacterAssets.Clear();
-            foreach (var name in new[] { "char-a.png", "char-b.png", "char-a.jpg", "char-b.jpg" })
-            {
-                string p = Path.Combine(assets, name);
-                if (File.Exists(p)) CharacterAssets.Add(p);
-            }
 
             string photo = Path.Combine(assets, "demo-photo.png");
-            DefaultPhotoAsset = File.Exists(photo) ? photo : CharacterAssets.FirstOrDefault();
+            DefaultPhotoAsset = File.Exists(photo) ? photo : null;
 
             string bg = Path.Combine(assets, "demo-bg.png");
             DefaultBackgroundAsset = File.Exists(bg) ? bg : null;
@@ -208,15 +208,19 @@ namespace MouseDock
             ApplyIcon(Mini);
             ApplyIcon(Icon);
             ApplyIcon(SettingsView);
+            ApplyAllBackgrounds();
+            ApplyAllStyles();
+            ApplyWindowBehavior();
 
+            SyncSurfaceFlags();
             if (Settings.ShowDock && !StartHidden) Dock.Show();
             if (Settings.ShowMini && !StartHidden) Mini.Show();
-            if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyMode(Settings.IconMode, false); }
+            if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
 
             // 关闭只隐藏到后台，程序继续跑；只有托盘「退出」才真正结束
             Dock.Closing += (_, args) =>
             {
-                // 桌件形态：任务栏关闭 / Alt+F4 一律忽略，面板始终留在桌面上
+                // 桌面型态：任务栏关闭 / Alt+F4 一律忽略，面板始终留在桌面
                 args.Cancel = true;
                 SaveWindowPositions();
             };
@@ -239,7 +243,7 @@ namespace MouseDock
             ApplyScale();
         }
 
-        /// <summary>窗口图标从磁盘读，避免 XAML 里当成 pack 资源找不到。</summary>
+        /// <summary>窗口图标从磁盘读，避免 XAML 里当嵌入资源找不到。</summary>
         private static void ApplyIcon(Window window)
         {
             if (window == null) return;
@@ -314,6 +318,10 @@ namespace MouseDock
             };
             _tray.DoubleClick += (_, __) => ShowAll();
             _tray.BalloonTipClicked += (_, __) => ShowAll();
+
+            // 电量一刷新就把托盘图标重画一遍
+            Battery.Refreshed += (_, __) => UpdateTrayIcon();
+            UpdateTrayIcon();
         }
 
 
@@ -327,6 +335,101 @@ namespace MouseDock
                 _tray.Visible = true;
             }
             catch { }
+        }
+
+        private static System.Windows.Forms.Timer _trayBlink;
+        private static bool _trayBlinkOn;
+
+        /// <summary>托盘图标跟着电量走：正常绿、低电量红（还会闪）、充电绿、未知灰。</summary>
+        private static void UpdateTrayIcon()
+        {
+            if (_tray == null) return;
+
+            DeviceInfo dev = null;
+            foreach (var d in Battery.Devices)
+            {
+                if (d.Connected && d.HasLevel) { dev = d; break; }
+            }
+
+            int level = dev?.Level ?? -1;
+            bool charging = dev?.Charging ?? false;
+            bool low = level >= 0 && !charging && level <= Settings.LowBatteryWarn;
+
+            try
+            {
+                _tray.Icon = RenderTrayIcon(level, charging, low && _trayBlinkOn);
+                _tray.Text = level >= 0
+                    ? $"MouseDock · {dev.Name} {level}%" + (charging ? "（充电中）" : "")
+                    : "MouseDock · 电量，一起看见（双击唤起）";
+            }
+            catch { }
+
+            if (low)
+            {
+                if (_trayBlink == null)
+                {
+                    _trayBlink = new System.Windows.Forms.Timer { Interval = 600 };
+                    _trayBlink.Tick += (_, __) =>
+                    {
+                        _trayBlinkOn = !_trayBlinkOn;
+                        UpdateTrayIcon();
+                    };
+                }
+                if (!_trayBlink.Enabled) _trayBlink.Start();
+            }
+            else
+            {
+                if (_trayBlink != null) _trayBlink.Stop();
+                _trayBlinkOn = false;
+            }
+        }
+
+        /// <summary>画一个 32×32 的圆角方块图标，里面写电量数字。</summary>
+        private static System.Drawing.Icon RenderTrayIcon(int level, bool charging, bool dim)
+        {
+            const int size = 32;
+            using var bmp = new System.Drawing.Bitmap(size, size);
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                g.Clear(System.Drawing.Color.Transparent);
+
+                System.Drawing.Color bg = charging
+                    ? System.Drawing.Color.FromArgb(0x7F, 0xE7, 0xC4)
+                    : level < 0
+                        ? System.Drawing.Color.FromArgb(0x8A, 0x8A, 0x8A)
+                        : level <= Settings.LowBatteryWarn
+                            ? System.Drawing.Color.FromArgb(0xFF, 0x6B, 0x6B)
+                            : System.Drawing.Color.FromArgb(0x7F, 0xE7, 0xC4);
+                if (dim) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
+
+                using (var path = RoundedRect(new System.Drawing.Rectangle(1, 1, size - 2, size - 2), 7))
+                using (var fill = new System.Drawing.SolidBrush(bg))
+                    g.FillPath(fill, path);
+
+                string txt = level >= 0 ? level.ToString() : "—";
+                float px = txt.Length >= 3 ? 12f : 15f;
+                using var font = new System.Drawing.Font("Segoe UI", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
+                using var fg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x12, 0x1A, 0x18));
+                var sz = g.MeasureString(txt, font);
+                g.DrawString(txt, font, fg,
+                    (size - sz.Width) / 2f,
+                    (size - sz.Height) / 2f + 1f);
+            }
+            return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+        }
+
+        private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(System.Drawing.Rectangle r, int radius)
+        {
+            var path = new System.Drawing.Drawing2D.GraphicsPath();
+            int d = radius * 2;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
         }
 
         private static System.Drawing.Icon BuildTrayIcon()
@@ -388,12 +491,41 @@ namespace MouseDock
             try { window.Focus(); } catch { }
         }
 
+        // ── 界面形态三选一：主面板 / 迷你 / 图标，同一时间只露一个 ──
+        private static void SyncSurfaceFlags()
+        {
+            string mode = Settings.SurfaceMode;
+            if (mode != "dock" && mode != "mini" && mode != "icon")
+            {
+                mode = Settings.ShowMini ? "mini" : Settings.ShowIcon ? "icon" : "dock";
+                Settings.SurfaceMode = mode;
+            }
+            Settings.ShowDock = mode == "dock";
+            Settings.ShowMini = mode == "mini";
+            Settings.ShowIcon = mode == "icon";
+        }
+
+        public static void ApplySurface()
+        {
+            SyncSurfaceFlags();
+
+            if (Dock != null) { if (Settings.ShowDock) Dock.Show(); else Dock.Hide(); }
+            if (Mini != null) { if (Settings.ShowMini) Mini.Show(); else Mini.Hide(); }
+            if (Icon != null)
+            {
+                if (Settings.ShowIcon) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
+                else Icon.Hide();
+            }
+            SaveSettings();
+        }
+
         public static void ShowIconIfNeeded()
         {
             if (Icon == null) return;
+            Settings.SurfaceMode = "icon";
             Settings.ShowIcon = true;
             Icon.Show();
-            Icon.ApplyMode(Settings.IconMode, false);
+            Icon.ApplyStyle(Settings.IconStyle, false);
             SaveSettings();
         }
 
@@ -420,14 +552,16 @@ namespace MouseDock
                 return mi;
             }
 
-            menu.Items.Add(Item(Dock != null && Dock.IsVisible ? "隐藏卡片窗" : "显示卡片窗", () => Toggle(Dock)));
-            menu.Items.Add(Item(Mini != null && Mini.IsVisible ? "隐藏迷你窗" : "显示迷你窗", () => Toggle(Mini)));
-            menu.Items.Add(Item(Icon != null && Icon.IsVisible ? "隐藏悬浮图标" : "显示悬浮图标", () => Toggle(Icon)));
+            // 显示方式三选一：同一时间只开一个，不再给三个独立开关
+            string mode = Settings.SurfaceMode;
+            menu.Items.Add(Item((mode == "dock" ? "● " : "○ ") + "主面板", () => SetSurface("dock")));
+            menu.Items.Add(Item((mode == "mini" ? "● " : "○ ") + "迷你窗", () => SetSurface("mini")));
+            menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
             menu.Items.Add(new Separator());
             foreach (var p in ThemePreset.Presets)
             {
                 var preset = p;
-                menu.Items.Add(Item("主题 · " + preset.Name, () =>
+            menu.Items.Add(Item("主题 · " + preset.Name, () =>
                 {
                     Settings.ThemeId = preset.Id;
                     Settings.CustomBackground = "";
@@ -443,6 +577,15 @@ namespace MouseDock
             menu.PlacementTarget = owner;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
             menu.IsOpen = true;
+        }
+
+        /// <summary>右键菜单切显示方式：三选一，顺带把另外两个藏起来。</summary>
+        public static void SetSurface(string mode)
+        {
+            Settings.SurfaceMode = mode;
+            SaveSettings();
+            ApplySurface();
+            SettingsView?.Reload();
         }
 
         public static void RefreshTheme()
@@ -475,7 +618,7 @@ namespace MouseDock
             if (Dock?.Content is FrameworkElement dockRoot) dockRoot.LayoutTransform = new ScaleTransform(s, s);
             if (Mini?.Content is FrameworkElement miniRoot) miniRoot.LayoutTransform = new ScaleTransform(s, s);
             if (Icon?.Content is FrameworkElement iconRoot) iconRoot.LayoutTransform = new ScaleTransform(s, s);
-            if (SettingsView?.Content is FrameworkElement setRoot) setRoot.LayoutTransform = new ScaleTransform(s, s);
+            // 设置窗口不跟面板缩放：它是固定尺寸的配置面板，放大缩小只会让控件挤成一团。
         }
 
         private static DispatcherTimer _deviceDebounce;
@@ -512,6 +655,157 @@ namespace MouseDock
 
         public static void SaveSettings() => SettingsStore.Save(Settings);
 
+        // ── 三个窗口各挑各的背景图 ──
+        public static void PickBackground(string surface)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择背景图片",
+                Filter = "鍥剧墖|*.png;*.jpg;*.jpeg;*.webp;*.bmp"
+            };
+            if (dlg.ShowDialog() != true) return;
+            SetBackground(surface, dlg.FileName);
+        }
+
+        public static void SetBackground(string surface, string path)
+        {
+            path ??= "";
+            switch (surface)
+            {
+                case "dock":
+                    Settings.DockBackground = path;
+                    Dock?.ApplyBackground(path);
+                    break;
+                case "mini":
+                    Settings.MiniBackground = path;
+                    Mini?.ApplyBackground(path);
+                    break;
+                case "icon":
+                    Settings.IconBackground = path;
+                    Icon?.LoadPhoto();
+                    break;
+            }
+            SaveSettings();
+        }
+
+        /// <summary>启动时把两个窗口的样式和三个窗口的背景贴回去。</summary>
+        private static void ApplyAllBackgrounds()
+        {
+            Dock?.ApplyBackground(Settings.DockBackground);
+            Mini?.ApplyBackground(Settings.MiniBackground);
+        }
+
+        private static void ApplyAllStyles()
+        {
+            Dock?.ApplyDensity(Settings.DockStyle);
+            Mini?.ApplyDensity(Settings.MiniStyle);
+            Icon?.ApplyShape(Settings.IconShape, false);
+        }
+
+        /// <summary>设置页改样式后统一重贴。</summary>
+        public static void ApplySurfaceStyles()
+        {
+            Dock?.ApplyDensity(Settings.DockStyle);
+            Mini?.ApplyDensity(Settings.MiniStyle);
+            Icon?.ApplyShape(Settings.IconShape, false);
+            Icon?.ApplyStyle(Settings.IconStyle, false);
+        }
+
+        // ── 窗口行为：置顶 / 鼠标穿透 ──
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TRANSPARENT = 0x20;
+        private const int WS_EX_LAYERED = 0x80000;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        public static void ApplyWindowBehavior()
+        {
+            foreach (var w in new Window[] { Dock, Mini, Icon })
+            {
+                if (w == null) continue;
+                w.Topmost = Settings.AlwaysOnTop;
+                SetClickThrough(w, Settings.ClickThrough);
+
+                if (Settings.ClickThrough)
+                {
+                    // 穿透开着就点不到窗口，得留个能关的入口：托盘菜单里能改
+                    w.IsHitTestVisible = false;
+                }
+                else
+                {
+                    w.IsHitTestVisible = true;
+                }
+            }
+        }
+
+        private static void SetClickThrough(Window w, bool on)
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+            if (handle == IntPtr.Zero) return;
+            int ex = GetWindowLong(handle, GWL_EXSTYLE);
+            ex = on
+                ? (ex | WS_EX_TRANSPARENT | WS_EX_LAYERED)
+                : (ex & ~WS_EX_TRANSPARENT);
+            SetWindowLong(handle, GWL_EXSTYLE, ex);
+        }
+
+        // ── 低电量提醒：阈值 10/20/30/40，默认 20；同一台设备只提醒一次，回升后重新武装 ──
+        private static readonly HashSet<string> _lowWarned = new HashSet<string>();
+        private static DispatcherTimer _lowWarnTimer;
+
+        private static void StartLowBatteryWatcher()
+        {
+            if (_lowWarnTimer != null) return;
+            _lowWarnTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            _lowWarnTimer.Tick += (_, __) => CheckLowBattery();
+            _lowWarnTimer.Start();
+        }
+
+        private static void CheckLowBattery()
+        {
+            try
+            {
+                int threshold = Settings?.LowBatteryWarn ?? 20;
+                if (threshold <= 0 || Battery?.Devices == null) return;
+
+                foreach (var d in Battery.Devices)
+                {
+                    if (!d.Connected || !d.HasLevel)
+                    {
+                        _lowWarned.Remove(d.Id);
+                        continue;
+                    }
+
+                    // 正在充电不算低电；回升到阈值以上 5 个点后重新武装
+                    if (d.Charging || d.Level < 0)
+                    {
+                        _lowWarned.Remove(d.Id);
+                        continue;
+                    }
+
+                    if (d.Level <= threshold)
+                    {
+                        if (_lowWarned.Add(d.Id) && _tray != null)
+                        {
+                            _tray.BalloonTipTitle = $"{d.Name} 电量低";
+                            _tray.BalloonTipText = $"只剩 {d.Level}%，低于 {threshold}% 提醒线。";
+                            _tray.BalloonTipIcon = WinForms.ToolTipIcon.Warning;
+                            _tray.ShowBalloonTip(5000);
+                        }
+                    }
+                    else if (d.Level > threshold + 5)
+                    {
+                        _lowWarned.Remove(d.Id);
+                    }
+                }
+            }
+            catch { }
+        }
+
         public static void ExitApp()
         {
             SaveWindowPositions();
@@ -520,7 +814,7 @@ namespace MouseDock
             Current.Shutdown();
         }
 
-        // ── 探测报告：--detect 打印本机真实外设，不依赖界面 ────────────────
+        // ── 探测报告：--detect 打印本机真实外设，不依赖界面 ──
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool AttachConsole(int processId);
@@ -536,7 +830,7 @@ namespace MouseDock
             int known = Battery.Devices.FirstOrDefault(d => d.HasLevel)?.Level ?? -1;
             string text;
             try { text = Services.Detection.HidCapture.Run(known, seconds); }
-            catch (Exception ex) { text = "抓取失败: " + ex.GetType().Name + " " + ex.Message; }
+            catch (Exception ex) { text = "鎶撳彇澶辫触: " + ex.GetType().Name + " " + ex.Message; }
 
             string path = Path.Combine(SettingsStore.Dir, "capture24g.txt");
             try
@@ -562,7 +856,7 @@ namespace MouseDock
         public static string WriteDetectReport(out string content)
         {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("=== MouseDock 本机外设探测 ===");
+            sb.AppendLine("=== MouseDock 鏈満澶栬鎺㈡祴 ===");
             sb.AppendLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine();
 
@@ -573,7 +867,7 @@ namespace MouseDock
                 sb.AppendLine($"[HID] 命中 {hid.Count} 台");
                 foreach (var line in Services.Detection.HidDiscovery.LastDiagnostics) sb.AppendLine("    · " + line);
             }
-            catch (Exception ex) { sb.AppendLine("[HID] 失败: " + ex.Message); }
+            catch (Exception ex) { sb.AppendLine("[HID] 澶辫触: " + ex.Message); }
 
             var bt = new List<Services.Detection.DetectedDevice>();
             try
@@ -582,14 +876,15 @@ namespace MouseDock
                 sb.AppendLine($"[蓝牙] 命中 {bt.Count} 台");
                 foreach (var line in Services.Detection.BluetoothDiscovery.LastErrors) sb.AppendLine("    · " + line);
             }
-            catch (Exception ex) { sb.AppendLine("[蓝牙] 失败: " + ex.GetType().Name + ": " + ex.Message); }
+            catch (Exception ex) { sb.AppendLine("[钃濈墮] 澶辫触: " + ex.GetType().Name + ": " + ex.Message); }
 
             sb.AppendLine();
             foreach (var d in hid.Concat(bt))
             {
-                string level = d.Level >= 0 ? d.Level + "%" : "未知";
-                sb.AppendLine($"[{d.Kind}] {d.Name}  电量={level}  连接={(d.Connected ? "是" : "否")}  通道={d.Transport}  ({d.Detail})");
-                if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("    说明: " + d.Note);
+                string level = d.Level >= 0 ? d.Level + "%" : "鏈煡";
+                string charge = d.Charging ? "  充电=是" : "";
+                sb.AppendLine($"[{d.Kind}] {d.Name}  电量={level}{charge}  连接={(d.Connected ? "是" : "否")}  通道={d.Transport}  ({d.Detail})");
+                if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("    璇存槑: " + d.Note);
             }
 
             content = sb.ToString();
@@ -603,15 +898,14 @@ namespace MouseDock
             return path;
         }
 
-        // ── 截图模式：dotnet run -- --shot 生成自检 PNG ─────────────────────
+        // ── 截图模式：dotnet run -- --shot 生成自检 PNG ──
 
         private void RunScreenshots()
         {
             string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "shots");
             Directory.CreateDirectory(dir);
 
-            // 截图要展示真实探测结果
-            Settings.Provider = "auto";
+            // 鎴浘瑕佸睍绀虹湡瀹炴帰娴嬬粨鏋?            Settings.Provider = "auto";
             Settings.SelectedDeviceIds.Clear();
             Battery.Configure(Settings);
             Battery.Poll();

@@ -47,7 +47,9 @@ namespace MouseDock.Services.Detection
                     device.Note = merged.Note;
                     device.Connected = true;
                     device.Level = merged.Level >= 0 ? merged.Level : -1;
-                    device.Charging = merged.Charging;
+                    // 换电池的型号（G304/G305、G602/G603、办公 Nano 鼠）没有充电状态，
+                    // 别让任何读取路径把「电量低」画成「充电中」。
+                    device.Charging = merged.Charging && !VendorMap.IsReplaceableBattery(merged.Name);
                 }
 
                 // 这一轮没出现的设备直接移除，列表里只留「现在连接中的」

@@ -22,7 +22,7 @@ namespace MouseDock.Services.Detection
     }
 
     /// <summary>VID/PID → 品牌；产品名 → 更干净的型号名；接收器 → 真正挂在它后面的设备。</summary>
-    public static class VendorMap
+    public static partial class VendorMap
     {
         private static readonly Dictionary<ushort, string> Brands = new Dictionary<ushort, string>
         {
@@ -54,10 +54,50 @@ namespace MouseDock.Services.Detection
         internal static readonly Dictionary<string, (string Name, DeviceKind Kind, string PhysicalKey)> KnownReceivers =
             new Dictionary<string, (string, DeviceKind, string)>(StringComparer.OrdinalIgnoreCase)
             {
-                ["089D:062F"] = ("狼蛛 SC580", DeviceKind.Mouse, "aula-sc580"),
-                ["3554:FA09"] = ("狼蛛 SC580", DeviceKind.Mouse, "aula-sc580"),
-                ["391D:2A05"] = ("VGN Neon75 Air", DeviceKind.Keyboard, "vgn-neon75")
+                ["089D:062F"] = ("2.4G 鼠标接收器", DeviceKind.Mouse, null),
+                ["3554:FA09"] = ("无线键盘 3554:FA09", DeviceKind.Keyboard, "kzzi-k75v2"),
+                ["391D:2A05"] = ("VGN Neon75 Air", DeviceKind.Keyboard, "vgn-neon75"),
+
+                // 罗技接收器。Nano 只带 1 台，Unifying/Bolt 最多 6 台，Lightspeed 1 台。
+                // 具体型号靠 HID++ 自己报，这里只保证通道和类型不丢。
+                ["046D:C531"] = ("罗技无线接收器", DeviceKind.Mouse, null),
+                ["046D:C534"] = ("罗技 Nano 接收器", DeviceKind.Keyboard, null),
+                ["046D:C537"] = ("罗技 Nano 接收器", DeviceKind.Keyboard, null),
+                ["046D:C539"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C53A"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C53D"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C53F"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C541"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C545"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C547"] = ("罗技 Lightspeed 接收器", DeviceKind.Mouse, null),
+                ["046D:C52B"] = ("罗技 Unifying 接收器", DeviceKind.Keyboard, null),
+                ["046D:C532"] = ("罗技 Unifying 接收器", DeviceKind.Keyboard, null),
+                ["046D:C548"] = ("罗技 Bolt 接收器", DeviceKind.Keyboard, null)
             };
+
+        /// <summary>
+        /// Identify 应答 [4:8] 的型号串 → 真实型号。VID:PID 只能说明「这是 llTECH 那套 OEM 接收器」，
+        /// 同一对 VID:PID 下面既挂过狼蛛 SC580 也挂过前行者 X23，分家全靠这 4 个字符。
+        /// </summary>
+        internal static readonly Dictionary<string, (string Name, string PhysicalKey)> IdentityModels =
+            new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["M137"] = ("狼蛛 SC580", "aula-sc580"),
+                ["M230"] = ("前行者 X23 标准版", "x23-standard")
+            };
+
+        public static bool TryIdentityModel(string identity, out string name, out string physicalKey)
+        {
+            if (!string.IsNullOrWhiteSpace(identity) && IdentityModels.TryGetValue(identity.Trim(), out var v))
+            {
+                name = v.Name;
+                physicalKey = v.PhysicalKey;
+                return true;
+            }
+            name = null;
+            physicalKey = null;
+            return false;
+        }
 
         public static bool TryKnownReceiver(string key, out string name, out DeviceKind kind, out string physicalKey)
         {

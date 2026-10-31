@@ -67,6 +67,55 @@ namespace MouseDock.Views
             Root.BeginAnimation(OpacityProperty, anim);
         }
 
+        /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
+        public void ApplyBackground(string path)
+        {
+            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+            {
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.DecodePixelWidth = 2048;
+                bmp.UriSource = new Uri(path);
+                bmp.EndInit();
+                bmp.Freeze();
+
+                RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
+                Root.Background = new System.Windows.Media.ImageBrush(bmp)
+                {
+                    Stretch = Stretch.UniformToFill
+                };
+                return;
+            }
+            ApplyTheme(App.Theme, false);
+        }
+
+        /// <summary>迷你窗样式：standard 标准 / compact 紧凑 / bare 极简。</summary>
+        public void ApplyDensity(string style)
+        {
+            style = (style ?? "standard").ToLowerInvariant();
+            switch (style)
+            {
+                case "compact":
+                    Root.Padding = new Thickness(8, 6, 8, 6);
+                    Root.CornerRadius = new CornerRadius(12);
+                    RootShadow.Opacity = 0.32;
+                    break;
+                case "bare":
+                    Root.Padding = new Thickness(9, 7, 9, 7);
+                    Root.CornerRadius = new CornerRadius(0);
+                    RootShadow.Opacity = 0;
+                    Root.Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x10, 0x0D, 0x1C));
+                    return;
+                default:
+                    Root.Padding = new Thickness(12, 10, 12, 10);
+                    Root.CornerRadius = new CornerRadius(18);
+                    RootShadow.Opacity = 0.42;
+                    break;
+            }
+            ApplyBackground(App.Settings.MiniBackground);
+        }
+
         public void ApplyTheme(ThemePreset theme, bool animate)
         {
             var text = new SolidColorBrush(theme.Text);

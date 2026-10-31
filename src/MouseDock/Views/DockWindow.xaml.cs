@@ -50,6 +50,60 @@ namespace MouseDock.Views
             RootTranslate.BeginAnimation(TranslateTransform.YProperty, slide);
         }
 
+        /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
+        public void ApplyBackground(string path)
+        {
+            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+            {
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.DecodePixelWidth = 2048;      // 按 2K 解码，够用又不吃内存
+                bmp.UriSource = new Uri(path);
+                bmp.EndInit();
+                bmp.Freeze();
+
+                // 高质量重采样，缩放时边缘不糊
+                RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
+                RenderOptions.SetEdgeMode(Root, EdgeMode.Unspecified);
+                Root.Background = new System.Windows.Media.ImageBrush(bmp)
+                {
+                    Stretch = Stretch.UniformToFill
+                };
+                return;
+            }
+            ApplyTheme(App.Theme, false);
+        }
+
+        /// <summary>卡片窗样式：standard 标准 / compact 紧凑 / bare 极简（去底色去圆角阴影）。</summary>
+        public void ApplyDensity(string style)
+        {
+            style = (style ?? "standard").ToLowerInvariant();
+            switch (style)
+            {
+                case "compact":
+                    Root.Padding = new Thickness(9, 7, 9, 6);
+                    Root.CornerRadius = new CornerRadius(12);
+                    Root.BorderThickness = new Thickness(0);
+                    RootShadow.Opacity = 0.35;
+                    break;
+                case "bare":
+                    Root.Padding = new Thickness(10, 8, 10, 7);
+                    Root.CornerRadius = new CornerRadius(0);
+                    Root.BorderThickness = new Thickness(0);
+                    RootShadow.Opacity = 0;
+                    Root.Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x10, 0x0D, 0x1C));
+                    return;
+                default:
+                    Root.Padding = new Thickness(12, 10, 12, 9);
+                    Root.CornerRadius = new CornerRadius(18);
+                    Root.BorderThickness = new Thickness(1);
+                    RootShadow.Opacity = 0.45;
+                    break;
+            }
+            ApplyBackground(App.Settings.DockBackground);
+        }
+
         public void ApplyTheme(ThemePreset theme, bool animate)
         {
             var text = new SolidColorBrush(theme.Text);

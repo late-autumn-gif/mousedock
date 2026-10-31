@@ -25,6 +25,11 @@ namespace MouseDock.Services.Detection
 
         private static readonly Guid GUID_DEVINTERFACE_HID = new Guid("4D1E55B2-F16F-11CF-88CB-001111000030");
 
+        /// <summary>罗技 HID++ 自报的型号和电量，键是 "VID:PID"。
+        /// 厂商集合（FF00）接口会在 usage 检查时被跳过，所以在那里先捞，存这儿等 ToDevice 用。</summary>
+        private static readonly Dictionary<string, (int Battery, string Name, bool Charging)> _logiHints =
+            new Dictionary<string, (int, string, bool)>();
+
         [StructLayout(LayoutKind.Sequential)]
         private struct SP_DEVICE_INTERFACE_DATA { public int cbSize; public Guid InterfaceClassGuid; public int Flags; public IntPtr Reserved; }
 
@@ -187,6 +192,26 @@ namespace MouseDock.Services.Detection
             }
             finally { CloseHandle(probe); }
 
+            // 罗技 HID++ 挂在厂商集合（FF00）接口上，这些不是鼠标/键盘用法，下面会被跳过。
+            // 先在这里把型号和电量捞出来，存进提示表，等 ToDevice 按 VID:PID 取。
+            if (vid == 0x046D && caps.UsagePage == 0xFF00)
+            {
+                string hintKey = $"{vid:X4}:{pid:X4}";
+                lock (_logiHints)
+                {
+                    _logiHints.TryGetValue(hintKey, out var prev);
+                    if (prev.Battery == 0 && string.IsNullOrEmpty(prev.Name)) prev = (-1, null, false);
+                    if (prev.Battery < 0 || string.IsNullOrWhiteSpace(prev.Name))
+                    {
+                        var lr = LogitechHidpp.Probe(path);
+                        _logiHints[hintKey] = (
+                            prev.Battery >= 0 ? prev.Battery : lr.Battery,
+                            !string.IsNullOrWhiteSpace(prev.Name) ? prev.Name : lr.Name,
+                            prev.Charging || lr.Charging);
+                    }
+                }
+            }
+
             if (!UsageMap.TryKind(caps.UsagePage, caps.Usage, out DeviceKind kind))
             {
                 if (LastDiagnostics.Count < 60)
@@ -224,9 +249,6 @@ namespace MouseDock.Services.Detection
                         var buf = new byte[caps.FeatureReportByteLength];
                         if (HidD_GetFeature(h, buf, buf.Length) && buf[1] <= 100) battery = buf[1];
                     }
-
-                    if (battery < 0 && vid == 0x046D)
-                        battery = LogitechHidpp.TryReadBattery(h, caps.FeatureReportByteLength);
                 }
                 catch { }
                 finally { CloseHandle(h); }
@@ -241,11 +263,77 @@ namespace MouseDock.Services.Detection
                 try { battery = VendorProtocol.TryReadBattery(vid, pid); } catch { }
             }
 
+            // 0xFFFF 厂商集合的只读状态（VGN Neon75 Air 这类键盘接收器只在这里报电量）
+            if (battery < 0)
+            {
+                try { battery = VendorProtocol.TryReadStatus(vid, pid); } catch { }
+            }
+
+            // M HUB 家族（迈从 / RealTek 2.4G 接收器，e.g. 5253:1021 MCHOSE A7）
+            if (battery < 0)
+            {
+                try { battery = VendorProtocol.TryReadMchose(vid, pid); } catch { }
+            }
+
+            // 第一批厂商读取器：写一帧读一帧，按 VID 分派，互不抢通道
+            if (battery < 0)
+            {
+                try
+                {
+                    if (vid == 0x1532) battery = VendorProtocol.TryReadRazer(vid, pid);
+                    else if (vid == 0x0B05) battery = VendorProtocol.TryReadRog(vid, pid);
+                    else if (vid == 0x1038) battery = VendorProtocol.TryReadSteelSeries(vid, pid);
+                    else if (vid == 0x361D) battery = VendorProtocol.TryReadFinalmouse(vid, pid);
+                    else if (vid == 0x373B || vid == 0x3554 || vid == 0x33E4)
+                        battery = VendorProtocol.TryReadCompx(vid, pid);
+                }
+                catch { }
+            }
+
+            // 第二批：帧形已确认的厂商读取器（AUSDOM / AM Infinity / ZYNOO / AULA SC525 / RIDLAG·VGN / 雷柏）
+            if (battery < 0)
+            {
+                try { battery = VendorProtocol.TryReadFamily(vid, pid); } catch { }
+            }
+
+            // 第三批：报告 ID / 命令字是变量的，靠试探 + 强校验确定
+            if (battery < 0)
+            {
+                try { battery = VendorProtocol.TryReadExtra(vid, pid); } catch { }
+            }
+
+            // 按接口形状认的两家（WEBBRANDS F83 / 达尔优 A980），VID 不固定，回包头必须完全对上
+            if (battery < 0 && caps.UsagePage >= 0xFF00)
+            {
+                try { battery = VendorProtocol.TryReadByShape(vid, pid); } catch { }
+            }
+
+            // 第四批：G-Wolves / ipi / RAWM / passive 型（AULA SC900、雷柏 VT2 MAX）
+            if (battery < 0)
+            {
+                try { battery = VendorProtocol.TryReadThird(vid, pid); } catch { }
+            }
+
+            // 形状型老协议：WLMouse Beast X（report4 + CRC16）、Angry Miao（report F7）
+            if (battery < 0 && caps.UsagePage >= 0xFF00)
+            {
+                try { battery = VendorProtocol.TryReadLegacyShape(vid, pid); } catch { }
+            }
+
             if (!buckets.TryGetValue(key, out Bucket bucket))
             {
                 bucket = new Bucket { Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };
                 buckets[key] = bucket;
             }
+
+            string identity = null;
+            try { identity = VendorProtocol.IdentityFor(vid, pid); } catch { }
+            if (!string.IsNullOrEmpty(identity)) bucket.Identity = identity;
+
+            // 记录厂商集合和接口号：无线接收器通常横跨 mi_00/01/02，有线鼠标只有一个接口
+            if (caps.UsagePage >= 0xFF00) bucket.HasVendor = true;
+            string miTag = InterfaceTag(path);
+            if (miTag != null) bucket.Interfaces.Add(miTag);
 
             bucket.Counts[kind] = bucket.Counts.TryGetValue(kind, out int c) ? c + 1 : 1;
 
@@ -259,6 +347,14 @@ namespace MouseDock.Services.Detection
             if (battery > bucket.Battery) bucket.Battery = battery;
 
             return true;
+        }
+
+        private static string InterfaceTag(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            int i = path.ToLowerInvariant().IndexOf("mi_", StringComparison.Ordinal);
+            if (i < 0 || i + 5 > path.Length) return null;
+            return path.Substring(i, 5);
         }
 
         private static bool IsNoise(ushort vid, string product)
@@ -292,6 +388,9 @@ namespace MouseDock.Services.Detection
             public string Product;
             public string Vendor;
             public string Path = "";
+            public string Identity = "";
+            public bool HasVendor;
+            public readonly HashSet<string> Interfaces = new HashSet<string>();
             public DeviceKind Kind = DeviceKind.Other;
             public int Battery = -1;
             public readonly Dictionary<DeviceKind, int> Counts = new Dictionary<DeviceKind, int>();
@@ -317,7 +416,41 @@ namespace MouseDock.Services.Detection
                 }
                 else
                 {
+                    // 罗技鼠标本体：接收器之外的直连/有线场景按静态 PID 表兜底
+                    if (VendorMap.TryKnownMouse($"{Vid:X4}:{Pid:X4}", out string logiName)) name = logiName;
                     physicalKey = VendorMap.PhysicalKeyFromName(name);
+                }
+
+                // 罗技 HID++ 自报的型号最可信，压过接收器的占位名（「罗技无线接收器」）
+                bool charging = false;
+                if (Vid == 0x046D)
+                {
+                    (int Battery, string Name, bool Charging) hint;
+                    bool hasHint;
+                    lock (_logiHints) hasHint = _logiHints.TryGetValue($"{Vid:X4}:{Pid:X4}", out hint);
+                    if (hasHint)
+                    {
+                        if (!string.IsNullOrWhiteSpace(hint.Name))
+                        {
+                            name = hint.Name;
+                            physicalKey = VendorMap.PhysicalKeyFromName(name);
+                        }
+                        if (Battery < 0 && hint.Battery >= 0) Battery = hint.Battery;
+                        charging = hint.Charging;
+                    }
+                }
+
+                // 型号串优先：同一对 VID:PID 下 M137 是狼蛛 SC580、M230 是前行者 X23。
+                // 没收录的型号串也不猜，直接把串显示出来，方便以后补表。
+                if (VendorMap.TryIdentityModel(Identity, out string idName, out string idKey))
+                {
+                    name = idName;
+                    physicalKey = idKey;
+                }
+                else if (!string.IsNullOrWhiteSpace(Identity))
+                {
+                    name = $"未知型号（{Identity.Trim()}）";
+                    physicalKey = "oem-" + Identity.Trim().ToLowerInvariant();
                 }
 
                 bool bt = Path.IndexOf("BTHENUM", StringComparison.OrdinalIgnoreCase) >= 0
@@ -328,8 +461,13 @@ namespace MouseDock.Services.Detection
                     (Product.IndexOf("receiver", StringComparison.OrdinalIgnoreCase) >= 0 ||
                      Product.IndexOf("接收", StringComparison.Ordinal) >= 0);
 
+                // 鼠标键鼠一体接收器：同一个 VID:PID 下同时挂鼠标和键盘集合，
+                // 有线鼠标不会这样，用它判断 2.4G 比猜产品串靠谱
+                bool peerKeyboard = Kind == DeviceKind.Mouse && Counts.ContainsKey(DeviceKind.Keyboard);
+
                 string transport = bt ? "蓝牙"
-                    : (dongle || receiverProduct || LooksWireless(Product) ? "2.4G" : "有线");
+                    : (dongle || receiverProduct || LooksWireless(Product) || peerKeyboard ||
+                       (HasVendor && Interfaces.Count >= 2) ? "2.4G" : "有线");
 
                 return new DetectedDevice
                 {
@@ -338,6 +476,7 @@ namespace MouseDock.Services.Detection
                     Kind = kind,
                     Transport = transport,
                     Level = Battery,
+                    Charging = charging,
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = physicalKey,

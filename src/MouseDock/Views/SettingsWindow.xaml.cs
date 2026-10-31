@@ -74,24 +74,7 @@ namespace MouseDock.Views
                 ThemeList.SelectedItem = current;
                 foreach (var r in rows) r.IsSelected = r == current;
 
-                PickBgButton.Background = new SolidColorBrush(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
-
                 var theme = App.Theme;
-                AccentSwatch.Background = new SolidColorBrush(theme.Accent);
-                if (hasBg && App.ExtractedAccent.HasValue)
-                {
-                    AccentText.Text = $"已提取主色 {Palette.ToHex(App.ExtractedAccent.Value)} · " +
-                                      $"背景{(App.ExtractedAccent.Value.R > 200 && App.ExtractedAccent.Value.G > 200 ? "浅色" : "深色")} · " +
-                                      "主题已自动切换为「自定义」";
-                }
-                else if (hasBg)
-                {
-                    AccentText.Text = "背景图已选，但没能提取主色（可能是纯色图）";
-                }
-                else
-                {
-                    AccentText.Text = "未选择背景图 · 使用预设主题";
-                }
 
                 DeviceChecks.ItemsSource = App.Battery.Devices;
                 UpdateDeviceHint();
@@ -103,12 +86,13 @@ namespace MouseDock.Views
                 RefreshSlider.Value = Math.Clamp(s.RefreshSeconds, 5, 120);
                 RefreshValue.Text = $"{s.RefreshSeconds}s";
                 AutoStartCheck.IsChecked = AutoStart.IsEnabled();
+                ApplyWarnButtons(s.LowBatteryWarn);
+                ApplySurfaceButtons(s.SurfaceMode);
+                if (TopmostBox != null) TopmostBox.IsChecked = s.AlwaysOnTop;
+                if (ClickThroughBox != null) ClickThroughBox.IsChecked = s.ClickThrough;
 
-                HighlightProvider(s.Provider);
             }
             finally { _loading = false; }
-
-            if (SafeModeBox != null) SafeModeBox.IsChecked = App.Settings.SafeMode;
 
             ApplyTheme(App.Theme, false);
         }
@@ -120,14 +104,6 @@ namespace MouseDock.Views
             var accentBrush = new SolidColorBrush(accent);
             accentBrush.Freeze();
             return new ThemeRow { Id = id, Name = name, Swatch = swatch, AccentBrush = accentBrush };
-        }
-
-        private void OnSafeModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (SafeModeBox == null) return;
-            App.Settings.SafeMode = SafeModeBox.IsChecked == true;
-            App.SaveSettings();
-            App.Battery?.Poll();
         }
 
         private void UpdateDeviceHint()
@@ -147,6 +123,19 @@ namespace MouseDock.Views
         {
             var text = new SolidColorBrush(theme.Text);
             TextElement.SetForeground(Root, text);
+
+            // 资源画刷跟着主题走：浅色主题用深字、深卡片，免得白字糊在白底上
+            bool isLight = theme.IsLight;
+            Resources["TextBrush"] = new SolidColorBrush(theme.Text);
+            Resources["CardBrush"] = new SolidColorBrush(isLight
+                ? Color.FromArgb(0x14, 0x00, 0x00, 0x00)
+                : Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF));
+            Resources["ButtonBrush"] = new SolidColorBrush(isLight
+                ? Color.FromArgb(0x12, 0x00, 0x00, 0x00)
+                : Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
+            Resources["ButtonHoverBrush"] = new SolidColorBrush(isLight
+                ? Color.FromArgb(0x24, 0x00, 0x00, 0x00)
+                : Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF));
             var accent = new SolidColorBrush(theme.Accent);
             accent.Freeze();
             AccentBrush = accent;
@@ -306,40 +295,6 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        private void OnProviderAuto(object sender, RoutedEventArgs e) => SetProvider("auto");
-        private void OnProviderDemo(object sender, RoutedEventArgs e) => SetProvider("demo");
-        private void OnProviderJson(object sender, RoutedEventArgs e) => SetProvider("json");
-        private void OnProviderHid(object sender, RoutedEventArgs e) => SetProvider("hid");
-
-        private void SetProvider(string key)
-        {
-            App.Settings.Provider = key;
-            App.Battery.Configure(App.Settings);
-            App.SaveSettings();
-            App.Mini?.Rebuild();
-            HighlightProvider(key);
-        }
-
-        private void HighlightProvider(string key)
-        {
-            key = string.IsNullOrWhiteSpace(key) ? "auto" : key.ToLowerInvariant();
-            var on = new SolidColorBrush(Color.FromArgb(0x30, 0xB4, 0x9C, 0xFF));
-            var off = new SolidColorBrush(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
-
-            ProviderAuto.Background = key == "auto" ? on : off;
-            ProviderDemo.Background = key == "demo" ? on : off;
-            ProviderJson.Background = key == "json" ? on : off;
-            ProviderHid.Background = key == "hid" ? on : off;
-
-            ProviderHint.Text = key switch
-            {
-                "demo" => "演示用的假数据，只适合看界面效果",
-                "json" => "外部脚本写 devices.json 驱动界面，格式见 samples\\devices.json",
-                "hid" => "只读暴露标准 HID 电池用法的设备，多数 2.4G 接收器读不到",
-                _ => "扫描本机 HID 与蓝牙设备；读不到电量就显示 —，不编数字"
-            };
-        }
-
         private void OnOpenDataDir(object sender, RoutedEventArgs e)
         {
             try
@@ -352,34 +307,6 @@ namespace MouseDock.Views
                 });
             }
             catch { }
-        }
-
-        private async void OnCapture24G(object sender, RoutedEventArgs e)
-        {
-            CaptureButton.IsEnabled = false;
-            CaptureButton.Content = "抓取中… 请把鼠标切到 2.4G 并动一下";
-            try
-            {
-                int known = App.Battery.Devices.FirstOrDefault(d => d.HasLevel)?.Level ?? -1;
-                string text = await System.Threading.Tasks.Task.Run(
-                    () => Services.Detection.HidCapture.Run(known, 8));
-
-                string path = System.IO.Path.Combine(SettingsStore.Dir, "capture24g.txt");
-                System.IO.Directory.CreateDirectory(SettingsStore.Dir);
-                System.IO.File.WriteAllText(path, text, System.Text.Encoding.UTF8);
-
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = path,
-                    UseShellExecute = true
-                });
-            }
-            catch { }
-            finally
-            {
-                CaptureButton.Content = "抓取 2.4G 报文（8 秒）";
-                CaptureButton.IsEnabled = true;
-            }
         }
 
         private void OnOpenDetectReport(object sender, RoutedEventArgs e)
@@ -396,12 +323,112 @@ namespace MouseDock.Views
             catch { }
         }
 
+        private void OnWarnClick(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button b) || !(b.Tag is string tag) || !int.TryParse(tag, out int pct)) return;
+            App.Settings.LowBatteryWarn = pct;
+            ApplyWarnButtons(pct);
+            App.SaveSettings();
+        }
+
+        /// <summary>四个档位里高亮选中的那个，其余压暗。</summary>
+        private void ApplyWarnButtons(int selected)
+        {
+            var buttons = new[] { (Warn10, 10), (Warn20, 20), (Warn30, 30), (Warn40, 40) };
+            foreach (var (btn, pct) in buttons)
+            {
+                if (btn == null) continue;
+                bool on = pct == selected;
+                btn.Background = new SolidColorBrush(Color.FromArgb(
+                    on ? (byte)0x46 : (byte)0x16, 0xFF, 0xFF, 0xFF));
+                btn.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+        }
+
+        private void OnSurfaceClick(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button b) || !(b.Tag is string mode)) return;
+            App.Settings.SurfaceMode = mode;
+            ApplySurfaceButtons(mode);
+            App.ApplySurface();
+        }
+
+        private void OnPickIconBackground(object sender, RoutedEventArgs e) => App.PickBackground("icon");
+
+        private void OnTopmostChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.AlwaysOnTop = TopmostBox.IsChecked == true;
+            App.ApplyWindowBehavior();
+            App.SaveSettings();
+        }
+
+        private void OnClickThroughChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.ClickThrough = ClickThroughBox.IsChecked == true;
+            App.ApplyWindowBehavior();
+            App.SaveSettings();
+        }        private void OnClearIconBackground(object sender, RoutedEventArgs e) => App.SetBackground("icon", "");
+        private void OnPickDockBg(object sender, RoutedEventArgs e) => App.PickBackground("dock");
+        private void OnClearDockBg(object sender, RoutedEventArgs e) => App.SetBackground("dock", "");
+        private void OnPickMiniBg(object sender, RoutedEventArgs e) => App.PickBackground("mini");
+        private void OnClearMiniBg(object sender, RoutedEventArgs e) => App.SetBackground("mini", "");
+
+        /// <summary>三个形态按钮里高亮选中的那个，其余压暗。</summary>
+        private void ApplySurfaceButtons(string mode)
+        {
+            if (string.IsNullOrEmpty(mode)) mode = "dock";
+            var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon") };
+            foreach (var (btn, m) in buttons)
+            {
+                if (btn == null) continue;
+                bool on = m == mode;
+                btn.Background = new SolidColorBrush(Color.FromArgb(
+                    on ? (byte)0x46 : (byte)0x16, 0xFF, 0xFF, 0xFF));
+                btn.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+        }
+
+        private void OnRefreshDevicesClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                App.ScheduleDeviceRefresh();
+                DeviceHint.Text = $"已请求刷新 · {DateTime.Now:HH:mm:ss}";
+            }
+            catch
+            {
+                DeviceHint.Text = "刷新失败，看看探测报告";
+            }
+        }
+
         private void OnDragWindow(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton != MouseButton.Left) return;
-            // 点在关闭按钮上时不拖动（否则 DragMove 会把 click 吃掉）
-            if (e.OriginalSource is DependencyObject src && IsInside(src, CloseButton)) return;
+            if (e.OriginalSource is DependencyObject src)
+            {
+                // 点在关闭按钮或任何交互控件上时不拖动，否则会把点击吃掉
+                if (IsInside(src, CloseButton)) return;
+                if (IsInteractive(src)) return;
+            }
+            e.Handled = true;
             try { DragMove(); } catch { }
+        }
+
+        /// <summary>按钮、滑块、列表、勾选框这些控件自己处理鼠标，别拿来拖窗口。</summary>
+        private static bool IsInteractive(DependencyObject node)
+        {
+            while (node != null)
+            {
+                if (node is System.Windows.Controls.Primitives.ButtonBase ||
+                    node is Slider || node is TextBox || node is ListBox || node is ListBoxItem ||
+                    node is CheckBox || node is System.Windows.Controls.Primitives.ScrollBar ||
+                    node is System.Windows.Controls.Primitives.Thumb)
+                    return true;
+                node = System.Windows.Media.VisualTreeHelper.GetParent(node);
+            }
+            return false;
         }
 
         private static bool IsInside(DependencyObject child, DependencyObject parent)

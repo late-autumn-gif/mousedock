@@ -8,55 +8,154 @@
         SizeToContent="WidthAndHeight" SnapsToDevicePixels="True" UseLayoutRounding="True"
         FontFamily="Segoe UI, Microsoft YaHei UI">
 
-    <Grid Width="96" Height="96" MouseRightButtonUp="OnContextMenu">
+    <Grid x:Name="RootGrid" Width="96" Height="96" MouseRightButtonUp="OnContextMenu">
 
         <!-- 角色款 -->
         <Border x:Name="CharLayer" CornerRadius="20" Width="96" Height="96"
-                MouseLeftButtonDown="OnDragWindow" MouseWheel="OnWheel">
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseWheel="OnWheel">
             <Border.Background>
                 <ImageBrush x:Name="CharBrush" Stretch="UniformToFill" />
             </Border.Background>
             <Grid>
-                <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,7"
-                        CornerRadius="7" Padding="9,2" Background="#C4101018">
-                    <TextBlock x:Name="CharPlateText" Text="86%" FontSize="11.5" FontWeight="Bold" Foreground="#FFFFFF" />
+                <Border x:Name="CharPlate" Visibility="Collapsed" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                        Margin="0,0,0,7" CornerRadius="7" Padding="9,2" Background="#C4101018">
+                    <TextBlock x:Name="CharPlateText" Text="" FontSize="11.5" FontWeight="Bold" Foreground="#FFFFFF" />
                 </Border>
             </Grid>
         </Border>
 
         <!-- 照片款 -->
         <Border x:Name="PhotoLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
-                MouseLeftButtonDown="OnPhotoMouseDown" MouseMove="OnPhotoMouseMove"
-                MouseLeftButtonUp="OnPhotoMouseUp" MouseWheel="OnWheel">
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseWheel="OnWheel">
             <Border.Background>
                 <ImageBrush x:Name="PhotoBrush" Stretch="UniformToFill" />
             </Border.Background>
             <Grid>
-                <Border VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="7,0,0,7"
-                        CornerRadius="6" Padding="6,1,6,2" Background="#B0000000">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="电量 " FontSize="9" Foreground="#D9FFFFFF" VerticalAlignment="Bottom" Margin="0,0,0,1" />
-                        <TextBlock x:Name="PhotoPlateText" Text="76%" FontSize="12.5" FontWeight="Bold" Foreground="#FFFFFF" />
-                    </StackPanel>
+                <Border x:Name="PhotoPlate" Visibility="Collapsed" VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                        Margin="7,0,0,7" CornerRadius="6" Padding="6,1,6,2" Background="#B0000000">
+                    <TextBlock x:Name="PhotoPlateText" Text="" FontSize="12.5" FontWeight="Bold" Foreground="#FFFFFF" />
                 </Border>
             </Grid>
         </Border>
 
         <!-- 迷你款 -->
-        <Border x:Name="MiniLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
-                MouseLeftButtonDown="OnDragWindow">
+        <Border x:Name="MiniLayer" CornerRadius="20" Height="96" Visibility="Collapsed"
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.9,1">
                     <GradientStop x:Name="MiniTop" Color="#221B3B" Offset="0" />
                     <GradientStop x:Name="MiniBottom" Color="#120F22" Offset="1" />
                 </LinearGradientBrush>
             </Border.Background>
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <c:DeviceGlyph x:Name="MiniGlyph" Kind="Mouse" Width="17" Height="17" HorizontalAlignment="Center"
-                               GlyphBrush="#B4A5D6" Margin="0,0,0,2" />
-                <TextBlock x:Name="MiniText" Text="86%" FontSize="21" FontWeight="Bold" HorizontalAlignment="Center"
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="10,0">
+                <c:DeviceGlyph x:Name="MiniGlyph" Kind="Mouse" Width="15" Height="15" HorizontalAlignment="Center"
+                               GlyphBrush="#B4A5D6" Margin="0,0,0,1" />
+                <TextBlock x:Name="MiniText" Text="--" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"
                            Foreground="#ECE7FA" />
+                <Border x:Name="MiniBar" Width="26" Height="3" CornerRadius="1.5" Background="#7FE7C4"
+                        HorizontalAlignment="Center" Margin="0,4,0,0" />
             </StackPanel>
         </Border>
+
+        <!-- 环形刻度款：圆环直接浮在桌面上，不压底色 -->
+        <Border x:Name="RingLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
+                Background="Transparent"
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseRightButtonUp="OnContextMenu">
+            <Grid>
+                <Ellipse Width="56" Height="56" Stroke="#30FFFFFF" StrokeThickness="5" />
+                <Path x:Name="RingArc" Stroke="#7FE7C4" StrokeThickness="5"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <TextBlock x:Name="RingText" Text="--" FontSize="17" FontWeight="Bold" Foreground="#ECE7FA"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- 横向胶囊款 -->
+        <Border x:Name="PillLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseRightButtonUp="OnContextMenu">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.9,1">
+                    <GradientStop x:Name="PillTop" Color="#221B3B" Offset="0" />
+                    <GradientStop x:Name="PillBottom" Color="#120F22" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+            <Border Width="78" Height="32" CornerRadius="16" Background="#33FFFFFF"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <c:DeviceGlyph x:Name="PillGlyph" Kind="Mouse" Width="12" Height="12" GlyphBrush="#B4A5D6" />
+                    <TextBlock x:Name="PillText" Text="--" FontSize="15" FontWeight="Bold" Foreground="#ECE7FA"
+                               Margin="5,0,0,0" />
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 经典电池款 -->
+        <Border x:Name="BatteryLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseRightButtonUp="OnContextMenu">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.9,1">
+                    <GradientStop x:Name="BatteryTop" Color="#221B3B" Offset="0" />
+                    <GradientStop x:Name="BatteryBottom" Color="#120F22" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+            <Grid Width="66" Height="34" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border CornerRadius="5" BorderThickness="2.5" BorderBrush="#9AB4A5D6" Background="#1AFFFFFF" />
+                <Border Width="4" Height="12" CornerRadius="1.5" Background="#9AB4A5D6"
+                        HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-7,0" />
+                <Border x:Name="BatteryFill" CornerRadius="2" Background="#7FE7C4"
+                        HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="4" Width="24" />
+                <TextBlock x:Name="BatteryText" Text="--" FontSize="12.5" FontWeight="Bold" Foreground="#ECE7FA"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- 轻量数字款：只有数字和一条下划线，不压底色 -->
+        <Border x:Name="PlainLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
+                Background="Transparent"
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseRightButtonUp="OnContextMenu">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock x:Name="PlainText" Text="--" FontSize="30" FontWeight="Bold" Foreground="#ECE7FA"
+                           HorizontalAlignment="Center" />
+                <Border x:Name="PlainBar" Width="34" Height="3" CornerRadius="1.5" Background="#7FE7C4"
+                        Margin="0,5,0,0" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <!-- 多电量迷你款：每台设备一行小数字 -->
+        <Border x:Name="MultiLayer" CornerRadius="20" Width="96" Height="96" Visibility="Collapsed"
+                MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
+                MouseRightButtonUp="OnContextMenu">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.9,1">
+                    <GradientStop x:Name="MultiTop" Color="#221B3B" Offset="0" />
+                    <GradientStop x:Name="MultiBottom" Color="#120F22" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+            <StackPanel x:Name="MultiPanel" VerticalAlignment="Center" HorizontalAlignment="Center" />
+        </Border>
+
+        <!-- 共享设备列表：连着的都列出来，几条就多高 -->
+        <ItemsControl x:Name="DeviceList" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                      Margin="0,0,0,7" IsHitTestVisible="False">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border CornerRadius="6" Padding="6,1,6,2" Background="#B8000000" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Name}" FontSize="8" Foreground="#D9FFFFFF"
+                                       MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding LevelText}" FontSize="10.5" FontWeight="Bold"
+                                       Foreground="#FFFFFF" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
     </Grid>
 </Window>
