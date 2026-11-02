@@ -357,6 +357,24 @@
                         </StackPanel>
                     </Border>
 
+                    <TextBlock Text="帮助与反馈" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="遇到不适配的设备、有建议，发邮件给我。附错误报告最有用。"
+                                       FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,10" />
+                            <TextBlock Text="2653880019@qq.com" FontSize="12" Foreground="#9CB4FF" Margin="0,0,0,4" />
+                            <TextBlock Text="QQ 群 148894057" FontSize="11" Opacity="0.5" Margin="0,0,0,12" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="BtnReport" Content="导出错误报告" Style="{StaticResource GhostButton}"
+                                        Padding="12,5" FontSize="11.5" Click="OnExportReportClick" />
+                                <Button x:Name="BtnFeedback" Content="反馈" Style="{StaticResource GhostButton}"
+                                        Padding="12,5" FontSize="11.5" Margin="8,0,0,0" Click="OnFeedbackClick" />
+                                <Button x:Name="BtnAbout" Content="关于" Style="{StaticResource GhostButton}"
+                                        Padding="12,5" FontSize="11.5" Margin="8,0,0,0" Click="OnAboutClick" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="窗口行为" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>

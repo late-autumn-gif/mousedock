@@ -52,6 +52,9 @@ namespace MouseDock.Models
         /// <summary>启动时自动检查更新。默认开；断网时静默跳过。</summary>
         public bool AutoUpdate { get; set; } = true;
 
+        /// <summary>是否已经展示过「关于」通告。只在第一次启动弹一次。</summary>
+        public bool HasShownAbout { get; set; }
+
         /// <summary>界面形态三选一：dock（主面板）/ mini（迷你）/ icon（悬浮图标）。</summary>
         public string SurfaceMode { get; set; } = "dock";
 

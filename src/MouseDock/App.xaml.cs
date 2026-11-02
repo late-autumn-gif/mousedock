@@ -218,6 +218,9 @@ namespace MouseDock
             if (Settings.ShowMini && !StartHidden) Mini.Show();
             if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
 
+            // 第一次启动弹「关于」通告
+            Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
+
             // 启动后延迟检查更新。无网直接放弃，不打扰用户。
             _ = CheckUpdateOnStartupAsync();
 
@@ -906,7 +909,7 @@ namespace MouseDock
 
         private void RunScreenshots()
         {
-            string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "shots");
+            string dir = ShotDir();
             Directory.CreateDirectory(dir);
 
             // 鎴浘瑕佸睍绀虹湡瀹炴帰娴嬬粨鏋?            Settings.Provider = "auto";
@@ -1120,6 +1123,48 @@ namespace MouseDock
             try { _updateWin?.Close(); } catch { }
             _updateWin = null;
             _updateBar = null;
+        }
+
+
+
+        // ---------- 关于通告 ----------
+
+        private void ShowAboutIfFirstRun()
+        {
+            try
+            {
+                if (Settings != null && Settings.HasShownAbout) return;
+
+                Views.AboutWindow.Show(
+                    MainWindow is Window w && w.IsVisible ? w : null,
+                    true,
+                    ExportErrorReport,
+                    OpenFeedbackMail);
+
+                if (Settings != null)
+                {
+                    Settings.HasShownAbout = true;
+                    SettingsStore.Save(Settings);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>导出错误报告，返回 zip 路径。</summary>
+        private string ExportErrorReport()
+        {
+            try
+            {
+                var devices = Battery?.Devices?.ToList() ?? new System.Collections.Generic.List<Models.DeviceInfo>();
+                return Services.FeedbackService.ExportReport(Settings, devices);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>写反馈邮件。</summary>
+        private void OpenFeedbackMail(string reportPath)
+        {
+            try { Services.FeedbackService.OpenFeedbackMail(reportPath); } catch { }
         }
 
 }

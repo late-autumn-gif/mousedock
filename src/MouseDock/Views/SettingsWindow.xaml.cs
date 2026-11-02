@@ -325,6 +325,70 @@ namespace MouseDock.Views
         }
 
         /// <summary>自动更新开关。关掉之后启动不再联网。</summary>
+        /// <summary>导出错误报告。</summary>
+        private void OnExportReportClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var devices = App.Battery?.Devices?.ToList()
+                              ?? new System.Collections.Generic.List<Models.DeviceInfo>();
+                string path = Services.FeedbackService.ExportReport(App.Settings, devices);
+
+                if (string.IsNullOrEmpty(path))
+                {
+                    MessageBox.Show(this, "导出失败，请检查磁盘权限。", "MouseDock",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var r = MessageBox.Show(this,
+                    "报告已生成：\n" + path + "\n\n现在打开它所在的文件夹吗？",
+                    "导出成功", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (r == MessageBoxResult.Yes) Services.FeedbackService.OpenReportFolder(path);
+            }
+            catch (System.Exception ex)
+            {
+                MessageBox.Show(this, "导出失败：" + ex.Message, "MouseDock",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>写反馈邮件：先导出报告，再打开邮件客户端。</summary>
+        private void OnFeedbackClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var devices = App.Battery?.Devices?.ToList()
+                              ?? new System.Collections.Generic.List<Models.DeviceInfo>();
+                string path = Services.FeedbackService.ExportReport(App.Settings, devices);
+
+                if (!string.IsNullOrEmpty(path))
+                    Services.FeedbackService.OpenReportFolder(path);
+
+                Services.FeedbackService.OpenFeedbackMail(path);
+            }
+            catch (System.Exception ex)
+            {
+                MessageBox.Show(this, "打开邮件失败：" + ex.Message, "MouseDock",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>再次查看关于通告。</summary>
+        private void OnAboutClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Views.AboutWindow.Show(this, false, () =>
+                {
+                    var devices = App.Battery?.Devices?.ToList()
+                                  ?? new System.Collections.Generic.List<Models.DeviceInfo>();
+                    return Services.FeedbackService.ExportReport(App.Settings, devices);
+                }, p => Services.FeedbackService.OpenFeedbackMail(p));
+            }
+            catch { }
+        }
+
         private void OnAutoUpdateClick(object sender, RoutedEventArgs e)
         {
             try
