@@ -58,6 +58,19 @@ namespace MouseDock.Services.Detection
                 ["3554:FA09"] = ("无线键盘 3554:FA09", DeviceKind.Keyboard, "kzzi-k75v2"),
                 ["391D:2A05"] = ("VGN Neon75 Air", DeviceKind.Keyboard, "vgn-neon75"),
 
+                // 前行者 X87 三模键盘。判据来自 3.0 网页驱动 hub.eweadn.cn：
+                //   vendorId === 0x0C45 && productId === 0x8006 && productName === "X87"
+                // 同 PID 下还有别的键盘，官方靠接口区分：
+                //   usagePage 含 0xFF68 && usage 含 0x0061  → 这一支是 X87
+                //   usagePage 含 0xFF60 && usage 含 0x0061  → 另一支
+                ["0C45:8006"] = ("前行者 X87", DeviceKind.Keyboard, "eweadn-x87"),
+
+                // 瓦尔基里（Valkyrie）。05AC:024F 是 Apple 公版号，VK87 / VK99 / Valkyrie 75
+                // 都挂在这一个号下面，只能靠产品名分。config.xml 原文：
+                //   VK87 / VK99 / VK99 TFT / Valkyrie 75 → MI_02 (USB) 或 MI_03 (2.4G)
+                // 另有 0C45:FEFE 的 Sonix 2.4G Dongle。
+                ["0C45:FEFE"] = ("瓦尔基里 2.4G 接收器", DeviceKind.Keyboard, "valkyrie-dongle"),
+
                 // 罗技接收器。Nano 只带 1 台，Unifying/Bolt 最多 6 台，Lightspeed 1 台。
                 // 具体型号靠 HID++ 自己报，这里只保证通道和类型不丢。
                 ["046D:C531"] = ("罗技无线接收器", DeviceKind.Mouse, null),

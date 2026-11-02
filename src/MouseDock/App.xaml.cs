@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -216,6 +217,9 @@ namespace MouseDock
             if (Settings.ShowDock && !StartHidden) Dock.Show();
             if (Settings.ShowMini && !StartHidden) Mini.Show();
             if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
+
+            // 启动后延迟检查更新。无网直接放弃，不打扰用户。
+            _ = CheckUpdateOnStartupAsync();
 
             // 关闭只隐藏到后台，程序继续跑；只有托盘「退出」才真正结束
             Dock.Closing += (_, args) =>
@@ -1006,5 +1010,117 @@ namespace MouseDock
             }
             catch { }
         }
-    }
+
+        // ---------- 自动更新 ----------
+
+        private Window _updateWin;
+        private System.Windows.Controls.ProgressBar _updateBar;
+
+        /// <summary>
+        /// 启动后延迟检查更新。断网 / 超时 / 用户关掉开关都静默跳过。
+        /// </summary>
+        private async Task CheckUpdateOnStartupAsync()
+        {
+            try
+            {
+                if (Settings != null && !Settings.AutoUpdate) return;
+
+                await Task.Delay(TimeSpan.FromSeconds(10));
+
+                var info = await Services.UpdateService.CheckAsync();
+                if (info == null) return;
+
+                bool go = Dispatcher.Invoke(() =>
+                {
+                    var msg = "发现新版本 " + info.Version + "（当前 " + Services.UpdateService.CurrentVersionText + "）\n\n" +
+                              "安装包：" + info.AssetName + "（" + (info.AssetSize / 1024 / 1024) + " MB）\n\n" +
+                              "现在下载并安装吗？安装时程序会自动重启。";
+                    return MessageBox.Show(msg, "MouseDock 更新",
+                        MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK;
+                });
+
+                if (!go) return;
+
+                var progressForm = Dispatcher.Invoke(() => CreateUpdateProgress());
+                var progress = progressForm == null ? null : new Progress<int>(p =>
+                {
+                    try { Dispatcher.Invoke(() => UpdateProgressBar(p)); } catch { }
+                });
+
+                bool ok = await Services.UpdateService.DownloadAndApplyAsync(info, progress);
+
+                Dispatcher.Invoke(() =>
+                {
+                    CloseUpdateProgress();
+
+                    if (ok)
+                    {
+                        MessageBox.Show("更新已下载，程序即将重启完成安装。", "MouseDock 更新",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                        Shutdown();
+                    }
+                    else
+                    {
+                        MessageBox.Show("更新失败，请稍后重试或到 GitHub 手动下载。", "MouseDock 更新",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                });
+            }
+            catch
+            {
+                // 更新失败绝不能影响主程序
+            }
+        }
+
+        private Window CreateUpdateProgress()
+        {
+            try
+            {
+                _updateBar = new System.Windows.Controls.ProgressBar
+                {
+                    Minimum = 0, Maximum = 100, Value = 0,
+                    Height = 8, Margin = new Thickness(24, 16, 24, 8)
+                };
+
+                var text = new System.Windows.Controls.TextBlock
+                {
+                    Text = "正在下载更新…",
+                    Margin = new Thickness(24, 20, 24, 0),
+                    FontSize = 13
+                };
+
+                var stack = new System.Windows.Controls.StackPanel();
+                stack.Children.Add(text);
+                stack.Children.Add(_updateBar);
+
+                _updateWin = new Window
+                {
+                    Title = "MouseDock 更新",
+                    Content = stack,
+                    Width = 380, Height = 120,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                    ResizeMode = ResizeMode.NoResize,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    Topmost = true,
+                    ShowInTaskbar = true
+                };
+                _updateWin.Show();
+                return _updateWin;
+            }
+            catch { return null; }
+        }
+
+        private void UpdateProgressBar(int percent)
+        {
+            try { if (_updateBar != null) _updateBar.Value = percent; } catch { }
+        }
+
+        private void CloseUpdateProgress()
+        {
+            try { _updateWin?.Close(); } catch { }
+            _updateWin = null;
+            _updateBar = null;
+        }
+
+}
 }

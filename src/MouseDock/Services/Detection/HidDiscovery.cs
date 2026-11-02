@@ -320,6 +320,37 @@ namespace MouseDock.Services.Detection
                 try { battery = VendorProtocol.TryReadLegacyShape(vid, pid); } catch { }
             }
 
+            // 前行者（X87 三模及全系）。两套协议：
+            //   CH315  16 字节 report 8，cmd 0x04，校验 0x55 - sum
+            //   北赢   63 字节，cmd 0x87，校验 255 - sum%256
+            // 协议抄自 hub.eweadn.cn 和 new-hub.eweadn.cn 两套网页驱动。
+            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsEweadnVid(vid))
+            {
+                try { battery = VendorProtocol.TryReadEweadn(vid, pid); } catch { }
+            }
+
+            // VGN（391D 号段）。64 字节帧，[0]=0x0D ThreeMode，[1]=0x01 GetBasicInfo，
+            // 无校验，响应 [4] 是电量。协议抄自 VGN VHUB 里带的方案商 SDK 源码。
+            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsVgnVid(vid))
+            {
+                try { battery = VendorProtocol.TryReadVgn(vid, pid); } catch { }
+            }
+
+            // 黑爵 AJAZZ（0x1A2C 号段）。命令 0xAA，响应 [4]==14 表状态帧，
+            // [5] 电量、[6] 在线、[7] 充电。协议抄自 ajazz.shinetek-ic.net 网页驱动。
+            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsAjazzVid(vid))
+            {
+                try { battery = VendorProtocol.TryReadAjazz(vid, pid); } catch { }
+            }
+
+            // 瓦尔基里（VK87 / VK99 / Valkyrie 75）。feature report 上的 F7 命令：
+            //   响应 [0]=可读 [1]=键盘电量 [2]=鼠标电量 [3]=键盘在线(0) [4]=鼠标在线(0)
+            // 05AC:024F 是 Apple 公版号，多家共用，只能靠产品名认。
+            if (battery < 0 && VendorProtocol.IsValkyrieDevice(vid, pid, product))
+            {
+                try { battery = VendorProtocol.TryReadValkyrie(vid, pid, kind == DeviceKind.Keyboard); } catch { }
+            }
+
             if (!buckets.TryGetValue(key, out Bucket bucket))
             {
                 bucket = new Bucket { Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };

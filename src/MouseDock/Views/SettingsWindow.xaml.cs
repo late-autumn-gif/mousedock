@@ -87,6 +87,7 @@ namespace MouseDock.Views
                 RefreshValue.Text = $"{s.RefreshSeconds}s";
                 AutoStartCheck.IsChecked = AutoStart.IsEnabled();
                 ApplyWarnButtons(s.LowBatteryWarn);
+            AutoUpdateBox.IsChecked = s.AutoUpdate;
                 ApplySurfaceButtons(s.SurfaceMode);
                 if (TopmostBox != null) TopmostBox.IsChecked = s.AlwaysOnTop;
                 if (ClickThroughBox != null) ClickThroughBox.IsChecked = s.ClickThrough;
@@ -319,6 +320,17 @@ namespace MouseDock.Views
                     FileName = path,
                     UseShellExecute = true
                 });
+            }
+            catch { }
+        }
+
+        /// <summary>自动更新开关。关掉之后启动不再联网。</summary>
+        private void OnAutoUpdateClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                App.Settings.AutoUpdate = AutoUpdateBox.IsChecked == true;
+                SettingsStore.Save(App.Settings);
             }
             catch { }
         }

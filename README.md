@@ -1,7 +1,7 @@
 # MouseDock
 
 > Windows 桌面外设电量面板 —— 2.4G / 蓝牙 / 有线自动识别，电量实时刷新。
-> 不联网、不上传、无遥测；读不到电量就显示 `—`，绝不编数字。
+> 仅检查更新时联网，不上传、无遥测；读不到电量就显示 `—`，绝不编数字。
 
 <p align="center">
   <img src="docs/screenshots/dock.png" width="420" alt="卡片面板" />
@@ -24,14 +24,23 @@
 
 ## 快速开始
 
+下完仓库双击 `MouseDock.cmd` 就行。它会自己在仓库里装 .NET 10 SDK（装到 `.dotnet\`，不写注册表）、把程序打成**单个** `dist\MouseDock.exe`（约 77 MB，运行时和图片资源全在里面，不用另装 .NET）、在桌面和开始菜单放 `MouseDock.lnk`，然后把程序拉起来。产物那一个 exe 拷到 U 盘或发给别人也能直接双击跑。
+
+第一次启动要解包到 `%TEMP%\.net\MouseDock\`，慢一些（约 30 秒）；之后启动 5 秒内。
+
 ```powershell
 git clone https://github.com/late-autumn-gif/MouseDock.git
 cd MouseDock
-./build.ps1          # 产物：dist\MouseDock.exe（自包含，运行无需装 .NET）
-./install.ps1        # 可选：桌面 / 开始菜单快捷方式；加 -AutoStart 开机启动
+./MouseDock.cmd                    # 一键：装 SDK → 编译 → 建快捷方式 → 启动
+.\tools\bootstrap.ps1 -NoLaunch    # 只建快捷方式，不启动
+.\tools\bootstrap.ps1 -Rebuild     # 强制重编
+./build.ps1                        # 只编译，产物 dist\MouseDock.exe
+./install.ps1                      # 只有 dist 已存在时才好用；加 -AutoStart 开机启动
 ```
 
-构建需要 .NET 10 SDK；运行需要 Windows 10 1809+ / Windows 11。
+`.cmd` 里走的是 `-ExecutionPolicy Bypass`，不改系统脚本策略。压缩包从网上下载的，右键属性里可能有「解除锁定」，不解除会弹安全警告。
+
+构建需要 .NET 10 SDK（`MouseDock.cmd` 发现缺失会自装）；运行需要 Windows 10 1809+ / Windows 11。
 
 ## 电量是怎么读到的
 
@@ -52,7 +61,8 @@ cd MouseDock
 
 ## 关于杀软误报
 
-本程序**不联网、无自动更新、无混淆、无壳、无注入**，全部源码可审计。
+本程序**只在检查更新时联网、无混淆、无壳、无注入**，全部源码可审计。
+自动更新可在设置里关闭，关掉后完全不发起任何网络请求。
 但与 HID 设备交互本身容易触发启发式误判，因此：
 
 - **安全模式**：`设置 → 数据源 → 安全模式`，关闭所有厂商通道写操作，只保留标准 HID 读取

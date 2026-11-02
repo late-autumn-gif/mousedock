@@ -49,6 +49,9 @@ namespace MouseDock.Models
         /// <summary>低电量提醒阈值（百分比）。档位 10/20/30/40，默认 20。</summary>
         public int LowBatteryWarn { get; set; } = 20;
 
+        /// <summary>启动时自动检查更新。默认开；断网时静默跳过。</summary>
+        public bool AutoUpdate { get; set; } = true;
+
         /// <summary>界面形态三选一：dock（主面板）/ mini（迷你）/ icon（悬浮图标）。</summary>
         public string SurfaceMode { get; set; } = "dock";
 
