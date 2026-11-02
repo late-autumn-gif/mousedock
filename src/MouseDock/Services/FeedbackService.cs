@@ -212,28 +212,61 @@ namespace MouseDock.Services
 
                 if (!string.IsNullOrEmpty(reportPath) && File.Exists(reportPath))
                 {
-                    body.AppendLine("错误报告已生成，请把下面这个文件作为附件加入邮件：");
+                    body.AppendLine("错误报告已生成，请把它作为附件加入邮件：");
                     body.AppendLine(reportPath);
                     body.AppendLine();
                 }
 
                 body.AppendLine("如果设备电量显示「—」，附上错误报告最有用。");
 
-                string url = "mailto:" + ContactEmail
-                           + "?subject=" + Uri.EscapeDataString(subject)
-                           + "&body=" + Uri.EscapeDataString(body.ToString());
+                // 把收件人、主题、正文全部塞进剪贴板
+                string clip = "收件人: " + ContactEmail + "\r\n"
+                            + "主题: " + subject + "\r\n"
+                            + "\r\n"
+                            + body.ToString();
+                try { System.Windows.Clipboard.SetText(clip); } catch { }
 
+                // 直接打开网页版 QQ 邮箱
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = url,
+                    FileName = "https://mail.qq.com/",
                     UseShellExecute = true
                 });
+
                 return true;
             }
             catch
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 打开系统默认邮件客户端（备用方案）。
+        /// </summary>
+        public static bool OpenFeedbackMailClient(string reportPath = null)
+        {
+            try
+            {
+                string subject = "MouseDock " + UpdateService.CurrentVersionText + " 反馈";
+                var body = new StringBuilder();
+                body.AppendLine("（这条下面写你的问题和建议）");
+                body.AppendLine();
+
+                if (!string.IsNullOrEmpty(reportPath) && File.Exists(reportPath))
+                {
+                    body.AppendLine("错误报告请作为附件加入：");
+                    body.AppendLine(reportPath);
+                }
+
+                string url = "mailto:" + ContactEmail
+                           + "?subject=" + Uri.EscapeDataString(subject)
+                           + "&body=" + Uri.EscapeDataString(body.ToString());
+
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+                return true;
+            }
+            catch { return false; }
         }
 
         /// <summary>打开报告所在目录，方便用户拖附件。</summary>

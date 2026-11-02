@@ -1164,7 +1164,20 @@ namespace MouseDock
         /// <summary>写反馈邮件。</summary>
         private void OpenFeedbackMail(string reportPath)
         {
-            try { Services.FeedbackService.OpenFeedbackMail(reportPath); } catch { }
+            try
+            {
+                bool ok = Services.FeedbackService.OpenFeedbackMail(reportPath);
+
+                var msg = ok
+                    ? "\u5df2\u6253\u5f00\u7f51\u9875\u7248 QQ \u90ae\u7bb1\u3002\n\n\u6536\u4ef6\u4eba\u3001\u4e3b\u9898\u548c\u6b63\u6587\u90fd\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f\uff0c\n\u5728\u90ae\u4ef6\u9875\u9762\u6309 Ctrl+V \u76f4\u63a5\u7c98\u8d34\u5c31\u884c\u3002"
+                    : "\u6253\u5f00\u6d4f\u89c8\u5668\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u8bbf\u95ee mail.qq.com\u3002\n\n\u5185\u5bb9\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f\u3002";
+
+                if (!string.IsNullOrEmpty(reportPath))
+                    msg += "\n\n\u9519\u8bef\u62a5\u544a\uff1a\n" + reportPath + "\n\u8bf7\u628a\u5b83\u4f5c\u4e3a\u9644\u4ef6\u52a0\u5165\u90ae\u4ef6\u3002";
+
+                MessageBox.Show(msg, "MouseDock \u53cd\u9988", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch { }
         }
 
 }
