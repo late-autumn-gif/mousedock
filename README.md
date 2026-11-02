@@ -12,6 +12,11 @@
   <img src="docs/screenshots/settings.png" width="300" alt="设置面板" />
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/icon-character.png" width="110" alt="悬浮图标 · 角色" />
+  <img src="docs/screenshots/icon-photo.png" width="110" alt="悬浮图标 · 照片" />
+</p>
+
 ## 特性
 
 - **只显示当前连接的设备**：内置键盘 / 触摸板 / 摄像头自动过滤；拔出即从列表消失
