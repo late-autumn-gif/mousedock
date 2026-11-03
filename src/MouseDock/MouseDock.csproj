@@ -20,6 +20,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WPF owns startup; WinForms is used only for the tray icon. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <DebugType>none</DebugType>

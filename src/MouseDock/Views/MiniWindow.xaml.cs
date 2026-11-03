@@ -21,10 +21,12 @@ namespace MouseDock.Views
         public Brush GlyphBrush { get => (Brush)GetValue(GlyphBrushProperty); set => SetValue(GlyphBrushProperty, value); }
 
         private readonly List<DeviceInfo> _visible = new List<DeviceInfo>();
+        private readonly Brush _themeBackground;
 
         public MiniWindow()
         {
             InitializeComponent();
+            _themeBackground = Root.Background;
             CellList.ItemsSource = _visible;
             App.Battery.Refreshed += (_, __) => Rebuild();
             App.Battery.SourceChanged += (_, __) => Rebuild();
@@ -38,13 +40,9 @@ namespace MouseDock.Views
         /// <summary>迷你视图只显示被勾选的设备，最多 5 台。</summary>
         public void Rebuild()
         {
-            var selected = App.Battery.Devices
-                .Where(d => d.Selected && d.Connected)
+            var selected = App.SelectedDevices
                 .Take(5)
                 .ToList();
-
-            if (selected.Count == 0)
-                selected = App.Battery.Devices.Where(d => d.Connected).Take(5).ToList();
 
             if (selected.Count == _visible.Count && selected.SequenceEqual(_visible)) return;
 
@@ -87,6 +85,7 @@ namespace MouseDock.Views
                 };
                 return;
             }
+            Root.Background = _themeBackground;
             ApplyTheme(App.Theme, false);
         }
 
@@ -132,6 +131,8 @@ namespace MouseDock.Views
             }
             else
             {
+                BgTopStop.BeginAnimation(GradientStop.ColorProperty, null);
+                BgBottomStop.BeginAnimation(GradientStop.ColorProperty, null);
                 BgTopStop.Color = theme.BgTop;
                 BgBottomStop.Color = theme.BgBottom;
             }

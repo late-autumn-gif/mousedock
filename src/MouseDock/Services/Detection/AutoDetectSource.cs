@@ -102,6 +102,7 @@ namespace MouseDock.Services.Detection
                 Kind = best.Kind,
                 Transport = best.Transport,
                 Level = best.Level,
+                Charging = group.Any(d => d.Connected && d.Charging),
                 Connected = best.Connected,
                 Detail = best.Detail,
                 Note = best.Note

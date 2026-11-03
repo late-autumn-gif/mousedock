@@ -48,6 +48,7 @@ namespace MouseDock.Models
                 _level = v;
                 Raise(nameof(Level));
                 Raise(nameof(LevelText));
+                Raise(nameof(MiniText));
                 Raise(nameof(LevelFraction));
                 Raise(nameof(HasLevel));
             }
@@ -56,13 +57,21 @@ namespace MouseDock.Models
         public bool Charging
         {
             get => _charging;
-            set { if (_charging == value) return; _charging = value; Raise(nameof(Charging)); }
+            set { if (_charging == value) return; _charging = value; Raise(nameof(Charging)); Raise(nameof(StatusText)); }
         }
 
         public bool Connected
         {
             get => _connected;
-            set { if (_connected == value) return; _connected = value; Raise(nameof(Connected)); Raise(nameof(StatusText)); }
+            set
+            {
+                if (_connected == value) return;
+                _connected = value;
+                Raise(nameof(Connected));
+                Raise(nameof(StatusText));
+                Raise(nameof(LevelText));
+                Raise(nameof(MiniText));
+            }
         }
 
         public bool Selected

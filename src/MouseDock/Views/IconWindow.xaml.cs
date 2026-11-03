@@ -18,6 +18,7 @@ namespace MouseDock.Views
         private readonly ScaleTransform _photoScale = new ScaleTransform(1, 1, 0.5, 0.5);
         private readonly TranslateTransform _photoOffset = new TranslateTransform(0, 0);
         private readonly TransformGroup _photoTransform = new TransformGroup();
+        private ThemePreset _theme = App.Theme;
 
         private bool _dragging;
         private Point _dragStart;
@@ -154,8 +155,7 @@ namespace MouseDock.Views
 
         public void UpdateValue()
         {
-            // 连着的都列出来，最多五行
-            var devices = App.Battery.Devices.Where(d => d.Connected).Take(5).ToList();
+            var devices = App.SelectedDevices.Take(5).ToList();
             var dev = App.PrimaryDevice;
 
             if (DeviceList != null) DeviceList.ItemsSource = devices;
@@ -215,7 +215,7 @@ namespace MouseDock.Views
                         Text = "--",
                         FontSize = 22,
                         FontWeight = FontWeights.Bold,
-                        Foreground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE7, 0xFA)),
+                        Foreground = new SolidColorBrush(_theme.Text),
                         HorizontalAlignment = HorizontalAlignment.Center
                     });
                 }
@@ -235,7 +235,7 @@ namespace MouseDock.Views
                             HorizontalAlignment = HorizontalAlignment.Center,
                             Foreground = new SolidColorBrush(lowV
                                 ? Color.FromRgb(0xFF, 0x6B, 0x6B)
-                                : Color.FromRgb(0xEC, 0xE7, 0xFA)),
+                                : _theme.Text),
                             Margin = new Thickness(0, 1, 0, 1)
                         });
                     }
@@ -327,21 +327,34 @@ namespace MouseDock.Views
 
         public void ApplyTheme(ThemePreset theme, bool animate)
         {
+            _theme = theme;
             var text = new SolidColorBrush(theme.Text);
+            Foreground = text;
             TextElement.SetForeground(MiniLayer, text);
-            MiniText.Foreground = text;
+            foreach (var label in new[] { MiniText, RingText, PillText, BatteryText, PlainText })
+                label.Foreground = text;
             MiniGlyph.GlyphBrush = new SolidColorBrush(Palette.Mix(theme.Text, theme.Accent, 0.35));
-
-            if (animate)
+            PillGlyph.GlyphBrush = MiniGlyph.GlyphBrush;
+            foreach (var (top, bottom) in new[]
             {
-                var dur = TimeSpan.FromMilliseconds(240);
-                MiniTop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(theme.BgTop, dur));
-                MiniBottom.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(theme.BgBottom, dur));
+                (MiniTop, MiniBottom), (PillTop, PillBottom),
+                (BatteryTop, BatteryBottom), (MultiTop, MultiBottom)
+            })
+            {
+                SetGradient(top, theme.BgTop);
+                SetGradient(bottom, theme.BgBottom);
             }
-            else
+            UpdateValue();
+
+            void SetGradient(GradientStop stop, Color target)
             {
-                MiniTop.Color = theme.BgTop;
-                MiniBottom.Color = theme.BgBottom;
+                var previous = stop.Color;
+                stop.BeginAnimation(GradientStop.ColorProperty, null);
+                stop.Color = target;
+                if (animate)
+                    stop.BeginAnimation(GradientStop.ColorProperty,
+                        new ColorAnimation(previous, target, TimeSpan.FromMilliseconds(240))
+                        { FillBehavior = FillBehavior.Stop });
             }
         }
 

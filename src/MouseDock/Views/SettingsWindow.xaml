@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="MouseDock 设置"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        ShowInTaskbar="False" Topmost="False" ResizeMode="NoResize"
+        ShowInTaskbar="True" Topmost="False" ResizeMode="NoResize"
         Width="396" SizeToContent="Height" SnapsToDevicePixels="True" UseLayoutRounding="True"
         FontFamily="Segoe UI, Microsoft YaHei UI"
         TextOptions.TextFormattingMode="Ideal">
@@ -92,7 +92,7 @@
         </Style>
         <Style TargetType="CheckBox">
             <Setter Property="FontSize" Value="12.5" />
-            <Setter Property="Foreground" Value="#ECE7FA" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="Margin" Value="0,5" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -192,10 +192,12 @@
 
                     <TextBlock Text="主题" Style="{StaticResource Section}" />
                     <ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0"
+                             Foreground="{DynamicResource TextBrush}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              SelectionChanged="OnThemeSelected">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                                 <Setter Property="Padding" Value="0" />
                                 <Setter Property="Margin" Value="0" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -235,7 +237,7 @@
 
                     
 
-                    <TextBlock Text="多电量迷你 · 显示设备（最多 5 台）" Style="{StaticResource Section}" />
+                    <TextBlock Text="显示设备（任务栏与迷你视图最多 5 台）" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <Grid Margin="0,0,0,6">
@@ -244,11 +246,11 @@
                                         Style="{StaticResource GhostButton}" Padding="9,3" FontSize="10.5"
                                         Click="OnRefreshDevicesClick" />
                             </Grid>
-                            <ItemsControl x:Name="DeviceChecks">
+                            <ItemsControl x:Name="DeviceChecks" Foreground="{DynamicResource TextBrush}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay}"
-                                                  Checked="OnDeviceChecked" Unchecked="OnDeviceChecked" Foreground="#ECE7FA" />
+                                                  Checked="OnDeviceChecked" Unchecked="OnDeviceChecked" Foreground="{DynamicResource TextBrush}" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -266,8 +268,22 @@
                                         Padding="10,4" Margin="8,0,0,0" Click="OnSurfaceClick" />
                                 <Button x:Name="SurfaceIcon" Content="悬浮图标" Tag="icon" Style="{StaticResource GhostButton}"
                                         Padding="10,4" Margin="8,0,0,0" Click="OnSurfaceClick" />
+                                <Button x:Name="SurfaceTaskbar" Content="任务栏" Tag="taskbar" Style="{StaticResource GhostButton}"
+                                        Padding="10,4" Margin="8,0,0,0" Click="OnSurfaceClick" />
                             </StackPanel>
-                            <TextBlock Text="三选一，同一时间只露一个" FontSize="10" Opacity="0.42" Margin="0,8,0,0" />
+                            <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="48" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="左侧偏移" Style="{StaticResource RowText}" />
+                                <Slider x:Name="TaskbarOffsetSlider" Grid.Column="1" Minimum="0" Maximum="1200"
+                                        Width="Auto" Margin="14,0,8,0" SmallChange="4" LargeChange="40"
+                                        ValueChanged="OnTaskbarOffsetChanged" />
+                                <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right"
+                                           Style="{StaticResource RowText}" Opacity="0.65" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -389,7 +405,7 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Text="左键拖动窗口 · 右键打开快捷菜单 · 双击托盘图标显示全部"
+                    <TextBlock Text="左键拖动窗口 · 右键打开快捷菜单 · 双击托盘图标显示当前面板"
                                FontSize="10" Opacity="0.34" Margin="3,12,0,0" TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>

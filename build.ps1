@@ -5,7 +5,8 @@
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$dotnet = "D:\AgentTools\dotnet\dotnet.exe"
+$dotnet = Join-Path $root ".dotnet\dotnet.exe"
+if (-not (Test-Path $dotnet)) { $dotnet = "D:\AgentTools\dotnet\dotnet.exe" }
 if (-not (Test-Path $dotnet)) { $dotnet = "dotnet" }
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
@@ -16,7 +17,8 @@ if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 Write-Host "[MouseDock] publish -> dist ..." -ForegroundColor Cyan
 & $dotnet publish "$root\src\MouseDock\MouseDock.csproj" -c $Configuration -r $Runtime `
-    --self-contained false -o "$root\dist" -v m --nologo
+    --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+    -o "$root\dist" -v m --nologo
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
 Write-Host "[MouseDock] done: $root\dist\MouseDock.exe" -ForegroundColor Green

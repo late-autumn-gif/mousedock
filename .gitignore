@@ -1,5 +1,7 @@
 # 构建产物
 dist/
+.dotnet/
+artifacts/
 bin/
 obj/
 publish/

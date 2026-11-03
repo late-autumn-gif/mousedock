@@ -24,7 +24,7 @@
         <ItemsControl x:Name="CellList">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <UniformGrid Columns="2" Rows="2" />
+                    <UniformGrid Columns="2" />
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
