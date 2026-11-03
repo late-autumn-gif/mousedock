@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using MouseDock.Models;
 
 namespace MouseDock.Services
@@ -18,6 +19,13 @@ namespace MouseDock.Services
     ///   2. 标出哪些被 MouseDock 认出来了、哪些读不到电量
     ///   3. 附上识别结果、设置、系统信息
     ///   4. 打包成 zip
+    ///
+    /// 报告放哪：
+    ///   不往 C 盘的 %APPDATA% 里塞。导出时弹一次「另存为」对话框，
+    ///   默认目录就是 MouseDock.exe 自己所在的文件夹，文件名也填好了 ——
+    ///   想收下直接回车，想换地方就换。
+    ///   报告是用户自己要拿去发邮件的东西，放在他挑得到的地方更合适；
+    ///   exe 目录不可写（装在 Program Files、只读介质）时才退回「文档」。
     ///
     /// 反馈做什么：
     ///   用 mailto 打开系统默认邮件客户端，收件人预填，主题和正文预填。
@@ -34,52 +42,159 @@ namespace MouseDock.Services
         private static string DataDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock");
 
-        private static string ReportDir =>
-            Path.Combine(DataDir, "reports");
+        // ─────────────────────────── 报告放哪 ───────────────────────────
+
+        /// <summary>
+        /// 报告默认放在程序自己所在目录 —— 也就是 MouseDock.exe 旁边。
+        /// 该目录写不进去时退回「文档」，再不行退回临时目录。
+        /// </summary>
+        public static string DefaultExportDir
+        {
+            get
+            {
+                string exeDir = ExeDir();
+                if (CanWriteTo(exeDir)) return exeDir;
+
+                string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (!string.IsNullOrEmpty(docs) && CanWriteTo(docs)) return docs;
+
+                return Path.GetTempPath();
+            }
+        }
+
+        /// <summary>默认的完整 zip 路径，界面用来预热对话框。</summary>
+        public static string DefaultExportPath => Path.Combine(DefaultExportDir, SuggestedFileName());
+
+        /// <summary>建议的文件名，带时间戳，不会覆盖上一份报告。</summary>
+        private static string SuggestedFileName()
+            => "MouseDock-report-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip";
+
+        /// <summary>exe 所在目录。用 dotnet MouseDock.dll 跑调试时退回程序基目录。</summary>
+        private static string ExeDir()
+        {
+            try
+            {
+                string exe = Environment.ProcessPath;
+                if (!string.IsNullOrEmpty(exe) &&
+                    !string.Equals(Path.GetFileNameWithoutExtension(exe), "dotnet", StringComparison.OrdinalIgnoreCase))
+                {
+                    string dir = Path.GetDirectoryName(exe);
+                    if (!string.IsNullOrEmpty(dir)) return dir;
+                }
+            }
+            catch { }
+
+            return AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        /// <summary>真去写一个临时文件试一下，别只信 ACL：U 盘、受控文件夹访问都会在这里露馅。</summary>
+        private static bool CanWriteTo(string dir)
+        {
+            if (string.IsNullOrEmpty(dir)) return false;
+            try
+            {
+                Directory.CreateDirectory(dir);
+                string probe = Path.Combine(dir, ".mousedock-" + Guid.NewGuid().ToString("N") + ".tmp");
+                using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1,
+                                      FileOptions.DeleteOnClose))
+                { }
+                return true;
+            }
+            catch { return false; }
+        }
 
         // ─────────────────────────── 错误报告 ───────────────────────────
 
         /// <summary>
-        /// 生成错误报告 zip。返回 zip 路径，失败返回 null。
+        /// 弹「另存为」让用户挑位置，默认就在 exe 同目录。
+        /// 返回用户选定的路径；取消返回 null。
         /// </summary>
-        public static string ExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected)
+        public static string AskSavePath(Window owner = null)
         {
+            string dir = DefaultExportDir;
+
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "保存错误报告",
+                Filter = "压缩包 (*.zip)|*.zip|所有文件 (*.*)|*.*",
+                DefaultExt = ".zip",
+                AddExtension = true,
+                OverwritePrompt = true,
+                CheckPathExists = true,
+                FileName = SuggestedFileName(),
+                InitialDirectory = dir
+            };
+
+            bool? ok = owner != null && owner.IsVisible ? dlg.ShowDialog(owner) : dlg.ShowDialog();
+            return ok == true ? dlg.FileName : null;
+        }
+
+        /// <summary>
+        /// 弹框选位置，然后导出。三个入口（设置页 / 关于 / 反馈）都走这里。
+        /// </summary>
+        public static ReportExportResult ExportReportWithPrompt(Window owner, AppSettings settings,
+                                                               IEnumerable<DeviceInfo> detected)
+        {
+            string target = AskSavePath(owner);
+            if (string.IsNullOrEmpty(target)) return ReportExportResult.CanceledByUser;
+
+            string path = ExportReport(settings, detected, target);
+            return path == null ? ReportExportResult.Failed : ReportExportResult.Ok(path);
+        }
+
+        /// <summary>
+        /// 生成错误报告 zip。zipPath 为空时落在 <see cref="DefaultExportPath"/>。
+        /// 返回 zip 路径，失败返回 null。
+        /// </summary>
+        public static string ExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected, string zipPath = null)
+        {
+            if (string.IsNullOrWhiteSpace(zipPath)) zipPath = DefaultExportPath;
+            zipPath = Path.GetFullPath(zipPath);
+            bool touched = false;
+
             try
             {
-                Directory.CreateDirectory(ReportDir);
-                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                string work = Path.Combine(ReportDir, "work-" + stamp);
-                Directory.CreateDirectory(work);
+                string dir = Path.GetDirectoryName(zipPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
                 var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
 
-                string hidText = BuildHidReport(detectedList);
-                File.WriteAllText(Path.Combine(work, "hid-devices.txt"), hidText, new UTF8Encoding(false));
-
-                string summary = BuildSummary(settings, detectedList);
-                File.WriteAllText(Path.Combine(work, "summary.txt"), summary, new UTF8Encoding(false));
-
-                // 现有的缓存与诊断文件，有就捎上
-                foreach (var name in new[] { "settings.json", "battery-cache.json", "vendor-identity.json",
-                                             "detect.txt", "hid-probe.txt", "ble-scan.txt" })
+                // 直接写进目标 zip，不再先摊一个临时目录出来：
+                // 少一次复制，也不会在用户的目录里留下 work-xxxx 之类的残骸。
+                using (var stream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    string src = Path.Combine(DataDir, name);
-                    if (File.Exists(src))
+                    touched = true;
+                    AddText(zip, "hid-devices.txt", BuildHidReport(detectedList));
+                    AddText(zip, "summary.txt", BuildSummary(settings, detectedList));
+
+                    // 现有的缓存与诊断文件，有就捎上
+                    foreach (var name in new[] { "settings.json", "battery-cache.json", "vendor-identity.json",
+                                                 "detect.txt", "hid-probe.txt", "ble-scan.txt" })
                     {
-                        try { File.Copy(src, Path.Combine(work, name), true); } catch { }
+                        string src = Path.Combine(DataDir, name);
+                        if (!File.Exists(src)) continue;
+                        try { zip.CreateEntryFromFile(src, name, CompressionLevel.Optimal); } catch { }
                     }
                 }
 
-                string zip = Path.Combine(ReportDir, $"MouseDock-report-{stamp}.zip");
-                if (File.Exists(zip)) File.Delete(zip);
-                ZipFile.CreateFromDirectory(work, zip, CompressionLevel.Optimal, false);
-
-                try { Directory.Delete(work, true); } catch { }
-                return zip;
+                return zipPath;
             }
             catch
             {
+                // 写了一半失败的话别留下一个坏 zip 让用户当附件发出去
+                if (touched) { try { File.Delete(zipPath); } catch { } }
                 return null;
+            }
+        }
+
+        private static void AddText(ZipArchive zip, string name, string text)
+        {
+            var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+            using (var stream = entry.Open())
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+            {
+                writer.Write(text);
             }
         }
 
@@ -280,14 +395,33 @@ namespace MouseDock.Services
                 }
                 else
                 {
-                    Directory.CreateDirectory(ReportDir);
-                    Process.Start("explorer.exe", "\"" + ReportDir + "\"");
+                    string dir = DefaultExportDir;
+                    Directory.CreateDirectory(dir);
+                    Process.Start("explorer.exe", "\"" + dir + "\"");
                 }
             }
             catch { }
         }
+    }
 
-        /// <summary>报告目录，界面用来显示。</summary>
-        public static string ReportFolder => ReportDir;
+    /// <summary>
+    /// 导出的结果。三态要分清楚：
+    ///   用户自己取消了 → 什么都不用提示，别弹「失败」，
+    ///   写不进去 → 要提示换个目录，
+    ///   成功 → 把路径拿去开目录、写邮件正文。
+    /// </summary>
+    internal sealed class ReportExportResult
+    {
+        public string Path { get; private set; }
+
+        public bool Canceled { get; private set; }
+
+        public bool Succeeded => !Canceled && !string.IsNullOrEmpty(Path);
+
+        public static readonly ReportExportResult CanceledByUser = new ReportExportResult { Canceled = true };
+
+        public static readonly ReportExportResult Failed = new ReportExportResult();
+
+        public static ReportExportResult Ok(string path) => new ReportExportResult { Path = path };
     }
 }

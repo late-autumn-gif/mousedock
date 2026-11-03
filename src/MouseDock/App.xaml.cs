@@ -30,6 +30,7 @@ namespace MouseDock
         public static DockWindow Dock { get; private set; }
         public static MiniWindow Mini { get; private set; }
         public static IconWindow Icon { get; private set; }
+        public static TaskbarWindow Taskbar { get; private set; }
         public static SettingsWindow SettingsView { get; private set; }
 
         public static List<string> CharacterAssets { get; } = new List<string>();
@@ -37,9 +38,13 @@ namespace MouseDock
         public static string DefaultBackgroundAsset { get; private set; }
         public static bool StartHidden { get; private set; }
 
-        public static DeviceInfo PrimaryDevice =>
-            Battery?.Devices.FirstOrDefault(d => d.Selected && d.Connected)
-            ?? Battery?.Devices.FirstOrDefault(d => d.Connected);
+        public static IEnumerable<DeviceInfo> SelectedDevices =>
+            Battery?.Devices.Where(d => d.Selected && d.Connected) ?? Enumerable.Empty<DeviceInfo>();
+
+        public static DeviceInfo PrimaryDevice => SelectedDevices.FirstOrDefault();
+
+        private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar);
+        private static DispatcherTimer _trayClickTimer;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -79,8 +84,7 @@ namespace MouseDock
                         if (!_showSignal.WaitOne(TimeSpan.FromSeconds(5))) continue;
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            if (Dock != null) BringToFront(Dock);
-                            ShowAll();
+                            ShowCurrentSurface();
                         }));
                     }
                     catch { }
@@ -96,6 +100,12 @@ namespace MouseDock
                 Settings.Provider = "auto";
                 Settings.RefreshSeconds = 5;
                 Settings.SelectedDeviceIds.Clear();
+                SettingsStore.Save(Settings);
+            }
+            if (Settings.Version < 5)
+            {
+                Settings.Version = 5;
+                Settings.SurfaceMode = "taskbar";
                 SettingsStore.Save(Settings);
             }
             ResolveAssets();
@@ -189,7 +199,7 @@ namespace MouseDock
         private static void RestoreSelection()
         {
             var ids = Settings.SelectedDeviceIds;
-            bool hasAny = ids != null && ids.Count > 0;
+            bool hasAny = Settings.HasDeviceSelection || (ids != null && ids.Count > 0);
             foreach (var d in Battery.Devices)
                 d.Selected = !hasAny || ids.Contains(d.Id);
         }
@@ -199,6 +209,7 @@ namespace MouseDock
             Dock = new DockWindow();
             Mini = new MiniWindow();
             Icon = new IconWindow();
+            Taskbar = new TaskbarWindow();
             SettingsView = new SettingsWindow();
 
             PlaceWindow(Dock, Settings.DockX, Settings.DockY, 0.72, 0.30);
@@ -217,6 +228,7 @@ namespace MouseDock
             if (Settings.ShowDock && !StartHidden) Dock.Show();
             if (Settings.ShowMini && !StartHidden) Mini.Show();
             if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
+            if (Settings.SurfaceMode == "taskbar") Taskbar.Show();
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -302,11 +314,12 @@ namespace MouseDock
         private void BuildTray()
         {
             var menu = new WinForms.ContextMenuStrip();
-            menu.Items.Add("显示全部面板（置前）", null, (_, __) => ShowAll());
+            menu.Items.Add("显示当前面板", null, (_, __) => ShowCurrentSurface());
             menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("显示 / 隐藏 卡片窗", null, (_, __) => Toggle(Dock));
-            menu.Items.Add("显示 / 隐藏 迷你窗", null, (_, __) => Toggle(Mini));
-            menu.Items.Add("显示 / 隐藏 悬浮图标", null, (_, __) => Toggle(Icon));
+            menu.Items.Add("切换到卡片窗", null, (_, __) => SetSurface("dock"));
+            menu.Items.Add("切换到迷你窗", null, (_, __) => SetSurface("mini"));
+            menu.Items.Add("切换到悬浮图标", null, (_, __) => SetSurface("icon"));
+            menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
@@ -321,10 +334,32 @@ namespace MouseDock
             };
             _tray.MouseClick += (_, e) =>
             {
-                if (e.Button == WinForms.MouseButtons.Left) Toggle(Dock);
+                if (e.Button == WinForms.MouseButtons.Left)
+                {
+                    // Wait for the double-click window so one double-click is not also a toggle.
+                    if (_trayClickTimer == null)
+                    {
+                        _trayClickTimer = new DispatcherTimer
+                        {
+                            Interval = TimeSpan.FromMilliseconds(WinForms.SystemInformation.DoubleClickTime)
+                        };
+                        _trayClickTimer.Tick += (_, __) =>
+                        {
+                            _trayClickTimer.Stop();
+                            ToggleCurrentSurface();
+                        };
+                    }
+                    _trayClickTimer.Stop();
+                    _trayClickTimer.Start();
+                }
             };
-            _tray.DoubleClick += (_, __) => ShowAll();
-            _tray.BalloonTipClicked += (_, __) => ShowAll();
+            _tray.MouseDoubleClick += (_, e) =>
+            {
+                if (e.Button != WinForms.MouseButtons.Left) return;
+                _trayClickTimer?.Stop();
+                ShowCurrentSurface();
+            };
+            _tray.BalloonTipClicked += (_, __) => ShowCurrentSurface();
 
             // 电量一刷新就把托盘图标重画一遍
             Battery.Refreshed += (_, __) => UpdateTrayIcon();
@@ -353,7 +388,7 @@ namespace MouseDock
             if (_tray == null) return;
 
             DeviceInfo dev = null;
-            foreach (var d in Battery.Devices)
+            foreach (var d in SelectedDevices)
             {
                 if (d.Connected && d.HasLevel) { dev = d; break; }
             }
@@ -473,18 +508,26 @@ namespace MouseDock
             }
         }
 
-        private static void Toggle(Window w)
+        public static void ToggleCurrentSurface()
         {
-            if (w == null) return;
-            if (w.IsVisible) w.Hide(); else BringToFront(w);
+            SyncSurfaceFlags();
+            if (Settings.SurfaceMode == "taskbar")
+            {
+                ShowCurrentSurface();
+                return;
+            }
+            var active = Surfaces.GetWindow(Settings.SurfaceMode);
+            bool visible = active?.IsVisible == true;
             SaveWindowPositions();
+            if (visible) Surfaces.Apply(Settings.SurfaceMode, false);
+            else ShowCurrentSurface();
         }
 
-        public static void ShowAll()
+        public static void ShowCurrentSurface()
         {
-            BringToFront(Dock);
-            BringToFront(Mini);
-            ShowIconIfNeeded();
+            ApplySurface();
+            if (Settings.SurfaceMode != "taskbar")
+                BringToFront(Surfaces.GetWindow(Settings.SurfaceMode));
         }
 
         /// <summary>显示并压到最前（Topmost 短暂切换一下，绕过 Windows 的前台限制）。</summary>
@@ -493,7 +536,7 @@ namespace MouseDock
             if (window == null) return;
             window.Show();
             if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
-            window.Topmost = false;          // 普通窗口层级：会被其它窗口盖住
+            window.Topmost = Settings.AlwaysOnTop;
             window.Activate();
             try { window.Focus(); } catch { }
         }
@@ -502,7 +545,7 @@ namespace MouseDock
         private static void SyncSurfaceFlags()
         {
             string mode = Settings.SurfaceMode;
-            if (mode != "dock" && mode != "mini" && mode != "icon")
+            if (mode != "dock" && mode != "mini" && mode != "icon" && mode != "taskbar")
             {
                 mode = Settings.ShowMini ? "mini" : Settings.ShowIcon ? "icon" : "dock";
                 Settings.SurfaceMode = mode;
@@ -515,25 +558,16 @@ namespace MouseDock
         public static void ApplySurface()
         {
             SyncSurfaceFlags();
-
-            if (Dock != null) { if (Settings.ShowDock) Dock.Show(); else Dock.Hide(); }
-            if (Mini != null) { if (Settings.ShowMini) Mini.Show(); else Mini.Hide(); }
-            if (Icon != null)
-            {
-                if (Settings.ShowIcon) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
-                else Icon.Hide();
-            }
-            SaveSettings();
+            RefreshDeviceViews();
+            Surfaces.Apply(Settings.SurfaceMode, true);
+            if (Settings.ShowIcon) Icon?.ApplyStyle(Settings.IconStyle, false);
+            if (Settings.SurfaceMode == "taskbar") Taskbar?.UpdateAnchor();
         }
 
         public static void ShowIconIfNeeded()
         {
             if (Icon == null) return;
-            Settings.SurfaceMode = "icon";
-            Settings.ShowIcon = true;
-            Icon.Show();
-            Icon.ApplyStyle(Settings.IconStyle, false);
-            SaveSettings();
+            SetSurface("icon");
         }
 
         public static void ShowSettings(Window owner)
@@ -564,6 +598,7 @@ namespace MouseDock
             menu.Items.Add(Item((mode == "dock" ? "● " : "○ ") + "主面板", () => SetSurface("dock")));
             menu.Items.Add(Item((mode == "mini" ? "● " : "○ ") + "迷你窗", () => SetSurface("mini")));
             menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
+            menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量环", () => SetSurface("taskbar")));
             menu.Items.Add(new Separator());
             foreach (var p in ThemePreset.Presets)
             {
@@ -649,7 +684,18 @@ namespace MouseDock
         public static void SaveDeviceSelection()
         {
             Settings.SelectedDeviceIds = Battery.Devices.Where(d => d.Selected).Select(d => d.Id).ToList();
+            Settings.HasDeviceSelection = true;
+            RefreshDeviceViews();
+            UpdateTrayIcon();
             SaveSettings();
+        }
+
+        public static void RefreshDeviceViews()
+        {
+            Dock?.RefreshDevices();
+            Mini?.Rebuild();
+            Icon?.UpdateValue();
+            Taskbar?.UpdateDevices();
         }
 
         public static void SaveWindowPositions()
@@ -816,7 +862,6 @@ namespace MouseDock
         public static void ExitApp()
         {
             SaveWindowPositions();
-            SaveDeviceSelection();
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
             Current.Shutdown();
         }
@@ -1150,15 +1195,31 @@ namespace MouseDock
             catch { }
         }
 
-        /// <summary>导出错误报告，返回 zip 路径。</summary>
-        private string ExportErrorReport()
+        /// <summary>
+        /// 导出错误报告：先弹「另存为」问用户放哪，默认就是 exe 同目录。
+        /// 用户取消不提示，写入失败才提示。
+        /// </summary>
+        internal static Services.ReportExportResult ExportErrorReport(Window owner)
         {
             try
             {
                 var devices = Battery?.Devices?.ToList() ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                return Services.FeedbackService.ExportReport(Settings, devices);
+                var result = Services.FeedbackService.ExportReportWithPrompt(owner, Settings, devices);
+
+                if (!result.Canceled && !result.Succeeded)
+                {
+                    MessageBox.Show(owner, "\u5bfc\u51fa\u5931\u8d25\uff1a\u62a5\u544a\u6ca1\u80fd\u5199\u5165\u6240\u9009\u7684\u4f4d\u7f6e\u3002\n\u6362\u4e2a\u76ee\u5f55\u518d\u8bd5\u4e00\u6b21\u3002",
+                        "MouseDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                return result;
             }
-            catch { return null; }
+            catch (System.Exception ex)
+            {
+                MessageBox.Show(owner, "\u5bfc\u51fa\u5931\u8d25\uff1a" + ex.Message,
+                    "MouseDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return Services.ReportExportResult.Failed;
+            }
         }
 
         /// <summary>写反馈邮件。</summary>

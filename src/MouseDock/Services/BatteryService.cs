@@ -301,6 +301,7 @@ namespace MouseDock.Services
         private readonly Dictionary<string, int> _absent = new Dictionary<string, int>();
         private readonly Dictionary<string, (int Level, DateTime At)> _lastKnown = new Dictionary<string, (int, DateTime)>();
         private int _refreshSeconds = 5;
+        private AppSettings _settings;
 
         public ObservableCollection<DeviceInfo> Devices { get; } = new ObservableCollection<DeviceInfo>();
 
@@ -310,6 +311,7 @@ namespace MouseDock.Services
 
         public BatteryService(AppSettings settings)
         {
+            _settings = settings;
             _source = CreateSource(settings);
             _refreshSeconds = Math.Max(5, settings.RefreshSeconds);
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_refreshSeconds) };
@@ -320,6 +322,7 @@ namespace MouseDock.Services
 
         public void Configure(AppSettings settings)
         {
+            _settings = settings;
             string key = settings.Provider ?? "auto";
             if (_source == null || _source.Key != key)
             {
@@ -365,7 +368,14 @@ namespace MouseDock.Services
             List<DeviceInfo> snapshot = null;
             try
             {
-                snapshot = await System.Threading.Tasks.Task.Run(() => source.Read()?.ToList());
+                // Sources may reuse mutable objects. Keep them separate from UI-bound devices and cached readings.
+                snapshot = await System.Threading.Tasks.Task.Run(() => source.Read()?.Select(d => new DeviceInfo
+                {
+                    Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
+                    Transport = d.Transport, Detail = d.Detail, Note = d.Note,
+                    Connected = d.Connected, Level = d.Level, Charging = d.Charging,
+                    Selected = d.Selected, IsStale = d.IsStale
+                }).ToList());
             }
             catch { }
             finally { _polling = false; }
@@ -377,7 +387,7 @@ namespace MouseDock.Services
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
 
                 // 设备还在，只是这一次没读到（厂商通道忙/设备刚唤醒）：
-                // 保留上一次的有效读数，避免百分比闪成「—」；连续 6 次读不到再清零
+                // 保留上一次的有效读数，避免百分比闪成「—」。
                 if (existing != null && incoming.Level < 0 && existing.Level >= 0)
                 {
                     // 设备休眠 / 通道忙：一直沿用上一次成功的读数，只标记为「旧值」，
@@ -400,6 +410,8 @@ namespace MouseDock.Services
 
                 if (existing == null)
                 {
+                    if (_settings.HasDeviceSelection || _settings.SelectedDeviceIds.Count > 0)
+                        incoming.Selected = _settings.SelectedDeviceIds.Contains(incoming.Id);
                     // 短暂掉线后重新出现：如果几分钟内读过，先用旧值顶上，避免界面闪成 —
                     if (incoming.Level < 0 && _lastKnown.TryGetValue(incoming.Id, out var last)
                         && (DateTime.UtcNow - last.At).TotalMinutes < 10)
@@ -421,6 +433,7 @@ namespace MouseDock.Services
                     existing.Transport = incoming.Transport;
                     existing.Detail = incoming.Detail;
                     existing.Note = incoming.Note;
+                    existing.IsStale = incoming.IsStale;
                 }
             }
 
@@ -440,11 +453,7 @@ namespace MouseDock.Services
                 Devices.RemoveAt(i);
             }
 
-            // 还一次都没读到的设备：先用 1 秒间隔快速重试（抓鼠标醒着的那一瞬间），
-            // 全部拿到过有效值后回到用户设置的间隔
-            bool needFast = Devices.Any(d => d.Level < 0 && !_lastKnown.ContainsKey(d.Id));
-            var target = needFast ? TimeSpan.FromSeconds(1)
-                                  : TimeSpan.FromSeconds(Math.Max(5, _refreshSeconds));
+            var target = TimeSpan.FromSeconds(_refreshSeconds);
             if (_timer.Interval != target) _timer.Interval = target;
 
             Refreshed?.Invoke(this, EventArgs.Empty);

@@ -123,7 +123,7 @@ namespace MouseDock.Controls
         public double Thickness { get => (double)GetValue(ThicknessProperty); set => SetValue(ThicknessProperty, value); }
 
         private static readonly Geometry MouseGeo = Geometry.Parse(
-            "M8,2.5 H16 A5.5,5.5 0 0 1 21.5,8 V16 A5.5,5.5 0 0 1 16,21.5 H8 A5.5,5.5 0 0 1 2.5,16 V8 A5.5,5.5 0 0 1 8,2.5 Z M12,3 V8.5");
+            "M12,2.5 A6.5,6.5 0 0 1 18.5,9 V15 A6.5,6.5 0 0 1 5.5,15 V9 A6.5,6.5 0 0 1 12,2.5 Z M12,6 V10");
 
         private static readonly Geometry HeadsetGeo = Geometry.Parse(
             "M3.5,14.5 V11.5 A8.5,8.5 0 0 1 20.5,11.5 V14.5 M2.5,14.5 H6.5 V20.5 H2.5 Z M17.5,14.5 H21.5 V20.5 H17.5 Z");

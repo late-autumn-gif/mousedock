@@ -13,6 +13,7 @@ namespace MouseDock.Views
 {
     public partial class DockWindow : Window
     {
+        private readonly Brush _themeBackground;
         public static readonly DependencyProperty AccentColorProperty = DependencyProperty.Register(
             nameof(AccentColor), typeof(Color), typeof(DockWindow), new PropertyMetadata(Color.FromRgb(0xB4, 0x9C, 0xFF)));
 
@@ -34,10 +35,10 @@ namespace MouseDock.Views
         public DockWindow()
         {
             InitializeComponent();
-            DeviceList.ItemsSource = App.Battery.Devices;
-            App.Battery.Refreshed += (_, __) => UpdateSourceChip();
-            App.Battery.SourceChanged += (_, __) => UpdateSourceChip();
-            UpdateSourceChip();
+            _themeBackground = Root.Background;
+            App.Battery.Refreshed += (_, __) => RefreshDevices();
+            App.Battery.SourceChanged += (_, __) => RefreshDevices();
+            RefreshDevices();
             Loaded += OnLoaded;
             UpdateLayout();
         }
@@ -72,6 +73,7 @@ namespace MouseDock.Views
                 };
                 return;
             }
+            Root.Background = _themeBackground;
             ApplyTheme(App.Theme, false);
         }
 
@@ -148,6 +150,10 @@ namespace MouseDock.Views
             }
             else
             {
+                BgTopStop.BeginAnimation(GradientStop.ColorProperty, null);
+                BgBottomStop.BeginAnimation(GradientStop.ColorProperty, null);
+                LogoStop1.BeginAnimation(GradientStop.ColorProperty, null);
+                LogoStop2.BeginAnimation(GradientStop.ColorProperty, null);
                 BgTopStop.Color = theme.BgTop;
                 BgBottomStop.Color = theme.BgBottom;
                 LogoStop1.Color = theme.Accent;
@@ -205,11 +211,14 @@ namespace MouseDock.Views
             return IntPtr.Zero;
         }
 
-        private void UpdateSourceChip()
+        public void RefreshDevices()
         {
+            var selected = App.SelectedDevices.ToList();
+            if (DeviceList.ItemsSource is not System.Collections.Generic.List<DeviceInfo> current ||
+                !current.SequenceEqual(selected))
+                DeviceList.ItemsSource = selected;
             string label = App.Battery.Source?.Label ?? "自动检测";
-            int online = App.Battery.Devices.Count(d => d.Connected);
-            SourceText.Text = $"{label} · {online} 台在线";
+            SourceText.Text = $"{label} · {selected.Count} 台显示";
             var accent = new SolidColorBrush(App.Theme.Accent);
             LiveDot.Fill = accent;
         }

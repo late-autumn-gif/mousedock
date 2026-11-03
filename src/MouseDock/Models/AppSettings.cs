@@ -5,7 +5,7 @@ namespace MouseDock.Models
     /// <summary>全部持久化状态，写到 %APPDATA%\MouseDock\settings.json。</summary>
     public sealed class AppSettings
     {
-        public int Version { get; set; } = 2;
+        public int Version { get; set; } = 5;
 
         public string ThemeId { get; set; } = "dusk";
 
@@ -16,6 +16,7 @@ namespace MouseDock.Models
 
         // 监视的设备 id（最多 4 台用于迷你视图，主卡片最多 6 行）
         public List<string> SelectedDeviceIds { get; set; } = new List<string>();
+        public bool HasDeviceSelection { get; set; }
 
         // 悬浮图标形态：mini | character | photo
         public string IconMode { get; set; } = "photo";
@@ -56,7 +57,9 @@ namespace MouseDock.Models
         public bool HasShownAbout { get; set; }
 
         /// <summary>界面形态三选一：dock（主面板）/ mini（迷你）/ icon（悬浮图标）。</summary>
-        public string SurfaceMode { get; set; } = "dock";
+        public string SurfaceMode { get; set; } = "taskbar";
+
+        public double TaskbarOffset { get; set; } = 160;
 
         /// <summary>悬浮图标样式：photo（照片）/ tile（圆角方块）/ ring（环形刻度）/ pill（横向胶囊）/ battery（经典电池）。</summary>
         public string IconStyle { get; set; } = "photo";
@@ -98,6 +101,7 @@ namespace MouseDock.Models
                 CustomAccent = CustomAccent,
                 CustomSurface = CustomSurface,
                 SelectedDeviceIds = new List<string>(SelectedDeviceIds),
+                HasDeviceSelection = HasDeviceSelection,
                 IconMode = IconMode,
                 CharacterAsset = CharacterAsset,
                 PhotoAsset = PhotoAsset,
@@ -117,6 +121,7 @@ namespace MouseDock.Models
                 RefreshSeconds = RefreshSeconds,
                 LowBatteryWarn = LowBatteryWarn,
                 SurfaceMode = SurfaceMode,
+                TaskbarOffset = TaskbarOffset,
                 IconStyle = IconStyle,
                 IconShape = IconShape,
                 DockBackground = DockBackground,

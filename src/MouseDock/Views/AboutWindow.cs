@@ -17,9 +17,10 @@ namespace MouseDock.Views
     {
         /// <summary>
         /// 显示关于窗口。isFirstRun 决定标题和按钮文案。
+        /// exportReport 拿到窗口本身当所有者，好让「另存为」对话框压在它上面。
         /// </summary>
         public static void Show(Window owner, bool isFirstRun,
-            Func<string> exportReport, Action<string> openFeedback)
+            Func<Window, ReportExportResult> exportReport, Action<string> openFeedback)
         {
             var win = new Window
             {
@@ -120,16 +121,14 @@ namespace MouseDock.Views
             {
                 try
                 {
-                    string path = exportReport?.Invoke();
-                    if (string.IsNullOrEmpty(path))
-                    {
-                        MessageBox.Show(win, "导出失败，请检查磁盘权限。", "MouseDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
+                    // 取消和失败都已经由 exportReport 那边交代过，这里只管成功那一步
+                    var result = exportReport?.Invoke(win);
+                    if (result == null || !result.Succeeded) return;
+
                     var r = MessageBox.Show(win,
-                        "报告已生成：\n" + path + "\n\n现在打开它所在的文件夹吗？",
+                        "报告已生成：\n" + result.Path + "\n\n现在打开它所在的文件夹吗？",
                         "导出成功", MessageBoxButton.YesNo, MessageBoxImage.Information);
-                    if (r == MessageBoxResult.Yes) FeedbackService.OpenReportFolder(path);
+                    if (r == MessageBoxResult.Yes) FeedbackService.OpenReportFolder(result.Path);
                 }
                 catch { }
             };
@@ -141,9 +140,14 @@ namespace MouseDock.Views
             {
                 try
                 {
-                    string path = exportReport?.Invoke();
-                    if (!string.IsNullOrEmpty(path)) FeedbackService.OpenReportFolder(path);
-                    openFeedback?.Invoke(path);
+                    var result = exportReport?.Invoke(win);
+                    if (result != null && result.Canceled) return;
+
+                    if (result != null && result.Succeeded)
+                        FeedbackService.OpenReportFolder(result.Path);
+
+                    // 报告写不进去也得让人说话
+                    openFeedback?.Invoke(result?.Path);
                 }
                 catch { }
             };

@@ -44,11 +44,22 @@ namespace MouseDock.Views
         public SettingsWindow()
         {
             InitializeComponent();
+            App.Battery.Refreshed += (_, __) =>
+            {
+                if (IsVisible && !_loading) UpdateDeviceHint();
+            };
             Loaded += (_, __) =>
             {
                 Root.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
                 Reload();
             };
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            e.Cancel = true;
+            Hide();
+            base.OnClosing(e);
         }
 
         public void Reload()
@@ -89,6 +100,8 @@ namespace MouseDock.Views
                 ApplyWarnButtons(s.LowBatteryWarn);
             AutoUpdateBox.IsChecked = s.AutoUpdate;
                 ApplySurfaceButtons(s.SurfaceMode);
+                TaskbarOffsetSlider.Value = Math.Clamp(s.TaskbarOffset, 0, 1200);
+                TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}";
                 if (TopmostBox != null) TopmostBox.IsChecked = s.AlwaysOnTop;
                 if (ClickThroughBox != null) ClickThroughBox.IsChecked = s.ClickThrough;
 
@@ -111,8 +124,8 @@ namespace MouseDock.Views
         {
             int selected = App.Battery.Devices.Count(d => d.Selected);
             DeviceHint.Text = selected > 4
-                ? $"已勾选 {selected} 台，迷你视图只取前 5 台"
-                : "勾选后同步到迷你视图；同类设备可多台";
+                ? $"已勾选 {selected} 台，任务栏与迷你视图显示前 5 台"
+                : $"已勾选 {selected} 台";
         }
 
         public void ScrollToBottom()
@@ -212,7 +225,6 @@ namespace MouseDock.Views
             if (_loading) return;
             App.SaveDeviceSelection();
             UpdateDeviceHint();
-            App.Mini?.Rebuild();
         }
 
         private void OnModeCharacter(object sender, RoutedEventArgs e) => SetMode("character");
@@ -324,27 +336,31 @@ namespace MouseDock.Views
             catch { }
         }
 
-        /// <summary>自动更新开关。关掉之后启动不再联网。</summary>
-        /// <summary>导出错误报告。</summary>
+        /// <summary>
+        /// 导出错误报告。先弹「另存为」问用户放哪，
+        /// 默认目录是 exe 同目录、文件名也填好了，直接回车就收下。
+        /// </summary>
         private void OnExportReportClick(object sender, RoutedEventArgs e)
         {
             try
             {
                 var devices = App.Battery?.Devices?.ToList()
                               ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                string path = Services.FeedbackService.ExportReport(App.Settings, devices);
+                var export = Services.FeedbackService.ExportReportWithPrompt(this, App.Settings, devices);
 
-                if (string.IsNullOrEmpty(path))
+                if (export.Canceled) return;
+
+                if (!export.Succeeded)
                 {
-                    MessageBox.Show(this, "导出失败，请检查磁盘权限。", "MouseDock",
+                    MessageBox.Show(this, "导出失败：报告没能写入所选的位置。\n换个目录再试一次。", "MouseDock",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
                 var r = MessageBox.Show(this,
-                    "报告已生成：\n" + path + "\n\n现在打开它所在的文件夹吗？",
+                    "报告已生成：\n" + export.Path + "\n\n现在打开它所在的文件夹吗？",
                     "导出成功", MessageBoxButton.YesNo, MessageBoxImage.Information);
-                if (r == MessageBoxResult.Yes) Services.FeedbackService.OpenReportFolder(path);
+                if (r == MessageBoxResult.Yes) Services.FeedbackService.OpenReportFolder(export.Path);
             }
             catch (System.Exception ex)
             {
@@ -353,19 +369,23 @@ namespace MouseDock.Views
             }
         }
 
-        /// <summary>写反馈邮件：先导出报告，再打开邮件客户端。</summary>
+        /// <summary>写反馈邮件：先导出报告（问一次放哪），再打开邮件客户端。</summary>
         private void OnFeedbackClick(object sender, RoutedEventArgs e)
         {
             try
             {
                 var devices = App.Battery?.Devices?.ToList()
                               ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                string path = Services.FeedbackService.ExportReport(App.Settings, devices);
+                var export = Services.FeedbackService.ExportReportWithPrompt(this, App.Settings, devices);
 
-                if (!string.IsNullOrEmpty(path))
-                    Services.FeedbackService.OpenReportFolder(path);
+                // 取消就是取消，别顺手把邮件也开了
+                if (export.Canceled) return;
 
-                Services.FeedbackService.OpenFeedbackMail(path);
+                if (export.Succeeded)
+                    Services.FeedbackService.OpenReportFolder(export.Path);
+
+                // 报告写不进去也得让人说话
+                Services.FeedbackService.OpenFeedbackMail(export.Path);
             }
             catch (System.Exception ex)
             {
@@ -374,17 +394,14 @@ namespace MouseDock.Views
             }
         }
 
-        /// <summary>再次查看关于通告。</summary>
+        /// <summary>再次查看关于通告。导出仍走 App 那一份，行为跟首次启动一致。</summary>
         private void OnAboutClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                Views.AboutWindow.Show(this, false, () =>
-                {
-                    var devices = App.Battery?.Devices?.ToList()
-                                  ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                    return Services.FeedbackService.ExportReport(App.Settings, devices);
-                }, p => Services.FeedbackService.OpenFeedbackMail(p));
+                Views.AboutWindow.Show(this, false,
+                    owner => App.ExportErrorReport(owner ?? this),
+                    p => Services.FeedbackService.OpenFeedbackMail(p));
             }
             catch { }
         }
@@ -403,6 +420,7 @@ namespace MouseDock.Views
         {
             if (!(sender is Button b) || !(b.Tag is string tag) || !int.TryParse(tag, out int pct)) return;
             App.Settings.LowBatteryWarn = pct;
+            App.Taskbar?.UpdateDevices();
             ApplyWarnButtons(pct);
             App.SaveSettings();
         }
@@ -424,12 +442,19 @@ namespace MouseDock.Views
         private void OnSurfaceClick(object sender, RoutedEventArgs e)
         {
             if (!(sender is Button b) || !(b.Tag is string mode)) return;
-            App.Settings.SurfaceMode = mode;
-            ApplySurfaceButtons(mode);
-            App.ApplySurface();
+            App.SetSurface(mode);
         }
 
         private void OnPickIconBackground(object sender, RoutedEventArgs e) => App.PickBackground("icon");
+
+        private void OnTaskbarOffsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loading || TaskbarOffsetValue == null) return;
+            App.Settings.TaskbarOffset = Math.Round(e.NewValue);
+            TaskbarOffsetValue.Text = $"{App.Settings.TaskbarOffset:0}";
+            App.Taskbar?.UpdateAnchor();
+            App.SaveSettings();
+        }
 
         private void OnTopmostChanged(object sender, RoutedEventArgs e)
         {
@@ -455,7 +480,8 @@ namespace MouseDock.Views
         private void ApplySurfaceButtons(string mode)
         {
             if (string.IsNullOrEmpty(mode)) mode = "dock";
-            var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon") };
+            TaskbarPositionRow.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
+            var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon"), (SurfaceTaskbar, "taskbar") };
             foreach (var (btn, m) in buttons)
             {
                 if (btn == null) continue;
