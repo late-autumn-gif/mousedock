@@ -11,6 +11,15 @@ namespace MouseDock.Services.Detection
         internal static bool IsMchoseModern(ushort vid, ushort pid) =>
             vid == 0x3837 && (pid == 0x1014 || pid == 0x1018);
 
+        internal static bool IsMchoseA7V2(ushort vid, ushort pid) => vid == 0x3837 && pid == 0x100B;
+
+        internal static bool IsMchoseA7V2Interface(HidProbe.Node node) =>
+            IsMchoseA7V2(node.Vid, node.Pid) &&
+            string.Equals(node.Product, "MCHOSE A7 V2 Ultra+", StringComparison.OrdinalIgnoreCase) &&
+            node.Caps.UsagePage == 0xFF01 && node.Caps.Usage == 1 &&
+            node.Caps.FeatureReportByteLength == 65 &&
+            node.Caps.InputReportByteLength == 65 && node.Caps.OutputReportByteLength == 65;
+
         public static int TryReadMchose(ushort vid, ushort pid) => TryReadMchose(vid, pid, out _, out _);
 
         public static int TryReadMchose(ushort vid, ushort pid, out bool charging, out string diagnostic)
@@ -18,6 +27,8 @@ namespace MouseDock.Services.Detection
             charging = false;
             diagnostic = "";
             // Different MHUB generations use different commands. Never probe arbitrary vendor collections.
+            if (IsMchoseA7V2(vid, pid))
+                return ReadMchoseA7V2().CopyTo(out charging, out diagnostic);
             if (IsMchoseModern(vid, pid))
                 return ReadMchoseModernAsync(vid, pid).GetAwaiter().GetResult().CopyTo(out charging, out diagnostic);
             if (vid == 0x5253 && pid == 0x1021)
@@ -84,16 +95,65 @@ namespace MouseDock.Services.Detection
         {
             level = -1;
             charging = false;
-            if (vid != 0x5253 || pid != 0x1021 || report.Length < 21 || report[0] != 0x11 || report[1] != 0xF9)
+            bool a7V2 = IsMchoseA7V2(vid, pid);
+            if ((!a7V2 && (vid != 0x5253 || pid != 0x1021)) ||
+                report.Length < 21 || report[0] != 0x11 || report[1] != 0xF9)
                 return false;
             Span<byte> body = stackalloc byte[19];
             for (int i = 0; i < body.Length; i++) body[i] = (byte)(report[i + 2] ^ 0xFF);
             int bodyVid = body[0] | body[1] << 8;
+            // 100B is the receiver; the official A7 V2 Ultra+ model identity is 4021.
+            if (a7V2 && (report.Length != 21 || bodyVid != 0x3837 ||
+                (body[2] | body[3] << 8) != 0x4021 || (body[8] & 0x0F) != 9 || body[10] > 1)) return false;
             if ((bodyVid != 0x5253 && bodyVid != 0x3837) ||
                 ((body[8] & 7) == 1 && (body[8] & 8) == 0) || body[9] > 100) return false;
             level = body[9];
             charging = body[10] == 1;
             return true;
+        }
+
+        internal static byte[] BuildMchoseA7V2Request()
+        {
+            // Report 11 contains 20 bytes even though another report makes the collection 65 bytes.
+            var request = new byte[21];
+            request[0] = 0x11;
+            request[1] = 0xF9;
+            Array.Fill(request, (byte)0xFF, 2, 19);
+            return request;
+        }
+
+        private static MchoseResult ReadMchoseA7V2()
+        {
+            string reason = "未找到 A7 V2 Ultra+ 的 FF01/0001 接口";
+            foreach (var node in HidProbe.Enumerate(0x3837, 0x100B))
+            {
+                if (!IsMchoseA7V2Interface(node)) continue;
+                IntPtr raw = CreateFile(node.Path, GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                if (raw == IntPtr.Zero || raw == new IntPtr(-1))
+                {
+                    reason = "无法打开电量接口";
+                    continue;
+                }
+                using var handle = new SafeFileHandle(raw, ownsHandle: true);
+                var request = BuildMchoseA7V2Request();
+                if (!HidD_SetFeature(raw, request, request.Length))
+                {
+                    reason = "11/F9 电量查询发送失败";
+                    continue;
+                }
+                reason = "未取得有效状态应答（设备可能休眠或接口被占用）";
+                for (int attempt = 0; attempt < 6; attempt++)
+                {
+                    Thread.Sleep(100);
+                    var response = new byte[21];
+                    response[0] = 0x11;
+                    if (HidD_GetFeature(raw, response, response.Length) &&
+                        TryParseMchoseLegacy(response, node.Vid, node.Pid, out int level, out bool charging))
+                        return new MchoseResult(level, charging, "MCHOSE A7 V2 Ultra+ Feature 11/F9");
+                }
+            }
+            return new MchoseResult(-1, false, "MCHOSE A7 V2 Ultra+：" + reason);
         }
 
         private static async Task<MchoseResult> ReadMchoseModernAsync(ushort vid, ushort pid)
