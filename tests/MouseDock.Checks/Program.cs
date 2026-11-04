@@ -16,6 +16,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--taskbar-host-fixture"))
+            return TaskbarEmbeddingChecks.RunHostFixture();
         if (args.Contains("--audit"))
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
@@ -23,6 +25,11 @@ internal static class Program
         }
         var checks = new (string Name, Action Check)[]
         {
+            ("Embedded taskbar uses a transparent native child", TaskbarEmbeddingChecks.AttachedToTaskbar),
+            ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
+            ("Embedded taskbar retains native alpha composition", TaskbarEmbeddingChecks.TransparentComposition),
+            ("Embedded taskbar recovers after its native host is destroyed", TaskbarEmbeddingChecks.HostLossRecovery),
+            ("Embedded taskbar recovers after a cross-process host exits", TaskbarEmbeddingChecks.CrossProcessHostLoss),
             ("Tray redraws release native icon resources", RuntimeAuditChecks.TrayResources),
             ("Update waits for the old process before replacement and restart", RuntimeAuditChecks.UpdateWaitsForExit),
             ("Corrupt card backgrounds recover without crashing", () => VisualAuditChecks.BackgroundRecovery("dock")),
@@ -67,9 +74,7 @@ internal static class Program
             ("Unknown devices respect the chosen poll interval", AuditChecks.PollInterval),
             ("All five mini cells stay inside the window", AuditChecks.FifthMiniCell),
             ("Clearing custom backgrounds restores the theme", AuditChecks.ClearBackground),
-            ("Taskbar activation cannot permanently cover the rings", TaskbarRegressionChecks.Activation),
-            ("Taskbar shell overlays are not fullscreen applications", TaskbarRegressionChecks.ShellFullscreen),
-            ("Taskbar order recovers from native events without polling", TaskbarRegressionChecks.ImmediateOrderRecovery),
+            ("Shell overlays are not fullscreen applications", TaskbarEmbeddingChecks.ShellFullscreen),
             ("Tray clicks keep the pinned taskbar surface visible", UiRegressionChecks.PinnedTrayClick),
             ("K87 query matches the verified battery-only command", MchoseKeyboardChecks.Query),
             ("K87 validates battery responses and charging", MchoseKeyboardChecks.Responses),

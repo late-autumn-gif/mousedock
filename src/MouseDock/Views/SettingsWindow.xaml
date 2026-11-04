@@ -180,7 +180,7 @@
             <Grid Grid.Row="0" MouseLeftButtonDown="OnDragWindow" Margin="0,0,0,4">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="设置" FontSize="15" FontWeight="SemiBold" />
-                    <TextBlock x:Name="VersionText" Text="  v1.3.0" FontSize="10.5" Opacity="0.45" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                    <TextBlock x:Name="VersionText" Text="  v1.3.9" FontSize="10.5" Opacity="0.45" VerticalAlignment="Bottom" Margin="0,0,0,2" />
                 </StackPanel>
                 <Border x:Name="CloseButton" HorizontalAlignment="Right" Width="24" Height="24" CornerRadius="8" Background="#12FFFFFF" Cursor="Hand" PreviewMouseLeftButtonDown="OnCloseClick">
                     <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.8" />

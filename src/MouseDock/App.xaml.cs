@@ -21,6 +21,7 @@ namespace MouseDock
         private static Mutex _mutex;
         private static WinForms.NotifyIcon _tray;
         private static EventWaitHandle _showSignal;
+        private static bool _exiting;
 
         public static AppSettings Settings { get; private set; } = new AppSettings();
         public static ThemePreset Theme { get; private set; } = ThemePreset.Presets[2];
@@ -210,7 +211,7 @@ namespace MouseDock
             Dock = new DockWindow();
             Mini = new MiniWindow();
             Icon = new IconWindow();
-            Taskbar = new TaskbarWindow();
+            Taskbar = CreateTaskbarWindow();
             Edge = new ScreenEdgeWindow();
             SettingsView = new SettingsWindow();
 
@@ -886,8 +887,21 @@ namespace MouseDock
             catch { }
         }
 
+        private static TaskbarWindow CreateTaskbarWindow()
+        {
+            var window = new TaskbarWindow();
+            window.HostLost += (_, _) =>
+            {
+                if (_exiting || window.Dispatcher.HasShutdownStarted || Taskbar != window) return;
+                Taskbar = CreateTaskbarWindow();
+                if (Settings.SurfaceMode == "taskbar") Taskbar.Show();
+            };
+            return window;
+        }
+
         public static void ExitApp()
         {
+            _exiting = true;
             SaveWindowPositions();
             _trayBlink?.Stop();
             if (_tray != null)

@@ -1,9 +1,11 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -17,8 +19,9 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly Viewbox _viewport = new Viewbox { Stretch = Stretch.Uniform };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        private TaskbarChangeMonitor _changeMonitor;
         private bool _vertical;
+        private bool _closingRequested, _hostLossQueued;
+        public event EventHandler HostLost;
 
         public TaskbarWindow()
         {
@@ -29,26 +32,28 @@ namespace MouseDock.Views
             Background = Brushes.Transparent;
             ShowInTaskbar = false;
             ShowActivated = false;
-            Topmost = true;
+            Topmost = false;
             Width = 40;
             Height = 40;
             _viewport.Child = _devices;
             Content = _viewport;
-            SourceInitialized += (_, __) => TaskbarAnchor.Configure(this);
+            SourceInitialized += (_, __) =>
+            {
+                TaskbarAnchor.Configure(this);
+                var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+                if (source != null) source.Disposed += (_, __) => OnHostDisposed();
+            };
             Loaded += (_, __) => { UpdateDevices(); UpdateAnchor(); };
             IsVisibleChanged += (_, __) =>
             {
                 if (IsVisible)
                 {
-                    _changeMonitor ??= new TaskbarChangeMonitor(Dispatcher, UpdateAnchor);
                     _anchorTimer.Start();
                     UpdateAnchor();
                 }
                 else
                 {
                     _anchorTimer.Stop();
-                    _changeMonitor?.Dispose();
-                    _changeMonitor = null;
                 }
             };
             _anchorTimer.Tick += (_, __) => UpdateAnchor();
@@ -62,8 +67,6 @@ namespace MouseDock.Views
             Closed += (_, __) =>
             {
                 _anchorTimer.Stop();
-                _changeMonitor?.Dispose();
-                _changeMonitor = null;
                 App.Battery.Refreshed -= OnRefreshed;
             };
             UpdateDevices();
@@ -71,10 +74,30 @@ namespace MouseDock.Views
 
         private void OnRefreshed(object sender, EventArgs e) => UpdateDevices();
 
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            base.OnClosing(e);
+            _closingRequested = !e.Cancel;
+        }
+
+        private void OnHostDisposed()
+        {
+            _anchorTimer.Stop();
+            App.Battery.Refreshed -= OnRefreshed;
+            if (!_closingRequested && !_hostLossQueued && !Dispatcher.HasShutdownStarted)
+            {
+                _hostLossQueued = true;
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    if (!_closingRequested) HostLost?.Invoke(this, EventArgs.Empty);
+                }));
+            }
+        }
+
         public void UpdateDevices()
         {
             _devices.Children.Clear();
-            TaskbarAnchor.TryGet(out _, out uint edge, out _, out _);
+            TaskbarAnchor.TryGet(out _, out uint edge, out _);
             _vertical = edge == 0 || edge == 2;
             _devices.Orientation = _vertical ? Orientation.Vertical : Orientation.Horizontal;
             bool light = false;
@@ -95,13 +118,14 @@ namespace MouseDock.Views
         public void UpdateAnchor()
         {
             if (!IsVisible) return;
-            if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi, out bool suppressed))
+            if (!TaskbarAnchor.AttachToTaskbar(this) ||
+                !TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
                 Opacity = 0;
                 IsHitTestVisible = false;
                 return;
             }
-            Opacity = suppressed || _devices.Children.Count == 0 ? 0 : 1;
+            Opacity = _devices.Children.Count == 0 ? 0 : 1;
             IsHitTestVisible = Opacity > 0;
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
             double length = !App.Settings.ShowBatteryNumber ? 40 : _vertical ? 56 : 72;
