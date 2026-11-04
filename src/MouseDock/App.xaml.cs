@@ -1280,18 +1280,18 @@ namespace MouseDock
 
         /// <summary>
         /// 导出错误报告：先弹「另存为」问用户放哪，默认就是 exe 同目录。
-        /// 用户取消不提示，写入失败才提示。
+        /// 用户取消不提示，失败才提示，而且要说清是生成炸了还是写不进去。
         /// </summary>
-        internal static Services.ReportExportResult ExportErrorReport(Window owner)
+        internal static async System.Threading.Tasks.Task<Services.ReportExportResult> ExportErrorReport(Window owner)
         {
             try
             {
                 var devices = Battery?.Devices?.ToList() ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                var result = Services.FeedbackService.ExportReportWithPrompt(owner, Settings, devices);
+                var result = await Services.FeedbackService.ExportReportWithPromptAsync(owner, Settings, devices);
 
                 if (!result.Canceled && !result.Succeeded)
                 {
-                    MessageBox.Show(owner, "\u5bfc\u51fa\u5931\u8d25\uff1a\u62a5\u544a\u6ca1\u80fd\u5199\u5165\u6240\u9009\u7684\u4f4d\u7f6e\u3002\n\u6362\u4e2a\u76ee\u5f55\u518d\u8bd5\u4e00\u6b21\u3002",
+                    MessageBox.Show(owner, Services.FeedbackService.BuildFailureMessage(result),
                         "MouseDock", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
@@ -1301,7 +1301,8 @@ namespace MouseDock
             {
                 MessageBox.Show(owner, "\u5bfc\u51fa\u5931\u8d25\uff1a" + ex.Message,
                     "MouseDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return Services.ReportExportResult.Failed;
+                return Services.ReportExportResult.Failed(
+                    Services.ReportExportFailureKind.GenerateFailed, null, ex.Message, ex);
             }
         }
 

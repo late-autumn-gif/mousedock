@@ -31,6 +31,22 @@ if (args.Length > 0 && args[0] == "--verify-native-io")
     Console.WriteLine($"PASS {NativeIoRegression.Run()} real Windows overlapped pipe checks; no hardware I/O.");
     return;
 }
+if (args.Length > 0 && args[0] == "--inspect-inphic-battery")
+{
+    ushort vid = args.Length > 2 ? Convert.ToUInt16(args[1], 16) : (ushort)0x1D57;
+    ushort pid = args.Length > 2 ? Convert.ToUInt16(args[2], 16) : (ushort)0xFA60;
+    for (int i = 0; i < 5; i++)
+    {
+        int level = VendorProtocol.TryReadInphic(vid, pid, out bool charging);
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            time = DateTimeOffset.Now, target = $"{vid:X4}:{pid:X4}", level, charging,
+            stale = VendorProtocol.IdentifyStale
+        }));
+        Thread.Sleep(500);
+    }
+    return;
+}
 if (args.Length > 0 && args[0] == "--inspect-sc580-battery")
 {
     for (int i = 0; i < 5; i++)
@@ -183,6 +199,95 @@ Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_048D&PID_1234", "HidUsb"),
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_045E&PID_0000", ""), (@"BTHLEDEVICE\ABC", ""), (@"ACPI\PNP0A08", "") }) == null, "Preserve Bluetooth despite upstream ACPI");
 assertions += BluetoothRegression.Run();
 assertions += HfpRegression.Run();
+assertions += InphicRegression.Run();
+var atkReceiver = new HidDiscovery.Bucket
+{
+    Vid = 0x373B, Pid = 0x1155, Product = "Wireless mouse 8k dongle-L1", Kind = DeviceKind.Mouse
+};
+atkReceiver.Counts[DeviceKind.Mouse] = 1;
+atkReceiver.Counts[DeviceKind.Keyboard] = 2;
+var detectedAtkReceiver = atkReceiver.ToDevice();
+Check(detectedAtkReceiver.Kind == DeviceKind.Mouse && detectedAtkReceiver.Transport == "2.4G",
+    "Reported 8K receiver remains a 2.4G mouse despite auxiliary keyboard collections");
+atkReceiver.Product = "Wireless Gaming Keyboard";
+Check(atkReceiver.ToDevice().Kind == DeviceKind.Keyboard, "Explicit keyboard keeps its type");
+Check(VendorProtocol.IsAtkZeroBatteryCollection(0xFF05, 1, 64, 64) &&
+    !VendorProtocol.IsAtkZeroBatteryCollection(0xFF00, 1, 0, 0), "ATK uses only the FF05 control collection");
+Check(VendorProtocol.BuildAtkZeroRequest(0x07, true).Take(8)
+    .SequenceEqual(new byte[] { 0x08, 0x7D, 0x72, 2, 0, 1, 7, 1 }), "ATK wireless battery request");
+Check(VendorProtocol.BuildAtkZeroRequest(0x89, true).Take(8)
+    .SequenceEqual(new byte[] { 0x08, 0x09, 0x72, 8, 0, 0, 0x89, 6 }), "ATK shared receiver identity request");
+var atkResponse = new byte[64];
+atkResponse[5] = 0x89;
+atkResponse[8] = 1;
+atkResponse[9] = 1;
+Check(VendorProtocol.IsAtkZeroPairedModel(atkResponse), "CID 1/MID 1 identifies ZERO");
+atkResponse[9] = 8;
+Check(!VendorProtocol.IsAtkZeroPairedModel(atkResponse), "Shared receiver can pair another mouse");
+atkResponse[5] = 7;
+atkResponse[7] = 0;
+Check(VendorProtocol.TryParseAtkZeroBattery(atkResponse, out int atkLevel) && atkLevel == 0, "ATK valid zero percent");
+atkResponse[2] = 2;
+Check(!VendorProtocol.TryParseAtkZeroBattery(atkResponse, out _), "ATK ignored reply status");
+atkResponse[2] = 0;
+atkResponse[7] = 101;
+Check(!VendorProtocol.TryParseAtkZeroBattery(atkResponse, out _), "ATK out-of-range level");
+Check(VendorProtocol.IsAulaF99(0x3554, 0xFA09, "AULA F99") &&
+    !VendorProtocol.IsAulaF99(0x3554, 0xFA09, "Wireless Gaming Keyboard"),
+    "AULA F99 requires a matching name on the shared ID");
+var f99 = VendorProtocol.BuildAulaF99BatteryRequest();
+Check(f99.Length == 520 && f99.Take(8).SequenceEqual(new byte[] { 9, 12, 9, 1, 1, 0, 1, 0 }),
+    "F99 official Feature report");
+Check(!VendorProtocol.TryParseAulaF99Battery(f99, out _), "F99 echo is not a reading");
+f99[8] = 57;
+Check(VendorProtocol.TryParseAulaF99Battery(f99, out int f99Level) && f99Level == 57, "F99 level field");
+Check(VendorProtocol.IsRainy75Wired(0x320F, 0x5055) && !VendorProtocol.IsRainy75Wired(0x320F, 0x5088),
+    "Rainy wired reader never claims the shared wireless PID");
+var rainy = VendorProtocol.BuildRainy75BatteryRequest();
+Check(!VendorProtocol.TryParseRainy75Battery(rainy, out _, out _), "Rainy rejects the request echo");
+rainy[8] = 48;
+rainy[9] = 1;
+Check(VendorProtocol.TryParseRainy75Battery(rainy, out int rainyLevel, out bool rainyCharging) &&
+    rainyLevel == 48 && rainyCharging, "Rainy wired battery and charge fields");
+foreach (var (pid, product, model) in new (ushort, string, string)[]
+{
+    (0x880C, "NUT75", "NUT75"), (0x880C, "NUT87", "NUT87"),
+    (0x80D3, "NUT65V2", "NUT65 V2"), (0x8802, "VEGA108", "VEGA108"), (0x800E, "NUT21", "NUT21"),
+    (0xFEF9, "NUT75 2.4G WIRELESS", "NUT75"), (0xFEF9, "NUT87 2.4G", "NUT87"),
+    (0xFEF9, "NUT65V2 2.4G", "NUT65 V2"), (0xFEF9, "VEGA108 2.4G", "VEGA108"),
+    (0xFEFA, "NUT21 2.4G", "NUT21")
+})
+    Check(VendorProtocol.IdentifyWeikav(0x0C45, pid, product) == model, $"WEIKAV {product} identity");
+Check(VendorProtocol.IdentifyWeikav(0x0C45, 0xFEF9, "HS USB Dongle") == null, "Shared OEM dongle stays unnamed");
+foreach (var (pid, product, model) in new (ushort, string, string)[]
+{
+    (0xE407, "Lucky65V2", "Lucky65 V2"), (0xE538, "Lucky65 V3", "Lucky65 V3"),
+    (0xE401, "Lucky80", "Lucky80"), (0xE401, "Stars80", "Stars80"),
+    (0xE554, "NUT108", "NUT108"), (0xE51A, "NUT65", "NUT65"), (0xE545, "NUT65 CU", "NUT65 CU"),
+    (0xE537, "MAX102", "MAX102"), (0xE543, "S21", "Stars21-S"), (0xE403, "Lucky21", "Stars21"),
+    (0xE409, "Lucky21", "Stars21"), (0xE402, "Stars75", "Stars75"), (0xE406, "WK87", "WK87"),
+    (0xE408, "Record Alice V2", "Record Alice")
+})
+    Check(VendorProtocol.IdentifyWeikavVia(0x342D, pid, product) == model, $"WEIKAV VIA {product} identity");
+Check(VendorProtocol.IdentifyWeikavVia(0x342D, 0xE401, "Wireless Gaming Keyboard") == null,
+    "Ambiguous WEIKAV VIA IDs need a model name");
+
+foreach (int length in new[] { 33, 65 })
+{
+    var reply = VendorProtocol.BuildWeikavBatteryRequest(length);
+    Check(reply[1] == 0xAA && reply[2] == 0x10 && reply[3] == (length == 33 ? 24 : 48) &&
+        reply[7] == (length == 33 ? 0 : 1), "WEIKAV device-info request header");
+    Check(!VendorProtocol.TryParseWeikavBattery(reply, out _), "WEIKAV rejects request echo");
+    reply[1] = 0x55;
+    reply[13] = 0x45;
+    reply[26] = 0;
+    Check(VendorProtocol.TryParseWeikavBattery(reply, out int weikavLevel) && weikavLevel == 0,
+        "WEIKAV parses device info including zero percent");
+    reply[26] = 101;
+    Check(!VendorProtocol.TryParseWeikavBattery(reply, out _), "WEIKAV rejects invalid percentages");
+}
+
+
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\TencentMyAppsHidBus&Col01", "mouhid") }) != null, "Exclude Tencent virtual mouse by actual bus identity");
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\TencentMyAppsHidBus&Col03", "kbdhid") }) != null, "Exclude Tencent virtual keyboard");
 Check(HidDiscovery.ExclusionReason(new[] { (@"ROOT\MyAppsVirtualBus\0000", "MyAppsHidBus") }) != null, "Exclude virtual bus ancestor");

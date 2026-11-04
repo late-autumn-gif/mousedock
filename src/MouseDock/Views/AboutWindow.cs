@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -20,7 +21,7 @@ namespace MouseDock.Views
         /// exportReport 拿到窗口本身当所有者，好让「另存为」对话框压在它上面。
         /// </summary>
         public static void Show(Window owner, bool isFirstRun,
-            Func<Window, ReportExportResult> exportReport, Action<string> openFeedback)
+            Func<Window, Task<ReportExportResult>> exportReport, Action<string> openFeedback)
         {
             var win = new Window
             {
@@ -117,12 +118,13 @@ namespace MouseDock.Views
             };
 
             var btnReport = MakeButton("导出错误报告");
-            btnReport.Click += (_, __) =>
+            btnReport.Click += async (_, __) =>
             {
+                btnReport.IsEnabled = false;
                 try
                 {
                     // 取消和失败都已经由 exportReport 那边交代过，这里只管成功那一步
-                    var result = exportReport?.Invoke(win);
+                    var result = exportReport == null ? null : await exportReport(win);
                     if (result == null || !result.Succeeded) return;
 
                     var r = MessageBox.Show(win,
@@ -130,26 +132,40 @@ namespace MouseDock.Views
                         "导出成功", MessageBoxButton.YesNo, MessageBoxImage.Information);
                     if (r == MessageBoxResult.Yes) FeedbackService.OpenReportFolder(result.Path);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(win, "导出失败：" + ex.Message, "MouseDock",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                finally { btnReport.IsEnabled = true; }
             };
             buttons.Children.Add(btnReport);
 
             var btnFeedback = MakeButton("写反馈邮件", true);
             btnFeedback.Margin = new Thickness(8, 0, 0, 0);
-            btnFeedback.Click += (_, __) =>
+            btnFeedback.Click += async (_, __) =>
             {
+                btnFeedback.IsEnabled = false;
                 try
                 {
-                    var result = exportReport?.Invoke(win);
+                    var result = exportReport == null ? null : await exportReport(win);
                     if (result != null && result.Canceled) return;
 
                     if (result != null && result.Succeeded)
                         FeedbackService.OpenReportFolder(result.Path);
+                    else if (result != null)
+                        MessageBox.Show(win, FeedbackService.BuildFailureMessage(result), "MouseDock",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
 
                     // 报告写不进去也得让人说话
                     openFeedback?.Invoke(result?.Path);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(win, "打开邮件失败：" + ex.Message, "MouseDock",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                finally { btnFeedback.IsEnabled = true; }
             };
             buttons.Children.Add(btnFeedback);
 

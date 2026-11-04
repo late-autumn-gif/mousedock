@@ -140,6 +140,46 @@ namespace MouseDock.Services.Detection
                 if (set != IntPtr.Zero && set != new IntPtr(-1)) SetupDiDestroyDeviceInfoList(set);
             }
 
+            // 专用电量接口不会参与输入类型归并。按归并后的设备读取一次。
+            if (!(App.Settings?.SafeMode ?? false))
+            {
+                foreach (var bucket in buckets.Values)
+                {
+                    bool inphic = VendorProtocol.IsInphicSplitReceiver(bucket.Vid, bucket.Pid);
+                    bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
+                    bool rainy = VendorProtocol.IsRainy75Wired(bucket.Vid, bucket.Pid);
+                    bool f99 = VendorProtocol.IsAulaF99(bucket.Vid, bucket.Pid, bucket.Product);
+                    bool weikav = VendorProtocol.IdentifyWeikav(bucket.Vid, bucket.Pid, bucket.Product) != null;
+                    if (bucket.Battery >= 0 || !(inphic || atk || rainy || f99 || weikav)) continue;
+                    string id = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                    if (!(preferences?.CanRead(id, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
+
+                    var trace = new List<string>();
+                    bool charging = false;
+                    bool atkZeroIdentified = false;
+                    string source = atk ? "ATK HUB BITMOUSE 电量查询"
+                        : rainy ? "Rainy 75 有线电量查询"
+                        : f99 ? "AULA F99 Feature 09 电量查询"
+                        : weikav ? "维咖 DriveAll 设备信息查询" : "英菲克 2.4G 接收器状态上报";
+                    bucket.Battery = ReadBattery(source, () =>
+                    {
+                        if (atk) return VendorProtocol.TryReadAtkZero(bucket.Vid, bucket.Pid, out charging, out atkZeroIdentified);
+                        if (rainy) return VendorProtocol.TryReadRainy75Wired(bucket.Vid, bucket.Pid, out charging);
+                        if (f99) return VendorProtocol.TryReadAulaF99(bucket.Vid, bucket.Pid);
+                        if (weikav) return VendorProtocol.TryReadWeikavBattery(bucket.Vid, bucket.Pid, bucket.Product);
+                        return VendorProtocol.TryReadInphic(bucket.Vid, bucket.Pid, out charging);
+                    }, trace);
+                    if (atkZeroIdentified) bucket.Product = bucket.Pid == 0x1154 ? "ATK ZERO" : "ATK ZERO 2.4G Receiver";
+                    if (bucket.Battery >= 0)
+                    {
+                        bucket.Charging = charging;
+                        bucket.BatterySource = source;
+                    }
+                    else bucket.BatteryFailures.UnionWith(trace);
+                    LastDiagnostics.Add($"{id} {string.Join("；", trace)}");
+                }
+            }
+
             LastDiagnostics.Add($"接口={interfaces} 打开失败={noOpen} 未运行={notRunning} 用法不符={kindRejected} 噪音={noise} 采集={collected} 归并={buckets.Count}");
 
             bool safeMode = false;
@@ -399,7 +439,12 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (VendorProtocol.IsNeon75Air(vid, pid))
+            if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Wired(vid, pid) ||
+                VendorProtocol.IsAulaF99(vid, pid, product) || VendorProtocol.IdentifyWeikav(vid, pid, product) != null)
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过专用电量查询" : "专用电量由归并后的设备读取");
+            }
+            else if (VendorProtocol.IsNeon75Air(vid, pid))
             {
                 battery = ReadBattery("VGN Neon75 Air F7 状态查询", () => VendorProtocol.TryReadNeon75(vid, pid, !safeMode,
                     out batteryCharging, out batteryStale), batteryTrace);
@@ -535,6 +580,17 @@ namespace MouseDock.Services.Detection
             if (battery < 0 && !safeMode && VendorProtocol.IsValkyrieDevice(vid, pid, product))
             {
                 battery = ReadBattery("Valkyrie", () => VendorProtocol.TryReadValkyrie(vid, pid, kind == DeviceKind.Keyboard), batteryTrace);
+            }
+
+            // 英菲克（Inphic）。网页驱动 HUB WEB 的本地桥 Inphic.exe 只做转发：
+            // hid_read 拿到的输入报告前 5 字节拼成 "8x01"+5×%02x 推给页面，
+            // 页面按 [机型][0x40|0x41][状态][电量] 取值。0x40/0x41 是电量类子命令，
+            // 状态 1=百分比 2=满电 3=充电中。桥不发查询帧，电量靠接收器主动上报。
+            // 协议抄自 Inphic_SetUp_V1.01.exe 装出来的本地桥（FUN_0040e3d0 等五套通道）。
+            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 &&
+                VendorProtocol.IsInphicDevice(vid, pid, product))
+            {
+                battery = ReadBattery("Inphic", () => VendorProtocol.TryReadInphic(vid, pid, out batteryCharging), batteryTrace);
             }
 
             }
@@ -705,6 +761,13 @@ namespace MouseDock.Services.Detection
             return -1;
         }
 
+        internal static string ReadHidProduct(IntPtr handle, string path)
+        {
+            if (path.Contains("BTHENUM", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("BTHLE", StringComparison.OrdinalIgnoreCase)) return null;
+            return Unicode(HidD_GetProductString, handle);
+        }
+
         private static string Unicode(Func<IntPtr, IntPtr, int, bool> getter, IntPtr h)
         {
             IntPtr buf = IntPtr.Zero;
@@ -750,8 +813,28 @@ namespace MouseDock.Services.Detection
                 var kind = RefineKind(name);
                 string physicalKey = null;
 
+                string weikav = VendorProtocol.IdentifyWeikav(Vid, Pid, Product)
+                    ?? VendorProtocol.IdentifyWeikavVia(Vid, Pid, Product);
                 // 已知接收器：显示它背后真正的外设，而不是 "Wireless-Receiver"
-                if (VendorMap.TryKnownReceiver($"{Vid:X4}:{Pid:X4}", out string knownName, out DeviceKind knownKind, out string knownKey))
+                if (weikav != null)
+                {
+                    name = "WEIKAV " + weikav;
+                    kind = DeviceKind.Keyboard;
+                    physicalKey = "weikav-" + weikav.Replace(" ", "").ToLowerInvariant();
+                }
+                else if (VendorProtocol.IsAulaF99(Vid, Pid, Product))
+                {
+                    name = "AULA F99";
+                    kind = DeviceKind.Keyboard;
+                    physicalKey = "aula-f99";
+                }
+                else if (VendorProtocol.IsRainy75Wired(Vid, Pid))
+                {
+                    name = "WOBKEY Rainy 75";
+                    kind = DeviceKind.Keyboard;
+                    physicalKey = "wobkey-rainy75";
+                }
+                else if (VendorMap.TryKnownReceiver($"{Vid:X4}:{Pid:X4}", out string knownName, out DeviceKind knownKind, out string knownKey))
                 {
                     name = knownName;
                     kind = knownKind;
@@ -812,7 +895,11 @@ namespace MouseDock.Services.Detection
                 if (usbHeadset) { name = headsetName; kind = DeviceKind.Headset; }
                 string transport = bt ? "蓝牙" : usbHeadset ? "USB"
                     : (dongle || receiverProduct || LooksWireless(Product) || peerKeyboard ||
+                       (Vid == 0x3554 && VendorProtocol.IsAulaF99(Vid, Pid, Product)) ||
                        (HasVendor && Interfaces.Count >= 2) ? "2.4G" : "有线");
+
+                if (VendorProtocol.IsRainy75Wired(Vid, Pid)) transport = "有线";
+                else if (weikav != null) transport = Pid is 0xFEF9 or 0xFEFA ? "2.4G" : "有线";
 
                 return new DetectedDevice
                 {
@@ -834,13 +921,20 @@ namespace MouseDock.Services.Detection
             }
 
             /// <summary>
-            /// 一个接收器可能同时暴露鼠标和键盘集合。先看名字里有没有键盘特征，
-            /// 否则用「集合数量多的那种」压过默认优先级。
+            /// 一个接收器可能同时暴露鼠标和键盘集合。优先使用产品名，
+            /// 最后按集合数量判断。
             /// </summary>
             private DeviceKind RefineKind(string name)
             {
+                if (VendorProtocol.IsInphicSplitReceiver(Vid, Pid) && Counts.ContainsKey(DeviceKind.Mouse))
+                    return DeviceKind.Mouse;
+
                 string n = (name ?? "").ToLowerInvariant();
                 if (n.Contains("keyboard") || n.Contains("键盘") || n.Contains("keychron")) return DeviceKind.Keyboard;
+
+                if (Counts.ContainsKey(DeviceKind.Mouse) &&
+                    System.Text.RegularExpressions.Regex.IsMatch(n, @"\bmouse\b|鼠标"))
+                    return DeviceKind.Mouse;
 
                 // 键盘型号常见写法：Neon75 / F87 / K8 / MK870 之类
                 if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(f|k|mk|neon|kzz|akko)[\s-]?\d{2,4}\b"))

@@ -56,6 +56,8 @@ internal static class Program
             ("Maximized apps do not hide a revealed auto-hide taskbar", CheckFullscreen),
             ("Error report lands in the folder the user picked", CheckReportExportPath),
             ("Error report defaults to the app's own folder", CheckReportDefaultFolder),
+            ("Error report failure names the step that broke", CheckReportFailureClassification),
+            ("Failed export leaves a diagnostic log", CheckReportFailureLog),
             ("Mini battery text updates without rebuilding devices", AuditChecks.MiniLiveReading),
             ("Settings can reopen after a system close", AuditChecks.ClosedSettings),
             ("Merged channels preserve charging status", AuditChecks.ChargingMerge),
@@ -311,6 +313,48 @@ internal static class Program
         string.Equals(Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
                       Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
                       StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 目标路径是个目录，写文件必然失败。这种失败要落在「写入失败」上，
+    /// 不能报成「生成报告内容失败」—— 用户照着换目录才有用。
+    /// </summary>
+    private static void CheckReportFailureClassification()
+    {
+        var service = ProductionType("MouseDock.Services.FeedbackService");
+        var tryExport = service.GetMethod("TryExportReport", BindingFlags.Public | BindingFlags.Static)!;
+
+        string dir = Path.Combine(Path.GetTempPath(), "mousedock-report-fail-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir])!;
+            string kind = result.GetType().GetProperty("FailureKind")!.GetValue(result)!.ToString()!;
+            Require(kind == "WriteFailed", $"A directory target must fail at the write step, got {kind}.");
+
+            string detail = result.GetType().GetProperty("Detail")!.GetValue(result) as string ?? "";
+            Require(!string.IsNullOrWhiteSpace(detail), "The failure must carry the real exception message.");
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    /// <summary>失败必须留下日志，作者才能看出是 IOException、权限还是别的。</summary>
+    private static void CheckReportFailureLog()
+    {
+        var service = ProductionType("MouseDock.Services.FeedbackService");
+        var tryExport = service.GetMethod("TryExportReport", BindingFlags.Public | BindingFlags.Static)!;
+
+        string dir = Path.Combine(Path.GetTempPath(), "mousedock-report-log-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir])!;
+            string log = result.GetType().GetProperty("LogPath")!.GetValue(result) as string ?? "";
+            Require(!string.IsNullOrEmpty(log), "A failed export must report where its log went.");
+            Require(File.Exists(log), $"The diagnostic log must exist, got {log}.");
+            Require(File.ReadAllText(log).Contains("WriteFailed"), "The log must name the failing step.");
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
 
     private static bool CanWrite(string folder)
     {

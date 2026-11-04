@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using MouseDock.Models;
 using Windows.Devices.Bluetooth;
@@ -88,7 +89,9 @@ namespace MouseDock.Services.Detection
                 {
                     bool recognitionEnabled = preferences?.CanRead("ble-" + device.BluetoothAddress.ToString("X"),
                         VendorMap.PhysicalKeyFromName(info.Name)) ?? true;
-                    var kind = KindFromAppearance(device, info.Name);
+                    bool isIn9Pro = string.Equals(info.Name?.Trim(), "IN9 PRO", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(info.Name?.Trim(), "IN9PRO", StringComparison.OrdinalIgnoreCase);
+                    var kind = isIn9Pro ? DeviceKind.Mouse : KindFromAppearance(device, info.Name);
                     if (kind == null && hint != null) kind = hint(info.Name);
                     if (kind == null && recognitionEnabled) kind = await KindFromGattAsync(device, timeoutMs).ConfigureAwait(false);
                     if (kind == null && !recognitionEnabled) kind = VendorMap.KindFromName(info.Name) ?? DeviceKind.Other;
@@ -130,6 +133,15 @@ namespace MouseDock.Services.Detection
                     }
 
                     int level = !recognitionEnabled ? -1 : earlyLevel >= 0 ? earlyLevel : await ReadBatteryAsync(device, timeoutMs).ConfigureAwait(false);
+                    bool charging = systemReading != null && earlyLevel >= 0 && systemReading.Charging;
+                    string batterySource = systemReading != null ? "Windows 系统电量" : "BLE GATT 电池服务";
+                    bool tryInphic = recognitionEnabled && isIn9Pro && level < 0 && !(App.Settings?.SafeMode ?? false);
+                    if (tryInphic)
+                    {
+                        (level, charging) = await ReadInphicBatteryAsync(device, timeoutMs).ConfigureAwait(false);
+                        if (level >= 0) batterySource = "英菲克蓝牙状态通知";
+                        Trace($"BLE {info.Name}：英菲克 FEE4 通知" + (level >= 0 ? $"读到 {level}%" : "未读到电量"));
+                    }
 
                     sink.Add(new DetectedDevice
                     {
@@ -138,13 +150,13 @@ namespace MouseDock.Services.Detection
                         Kind = kind.Value,
                         Transport = "蓝牙 LE",
                         Level = level,
-                        Charging = systemReading != null && earlyLevel >= 0 && systemReading.Charging,
+                        Charging = charging,
                         Connected = connected,
                         Detail = device.BluetoothAddress.ToString("X12"),
                         PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name),
-                        Note = !recognitionEnabled ? "用户已取消识别，未查询电量" : level >= 0 ? (systemReading != null ? "Windows 系统电量" : "BLE GATT 电池服务") : (connected
-                            ? "已连接但没读到 GATT 电量服务（0x180F）"
-                            : "设备待机中，连上后才能读 GATT 电量")
+                        Note = !recognitionEnabled ? "用户已取消识别，未查询电量" : level >= 0 ? batterySource
+                            : tryInphic ? "已连接，但 GATT 电池服务和英菲克通知均未返回电量"
+                            : "已连接但没读到 GATT 电量服务（0x180F）"
                     });
                 }
                 catch (Exception ex) { LastErrors.Add("BLE 处理失败 " + info.Name + ": " + ex.GetType().Name); }
@@ -250,6 +262,76 @@ namespace MouseDock.Services.Detection
                 catch { }
                 finally { device.Dispose(); }
             }
+        }
+
+        private static readonly Guid InphicService = new("6e3bb679-4372-40c8-9eaa-4509df260cd8");
+        private static readonly Guid InphicStatus = new("0000fee4-0000-1000-8000-00805f9b34fb");
+
+        private static async Task<(int Level, bool Charging)> ReadInphicBatteryAsync(BluetoothLEDevice device, int timeoutMs)
+        {
+            using var deadline = new CancellationTokenSource(timeoutMs);
+            try
+            {
+                var services = await device.GetGattServicesForUuidAsync(InphicService, BluetoothCacheMode.Uncached)
+                    .AsTask(deadline.Token).ConfigureAwait(false);
+                try
+                {
+                    if (services.Status != GattCommunicationStatus.Success) return (-1, false);
+                    foreach (var service in services.Services)
+                    {
+                        var characteristics = await service.GetCharacteristicsForUuidAsync(InphicStatus, BluetoothCacheMode.Uncached)
+                            .AsTask(deadline.Token).ConfigureAwait(false);
+                        if (characteristics.Status != GattCommunicationStatus.Success) continue;
+                        var status = characteristics.Characteristics.FirstOrDefault(c =>
+                            (c.CharacteristicProperties & GattCharacteristicProperties.Notify) != 0);
+                        if (status == null) continue;
+
+                        var reading = new TaskCompletionSource<(int, bool)>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        void OnValueChanged(GattCharacteristic _, GattValueChangedEventArgs args)
+                        {
+                            try
+                            {
+                                using var reader = DataReader.FromBuffer(args.CharacteristicValue);
+                                if (reader.UnconsumedBufferLength < 4) return;
+                                var bytes = new byte[4];
+                                reader.ReadBytes(bytes);
+                                if (bytes[0] == VendorProtocol.InphicModelIn9Pro &&
+                                    VendorProtocol.TryParseInphicStatus(bytes, out int level, out bool charging))
+                                    reading.TrySetResult((level, charging));
+                            }
+                            catch (Exception ex) { reading.TrySetException(ex); }
+                        }
+
+                        status.ValueChanged += OnValueChanged;
+                        try
+                        {
+                            var subscribed = await status.WriteClientCharacteristicConfigurationDescriptorAsync(
+                                GattClientCharacteristicConfigurationDescriptorValue.Notify)
+                                .AsTask(deadline.Token).ConfigureAwait(false);
+                            if (subscribed != GattCommunicationStatus.Success) continue;
+                            return await reading.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            status.ValueChanged -= OnValueChanged;
+                            using var cleanup = new CancellationTokenSource(300);
+                            try
+                            {
+                                await status.WriteClientCharacteristicConfigurationDescriptorAsync(
+                                    GattClientCharacteristicConfigurationDescriptorValue.None)
+                                    .AsTask(cleanup.Token).ConfigureAwait(false);
+                            }
+                            catch { /* 断开时描述符可能已不可访问。 */ }
+                        }
+                    }
+                }
+                finally
+                {
+                    foreach (var service in services.Services) service.Dispose();
+                }
+            }
+            catch (Exception ex) { Trace("英菲克 BLE 状态读取失败: " + ex.GetType().Name); }
+            return (-1, false);
         }
 
         private static async Task<int> ReadBatteryAsync(BluetoothLEDevice device, int timeoutMs)

@@ -46,7 +46,11 @@ namespace MouseDock.Services
 
         /// <summary>
         /// 报告默认放在程序自己所在目录 —— 也就是 MouseDock.exe 旁边。
-        /// 该目录写不进去时退回「文档」，再不行退回临时目录。
+        /// 该目录写不进去时退回「文档」，再不行退到 %LOCALAPPDATA%\MouseDock\reports，
+        /// 最后才是临时目录。
+        ///
+        /// 不用 %TEMP% 当第一档兜底：那地方会被系统清理，用户也认不出是自己的目录。
+        /// LocalAppData 属于当前用户、不受受控文件夹访问管辖，写权限最稳。
         /// </summary>
         public static string DefaultExportDir
         {
@@ -58,9 +62,17 @@ namespace MouseDock.Services
                 string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 if (!string.IsNullOrEmpty(docs) && CanWriteTo(docs)) return docs;
 
+                string local = LocalReportDir;
+                if (CanWriteTo(local)) return local;
+
                 return Path.GetTempPath();
             }
         }
+
+        /// <summary>本机诊断日志和最后的兜底目录，一定属于当前用户。</summary>
+        public static string LocalReportDir =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                         "MouseDock", "reports");
 
         /// <summary>默认的完整 zip 路径，界面用来预热对话框。</summary>
         public static string DefaultExportPath => Path.Combine(DefaultExportDir, SuggestedFileName());
@@ -87,14 +99,18 @@ namespace MouseDock.Services
             return AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        /// <summary>真去写一个临时文件试一下，别只信 ACL：U 盘、受控文件夹访问都会在这里露馅。</summary>
+        /// <summary>
+        /// 真去写一个临时文件试一下，别只信 ACL：U 盘、受控文件夹访问都会在这里露馅。
+        /// 探针后缀必须跟目标文件一致（.zip）—— 受控文件夹访问和按扩展名查杀的杀软
+        /// 会对 .tmp 放行、对 .zip 拦截，探 .tmp 等于没探。
+        /// </summary>
         private static bool CanWriteTo(string dir)
         {
             if (string.IsNullOrEmpty(dir)) return false;
             try
             {
                 Directory.CreateDirectory(dir);
-                string probe = Path.Combine(dir, ".mousedock-" + Guid.NewGuid().ToString("N") + ".tmp");
+                string probe = Path.Combine(dir, ".mousedock-" + Guid.NewGuid().ToString("N") + ".zip");
                 using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1,
                                       FileOptions.DeleteOnClose))
                 { }
@@ -131,40 +147,82 @@ namespace MouseDock.Services
 
         /// <summary>
         /// 弹框选位置，然后导出。三个入口（设置页 / 关于 / 反馈）都走这里。
+        /// HID 枚举和压缩放到后台线程：几百个集合时在 UI 线程做能把窗口冻住几十秒。
         /// </summary>
-        public static ReportExportResult ExportReportWithPrompt(Window owner, AppSettings settings,
-                                                               IEnumerable<DeviceInfo> detected)
+        public static async Task<ReportExportResult> ExportReportWithPromptAsync(
+            Window owner, AppSettings settings, IEnumerable<DeviceInfo> detected)
         {
             string target = AskSavePath(owner);
             if (string.IsNullOrEmpty(target)) return ReportExportResult.CanceledByUser;
 
-            string path = ExportReport(settings, detected, target);
-            return path == null ? ReportExportResult.Failed : ReportExportResult.Ok(path);
+            var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
+            return await Task.Run(() => TryExportReport(settings, detectedList, target))
+                             .ConfigureAwait(true);
         }
 
         /// <summary>
         /// 生成错误报告 zip。zipPath 为空时落在 <see cref="DefaultExportPath"/>。
         /// 返回 zip 路径，失败返回 null。
+        ///
+        /// 保留这个签名给 self-check 用；要拿到失败原因请用 TryExportReport。
         /// </summary>
         public static string ExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected, string zipPath = null)
         {
-            if (string.IsNullOrWhiteSpace(zipPath)) zipPath = DefaultExportPath;
+            var result = TryExportReport(settings, detected, zipPath);
+            return result.Succeeded ? result.Path : null;
+        }
+
+        /// <summary>
+        /// 生成错误报告，把成功、写入失败、生成失败分清楚。
+        /// 生成阶段和写盘阶段各自 catch：以前一个 try 全包住，StartTime 之类的异常
+        /// 会被界面报成「没能写入所选位置」，用户和作者都被带偏。
+        /// </summary>
+        public static ReportExportResult TryExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected,
+                                                         string zipPath = null)
+        {
+            string resolvedTarget = null;
             string temporaryPath = null;
 
             try
             {
-                zipPath = Path.GetFullPath(zipPath);
-                string dir = Path.GetDirectoryName(zipPath);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                resolvedTarget = Path.GetFullPath(string.IsNullOrWhiteSpace(zipPath) ? DefaultExportPath : zipPath);
+            }
+            catch (Exception ex)
+            {
+                return ReportExportResult.Failed(ReportExportFailureKind.WriteFailed, zipPath, ex.Message, ex);
+            }
 
-                var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
+            string dir = Path.GetDirectoryName(resolvedTarget);
+            if (string.IsNullOrEmpty(dir))
+                return ReportExportResult.Failed(ReportExportFailureKind.WriteFailed, resolvedTarget,
+                                                 "目标路径没有上级目录。");
+
+            var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
+
+            // 内容先在内存里生成完，再一次性写盘 —— 生成失败和写盘失败不会混在一起。
+            string hidReport;
+            string summary;
+            try
+            {
+                hidReport = BuildHidReport(detectedList);
+                summary = BuildSummary(settings, detectedList);
+            }
+            catch (Exception ex)
+            {
+                return ReportExportResult.Failed(ReportExportFailureKind.GenerateFailed, resolvedTarget,
+                                                 ex.Message, ex);
+            }
+
+            try
+            {
+                Directory.CreateDirectory(dir);
 
                 temporaryPath = Path.Combine(dir, $".mousedock-{Guid.NewGuid():N}.tmp");
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    AddText(zip, "hid-devices.txt", BuildHidReport(detectedList));
-                    AddText(zip, "summary.txt", BuildSummary(settings, detectedList));
+                    AddText(zip, "hid-devices.txt", hidReport);
+                    AddText(zip, "summary.txt", summary);
 
                     // 现有的缓存与诊断文件，有就捎上
                     foreach (var name in new[] { "settings.json", "battery-cache.json", "vendor-identity.json",
@@ -176,11 +234,17 @@ namespace MouseDock.Services
                     }
                 }
 
-                File.Move(temporaryPath, zipPath, overwrite: true);
+                // 原子替换：目标文件正被预览窗格、压缩软件或同步盘占着时，
+                // 这里会抛 IOException，但至少不会留下一份半截的坏 zip。
+                File.Move(temporaryPath, resolvedTarget, overwrite: true);
                 temporaryPath = null;
-                return zipPath;
+                return ReportExportResult.Ok(resolvedTarget);
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                return ReportExportResult.Failed(ReportExportFailureKind.WriteFailed, resolvedTarget,
+                                                 ex.Message, ex);
+            }
             finally
             {
                 if (temporaryPath != null)
@@ -302,7 +366,19 @@ namespace MouseDock.Services
             sb.AppendLine("版本: " + UpdateService.CurrentVersionText);
             sb.AppendLine("系统: " + Environment.OSVersion.VersionString);
             sb.AppendLine("64位: " + Environment.Is64BitOperatingSystem);
-            sb.AppendLine("运行时长: " + (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMinutes.ToString("F0") + " 分钟");
+
+            // StartTime 在受限令牌、沙箱、部分 EDR 环境里会抛 Win32Exception。
+            // 它只是一行运行时长，没有理由拖垮整份报告。
+            string uptime;
+            try
+            {
+                uptime = (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMinutes.ToString("F0") + " 分钟";
+            }
+            catch (Exception ex)
+            {
+                uptime = "读取不到（" + ex.GetType().Name + "）";
+            }
+            sb.AppendLine("运行时长: " + uptime);
             sb.AppendLine();
             sb.AppendLine("已识别设备: " + detected.Count + " 台");
             sb.AppendLine("电量已读到: " + detected.Count(d => d.Level >= 0) + " 台；未读到: " + detected.Count(d => d.Level < 0) + " 台");
@@ -407,6 +483,53 @@ namespace MouseDock.Services
             catch { return false; }
         }
 
+        /// <summary>
+        /// 把失败结果翻成用户看得懂的一段话。
+        /// 生成失败和写入失败要分开说 —— 以前一律写成「没能写入所选位置」，
+        /// 明明是内容生成炸了，用户却跑去换目录，怎么换都没用。
+        /// </summary>
+        public static string BuildFailureMessage(ReportExportResult result)
+        {
+            if (result == null) return "导出失败：没有拿到结果。";
+
+            var sb = new StringBuilder();
+            if (result.FailureKind == ReportExportFailureKind.GenerateFailed)
+            {
+                sb.AppendLine("导出失败：生成报告内容时出错，跟磁盘权限无关。");
+                sb.AppendLine();
+                sb.AppendLine(Trim(result.Detail, 400));
+                sb.AppendLine();
+                sb.AppendLine("把这条消息发到 " + ContactEmail + " 就能定位。");
+            }
+            else
+            {
+                sb.AppendLine("导出失败：报告没能写入下面的位置。");
+                sb.AppendLine(result.TargetPath ?? "(未定)");
+                sb.AppendLine();
+                if (!string.IsNullOrWhiteSpace(result.Detail))
+                {
+                    sb.AppendLine(Trim(result.Detail, 300));
+                    sb.AppendLine();
+                }
+                sb.AppendLine("换个目录再试一次。文件正被压缩软件、预览窗格或同步盘占着时也会这样。");
+            }
+
+            if (!string.IsNullOrEmpty(result.LogPath))
+            {
+                sb.AppendLine();
+                sb.AppendLine("诊断日志：" + result.LogPath);
+            }
+
+            return sb.ToString();
+        }
+
+        private static string Trim(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            text = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            return text.Length <= max ? text : text.Substring(0, max) + "…";
+        }
+
         /// <summary>打开报告所在目录，方便用户拖附件。</summary>
         public static void OpenReportFolder(string reportPath)
         {
@@ -425,6 +548,53 @@ namespace MouseDock.Services
             }
             catch { }
         }
+        /// <summary>
+        /// 把失败原因落到本地日志。以前这里是裸 catch，什么都不留，
+        /// 用户只能截个「导出失败」的图，作者也看不出是哪一步炸的。
+        /// </summary>
+        internal static string WriteFailureLog(Exception ex, string target, ReportExportFailureKind kind)
+        {
+            try
+            {
+                string dir = LocalReportDir;
+                Directory.CreateDirectory(dir);
+                string log = Path.Combine(dir, "export-error.log");
+
+                // 日志自增没有上限，超过 256 KB 就从头再来一份。
+                try
+                {
+                    var info = new FileInfo(log);
+                    if (info.Exists && info.Length > 256 * 1024) info.Delete();
+                }
+                catch { }
+
+                var sb = new StringBuilder();
+                sb.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + kind);
+                sb.AppendLine("目标: " + (target ?? "(未定)"));
+                sb.AppendLine("exe: " + (Environment.ProcessPath ?? "(未知)"));
+                sb.AppendLine("异常: " + ex.GetType().FullName);
+                sb.AppendLine("消息: " + ex.Message);
+                if (ex.StackTrace != null) sb.AppendLine("堆栈:" + Environment.NewLine + ex.StackTrace);
+                sb.AppendLine();
+
+                File.AppendAllText(log, sb.ToString(), new UTF8Encoding(false));
+                return log;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <summary>导出失败发生在哪一步。界面据此给不同的提示。</summary>
+    internal enum ReportExportFailureKind
+    {
+        None,
+        /// <summary>报告内容已经生成，但写不进目标文件。</summary>
+        WriteFailed,
+        /// <summary>连报告内容都没拼出来，跟磁盘权限无关。</summary>
+        GenerateFailed,
     }
 
     /// <summary>
@@ -441,10 +611,32 @@ namespace MouseDock.Services
 
         public bool Succeeded => !Canceled && !string.IsNullOrEmpty(Path);
 
+        /// <summary>失败发生在生成阶段还是写盘阶段。</summary>
+        public ReportExportFailureKind FailureKind { get; private set; }
+
+        /// <summary>给用户看的失败原因，通常是异常消息。</summary>
+        public string Detail { get; private set; }
+
+        /// <summary>用户当时选的目标路径。</summary>
+        public string TargetPath { get; private set; }
+
+        /// <summary>诊断日志落在哪，没写成就是 null。</summary>
+        public string LogPath { get; private set; }
+
         public static readonly ReportExportResult CanceledByUser = new ReportExportResult { Canceled = true };
 
-        public static readonly ReportExportResult Failed = new ReportExportResult();
-
         public static ReportExportResult Ok(string path) => new ReportExportResult { Path = path };
+
+        public static ReportExportResult Failed(ReportExportFailureKind kind, string target,
+                                                string detail, Exception ex = null)
+        {
+            return new ReportExportResult
+            {
+                FailureKind = kind,
+                TargetPath = target,
+                Detail = detail,
+                LogPath = ex == null ? null : FeedbackService.WriteFailureLog(ex, target, kind),
+            };
+        }
     }
 }

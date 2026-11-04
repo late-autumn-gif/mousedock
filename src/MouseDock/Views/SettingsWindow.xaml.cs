@@ -349,19 +349,22 @@ namespace MouseDock.Views
         /// 导出错误报告。先弹「另存为」问用户放哪，
         /// 默认目录是 exe 同目录、文件名也填好了，直接回车就收下。
         /// </summary>
-        private void OnExportReportClick(object sender, RoutedEventArgs e)
+        private async void OnExportReportClick(object sender, RoutedEventArgs e)
         {
+            var button = sender as Button;
+            if (button != null) button.IsEnabled = false;
+
             try
             {
                 var devices = App.Battery?.Devices?.ToList()
                               ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                var export = Services.FeedbackService.ExportReportWithPrompt(this, App.Settings, devices);
+                var export = await Services.FeedbackService.ExportReportWithPromptAsync(this, App.Settings, devices);
 
                 if (export.Canceled) return;
 
                 if (!export.Succeeded)
                 {
-                    MessageBox.Show(this, "导出失败：报告没能写入所选的位置。\n换个目录再试一次。", "MouseDock",
+                    MessageBox.Show(this, Services.FeedbackService.BuildFailureMessage(export), "MouseDock",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
@@ -376,30 +379,48 @@ namespace MouseDock.Views
                 MessageBox.Show(this, "导出失败：" + ex.Message, "MouseDock",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+            finally
+            {
+                if (button != null) button.IsEnabled = true;
+            }
         }
 
         /// <summary>写反馈邮件：先导出报告（问一次放哪），再打开邮件客户端。</summary>
-        private void OnFeedbackClick(object sender, RoutedEventArgs e)
+        private async void OnFeedbackClick(object sender, RoutedEventArgs e)
         {
+            var button = sender as Button;
+            if (button != null) button.IsEnabled = false;
+
             try
             {
                 var devices = App.Battery?.Devices?.ToList()
                               ?? new System.Collections.Generic.List<Models.DeviceInfo>();
-                var export = Services.FeedbackService.ExportReportWithPrompt(this, App.Settings, devices);
+                var export = await Services.FeedbackService.ExportReportWithPromptAsync(this, App.Settings, devices);
 
                 // 取消就是取消，别顺手把邮件也开了
                 if (export.Canceled) return;
 
                 if (export.Succeeded)
+                {
                     Services.FeedbackService.OpenReportFolder(export.Path);
+                }
+                else
+                {
+                    // 报告写不进去也得让人说话，但得先告诉他报告为什么没生成
+                    MessageBox.Show(this, Services.FeedbackService.BuildFailureMessage(export), "MouseDock",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
 
-                // 报告写不进去也得让人说话
                 Services.FeedbackService.OpenFeedbackMail(export.Path);
             }
             catch (System.Exception ex)
             {
                 MessageBox.Show(this, "打开邮件失败：" + ex.Message, "MouseDock",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                if (button != null) button.IsEnabled = true;
             }
         }
 
