@@ -996,7 +996,12 @@ namespace MouseDock
             Directory.CreateDirectory(dir);
 
             // 鎴浘瑕佸睍绀虹湡瀹炴帰娴嬬粨鏋?            Settings.Provider = "auto";
-            Settings.SelectedDeviceIds.Clear();
+            // 保留当前勾选，截图展示真实设备；没有勾选时按首次启动全选
+            if (Settings.SelectedDeviceIds.Count == 0)
+            {
+                Settings.HasDeviceSelection = false;
+                Settings.DeviceSelectionInitialized = false;
+            }
             Battery.Configure(Settings);
             Battery.Poll();
             Pump(TimeSpan.FromMilliseconds(1800));

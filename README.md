@@ -14,12 +14,11 @@
 
 <p align="center">
   <img src="docs/screenshots/icon-character.png" width="110" alt="悬浮图标 · 角色" />
-  <img src="docs/screenshots/icon-photo.png" width="110" alt="悬浮图标 · 照片" />
 </p>
 
 ## 特性
 
-- **任务栏电量环**：默认固定在主屏任务栏左侧，每台已勾选的设备显示对应图标和独立电量环，背景透明；最多显示 5 台
+- **任务栏电量环**：默认固定在主屏任务栏左侧，每台已勾选的设备显示对应图标和独立电量环，背景透明；最多显示 6 台
 - **任务栏位置设置**：设置 → 显示方式 → 任务栏，可调整左侧偏移；双击设备图标打开设置，右键打开菜单
 - **电量环状态**：绿色为正常、红色为低电量、蓝色为充电、虚线为未知；悬停查看名称和具体百分比
 - **只显示当前连接的设备**：内置键盘 / 触摸板 / 摄像头自动过滤；拔出即从列表消失
@@ -27,16 +26,17 @@
 - **通道判定**：`2.4G` / `蓝牙` / `蓝牙 LE` / `有线`，依据设备路径与产品串，不靠猜
 - **电量多策略**：HID 标准电池 → Logitech HID++ → 厂商 32 字节私有协议 → BLE GATT
 - **实时刷新**：默认 5 秒轮询（可调 5–120 秒）；USB 插拔由 `WM_DEVICECHANGE` 立即触发
-- **三种形态**：卡片面板 / 迷你 2×2 / 悬浮图标；可停靠到 Winstep Nexus
+- **四种形态**：卡片面板 / 迷你 2×2 / 悬浮图标 / 任务栏；可停靠到 Winstep Nexus
+- **悬浮图标形态**：外壳可选圆角 / 圆形 / 方形 / 胶囊，内容可选照片、角色动画、经典电池、极简、多设备
 - **普通窗口层级**：不置顶、不抢焦点，其它窗口可以正常盖住它；268×159 起，占桌面很小一块
 
 ## 快速开始
 
-本地修改版可运行 `.\build.ps1` 编译，产物为 `dist\MouseDock.exe` 与 `dist\Assets\`。运行时已包含在 exe 中，分发时请保留整个 `dist` 文件夹。脚本优先使用仓库内 `.dotnet\` 下的 SDK。
+本地修改版可运行 `.\build.ps1` 编译，产物为单文件 `app\MouseDock.exe`，运行时和图片资源都打包在 exe 里，拷走一个文件就能跑。脚本优先使用仓库内 `.dotnet\` 下的 SDK。
 
 任务栏模式使用独立透明窗口覆盖任务栏区域，不会为它挤出系统按钮空间。可通过“左侧偏移”避开开始、搜索或天气按钮。它跟随主屏任务栏位置与大小，在任务栏隐藏或全屏应用显示时隐藏。
 
-下完仓库双击 `MouseDock.cmd` 就行。它会自己在仓库里装 .NET 10 SDK（装到 `.dotnet\`，不写注册表）、把程序打成**单个** `dist\MouseDock.exe`（约 77 MB，运行时和图片资源全在里面，不用另装 .NET）、在桌面和开始菜单放 `MouseDock.lnk`，然后把程序拉起来。产物那一个 exe 拷到 U 盘或发给别人也能直接双击跑。
+下完仓库双击 `MouseDock.cmd` 就行。它会自己在仓库里装 .NET 10 SDK（装到 `.dotnet\`，不写注册表）、把程序打成**单个** `app\MouseDock.exe`（约 82 MB，运行时和图片资源全在里面，不用另装 .NET）、在桌面和开始菜单放 `MouseDock.lnk`，然后把程序拉起来。产物那一个 exe 拷到 U 盘或发给别人也能直接双击跑。
 
 第一次启动要解包到 `%TEMP%\.net\MouseDock\`，慢一些（约 30 秒）；之后启动 5 秒内。
 
@@ -46,8 +46,8 @@ cd MouseDock
 ./MouseDock.cmd                    # 一键：装 SDK → 编译 → 建快捷方式 → 启动
 .\tools\bootstrap.ps1 -NoLaunch    # 只建快捷方式，不启动
 .\tools\bootstrap.ps1 -Rebuild     # 强制重编
-./build.ps1                        # 只编译，产物 dist\MouseDock.exe
-./install.ps1                      # 只有 dist 已存在时才好用；加 -AutoStart 开机启动
+./build.ps1                        # 只编译，产物 app\MouseDock.exe
+./install.ps1                      # 只有 app 已存在时才好用；加 -AutoStart 开机启动
 ```
 
 `.cmd` 里走的是 `-ExecutionPolicy Bypass`，不改系统脚本策略。压缩包从网上下载的，右键属性里可能有「解除锁定」，不解除会弹安全警告。
@@ -77,7 +77,7 @@ cd MouseDock
 自动更新可在设置里关闭，关掉后完全不发起任何网络请求。
 但与 HID 设备交互本身容易触发启发式误判，因此：
 
-- **安全模式**：`设置 → 数据源 → 安全模式`，关闭所有厂商通道写操作，只保留标准 HID 读取
+- **安全模式**：`AppSettings.SafeMode` 打开后关闭所有厂商通道写操作，只保留标准 HID 读取；设置页入口暂时收起，需要时直接改 `%APPDATA%\MouseDock\settings.json`
 - **可复现构建**：见 [docs/BUILD.md](docs/BUILD.md)，附 SHA-256 校验
 - **代码签名**：见 [docs/SIGNING.md](docs/SIGNING.md)
 
@@ -86,7 +86,7 @@ cd MouseDock
 ```
 src/MouseDock/            应用本体
   Services/Detection/     设备发现、通道判定、电量读取
-  Views/                  面板 / 迷你 / 图标 / 设置 / 壁纸墙
+  Views/                  面板 / 迷你 / 悬浮图标 / 任务栏 / 设置 / 关于
 tools/                    开发期工具（USB 抓包解析等，不随发行版）
 docs/                     协议、构建、签名、支持设备
 .github/workflows/        CI：构建与发布
