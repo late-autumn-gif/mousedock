@@ -22,14 +22,17 @@ namespace MouseDock.Services.Detection
             List<DetectedDevice> detected;
             try { detected = Detect(); }
             catch { detected = new List<DetectedDevice>(); }
+            return UpdateKnown(detected);
+        }
 
+        private IEnumerable<DeviceInfo> UpdateKnown(List<DetectedDevice> detected)
+        {
             lock (_gate)
             {
                 var aliveIds = new HashSet<string>();
 
                 // 同一只物理设备（例如狼蛛 SC580 的 2.4G 接收器与它的蓝牙身份）按 PhysicalKey 合并成一条
-                foreach (var group in detected.Where(d => d.Connected)
-                                              .GroupBy(d => Normalize(d.PhysicalKey ?? d.Id)))
+                foreach (var group in detected.GroupBy(d => Normalize(d.PhysicalKey ?? d.Id)))
                 {
                     var merged = MergeGroup(group.ToList());
                     aliveIds.Add(group.Key);
@@ -45,7 +48,7 @@ namespace MouseDock.Services.Detection
                     device.Transport = merged.Transport;
                     device.Detail = merged.Detail;
                     device.Note = merged.Note;
-                    device.Connected = true;
+                    device.Connected = merged.Connected;
                     device.Level = merged.Level >= 0 ? merged.Level : -1;
                     // 换电池的型号（G304/G305、G602/G603、办公 Nano 鼠）没有充电状态，
                     // 别让任何读取路径把「电量低」画成「充电中」。
@@ -91,6 +94,18 @@ namespace MouseDock.Services.Detection
         /// <summary>同一台设备可能同时出现在 HID 与蓝牙里：优先蓝牙的连接状态，电量谁有取谁。</summary>
         private static DetectedDevice MergeGroup(List<DetectedDevice> group)
         {
+            var connected = group.Where(d => d.Connected).ToList();
+            if (connected.Count == 0)
+            {
+                var offline = group[0];
+                return new DetectedDevice
+                {
+                    Id = offline.Id, Name = offline.Name, Kind = offline.Kind,
+                    Transport = offline.Transport, Detail = offline.Detail, Note = offline.Note,
+                    PhysicalKey = offline.PhysicalKey, Connected = false, Level = -1
+                };
+            }
+            group = connected;
             var best = group.OrderByDescending(d => d.Level >= 0 ? 1 : 0)
                             .ThenByDescending(d => d.Transport == "蓝牙" || d.Transport == "蓝牙 LE")
                             .First();

@@ -36,9 +36,10 @@ internal static class UiRegressionChecks
         finally { window.Close(); }
     }
 
-    internal static void ThemeForeground(string surface)
+    internal static void ThemeForeground(string surface, bool edge = false)
     {
         using var battery = Fixtures();
+        if (edge) MouseDock.App.Settings.SurfaceMode = "edge";
         Window window = surface switch
         {
             "dock" => new DockWindow(),
@@ -82,6 +83,13 @@ internal static class UiRegressionChecks
                     Require(boxes.Length >= 2, "Device checkboxes were not realized.");
                     Require(boxes.All(box => ColorOf(box.Foreground) == theme.Text),
                         "Device labels do not follow the theme.");
+                    if (edge)
+                    {
+                        var options = (FrameworkElement)window.FindName("EdgeOptionsPanel");
+                        Require(options.IsVisible && options.ActualHeight > 0, "Edge settings are hidden.");
+                        foreach (var label in Descendants<TextBlock>(options))
+                            Require(label.ActualWidth >= label.DesiredSize.Width, "Edge settings text clipped.");
+                    }
                 }
                 else if (surface == "icon")
                 {
@@ -102,7 +110,7 @@ internal static class UiRegressionChecks
                     Require(Descendants<TextBlock>(list).Where(t => t.Text == "Mouse fixture")
                         .All(t => ColorOf(t.Foreground) == theme.Text), "Device name has the wrong color.");
                 }
-                Capture((FrameworkElement)window.Content, $"{surface}-{theme.Id}");
+                Capture((FrameworkElement)window.Content, $"{surface}{(edge ? "-edge" : "")}-{theme.Id}");
             }
         }
         finally { window.Close(); }

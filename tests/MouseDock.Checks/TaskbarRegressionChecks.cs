@@ -35,8 +35,9 @@ internal static class TaskbarRegressionChecks
             var foreground = GetForegroundWindow();
             for (int i = 0; i < 3; i++)
             {
-                // Reproduce Explorer raising the taskbar above an already-positioned strip.
-                SetWindowPos(taskbar, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
+                // Place the fixture below Explorer without relying on Explorer accepting a raise.
+                Require(SetWindowPos(handle, taskbar, 0, 0, 0, 0, 0x0013),
+                    "Could not place the strip underneath the taskbar.");
                 Require(Above(taskbar, handle), "The taskbar cover scenario was not reproduced.");
                 popup.Show();
                 var popupHandle = new WindowInteropHelper(popup).Handle;

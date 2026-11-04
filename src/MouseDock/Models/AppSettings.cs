@@ -60,6 +60,10 @@ namespace MouseDock.Models
         public string SurfaceMode { get; set; } = "taskbar";
 
         public double TaskbarOffset { get; set; } = 160;
+        public bool ShowBatteryNumber { get; set; } = true;
+        public string EdgeGlyphColor { get; set; } = "#F5F5F5";
+        public double EdgeVerticalPosition { get; set; } = 0.5;
+        public double EdgeInset { get; set; } = 12;
 
         /// <summary>悬浮图标样式：photo（照片）/ tile（圆角方块）/ ring（环形刻度）/ pill（横向胶囊）/ battery（经典电池）。</summary>
         public string IconStyle { get; set; } = "photo";
@@ -122,6 +126,10 @@ namespace MouseDock.Models
                 LowBatteryWarn = LowBatteryWarn,
                 SurfaceMode = SurfaceMode,
                 TaskbarOffset = TaskbarOffset,
+                ShowBatteryNumber = ShowBatteryNumber,
+                EdgeGlyphColor = EdgeGlyphColor,
+                EdgeVerticalPosition = EdgeVerticalPosition,
+                EdgeInset = EdgeInset,
                 IconStyle = IconStyle,
                 IconShape = IconShape,
                 DockBackground = DockBackground,

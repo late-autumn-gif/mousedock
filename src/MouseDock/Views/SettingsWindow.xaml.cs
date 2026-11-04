@@ -102,6 +102,12 @@ namespace MouseDock.Views
                 ApplySurfaceButtons(s.SurfaceMode);
                 TaskbarOffsetSlider.Value = Math.Clamp(s.TaskbarOffset, 0, 1200);
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}";
+                BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
+                EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(s.EdgeGlyphColor));
+                EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
+                EdgePositionValue.Text = $"{EdgePositionSlider.Value:0}";
+                EdgeInsetSlider.Value = double.IsFinite(s.EdgeInset) ? Math.Clamp(s.EdgeInset, 0, 160) : 12;
+                EdgeInsetValue.Text = $"{EdgeInsetSlider.Value:0}";
                 if (TopmostBox != null) TopmostBox.IsChecked = s.AlwaysOnTop;
                 if (ClickThroughBox != null) ClickThroughBox.IsChecked = s.ClickThrough;
 
@@ -421,6 +427,7 @@ namespace MouseDock.Views
             if (!(sender is Button b) || !(b.Tag is string tag) || !int.TryParse(tag, out int pct)) return;
             App.Settings.LowBatteryWarn = pct;
             App.Taskbar?.UpdateDevices();
+            App.Edge?.UpdateDevices();
             ApplyWarnButtons(pct);
             App.SaveSettings();
         }
@@ -456,6 +463,60 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
+        private void OnBatteryNumberChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.ShowBatteryNumber = BatteryNumberBox.IsChecked == true;
+            App.Taskbar?.UpdateDevices();
+            App.Edge?.UpdateDevices();
+            App.SaveSettings();
+        }
+
+        private void OnEdgePositionChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loading || EdgePositionValue == null) return;
+            App.Settings.EdgeVerticalPosition = Math.Round(e.NewValue) / 100;
+            EdgePositionValue.Text = $"{e.NewValue:0}";
+            App.Edge?.UpdateAnchor();
+            App.SaveSettings();
+        }
+
+        private void OnEdgeInsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loading || EdgeInsetValue == null) return;
+            App.Settings.EdgeInset = Math.Round(e.NewValue);
+            EdgeInsetValue.Text = $"{e.NewValue:0}";
+            App.Edge?.UpdateAnchor();
+            App.SaveSettings();
+        }
+
+        private sealed class DialogOwner : System.Windows.Forms.IWin32Window
+        {
+            public IntPtr Handle { get; }
+            public DialogOwner(Window window) { Handle = new System.Windows.Interop.WindowInteropHelper(window).Handle; }
+        }
+
+        private void OnPickEdgeColor(object sender, RoutedEventArgs e)
+        {
+            var color = ScreenEdgeWindow.ResolveGlyphColor(App.Settings.EdgeGlyphColor);
+            using var dialog = new System.Windows.Forms.ColorDialog
+            {
+                FullOpen = true, Color = System.Drawing.Color.FromArgb(color.R, color.G, color.B)
+            };
+            if (dialog.ShowDialog(new DialogOwner(this)) != System.Windows.Forms.DialogResult.OK) return;
+            ApplyEdgeColor($"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
+        }
+
+        private void OnResetEdgeColor(object sender, RoutedEventArgs e) => ApplyEdgeColor("#F5F5F5");
+
+        private void ApplyEdgeColor(string color)
+        {
+            App.Settings.EdgeGlyphColor = color;
+            EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(color));
+            App.Edge?.UpdateDevices();
+            App.SaveSettings();
+        }
+
         private void OnTopmostChanged(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
@@ -481,7 +542,10 @@ namespace MouseDock.Views
         {
             if (string.IsNullOrEmpty(mode)) mode = "dock";
             TaskbarPositionRow.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
-            var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon"), (SurfaceTaskbar, "taskbar") };
+            EdgeOptionsPanel.Visibility = mode == "edge" ? Visibility.Visible : Visibility.Collapsed;
+            BatteryNumberBox.Visibility = mode == "edge" || mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
+            var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon"),
+                (SurfaceTaskbar, "taskbar"), (SurfaceEdge, "edge") };
             foreach (var (btn, m) in buttons)
             {
                 if (btn == null) continue;

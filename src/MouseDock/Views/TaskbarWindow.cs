@@ -17,6 +17,7 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly Viewbox _viewport = new Viewbox { Stretch = Stretch.Uniform };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        private bool _vertical;
 
         public TaskbarWindow()
         {
@@ -60,6 +61,9 @@ namespace MouseDock.Views
         public void UpdateDevices()
         {
             _devices.Children.Clear();
+            TaskbarAnchor.TryGet(out _, out uint edge, out _, out _);
+            _vertical = edge == 0 || edge == 2;
+            _devices.Orientation = _vertical ? Orientation.Vertical : Orientation.Horizontal;
             bool light = false;
             try
             {
@@ -69,20 +73,8 @@ namespace MouseDock.Views
             catch { }
             foreach (var device in App.SelectedDevices.Take(5))
             {
-                string status = device.HasLevel ? device.Level + "%" : "电量未知";
-                if (device.Charging) status += " · 充电中";
-                if (device.IsStale) status += " · 上次读数";
-                var ring = new DeviceBatteryRing
-                {
-                    Kind = device.Kind, Level = device.Level, Charging = device.Charging,
-                    LowBatteryThreshold = App.Settings.LowBatteryWarn,
-                    GlyphBrush = light ? Brushes.Black : Brushes.WhiteSmoke,
-                    Opacity = device.ValueOpacity,
-                    ToolTip = device.Name + "\n" + status
-                };
-                AutomationProperties.SetName(ring, device.KindLabel + " · " + device.Name + " · " + status);
-                ToolTipService.SetInitialShowDelay(ring, 300);
-                _devices.Children.Add(ring);
+                _devices.Children.Add(new DeviceBatteryBadge(device, light ? Brushes.Black : Brushes.WhiteSmoke,
+                    App.Settings.ShowBatteryNumber, _vertical, App.Settings.LowBatteryWarn));
             }
             UpdateAnchor();
         }
@@ -97,8 +89,9 @@ namespace MouseDock.Views
             }
             Opacity = suppressed || _devices.Children.Count == 0 ? 0 : 1;
             IsHitTestVisible = Opacity > 0;
-            _devices.Orientation = edge == 0 || edge == 2 ? Orientation.Vertical : Orientation.Horizontal;
-            var size = new Size(Math.Max(1, _devices.Children.Count) * 40, 40);
+            if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
+            double length = !App.Settings.ShowBatteryNumber ? 40 : _vertical ? 56 : 72;
+            var size = new Size(Math.Max(1, _devices.Children.Count) * length, 40);
             var placement = TaskbarPlacement.Calculate(bounds, edge, size, App.Settings.TaskbarOffset, dpi);
             TaskbarAnchor.Move(this, placement);
         }

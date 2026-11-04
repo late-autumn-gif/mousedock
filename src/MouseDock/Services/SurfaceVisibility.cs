@@ -7,8 +7,11 @@ namespace MouseDock.Services
         private readonly (string Mode, Window Window)[] _windows;
 
         public SurfaceVisibility(Window dock, Window mini, Window icon, Window taskbar)
+            : this(dock, mini, icon, taskbar, null) { }
+
+        public SurfaceVisibility(Window dock, Window mini, Window icon, Window taskbar, Window edge)
         {
-            _windows = new[] { ("dock", dock), ("mini", mini), ("icon", icon), ("taskbar", taskbar) };
+            _windows = new[] { ("dock", dock), ("mini", mini), ("icon", icon), ("taskbar", taskbar), ("edge", edge) };
         }
 
         public Window GetWindow(string mode)

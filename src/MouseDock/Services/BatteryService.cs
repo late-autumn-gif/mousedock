@@ -385,6 +385,17 @@ namespace MouseDock.Services
             foreach (var incoming in snapshot)
             {
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
+                if (!incoming.Connected)
+                {
+                    if (existing != null)
+                    {
+                        _mirror.Remove(existing);
+                        Devices.Remove(existing);
+                    }
+                    _misses.Remove(incoming.Id);
+                    _absent.Remove(incoming.Id);
+                    continue;
+                }
 
                 // 设备还在，只是这一次没读到（厂商通道忙/设备刚唤醒）：
                 // 保留上一次的有效读数，避免百分比闪成「—」。

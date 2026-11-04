@@ -45,6 +45,9 @@ namespace MouseDock.Services.Detection
             public ushort Usage; public ushort UsagePage;
             public ushort InputReportByteLength; public ushort OutputReportByteLength; public ushort FeatureReportByteLength;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)] public ushort[] Reserved;
+            public ushort NumberLinkCollectionNodes, NumberInputButtonCaps, NumberInputValueCaps, NumberInputDataIndices;
+            public ushort NumberOutputButtonCaps, NumberOutputValueCaps, NumberOutputDataIndices;
+            public ushort NumberFeatureButtonCaps, NumberFeatureValueCaps, NumberFeatureDataIndices;
         }
 
         [DllImport("hid.dll")] private static extern bool HidD_GetAttributes(IntPtr h, ref HIDD_ATTRIBUTES a);
@@ -124,7 +127,27 @@ namespace MouseDock.Services.Detection
 
             LastDiagnostics.Add($"接口={interfaces} 打开失败={noOpen} 未运行={notRunning} 用法不符={kindRejected} 噪音={noise} 采集={collected} 归并={buckets.Count}");
 
-            return buckets.Values.Select(b => b.ToDevice()).Where(d => d != null).ToList();
+            // Query once per keyboard after merging its standard HID collections.
+            foreach (var bucket in buckets.Values)
+            {
+                if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product,
+                    App.Settings?.SafeMode ?? false);
+                if (result.Level >= 0)
+                {
+                    bucket.Battery = result.Level;
+                    bucket.Charging = result.Charging;
+                }
+                LastDiagnostics.Add($"MCHOSE K87 V3 QHW: battery={result.Level}, charging={result.Charging}");
+            }
+
+            return buckets.Values.Select(b =>
+            {
+                var rk = RkKeyboardProtocol.TryRead(b.Vid, b.Pid, App.Settings?.SafeMode ?? false);
+                if (rk != null)
+                    LastDiagnostics.Add($"RK R98Pro V2: connected={rk.Connected}, battery={rk.Level}");
+                return rk ?? b.ToDevice();
+            }).Where(d => d != null).ToList();
         }
 
         public static List<string> LastDiagnostics { get; } = new List<string>();
@@ -424,6 +447,7 @@ namespace MouseDock.Services.Detection
             public readonly HashSet<string> Interfaces = new HashSet<string>();
             public DeviceKind Kind = DeviceKind.Other;
             public int Battery = -1;
+            public bool Charging;
             public readonly Dictionary<DeviceKind, int> Counts = new Dictionary<DeviceKind, int>();
 
             public DetectedDevice ToDevice()
@@ -453,7 +477,7 @@ namespace MouseDock.Services.Detection
                 }
 
                 // 罗技 HID++ 自报的型号最可信，压过接收器的占位名（「罗技无线接收器」）
-                bool charging = false;
+                bool charging = Charging;
                 if (Vid == 0x046D)
                 {
                     (int Battery, string Name, bool Charging) hint;

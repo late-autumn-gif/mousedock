@@ -52,7 +52,30 @@ internal static class Program
             ("All five mini cells stay inside the window", AuditChecks.FifthMiniCell),
             ("Clearing custom backgrounds restores the theme", AuditChecks.ClearBackground),
             ("Taskbar activation cannot permanently cover the rings", TaskbarRegressionChecks.Activation),
-            ("Tray clicks keep the pinned taskbar surface visible", UiRegressionChecks.PinnedTrayClick)
+            ("Tray clicks keep the pinned taskbar surface visible", UiRegressionChecks.PinnedTrayClick),
+            ("K87 query matches the verified battery-only command", MchoseKeyboardChecks.Query),
+            ("K87 validates battery responses and charging", MchoseKeyboardChecks.Responses),
+            ("K87 rejects unrelated devices and interfaces", MchoseKeyboardChecks.Identity),
+            ("K87 safe mode never opens a device", MchoseKeyboardChecks.SafeMode),
+            ("K87 battery and charging reach the detected device", MchoseKeyboardChecks.Merge),
+            ("Battery numbers update live without percent signs", EdgeDisplayChecks.Badge),
+            ("Charging displays a separate bolt including unknown battery", EdgeDisplayChecks.Charging),
+            ("Edge preferences survive clone and serialization", EdgeDisplayChecks.SettingsRoundTrip),
+            ("Right edge layout handles DPI and small screens", EdgeDisplayChecks.Placement),
+            ("Right edge remains exclusive with other surfaces", EdgeDisplayChecks.Exclusive),
+            ("Battery badge renders all values and colors across DPI scales", EdgeDisplayChecks.Visuals),
+            ("App edge mode respects selection color and live settings", EdgeDisplayChecks.WindowIntegration),
+            ("Edge settings remain readable in both themes", () => UiRegressionChecks.ThemeForeground("settings", true)),
+            ("R98 queries match verified read-only commands", R98KeyboardChecks.Queries),
+            ("R98 validates exact model identity", R98KeyboardChecks.Identity),
+            ("R98 validates keyboard connection state", R98KeyboardChecks.Connection),
+            ("R98 safe mode never opens hardware", R98KeyboardChecks.SafeMode),
+            ("R98 decodes battery and rejects corrupt replies", R98KeyboardChecks.Battery),
+            ("Offline RK receiver skips keyboard-only queries", ConnectionSwitchChecks.ReceiverOffline),
+            ("Online RK receiver still validates model and battery", ConnectionSwitchChecks.ReceiverOnline),
+            ("Disconnected channels cannot supply old readings", ConnectionSwitchChecks.OfflineMerge),
+            ("Detection preserves explicit offline evidence", ConnectionSwitchChecks.OfflinePropagation),
+            ("Connection switches immediately remove the old channel", ConnectionSwitchChecks.ImmediateRemoval)
         };
         int failures = 0;
         foreach (var (name, check) in checks)
@@ -134,12 +157,12 @@ internal static class Program
         try
         {
             var strip = (StackPanel)((Viewbox)window.Content).Child;
-            var rings = strip.Children.Cast<DeviceBatteryRing>().ToArray();
+            var rings = strip.Children.Cast<DeviceBatteryBadge>().Select(b => b.Ring).ToArray();
             Require(rings.Length == 2, "Only selected connected devices may appear.");
             Require(rings[0].Kind == DeviceKind.Mouse && rings[0].Level == 75, "Mouse ring lost its identity.");
             Require(rings[1].Kind == DeviceKind.Keyboard && rings[1].Level == 30, "Keyboard ring lost its identity.");
-            Require(rings.All(r => r.Children.Count == 1 && r.Children[0] is MouseDock.Controls.DeviceGlyph),
-                "Each ring should contain only its device glyph, with no numeric label.");
+            Require(rings.All(r => r.Children[0] is MouseDock.Controls.DeviceGlyph),
+                "Each ring should retain its device glyph.");
             window.Show();
             window.UpdateLayout();
             window.UpdateAnchor();
@@ -147,12 +170,12 @@ internal static class Program
             Require(window.ActualWidth > 0 && window.ActualHeight > 0, "The native taskbar window must have a usable size.");
             battery.Devices[0].Level = 12;
             window.UpdateDevices();
-            Require(((DeviceBatteryRing)strip.Children[0]).Level == 12, "Battery changes must refresh.");
+            Require(((DeviceBatteryBadge)strip.Children[0]).Ring.Level == 12, "Battery changes must refresh.");
 
-            strip.Measure(new Size(80, 40));
-            strip.Arrange(new Rect(0, 0, 80, 40));
+            strip.Measure(new Size(144, 40));
+            strip.Arrange(new Rect(0, 0, 144, 40));
             strip.UpdateLayout();
-            var bitmap = new RenderTargetBitmap(320, 160, 384, 384, PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap(576, 160, 384, 384, PixelFormats.Pbgra32);
             bitmap.Render(strip);
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(bitmap));
