@@ -17,6 +17,7 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly Viewbox _viewport = new Viewbox { Stretch = Stretch.Uniform };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        private TaskbarChangeMonitor _changeMonitor;
         private bool _vertical;
 
         public TaskbarWindow()
@@ -37,8 +38,18 @@ namespace MouseDock.Views
             Loaded += (_, __) => { UpdateDevices(); UpdateAnchor(); };
             IsVisibleChanged += (_, __) =>
             {
-                if (IsVisible) { _anchorTimer.Start(); UpdateAnchor(); }
-                else _anchorTimer.Stop();
+                if (IsVisible)
+                {
+                    _changeMonitor ??= new TaskbarChangeMonitor(Dispatcher, UpdateAnchor);
+                    _anchorTimer.Start();
+                    UpdateAnchor();
+                }
+                else
+                {
+                    _anchorTimer.Stop();
+                    _changeMonitor?.Dispose();
+                    _changeMonitor = null;
+                }
             };
             _anchorTimer.Tick += (_, __) => UpdateAnchor();
             App.Battery.Refreshed += OnRefreshed;
@@ -51,6 +62,8 @@ namespace MouseDock.Views
             Closed += (_, __) =>
             {
                 _anchorTimer.Stop();
+                _changeMonitor?.Dispose();
+                _changeMonitor = null;
                 App.Battery.Refreshed -= OnRefreshed;
             };
             UpdateDevices();
@@ -85,6 +98,7 @@ namespace MouseDock.Views
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi, out bool suppressed))
             {
                 Opacity = 0;
+                IsHitTestVisible = false;
                 return;
             }
             Opacity = suppressed || _devices.Children.Count == 0 ? 0 : 1;

@@ -27,6 +27,7 @@ namespace MouseDock.Services
         [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int count);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
         [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr window, int index);
@@ -69,8 +70,19 @@ namespace MouseDock.Services
                 var name = new System.Text.StringBuilder(128);
                 GetClassName(foreground, name, name.Capacity);
                 var className = name.ToString();
-                // The desktop also covers its monitor and is not a full-screen application.
-                if (TaskbarPlacement.IsFullscreen(Convert(foregroundRect), monitor, IsZoomed(foreground), className))
+                // Shell flyouts can have a monitor-sized host even when their content is a small panel.
+                string processName = null;
+                if (Convert(foregroundRect).Contains(monitor))
+                {
+                    try
+                    {
+                        GetWindowThreadProcessId(foreground, out uint processId);
+                        using var process = System.Diagnostics.Process.GetProcessById((int)processId);
+                        processName = process.ProcessName;
+                    }
+                    catch { }
+                }
+                if (TaskbarPlacement.IsFullscreen(Convert(foregroundRect), monitor, IsZoomed(foreground), className, processName))
                     suppressed = true;
             }
             return bounds.Width > 0 && bounds.Height > 0;

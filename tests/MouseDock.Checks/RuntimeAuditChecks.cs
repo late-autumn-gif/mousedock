@@ -79,7 +79,16 @@ internal static class RuntimeAuditChecks
                 if (!process.HasExited) { process.Kill(); process.WaitForExit(5000); }
                 process.Dispose();
             }
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            // The restarted command can briefly retain its working directory after writing the marker.
+            Require(SpinWait.SpinUntil(() =>
+            {
+                try
+                {
+                    if (Directory.Exists(root)) Directory.Delete(root, true);
+                    return true;
+                }
+                catch (IOException) { return false; }
+            }, 5000), "The restarted fixture did not release its temporary directory.");
         }
     }
 

@@ -68,6 +68,8 @@ internal static class Program
             ("All five mini cells stay inside the window", AuditChecks.FifthMiniCell),
             ("Clearing custom backgrounds restores the theme", AuditChecks.ClearBackground),
             ("Taskbar activation cannot permanently cover the rings", TaskbarRegressionChecks.Activation),
+            ("Taskbar shell overlays are not fullscreen applications", TaskbarRegressionChecks.ShellFullscreen),
+            ("Taskbar order recovers from native events without polling", TaskbarRegressionChecks.ImmediateOrderRecovery),
             ("Tray clicks keep the pinned taskbar surface visible", UiRegressionChecks.PinnedTrayClick),
             ("K87 query matches the verified battery-only command", MchoseKeyboardChecks.Query),
             ("K87 validates battery responses and charging", MchoseKeyboardChecks.Responses),
@@ -245,7 +247,7 @@ internal static class Program
         Require(method != null, "Missing distinction between maximized and fullscreen windows.");
         var monitor = new Rect(0, 0, 1920, 1080);
         bool Evaluate(Rect window, bool maximized, string className) =>
-            (bool)method!.Invoke(null, [window, monitor, maximized, className])!;
+            (bool)method!.Invoke(null, [window, monitor, maximized, className, null])!;
         Require(!Evaluate(monitor, true, "OrdinaryApp"), "A maximized app must not hide taskbar rings.");
         Require(Evaluate(monitor, false, "GameWindow"), "A fullscreen app must hide taskbar rings.");
         Require(!Evaluate(monitor, false, "WorkerW"), "The desktop must not hide taskbar rings.");
