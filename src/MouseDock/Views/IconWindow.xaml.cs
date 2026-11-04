@@ -6,7 +6,6 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
 using MouseDock.Models;
 using MouseDock.Services;
 
@@ -37,7 +36,7 @@ namespace MouseDock.Views
             {
                 ApplyMode(App.Settings.IconMode, false);
                 UpdateValue();
-                BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
+                RootGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
             };
         }
 
@@ -190,22 +189,11 @@ namespace MouseDock.Views
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
                 path = App.DefaultPhotoAsset;
 
-            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
-            {
-                PhotoBrush.ImageSource = null;
-                return;
-            }
-
-            var bmp = new BitmapImage();
-            bmp.BeginInit();
-            bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.DecodePixelWidth = 2048;
-            bmp.UriSource = new Uri(path);
-            bmp.EndInit();
-            bmp.Freeze();
+            var bmp = Palette.Load(path, 2048);
+            PhotoBrush.ImageSource = bmp;
+            if (bmp == null) return;
 
             RenderOptions.SetBitmapScalingMode(PhotoLayer, BitmapScalingMode.HighQuality);
-            PhotoBrush.ImageSource = bmp;
             PhotoBrush.Stretch = Stretch.UniformToFill;
             ApplyPhotoTransform();
         }

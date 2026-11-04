@@ -66,16 +66,9 @@ namespace MouseDock.Views
         /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
         public void ApplyBackground(string path)
         {
-            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+            var bmp = Palette.Load(path, 2048);
+            if (bmp != null)
             {
-                var bmp = new System.Windows.Media.Imaging.BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bmp.DecodePixelWidth = 2048;
-                bmp.UriSource = new Uri(path);
-                bmp.EndInit();
-                bmp.Freeze();
-
                 RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
                 Root.Background = new System.Windows.Media.ImageBrush(bmp)
                 {

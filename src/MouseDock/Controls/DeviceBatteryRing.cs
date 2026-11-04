@@ -44,6 +44,23 @@ namespace MouseDock.Controls
             glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(Kind)) { Source = this });
             glyph.SetBinding(DeviceGlyph.GlyphBrushProperty, new Binding(nameof(GlyphBrush)) { Source = this });
             Children.Add(glyph);
+            var bolt = new TextBlock
+            {
+                Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 12, Width = 12, Height = 14, Margin = new Thickness(0, 0, 1, 0),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+                IsHitTestVisible = false,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    Color = Colors.Black, BlurRadius = 2, ShadowDepth = 0, Opacity = 0.85
+                }
+            };
+            bolt.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(GlyphBrush)) { Source = this });
+            bolt.SetBinding(VisibilityProperty, new Binding(nameof(Charging))
+            {
+                Source = this, Converter = new BooleanToVisibilityConverter()
+            });
+            Children.Add(bolt);
         }
 
         protected override void OnRender(DrawingContext dc)

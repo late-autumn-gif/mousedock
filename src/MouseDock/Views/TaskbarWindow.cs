@@ -1,9 +1,11 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -17,6 +19,9 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly Viewbox _viewport = new Viewbox { Stretch = Stretch.Uniform };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        private bool _vertical;
+        private bool _closingRequested, _hostLossQueued;
+        public event EventHandler HostLost;
 
         public TaskbarWindow()
         {
@@ -27,17 +32,29 @@ namespace MouseDock.Views
             Background = Brushes.Transparent;
             ShowInTaskbar = false;
             ShowActivated = false;
-            Topmost = true;
+            Topmost = false;
             Width = 40;
             Height = 40;
             _viewport.Child = _devices;
             Content = _viewport;
-            SourceInitialized += (_, __) => TaskbarAnchor.Configure(this);
+            SourceInitialized += (_, __) =>
+            {
+                TaskbarAnchor.Configure(this);
+                var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+                if (source != null) source.Disposed += (_, __) => OnHostDisposed();
+            };
             Loaded += (_, __) => { UpdateDevices(); UpdateAnchor(); };
             IsVisibleChanged += (_, __) =>
             {
-                if (IsVisible) { _anchorTimer.Start(); UpdateAnchor(); }
-                else _anchorTimer.Stop();
+                if (IsVisible)
+                {
+                    _anchorTimer.Start();
+                    UpdateAnchor();
+                }
+                else
+                {
+                    _anchorTimer.Stop();
+                }
             };
             _anchorTimer.Tick += (_, __) => UpdateAnchor();
             App.Battery.Refreshed += OnRefreshed;
@@ -57,9 +74,32 @@ namespace MouseDock.Views
 
         private void OnRefreshed(object sender, EventArgs e) => UpdateDevices();
 
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            base.OnClosing(e);
+            _closingRequested = !e.Cancel;
+        }
+
+        private void OnHostDisposed()
+        {
+            _anchorTimer.Stop();
+            App.Battery.Refreshed -= OnRefreshed;
+            if (!_closingRequested && !_hostLossQueued && !Dispatcher.HasShutdownStarted)
+            {
+                _hostLossQueued = true;
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    if (!_closingRequested) HostLost?.Invoke(this, EventArgs.Empty);
+                }));
+            }
+        }
+
         public void UpdateDevices()
         {
             _devices.Children.Clear();
+            TaskbarAnchor.TryGet(out _, out uint edge, out _);
+            _vertical = edge == 0 || edge == 2;
+            _devices.Orientation = _vertical ? Orientation.Vertical : Orientation.Horizontal;
             bool light = false;
             try
             {
@@ -69,20 +109,8 @@ namespace MouseDock.Views
             catch { }
             foreach (var device in App.Battery.VisibleDevices)
             {
-                string status = device.HasLevel ? device.Level + "%" : "电量未知";
-                if (device.IsChargingActive) status += " · 充电中";
-                if (device.IsStale) status += " · 上次读数";
-                var ring = new DeviceBatteryRing
-                {
-                    Kind = device.Kind, Level = device.Level, Charging = device.IsChargingActive,
-                    LowBatteryThreshold = App.Settings.LowBatteryWarn,
-                    GlyphBrush = light ? Brushes.Black : Brushes.WhiteSmoke,
-                    Opacity = device.ValueOpacity,
-                    ToolTip = device.Name + "\n" + status
-                };
-                AutomationProperties.SetName(ring, device.KindLabel + " · " + device.Name + " · " + status);
-                ToolTipService.SetInitialShowDelay(ring, 300);
-                _devices.Children.Add(ring);
+                _devices.Children.Add(new DeviceBatteryBadge(device, light ? Brushes.Black : Brushes.WhiteSmoke,
+                    App.Settings.ShowBatteryNumber, _vertical, App.Settings.LowBatteryWarn));
             }
             UpdateAnchor();
         }
@@ -90,16 +118,20 @@ namespace MouseDock.Views
         public void UpdateAnchor()
         {
             if (!IsVisible) return;
-            if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi, out bool suppressed))
+            bool attached = TaskbarAnchor.AttachToTaskbar(this);
+            if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
                 Opacity = 0;
                 IsHitTestVisible = false;
                 return;
             }
-            Opacity = suppressed || _devices.Children.Count == 0 ? 0 : 1;
+            // DPI 上下文对不上时 SetParent 会失败：退回原来的浮窗行为，总要看得见电量。
+            Topmost = !attached;
+            Opacity = _devices.Children.Count == 0 ? 0 : 1;
             IsHitTestVisible = Opacity > 0;
-            _devices.Orientation = edge == 0 || edge == 2 ? Orientation.Vertical : Orientation.Horizontal;
-            var size = new Size(Math.Max(1, _devices.Children.Count) * 40, 40);
+            if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
+            double length = !App.Settings.ShowBatteryNumber ? 40 : _vertical ? 56 : 72;
+            var size = new Size(Math.Max(1, _devices.Children.Count) * length, 40);
             var placement = TaskbarPlacement.Calculate(bounds, edge, size, App.Settings.TaskbarOffset, dpi);
             TaskbarAnchor.Move(this, placement);
         }

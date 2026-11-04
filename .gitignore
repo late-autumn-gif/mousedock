@@ -49,3 +49,6 @@ tools/hfp-ag.ps1
 tools/hfp-takeover.ps1
 tools/parse-pcap.ps1
 tools/parse-pcap2.ps1
+
+# local publish output (build.ps1)
+app/

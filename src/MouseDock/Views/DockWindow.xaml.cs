@@ -1,8 +1,10 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -27,15 +29,20 @@ namespace MouseDock.Views
             nameof(TrackBrush), typeof(Brush), typeof(DockWindow),
             new PropertyMetadata(new SolidColorBrush(Color.FromArgb(0x1A, 255, 255, 255))));
 
+        public static readonly DependencyProperty LowBatteryThresholdProperty = DependencyProperty.Register(
+            nameof(LowBatteryThreshold), typeof(int), typeof(DockWindow), new PropertyMetadata(20));
+
         public Color AccentColor { get => (Color)GetValue(AccentColorProperty); set => SetValue(AccentColorProperty, value); }
         public Color Accent2Color { get => (Color)GetValue(Accent2ColorProperty); set => SetValue(Accent2ColorProperty, value); }
         public Brush GlyphBrush { get => (Brush)GetValue(GlyphBrushProperty); set => SetValue(GlyphBrushProperty, value); }
         public Brush TrackBrush { get => (Brush)GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
+        public int LowBatteryThreshold { get => (int)GetValue(LowBatteryThresholdProperty); set => SetValue(LowBatteryThresholdProperty, value); }
 
         public DockWindow()
         {
             InitializeComponent();
             _themeBackground = Root.Background;
+            LowBatteryThreshold = App.Settings.LowBatteryWarn;
             App.Battery.Refreshed += (_, __) => RefreshDevices();
             App.Battery.SourceChanged += (_, __) => RefreshDevices();
             RefreshDevices();
@@ -54,16 +61,9 @@ namespace MouseDock.Views
         /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
         public void ApplyBackground(string path)
         {
-            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+            var bmp = Palette.Load(path, 2048);
+            if (bmp != null)
             {
-                var bmp = new System.Windows.Media.Imaging.BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bmp.DecodePixelWidth = 2048;      // 按 2K 解码，够用又不吃内存
-                bmp.UriSource = new Uri(path);
-                bmp.EndInit();
-                bmp.Freeze();
-
                 // 高质量重采样，缩放时边缘不糊
                 RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
                 RenderOptions.SetEdgeMode(Root, EdgeMode.Unspecified);
@@ -110,6 +110,8 @@ namespace MouseDock.Views
         {
             var text = new SolidColorBrush(theme.Text);
             text.Freeze();
+            Foreground = text;
+            LowBatteryThreshold = App.Settings.LowBatteryWarn;
             TextElement.SetForeground(Root, text);
 
             GlyphBrush = new SolidColorBrush(Palette.Mix(theme.Text, theme.Accent, 0.35));
@@ -158,18 +160,6 @@ namespace MouseDock.Views
                 BgBottomStop.Color = theme.BgBottom;
                 LogoStop1.Color = theme.Accent;
                 LogoStop2.Color = theme.Accent2;
-            }
-
-
-
-            // 低电量行提示：把 <20% 的百分比染成警示色
-            foreach (var tb in FindVisualChildren<TextBlock>(DeviceList))
-            {
-                if (tb.Name != "Pct") continue;
-                if (tb.DataContext is DeviceInfo dev)
-                    tb.Foreground = (dev.HasLevel && dev.Level <= 20)
-                        ? new SolidColorBrush(Color.FromRgb(0xFF, 0x8A, 0x8A))
-                        : text;
             }
         }
 
@@ -255,17 +245,25 @@ namespace MouseDock.Views
             App.ShowQuickMenu(this);
         }
 
-        private static System.Collections.Generic.IEnumerable<T> FindVisualChildren<T>(DependencyObject root)
-            where T : DependencyObject
+    }
+
+    public sealed class PercentageWarningConverter : IMultiValueConverter
+    {
+        private static readonly Brush WarningBrush = CreateWarningBrush();
+
+        private static Brush CreateWarningBrush()
         {
-            if (root == null) yield break;
-            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
-            for (int i = 0; i < count; i++)
-            {
-                var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
-                if (child is T typed) yield return typed;
-                foreach (var nested in FindVisualChildren<T>(child)) yield return nested;
-            }
+            var brush = new SolidColorBrush(Color.FromRgb(0xFF, 0x8A, 0x8A));
+            brush.Freeze();
+            return brush;
         }
+
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
+            values[0] is int level && level >= 0 && values[1] is int threshold && level <= threshold
+                ? WarningBrush
+                : values[2];
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+            throw new NotSupportedException();
     }
 }

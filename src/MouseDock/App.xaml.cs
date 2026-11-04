@@ -21,6 +21,7 @@ namespace MouseDock
         private static Mutex _mutex;
         private static WinForms.NotifyIcon _tray;
         private static EventWaitHandle _showSignal;
+        private static bool _exiting;
 
         public static AppSettings Settings { get; private set; } = new AppSettings();
         public static ThemePreset Theme { get; private set; } = ThemePreset.Presets[2];
@@ -31,6 +32,7 @@ namespace MouseDock
         public static MiniWindow Mini { get; private set; }
         public static IconWindow Icon { get; private set; }
         public static TaskbarWindow Taskbar { get; private set; }
+        public static ScreenEdgeWindow Edge { get; private set; }
         public static SettingsWindow SettingsView { get; private set; }
 
         public static List<string> CharacterAssets { get; } = new List<string>();
@@ -41,7 +43,7 @@ namespace MouseDock
         public static DeviceInfo PrimaryDevice =>
             Battery?.VisibleDevices.FirstOrDefault();
 
-        private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar);
+        private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar, Edge);
         private static DispatcherTimer _trayClickTimer;
 
         protected override void OnStartup(StartupEventArgs e)
@@ -203,7 +205,8 @@ namespace MouseDock
             Dock = new DockWindow();
             Mini = new MiniWindow();
             Icon = new IconWindow();
-            Taskbar = new TaskbarWindow();
+            Taskbar = CreateTaskbarWindow();
+            Edge = new ScreenEdgeWindow();
             SettingsView = new SettingsWindow();
 
             PlaceWindow(Dock, Settings.DockX, Settings.DockY, 0.72, 0.30);
@@ -223,6 +226,7 @@ namespace MouseDock
             if (Settings.ShowMini && !StartHidden) Mini.Show();
             if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
             if (Settings.SurfaceMode == "taskbar" && !StartHidden) Taskbar.Show();
+            if (Settings.SurfaceMode == "edge" && !StartHidden) Edge.Show();
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -314,6 +318,7 @@ namespace MouseDock
             menu.Items.Add("切换到迷你窗", null, (_, __) => SetSurface("mini"));
             menu.Items.Add("切换到悬浮图标", null, (_, __) => SetSurface("icon"));
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
+            menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
@@ -392,9 +397,11 @@ namespace MouseDock
 
             try
             {
-                var previousIcon = _tray.Icon;
-                _tray.Icon = RenderTrayIcon(level, charging, low && _trayBlinkOn);
-                previousIcon?.Dispose();
+                var replacement = RenderTrayIcon(level, charging, low && _trayBlinkOn);
+                var previous = _tray.Icon;
+                try { _tray.Icon = replacement; }
+                catch { replacement.Dispose(); throw; }
+                previous?.Dispose();
                 string trayText = level >= 0
                     ? $"MouseDock · {dev.Name} {level}%" + (charging ? "（充电中）" : "")
                     : charging ? $"MouseDock · {dev.Name}（充电中，电量未知）" : "MouseDock · 电量，一起看见（双击唤起）";
@@ -470,8 +477,18 @@ namespace MouseDock
                     (size - sz.Height) / 2f + 1f);
                 }
             }
-            IntPtr handle = bmp.GetHicon();
-            try { using var borrowed = System.Drawing.Icon.FromHandle(handle); return (System.Drawing.Icon)borrowed.Clone(); }
+            return OwnBitmapIcon(bmp);
+        }
+
+        /// <summary>把位图转成自持句柄的图标：FromHandle 只是借用，原句柄要自己销毁。</summary>
+        private static System.Drawing.Icon OwnBitmapIcon(System.Drawing.Bitmap bitmap)
+        {
+            IntPtr handle = bitmap.GetHicon();
+            try
+            {
+                using var borrowed = System.Drawing.Icon.FromHandle(handle);
+                return (System.Drawing.Icon)borrowed.Clone();
+            }
             finally { DestroyIcon(handle); }
         }
 
@@ -496,7 +513,7 @@ namespace MouseDock
                 {
                     using var bmp = new System.Drawing.Bitmap(path);
                     using var sized = new System.Drawing.Bitmap(bmp, 32, 32);
-                    return System.Drawing.Icon.FromHandle(sized.GetHicon());
+                    return OwnBitmapIcon(sized);
                 }
             }
             catch { }
@@ -513,18 +530,18 @@ namespace MouseDock
                     using var accent = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(255, 0xB4, 0x9C, 0xFF));
                     g.FillRectangle(accent, 9, 13, 14, 8);
                 }
-                return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+                return OwnBitmapIcon(bmp);
             }
             catch
             {
-                return System.Drawing.SystemIcons.Application;
+                return (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
             }
         }
 
         public static void ToggleCurrentSurface()
         {
             SyncSurfaceFlags();
-            if (Settings.SurfaceMode == "taskbar")
+            if (Settings.SurfaceMode == "taskbar" || Settings.SurfaceMode == "edge")
             {
                 ShowCurrentSurface();
                 return;
@@ -539,7 +556,7 @@ namespace MouseDock
         public static void ShowCurrentSurface()
         {
             ApplySurface();
-            if (Settings.SurfaceMode != "taskbar")
+            if (Settings.SurfaceMode != "taskbar" && Settings.SurfaceMode != "edge")
                 BringToFront(Surfaces.GetWindow(Settings.SurfaceMode));
         }
 
@@ -558,7 +575,7 @@ namespace MouseDock
         private static void SyncSurfaceFlags()
         {
             string mode = Settings.SurfaceMode;
-            if (mode != "dock" && mode != "mini" && mode != "icon" && mode != "taskbar")
+            if (mode != "dock" && mode != "mini" && mode != "icon" && mode != "taskbar" && mode != "edge")
             {
                 mode = Settings.ShowMini ? "mini" : Settings.ShowIcon ? "icon" : "dock";
                 Settings.SurfaceMode = mode;
@@ -575,6 +592,7 @@ namespace MouseDock
             Surfaces.Apply(Settings.SurfaceMode, true);
             if (Settings.ShowIcon) Icon?.ApplyStyle(Settings.IconStyle, false);
             if (Settings.SurfaceMode == "taskbar") Taskbar?.UpdateAnchor();
+            if (Settings.SurfaceMode == "edge") Edge?.UpdateAnchor();
         }
 
         public static void ShowIconIfNeeded()
@@ -612,6 +630,7 @@ namespace MouseDock
             menu.Items.Add(Item((mode == "mini" ? "● " : "○ ") + "迷你窗", () => SetSurface("mini")));
             menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
             menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量环", () => SetSurface("taskbar")));
+            menu.Items.Add(Item((mode == "edge" ? "● " : "○ ") + "屏幕右侧电量环", () => SetSurface("edge")));
             menu.Items.Add(new Separator());
             if (owner == Icon)
             {
@@ -687,6 +706,7 @@ namespace MouseDock
             if (Dock != null) Dock.Opacity = o;
             if (Mini != null) Mini.Opacity = o;
             if (Icon != null) Icon.Opacity = Math.Max(o, 0.85);
+            Edge?.UpdateAnchor();
         }
 
         public static void ApplyScale()
@@ -695,6 +715,7 @@ namespace MouseDock
             if (Dock?.Content is FrameworkElement dockRoot) dockRoot.LayoutTransform = new ScaleTransform(s, s);
             if (Mini?.Content is FrameworkElement miniRoot) miniRoot.LayoutTransform = new ScaleTransform(s, s);
             if (Icon?.Content is FrameworkElement iconRoot) iconRoot.LayoutTransform = new ScaleTransform(s, s);
+            Edge?.UpdateAnchor();
             // 设置窗口不跟面板缩放：它是固定尺寸的配置面板，放大缩小只会让控件挤成一团。
         }
 
@@ -730,6 +751,7 @@ namespace MouseDock
             Mini?.Rebuild();
             Icon?.UpdateValue();
             Taskbar?.UpdateDevices();
+            Edge?.UpdateDevices();
         }
 
         public static void SaveWindowPositions()
@@ -811,7 +833,7 @@ namespace MouseDock
 
         public static void ApplyWindowBehavior()
         {
-            foreach (var w in new Window[] { Dock, Mini, Icon })
+            foreach (var w in new Window[] { Dock, Mini, Icon, Edge })
             {
                 if (w == null) continue;
                 w.Topmost = Settings.AlwaysOnTop;
@@ -893,14 +915,34 @@ namespace MouseDock
             catch { }
         }
 
+        private static TaskbarWindow CreateTaskbarWindow()
+        {
+            var window = new TaskbarWindow();
+            window.HostLost += (_, _) =>
+            {
+                if (_exiting || window.Dispatcher.HasShutdownStarted || Taskbar != window) return;
+                Taskbar = CreateTaskbarWindow();
+                if (Settings.SurfaceMode == "taskbar") Taskbar.Show();
+            };
+            return window;
+        }
+
         public static void ExitApp()
         {
+            _exiting = true;
             SaveWindowPositions();
             SaveDeviceSelection();
             _trayClickTimer?.Stop();
             _trayBlink?.Stop();
             _trayBlink?.Dispose();
-            if (_tray != null) { _tray.Visible = false; _tray.Icon?.Dispose(); _tray.Dispose(); }
+            if (_tray != null)
+            {
+                var icon = _tray.Icon;
+                _tray.Visible = false;
+                _tray.Dispose();
+                _tray = null;
+                icon?.Dispose();
+            }
             Current.Shutdown();
         }
 
@@ -1146,9 +1188,7 @@ namespace MouseDock
 
                     if (ok)
                     {
-                        MessageBox.Show("更新已下载，程序即将重启完成安装。", "MouseDock 更新",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
-                        Shutdown();
+                        ExitApp();
                     }
                     else
                     {

@@ -16,7 +16,7 @@ namespace MouseDock.Services.Detection
     /// 响应字段：
     ///   [0]      0xAA        命令回显
     ///   [4]      14          状态帧标识
-    ///   [5]      电量原始值   0..100，钳位后 >=95 视为 100
+    ///   [5]      电量原始值   0..100，保留设备报告的百分比
     ///   [6]      在线标志     USB 或 2.4G 视为在线
     ///   [7]      充电标志
     ///   [8..9]   实际 VID     大端
@@ -65,40 +65,40 @@ namespace MouseDock.Services.Detection
                 try
                 {
                     var caps = Caps(h);
-                    if (caps.OutputReportByteLength == 0 && caps.FeatureReportByteLength == 0) continue;
+                    if (!IsAjazzQueryInterface(caps.UsagePage, caps.OutputReportByteLength)) continue;
 
                     // 请求帧：命令 0xAA，长度标识 14，其余补零
-                    int frameLen = caps.OutputReportByteLength > 0
-                        ? caps.OutputReportByteLength
-                        : caps.FeatureReportByteLength;
-                    if (frameLen < AjazzMinReport) frameLen = 64;
-
-                    var req = new byte[frameLen];
+                    var req = new byte[caps.OutputReportByteLength];
                     req[0] = AjazzCmdStatus;
-                    if (frameLen > 4) req[4] = AjazzStatusTag;
+                    req[4] = AjazzStatusTag;
 
                     var resp = Transact(h, ev, req, 600);
-                    if (resp == null || resp.Length < AjazzMinReport) continue;
-
-                    // 响应首字节可能是 report id，剥一位再对齐
-                    int off = resp[0] == AjazzCmdStatus ? 0
-                            : (resp.Length > 1 && resp[1] == AjazzCmdStatus ? 1 : -1);
-                    if (off < 0) continue;
-                    if (resp.Length < off + AjazzMinReport) continue;
-                    if (resp[off + 4] != AjazzStatusTag) continue;
-
-                    int raw = resp[off + 5];
-                    if (raw < 0) raw = 0;
-                    if (raw > 100) raw = 100;
-
-                    // 原文：>= 95 视为满电
-                    int battery = raw >= 95 ? 100 : raw;
-                    if (battery >= 1 && battery <= 100) return battery;
+                    int battery = ParseAjazzBattery(resp, vid, pid);
+                    if (battery >= 0) return battery;
                 }
                 catch { }
                 finally { CloseHandle(ev); CloseHandle(h); }
             }
             return -1;
+        }
+
+        private static bool IsAjazzQueryInterface(ushort usagePage, ushort outputLength) =>
+            usagePage >= 0xFF00 && outputLength >= AjazzMinReport;
+
+        private static int ParseAjazzBattery(byte[] response, ushort vid, ushort pid)
+        {
+            if (response == null || response.Length < AjazzMinReport) return -1;
+            int offset = response[0] == AjazzCmdStatus ? 0
+                : response[0] == 0 && response[1] == AjazzCmdStatus ? 1 : -1;
+            if (offset < 0 || response.Length < offset + AjazzMinReport ||
+                response[offset + 4] != AjazzStatusTag)
+                return -1;
+
+            int responseVid = (response[offset + 8] << 8) | response[offset + 9];
+            int responsePid = (response[offset + 10] << 8) | response[offset + 11];
+            if (responseVid != vid || responsePid != pid) return -1;
+            int battery = response[offset + 5];
+            return battery <= 100 ? battery : -1;
         }
     }
 }

@@ -5,8 +5,18 @@ namespace MouseDock.Services
 {
     public static class TaskbarPlacement
     {
-        public static bool IsFullscreen(Rect window, Rect monitor, bool maximized, string className) =>
-            !maximized && className != "Progman" && className != "WorkerW" && window.Contains(monitor);
+        public static bool IsFullscreen(Rect window, Rect monitor, bool maximized, string className,
+            string processName = null) =>
+            !maximized && className != "Progman" && className != "WorkerW" &&
+            !IsShellSurface(className, processName) && window.Contains(monitor);
+
+        private static bool IsShellSurface(string className, string processName) =>
+            string.Equals(processName, "StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(processName, "SearchHost", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(processName, "SearchApp", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(processName, "ShellExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+            (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase) &&
+                (className == "Windows.UI.Core.CoreWindow" || className == "XamlExplorerHostIslandWindow"));
 
         // Input/output rectangles use physical pixels; content and offset use DIPs.
         public static Rect Calculate(Rect taskbar, uint edge, Size content, double offset, double dpiScale)

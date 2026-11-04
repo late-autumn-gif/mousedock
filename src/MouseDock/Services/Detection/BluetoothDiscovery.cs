@@ -117,8 +117,15 @@ namespace MouseDock.Services.Detection
                     bool connected = device.ConnectionStatus == BluetoothConnectionStatus.Connected;
                     if (!connected)
                     {
-                        // 只显示现在连接中的：配对了但没连的一律不列
-                        Trace($"BLE 跳过 {info.Name}（当前未连接）");
+                        // Preserve explicit disconnection so the UI can remove cached values immediately.
+                        sink.Add(new DetectedDevice
+                        {
+                            Id = "ble-" + device.BluetoothAddress.ToString("X"),
+                            Name = info.Name, Kind = kind.Value, Transport = "蓝牙 LE",
+                            Connected = false, Level = -1,
+                            PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name)
+                        });
+                        Trace($"BLE {info.Name}（已断开）");
                         continue;
                     }
 
@@ -161,14 +168,20 @@ namespace MouseDock.Services.Detection
 
                 try
                 {
+                    var kind = UsageMap.FromClassOfDevice(device.ClassOfDevice.RawValue);
                     if (device.ConnectionStatus != BluetoothConnectionStatus.Connected)
                     {
-                        // 只显示现在连接中的：配对了但没连的一律不列
-                        Trace($"经典跳过 {info.Name}（当前未连接）");
+                        if (kind == DeviceKind.Headset || kind == DeviceKind.Mouse || kind == DeviceKind.Keyboard)
+                            sink.Add(new DetectedDevice
+                            {
+                                Id = "bt-" + device.BluetoothAddress.ToString("X"), Name = info.Name,
+                                Kind = kind, Transport = "蓝牙", Connected = false, Level = -1,
+                                PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name)
+                            });
+                        Trace($"经典 {info.Name}（已断开）");
                         continue;
                     }
 
-                    var kind = UsageMap.FromClassOfDevice(device.ClassOfDevice.RawValue);
                     if (kind != DeviceKind.Headset && kind != DeviceKind.Mouse && kind != DeviceKind.Keyboard)
                     {
                         LastErrors.Add($"经典跳过 {info.Name}（COD=0x{device.ClassOfDevice.RawValue:X6} → {kind}）");
@@ -176,7 +189,7 @@ namespace MouseDock.Services.Detection
                     }
 
                     // 已经在 BLE 里出现过的同名设备不重复列
-                    if (sink.Any(d => string.Equals(d.Name, info.Name, StringComparison.OrdinalIgnoreCase)))
+                    if (sink.Any(d => d.Connected && string.Equals(d.Name, info.Name, StringComparison.OrdinalIgnoreCase)))
                         continue;
 
                     // 耳机：走 HFP 的 Apple 扩展（AT+IPHONEACCEV）读电量。

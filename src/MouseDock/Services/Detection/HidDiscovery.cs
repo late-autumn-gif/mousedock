@@ -95,8 +95,8 @@ namespace MouseDock.Services.Detection
         public static List<DetectedDevice> Enumerate(DevicePreferences preferences = null)
         {
             LastDiagnostics.Clear();
-            lock (_logiHints) _logiHints.Clear();
             var buckets = new Dictionary<string, Bucket>();
+            var vendorCollections = new List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
             IntPtr set = IntPtr.Zero;
@@ -125,7 +125,8 @@ namespace MouseDock.Services.Detection
                         if (!IsRunning(set, ref devInfo)) { notRunning++; continue; }
 
                         var ancestors = ReadAncestors(devInfo.DevInst, out bool integratedUsb);
-                        var verdict = TryCollect(path, ancestors, integratedUsb, buckets, preferences, out bool wasNoise);
+                        var verdict = TryCollect(path, ancestors, integratedUsb, buckets, preferences,
+                            vendorCollections, out bool wasNoise);
                         if (verdict) collected++;
                         else if (wasNoise) noise++;
                         else kindRejected++;
@@ -141,7 +142,37 @@ namespace MouseDock.Services.Detection
 
             LastDiagnostics.Add($"接口={interfaces} 打开失败={noOpen} 未运行={notRunning} 用法不符={kindRejected} 噪音={noise} 采集={collected} 归并={buckets.Count}");
 
-            return buckets.Values.Select(b => b.ToDevice()).Where(d => d != null).ToList();
+            bool safeMode = false;
+            try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
+
+            // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
+            QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
+            {
+                var result = LogitechHidpp.Probe(path);
+                return (result.Battery, result.Name, result.Charging);
+            }, ReadVendorCollection);
+
+            // MCHOSE K87 V3：2.4G 键盘的 QHW 电量在独立厂商集合上，按整机身份读一次。
+            foreach (var bucket in buckets.Values)
+            {
+                if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
+                if (result.Level >= 0)
+                {
+                    bucket.Battery = result.Level;
+                    bucket.Charging = result.Charging;
+                    bucket.BatterySource = "MCHOSE K87 V3 QHW 电量查询";
+                }
+                LastDiagnostics.Add($"MCHOSE K87 V3 QHW: battery={result.Level}, charging={result.Charging}");
+            }
+
+            return buckets.Values.Select(b =>
+            {
+                // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
+                var rk = RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
+                if (rk != null) LastDiagnostics.Add($"RK R98Pro V2: connected={rk.Connected}, battery={rk.Level}");
+                return rk ?? b.ToDevice();
+            }).Where(d => d != null).ToList();
         }
 
         public static List<string> LastDiagnostics { get; } = new List<string>();
@@ -252,7 +283,9 @@ namespace MouseDock.Services.Detection
 
         /// <summary>返回 true 表示这台设备被采集（鼠标/键盘/手柄）。</summary>
         private static bool TryCollect(string path, List<(string InstanceId, string Service)> ancestors, bool integratedUsb,
-            Dictionary<string, Bucket> buckets, DevicePreferences preferences, out bool wasNoise)
+            Dictionary<string, Bucket> buckets, DevicePreferences preferences,
+            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> vendorCollections,
+            out bool wasNoise)
         {
             wasNoise = false;
 
@@ -327,25 +360,10 @@ namespace MouseDock.Services.Detection
             try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
             bool recognitionEnabled = preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true;
 
-            // 罗技 HID++ 挂在厂商集合（FF00）接口上，这些不是鼠标/键盘用法，下面会被跳过。
-            // 先在这里把型号和电量捞出来，存进提示表，等 ToDevice 按 VID:PID 取。
-            if (recognitionEnabled && !safeMode && vid == 0x046D && caps.UsagePage == 0xFF00)
-            {
-                string hintKey = $"{vid:X4}:{pid:X4}";
-                lock (_logiHints)
-                {
-                    _logiHints.TryGetValue(hintKey, out var prev);
-                    if (prev.Battery == 0 && string.IsNullOrEmpty(prev.Name)) prev = (-1, null, false);
-                    if (prev.Battery < 0 || string.IsNullOrWhiteSpace(prev.Name))
-                    {
-                        var lr = LogitechHidpp.Probe(path);
-                        _logiHints[hintKey] = (
-                            prev.Battery >= 0 ? prev.Battery : lr.Battery,
-                            !string.IsNullOrWhiteSpace(prev.Name) ? prev.Name : lr.Name,
-                            prev.Charging || lr.Charging);
-                    }
-                }
-            }
+            // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
+            // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
+            if (recognitionEnabled && caps.UsagePage >= 0xFF00)
+                vendorCollections.Add((path, vid, pid, caps.UsagePage, product));
 
             if (!TryDeviceKind(vid, pid, caps.UsagePage, caps.Usage, out DeviceKind kind))
             {
@@ -508,19 +526,8 @@ namespace MouseDock.Services.Detection
                 battery = ReadBattery("Eweadn", () => VendorProtocol.TryReadEweadn(vid, pid), batteryTrace);
             }
 
-            // VGN（391D 号段）。64 字节帧，[0]=0x0D ThreeMode，[1]=0x01 GetBasicInfo，
-            // 无校验，响应 [4] 是电量。协议抄自 VGN VHUB 里带的方案商 SDK 源码。
-            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 && VendorProtocol.IsVgnVid(vid))
-            {
-                battery = ReadBattery("VGN", () => VendorProtocol.TryReadVgn(vid, pid), batteryTrace);
-            }
-
-            // 黑爵 AJAZZ（0x1A2C 号段）。命令 0xAA，响应 [4]==14 表状态帧，
-            // [5] 电量、[6] 在线、[7] 充电。协议抄自 ajazz.shinetek-ic.net 网页驱动。
-            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 && VendorProtocol.IsAjazzVid(vid))
-            {
-                battery = ReadBattery("AJAZZ", () => VendorProtocol.TryReadAjazz(vid, pid), batteryTrace);
-            }
+            // VGN / AJAZZ 改在厂商集合统一读取（QueryVendorCollections），
+            // 因为它们的电量接口是 FF00 厂商页，走不到这条标准用法分支。
 
             // 瓦尔基里（VK87 / VK99 / Valkyrie 75）。feature report 上的 F7 命令：
             //   响应 [0]=可读 [1]=键盘电量 [2]=鼠标电量 [3]=键盘在线(0) [4]=鼠标在线(0)
@@ -570,6 +577,99 @@ namespace MouseDock.Services.Detection
             LastDiagnostics.Add($"{key} 电量={(battery >= 0 ? battery + "%" : "未读到")} 读取过程={string.Join("；", batteryTrace)} 路径={path}");
 
             return true;
+        }
+
+        /// <summary>厂商集合上的电量读取：设备本体归并完之后，每台最多读一次。</summary>
+        private static void QueryVendorCollections(Dictionary<string, Bucket> buckets,
+            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> collections,
+            bool safeMode, Func<string, (int Battery, string Name, bool Charging)> probeLogitech,
+            Func<string, ushort, ushort, int> readVendor)
+        {
+            // 上一轮读到的电量只属于上一次扫描；型号和名称留着，电量作废。
+            lock (_logiHints)
+            {
+                foreach (var key in _logiHints.Keys.ToArray())
+                    _logiHints[key] = (-1, _logiHints[key].Name, false);
+            }
+
+            var probedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var queriedDevices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var collection in collections)
+            {
+                if (collection.UsagePage < 0xFF00 ||
+                    IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
+                    continue;
+
+                string key = $"{collection.Vid:X4}:{collection.Pid:X4}";
+                if (!buckets.TryGetValue(key, out var bucket) ||
+                    IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path))
+                    continue;
+
+                if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00)
+                {
+                    if (!probedPaths.Add(collection.Path)) continue;
+                    (int Battery, string Name, bool Charging) current;
+                    lock (_logiHints)
+                    {
+                        if (!_logiHints.TryGetValue(key, out current)) current = (-1, null, false);
+                    }
+                    if (current.Battery >= 0 && !string.IsNullOrWhiteSpace(current.Name)) continue;
+                    try
+                    {
+                        var result = probeLogitech(collection.Path);
+                        bool usable = result.Battery >= 0 && result.Battery <= 100;
+                        lock (_logiHints)
+                            _logiHints[key] = (
+                                current.Battery >= 0 ? current.Battery : usable ? result.Battery : -1,
+                                !string.IsNullOrWhiteSpace(result.Name) ? result.Name : current.Name,
+                                current.Battery >= 0 ? current.Charging : usable && result.Charging);
+                    }
+                    catch { }
+                    continue;
+                }
+
+                if (safeMode || bucket.Battery >= 0 || queriedDevices.Contains(key)) continue;
+                string route = null;
+                if (VendorProtocol.IsVgnVid(collection.Vid)) route = "vgn";
+                else if (VendorProtocol.IsAjazzVid(collection.Vid) && VendorProtocol.IsAjazzPid(collection.Pid))
+                    route = "ajazz";
+
+                // 前行者解码与形状型协议识别还没用实机验证，这里不启用。
+                if (route == null) continue;
+                queriedDevices.Add(key);
+                try
+                {
+                    int level = readVendor(route, collection.Vid, collection.Pid);
+                    if (level >= 0 && level <= 100) bucket.Battery = level;
+                }
+                catch { }
+            }
+        }
+
+        private static int ReadVendorCollection(string route, ushort vid, ushort pid) => route switch
+        {
+            "vgn" => VendorProtocol.TryReadVgn(vid, pid),
+            "ajazz" => VendorProtocol.TryReadAjazz(vid, pid),
+            _ => -1
+        };
+
+        private static bool IsExcludedInterface(ushort vid, ushort pid, string product, string path)
+        {
+            if (IsNoise(vid, product) || (vid == 0 && pid == 0)) return true;
+            string lowerPath = (path ?? "").ToLowerInvariant();
+            return lowerPath.Contains("acpi\\") || lowerPath.Contains("hidi2c") ||
+                lowerPath.Contains("syna") || lowerPath.Contains("isensor") ||
+                lowerPath.Contains("camera") || lowerPath.Contains("vid_04f2");
+        }
+
+        private static bool IsNoise(ushort vid, string product)
+        {
+            if (vid == 0x06CB || vid == 0xFFAA) return true;   // 触摸板 / 腾讯虚拟 HID
+            if (vid == 0x048D) return true;                    // ITE 键盘 RGB 控制器，不是独立外设
+            if (string.IsNullOrWhiteSpace(product)) return false;
+            string p = product.ToLowerInvariant();
+            return p.Contains("virtual") || p.Contains("虚拟") || p.Contains("touchpad")
+                   || p.Contains("ite device");
         }
 
         private static string InterfaceTag(string path)

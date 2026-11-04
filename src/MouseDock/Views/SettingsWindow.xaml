@@ -267,16 +267,20 @@
                     <TextBlock Text="显示方式" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
+                            <UniformGrid Columns="5">
                                 <Button x:Name="SurfaceDock" Content="主面板" Tag="dock" Style="{StaticResource GhostButton}"
-                                        Padding="10,4" Click="OnSurfaceClick" />
+                                        Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                                 <Button x:Name="SurfaceMini" Content="迷你" Tag="mini" Style="{StaticResource GhostButton}"
-                                        Padding="10,4" Margin="8,0,0,0" Click="OnSurfaceClick" />
+                                        Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                                 <Button x:Name="SurfaceIcon" Content="悬浮图标" Tag="icon" Style="{StaticResource GhostButton}"
-                                        Padding="10,4" Margin="8,0,0,0" Click="OnSurfaceClick" />
+                                        Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                                 <Button x:Name="SurfaceTaskbar" Content="任务栏" Tag="taskbar" Style="{StaticResource GhostButton}"
-                                        Padding="10,4" Margin="8,0,0,0" Click="OnSurfaceClick" />
-                            </StackPanel>
+                                        Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
+                                <Button x:Name="SurfaceEdge" Content="屏幕右侧" Tag="edge" Style="{StaticResource GhostButton}"
+                                        Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
+                            </UniformGrid>
+                            <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
+                                      Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
                             <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -290,6 +294,42 @@
                                 <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right"
                                            Style="{StaticResource RowText}" Opacity="0.65" />
                             </Grid>
+                            <StackPanel x:Name="EdgeOptionsPanel" Margin="0,12,0,0">
+                                <Grid Margin="0,0,0,12">
+                                    <TextBlock Text="图标颜色" Style="{StaticResource RowText}" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button x:Name="EdgeColorButton" Style="{StaticResource GhostButton}"
+                                                Padding="7,5" ToolTip="选择图标颜色" Click="OnPickEdgeColor">
+                                            <Border x:Name="EdgeColorSwatch" Width="28" Height="16" CornerRadius="3"
+                                                    Background="WhiteSmoke" BorderBrush="#808080" BorderThickness="1" />
+                                        </Button>
+                                        <Button Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5"
+                                                ToolTip="恢复默认颜色" Click="OnResetEdgeColor">
+                                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="上下位置" Style="{StaticResource RowText}" />
+                                    <Slider x:Name="EdgePositionSlider" Grid.Column="1" Minimum="0" Maximum="100"
+                                            Width="Auto" Margin="14,0,8,0" ValueChanged="OnEdgePositionChanged" />
+                                    <TextBlock x:Name="EdgePositionValue" Grid.Column="2" Style="{StaticResource RowText}"
+                                               TextAlignment="Right" Opacity="0.65" />
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="右侧边距" Style="{StaticResource RowText}" />
+                                    <Slider x:Name="EdgeInsetSlider" Grid.Column="1" Minimum="0" Maximum="160"
+                                            Width="Auto" Margin="14,0,8,0" ValueChanged="OnEdgeInsetChanged" />
+                                    <TextBlock x:Name="EdgeInsetValue" Grid.Column="2" Style="{StaticResource RowText}"
+                                               TextAlignment="Right" Opacity="0.65" />
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
