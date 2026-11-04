@@ -55,6 +55,8 @@ namespace MouseDock.Services.Detection
         /// <summary>读电量。读不到返回 -1。</summary>
         public static int TryReadVgn(ushort vid, ushort pid)
         {
+            // Neon75 Air uses Rongyuan Feature F7, not this keyboard-v2 Output protocol.
+            if (IsNeon75Air(vid, pid)) return -1;
             foreach (var path in Paths(vid, pid))
             {
                 IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,

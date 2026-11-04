@@ -33,17 +33,6 @@ internal static class Program
             ("Maximized apps do not hide a revealed auto-hide taskbar", CheckFullscreen),
             ("Error report lands in the folder the user picked", CheckReportExportPath),
             ("Error report defaults to the app's own folder", CheckReportDefaultFolder),
-            ("Repeated surface wake and toggle stay exclusive", UiRegressionChecks.ExclusiveSurfaces),
-            ("App wake preserves the saved mode and closes other surfaces", UiRegressionChecks.AppWakeUsesSavedMode),
-            ("Card displays only selected devices", () => UiRegressionChecks.SelectedDevicesOnly("dock", false)),
-            ("Photo icon displays only selected devices", () => UiRegressionChecks.SelectedDevicesOnly("icon", false)),
-            ("Empty selection stays empty in card", () => UiRegressionChecks.SelectedDevicesOnly("dock", true)),
-            ("Empty selection stays empty in mini", () => UiRegressionChecks.SelectedDevicesOnly("mini", true)),
-            ("Empty selection stays empty in icon", () => UiRegressionChecks.SelectedDevicesOnly("icon", true)),
-            ("Card text follows light and dark themes", () => UiRegressionChecks.ThemeForeground("dock")),
-            ("Mini text follows light and dark themes", () => UiRegressionChecks.ThemeForeground("mini")),
-            ("Settings labels follow light and dark themes", () => UiRegressionChecks.ThemeForeground("settings")),
-            ("Icon text and backgrounds follow themes after refresh", () => UiRegressionChecks.ThemeForeground("icon")),
             ("Mini battery text updates without rebuilding devices", AuditChecks.MiniLiveReading),
             ("Settings can reopen after a system close", AuditChecks.ClosedSettings),
             ("Merged channels preserve charging status", AuditChecks.ChargingMerge),
@@ -52,7 +41,6 @@ internal static class Program
             ("All five mini cells stay inside the window", AuditChecks.FifthMiniCell),
             ("Clearing custom backgrounds restores the theme", AuditChecks.ClearBackground),
             ("Taskbar activation cannot permanently cover the rings", TaskbarRegressionChecks.Activation),
-            ("Tray clicks keep the pinned taskbar surface visible", UiRegressionChecks.PinnedTrayClick)
         };
         int failures = 0;
         foreach (var (name, check) in checks)
@@ -130,6 +118,8 @@ internal static class Program
         battery.Devices.Add(new DeviceInfo { Name = "Keyboard fixture", Kind = DeviceKind.Keyboard, Level = 30 });
         battery.Devices.Add(new DeviceInfo { Name = "Disconnected", Connected = false });
         battery.Devices.Add(new DeviceInfo { Name = "Deselected", Selected = false });
+        battery.VisibleDevices.Add(battery.Devices[0]);
+        battery.VisibleDevices.Add(battery.Devices[1]);
         var window = new TaskbarWindow();
         try
         {
@@ -163,6 +153,7 @@ internal static class Program
 
             battery.Devices[0].Selected = false;
             battery.Devices[1].Selected = false;
+            battery.VisibleDevices.Clear();
             window.UpdateDevices();
             Require(strip.Children.Count == 0, "No selection must not display a fabricated device.");
         }

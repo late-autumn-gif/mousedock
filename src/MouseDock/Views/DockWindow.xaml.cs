@@ -213,12 +213,11 @@ namespace MouseDock.Views
 
         public void RefreshDevices()
         {
-            var selected = App.SelectedDevices.ToList();
-            if (DeviceList.ItemsSource is not System.Collections.Generic.List<DeviceInfo> current ||
-                !current.SequenceEqual(selected))
-                DeviceList.ItemsSource = selected;
+            
+            if (DeviceList.ItemsSource == null) DeviceList.ItemsSource = App.Battery.VisibleDevices;
             string label = App.Battery.Source?.Label ?? "自动检测";
-            SourceText.Text = $"{label} · {selected.Count} 台显示";
+            int displayed = App.Battery.VisibleDevices.Count;
+            SourceText.Text = $"{label} · {displayed} 台显示";
             var accent = new SolidColorBrush(App.Theme.Accent);
             LiveDot.Fill = accent;
         }

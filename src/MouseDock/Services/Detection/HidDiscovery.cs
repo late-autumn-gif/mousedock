@@ -37,6 +37,9 @@ namespace MouseDock.Services.Detection
         private struct SP_DEVINFO_DATA { public int cbSize; public Guid ClassGuid; public uint DevInst; public IntPtr Reserved; }
 
         [StructLayout(LayoutKind.Sequential)]
+        private struct DEVPROPKEY { public Guid Format; public uint Id; }
+
+        [StructLayout(LayoutKind.Sequential)]
         private struct HIDD_ATTRIBUTES { public int Size; public ushort VendorID; public ushort ProductID; public ushort VersionNumber; }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -45,13 +48,16 @@ namespace MouseDock.Services.Detection
             public ushort Usage; public ushort UsagePage;
             public ushort InputReportByteLength; public ushort OutputReportByteLength; public ushort FeatureReportByteLength;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)] public ushort[] Reserved;
+            public ushort NumberLinkCollectionNodes, NumberInputButtonCaps, NumberInputValueCaps, NumberInputDataIndices;
+            public ushort NumberOutputButtonCaps, NumberOutputValueCaps, NumberOutputDataIndices;
+            public ushort NumberFeatureButtonCaps, NumberFeatureValueCaps, NumberFeatureDataIndices;
         }
 
         [DllImport("hid.dll")] private static extern bool HidD_GetAttributes(IntPtr h, ref HIDD_ATTRIBUTES a);
         [DllImport("hid.dll")] private static extern bool HidD_GetPreparsedData(IntPtr h, out IntPtr data);
         [DllImport("hid.dll")] private static extern bool HidD_FreePreparsedData(IntPtr data);
         [DllImport("hid.dll")] private static extern int HidP_GetCaps(IntPtr data, ref HIDP_CAPS caps);
-        [DllImport("hid.dll")] private static extern bool HidD_GetFeature(IntPtr h, byte[] buffer, int length);
+        [DllImport("hid.dll", SetLastError = true)] private static extern bool HidD_GetFeature(IntPtr h, byte[] buffer, int length);
         [DllImport("hid.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool HidD_GetProductString(IntPtr h, IntPtr buffer, int length);
         [DllImport("hid.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool HidD_GetManufacturerString(IntPtr h, IntPtr buffer, int length);
 
@@ -71,14 +77,25 @@ namespace MouseDock.Services.Detection
         private static extern int CM_Locate_DevNodeW(out uint devInst, string deviceId, uint flags);
         [DllImport("cfgmgr32.dll")]
         private static extern int CM_Get_DevNode_Status(out uint status, out uint problem, uint devInst, uint flags);
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+        private static extern int CM_Get_Device_IDW(uint devInst, StringBuilder buffer, uint length, uint flags);
+        [DllImport("cfgmgr32.dll")]
+        private static extern int CM_Get_Parent(out uint parent, uint devInst, uint flags);
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+        private static extern int CM_Get_DevNode_Registry_PropertyW(uint devInst, uint property,
+            out uint registryType, byte[] buffer, ref uint length, uint flags);
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+        private static extern int CM_Get_DevNode_PropertyW(uint devInst, ref DEVPROPKEY key,
+            out uint type, byte[] buffer, ref uint length, uint flags);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sec, uint creation, uint flags, IntPtr templ);
         [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
 
-        public static List<DetectedDevice> Enumerate()
+        public static List<DetectedDevice> Enumerate(DevicePreferences preferences = null)
         {
             LastDiagnostics.Clear();
+            lock (_logiHints) _logiHints.Clear();
             var buckets = new Dictionary<string, Bucket>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
@@ -107,8 +124,8 @@ namespace MouseDock.Services.Detection
                         if (string.IsNullOrEmpty(path)) { noOpen++; continue; }
                         if (!IsRunning(set, ref devInfo)) { notRunning++; continue; }
 
-                        int before = buckets.Count;
-                        var verdict = TryCollect(path, buckets, out bool wasNoise);
+                        var ancestors = ReadAncestors(devInfo.DevInst, out bool integratedUsb);
+                        var verdict = TryCollect(path, ancestors, integratedUsb, buckets, preferences, out bool wasNoise);
                         if (verdict) collected++;
                         else if (wasNoise) noise++;
                         else kindRejected++;
@@ -128,6 +145,91 @@ namespace MouseDock.Services.Detection
         }
 
         public static List<string> LastDiagnostics { get; } = new List<string>();
+
+        private static List<(string InstanceId, string Service)> ReadAncestors(uint devInst, out bool integratedUsb)
+        {
+            integratedUsb = false;
+            bool checkedUsb = false;
+            var result = new List<(string, string)>();
+            var visited = new HashSet<uint>();
+            try
+            {
+                for (int depth = 0; depth < 16 && visited.Add(devInst); depth++)
+                {
+                    var id = new StringBuilder(1024);
+                    CM_Get_Device_IDW(devInst, id, (uint)id.Capacity, 0);
+                    var bytes = new byte[1024];
+                    uint length = (uint)bytes.Length;
+                    string service = CM_Get_DevNode_Registry_PropertyW(devInst, 5, out _, bytes, ref length, 0) == 0
+                        ? Encoding.Unicode.GetString(bytes, 0, (int)Math.Min(length, (uint)bytes.Length)).TrimEnd('\0')
+                        : "";
+                    result.Add((id.ToString(), service));
+                    // Check only the actual USB device, never its upstream hub/controller.
+                    if (!checkedUsb && id.ToString().StartsWith("USB\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        checkedUsb = true;
+                        if (!id.ToString().StartsWith("USB\\ROOT_HUB", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var key = new DEVPROPKEY { Format = new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"), Id = 4 };
+                            var value = new byte[1];
+                            uint size = 1;
+                            integratedUsb = CM_Get_DevNode_PropertyW(devInst, ref key, out uint type, value, ref size, 0) == 0
+                                && type == 0x11 && size == 1 && value[0] != 0;
+                        }
+                    }
+                    if (CM_Get_Parent(out uint parent, devInst, 0) != 0) break;
+                    devInst = parent;
+                }
+            }
+            catch { /* 元数据不可读时保留未知设备，不凭名称或 VID/PID 猜测。 */ }
+            return result;
+        }
+
+        internal static string ExclusionReason(IEnumerable<(string InstanceId, string Service)> ancestors, bool integratedUsb = false)
+        {
+            if (integratedUsb) return "内置 USB HID（Windows 本机容器标记）";
+            foreach (var node in ancestors)
+            {
+                string id = (node.InstanceId ?? "").ToUpperInvariant();
+                string service = (node.Service ?? "").ToLowerInvariant();
+                if (id.StartsWith("HID\\TENCENTMYAPPSHIDBUS", StringComparison.Ordinal) ||
+                    id.StartsWith("ROOT\\MYAPPSVIRTUALBUS", StringComparison.Ordinal) ||
+                    service == "myappshidbus" || service == "myappsusbcontroller")
+                    return "腾讯 MyApps 虚拟输入设备（PnP 证据）";
+                // 在 USB / 蓝牙传输层停止。其上游控制器最终也会挂到 ACPI，不能据此排除外设。
+                if (id.StartsWith("USB\\", StringComparison.Ordinal) ||
+                    id.StartsWith("BTHENUM\\", StringComparison.Ordinal) ||
+                    id.StartsWith("BTHLE\\", StringComparison.Ordinal) ||
+                    id.StartsWith("BTHLEDEVICE\\", StringComparison.Ordinal)) return null;
+                if (service == "hidi2c" || service == "i8042prt" ||
+                    id.StartsWith("ACPI\\", StringComparison.Ordinal) || id.StartsWith("I2C\\", StringComparison.Ordinal))
+                    return "内置 I2C/ACPI/PS2 输入设备（PnP 证据）";
+                if (service == "vhf" || service == "hidinject" || service == "vmulti" ||
+                    id.StartsWith("ROOT\\RDP_KBD", StringComparison.Ordinal) ||
+                    id.StartsWith("ROOT\\RDP_MOU", StringComparison.Ordinal) ||
+                    id.StartsWith("ROOT\\VHF", StringComparison.Ordinal) ||
+                    id.StartsWith("ROOT\\VMULTI", StringComparison.Ordinal))
+                    return "虚拟输入设备（PnP 证据）";
+            }
+            return null;
+        }
+
+        internal static string InspectExclusion(string instanceId)
+        {
+            if (CM_Locate_DevNodeW(out uint devInst, instanceId, 0) != 0) return null;
+            var ancestors = ReadAncestors(devInst, out bool integratedUsb);
+            return ExclusionReason(ancestors, integratedUsb);
+        }
+
+        internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind)
+        {
+            if (VendorMap.TryUsbHeadset(vid, pid, out _) && usagePage == 0x0C && usage == 1)
+            {
+                kind = DeviceKind.Headset;
+                return true;
+            }
+            return UsageMap.TryKind(usagePage, usage, out kind);
+        }
 
         private static bool IsRunning(IntPtr set, ref SP_DEVINFO_DATA devInfo)
         {
@@ -149,14 +251,19 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>返回 true 表示这台设备被采集（鼠标/键盘/手柄）。</summary>
-        private static bool TryCollect(string path, Dictionary<string, Bucket> buckets, out bool wasNoise)
+        private static bool TryCollect(string path, List<(string InstanceId, string Service)> ancestors, bool integratedUsb,
+            Dictionary<string, Bucket> buckets, DevicePreferences preferences, out bool wasNoise)
         {
             wasNoise = false;
 
             // 键盘/鼠标集合常被系统独占，先用「零访问权限」打开，只做查询
             IntPtr probe = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
                 IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-            if (probe == IntPtr.Zero || probe == new IntPtr(-1)) return false;
+            if (probe == IntPtr.Zero || probe == new IntPtr(-1))
+            {
+                LastDiagnostics.Add($"查询打开失败 Win32={Marshal.GetLastWin32Error()} 路径={path}");
+                return false;
+            }
 
             ushort vid, pid;
             HIDP_CAPS caps = default;
@@ -165,14 +272,26 @@ namespace MouseDock.Services.Detection
             try
             {
                 var attr = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf<HIDD_ATTRIBUTES>() };
-                if (!HidD_GetAttributes(probe, ref attr)) return false;
+                if (!HidD_GetAttributes(probe, ref attr))
+                {
+                    LastDiagnostics.Add($"读取 VID/PID 失败 路径={path}");
+                    return false;
+                }
                 vid = attr.VendorID;
                 pid = attr.ProductID;
 
                 if (HidD_GetPreparsedData(probe, out IntPtr pre))
                 {
-                    HidP_GetCaps(pre, ref caps);
-                    HidD_FreePreparsedData(pre);
+                    try
+                    {
+                        int status = HidP_GetCaps(pre, ref caps);
+                        if (status != 0x110000)
+                        {
+                            LastDiagnostics.Add($"{vid:X4}:{pid:X4} 能力读取失败 NTSTATUS=0x{status:X8} 路径={path}");
+                            return false;
+                        }
+                    }
+                    finally { HidD_FreePreparsedData(pre); }
                 }
 
                 // 蓝牙 HID（BTHLE/BTHENUM）在部分驱动上调用字符串接口会直接崩，
@@ -192,9 +311,25 @@ namespace MouseDock.Services.Detection
             }
             finally { CloseHandle(probe); }
 
+            string key = $"{vid:X4}:{pid:X4}";
+            string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
+            string exclusion = ExclusionReason(ancestors, integratedUsb);
+            LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
+                $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
+            if (exclusion != null)
+            {
+                wasNoise = true;
+                LastDiagnostics.Add($"{key} 已排除: {exclusion} 路径={path}");
+                return false;
+            }
+
+            bool safeMode = false;
+            try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
+            bool recognitionEnabled = preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true;
+
             // 罗技 HID++ 挂在厂商集合（FF00）接口上，这些不是鼠标/键盘用法，下面会被跳过。
             // 先在这里把型号和电量捞出来，存进提示表，等 ToDevice 按 VID:PID 取。
-            if (vid == 0x046D && caps.UsagePage == 0xFF00)
+            if (recognitionEnabled && !safeMode && vid == 0x046D && caps.UsagePage == 0xFF00)
             {
                 string hintKey = $"{vid:X4}:{pid:X4}";
                 lock (_logiHints)
@@ -212,144 +347,192 @@ namespace MouseDock.Services.Detection
                 }
             }
 
-            if (!UsageMap.TryKind(caps.UsagePage, caps.Usage, out DeviceKind kind))
+            if (!TryDeviceKind(vid, pid, caps.UsagePage, caps.Usage, out DeviceKind kind))
             {
-                if (LastDiagnostics.Count < 60)
-                    LastDiagnostics.Add($"usage 跳过 UPage=0x{caps.UsagePage:X2} Usage=0x{caps.Usage:X2} feat={caps.FeatureReportByteLength}");
+                LastDiagnostics.Add($"{key} usage 跳过 UPage=0x{caps.UsagePage:X2} Usage=0x{caps.Usage:X2} feat={caps.FeatureReportByteLength} 路径={path}");
                 return false;
             }
 
-            if (IsNoise(vid, product)) { wasNoise = true; return false; }
+            if (kind == DeviceKind.Headset && VendorMap.TryUsbHeadset(vid, pid, out string headsetName))
+            {
+                if (!buckets.TryGetValue(key, out var headset))
+                    buckets[key] = headset = new Bucket { Vid = vid, Pid = pid, Product = headsetName, Vendor = vendor, Path = path, Kind = kind };
+                headset.Counts[kind] = headset.Counts.TryGetValue(kind, out int count) ? count + 1 : 1;
+                headset.BatteryFailures.Add("已识别 USB 耳机；电量协议尚未适配，当前电量未知");
+                LastDiagnostics.Add($"{key} 已识别 USB 耳机，未发送未知厂商查询命令 路径={path}");
+                return true;
+            }
 
-            // 只显示外接外设：内置键盘/触摸板/摄像头一律排除
-            string lowerPath = path.ToLowerInvariant();
-            if (lowerPath.Contains("acpi\\") || lowerPath.Contains("hidi2c") ||
-                lowerPath.Contains("syna") || lowerPath.Contains("isensor") ||
-                lowerPath.Contains("camera") || lowerPath.Contains("vid_04f2"))
+            // 仅对已知蓝牙链路的零 ID 集合去重；未知 ID 的 USB 外设仍需保留。
+            if (vid == 0 && pid == 0 && (path.IndexOf("BTHENUM", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                path.IndexOf("BTHLE", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 wasNoise = true;
+                LastDiagnostics.Add($"{key} 零 ID 蓝牙集合交给蓝牙发现链路 路径={path}");
                 return false;
             }
-
-            // BLE HID 集合常常读不到 VID/PID（全 0），这类交给蓝牙链路那条去报
-            if (vid == 0 && pid == 0) { wasNoise = true; return false; }
-
-            string key = $"{vid:X4}:{pid:X4}";
 
             // 需要读电量时才申请读写权限；拿不到就保持 -1，不影响设备本身被列出
             int battery = -1;
-            IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-            if (h != IntPtr.Zero && h != new IntPtr(-1))
+            bool batteryCharging = false;
+            bool batteryStale = false;
+            string batterySource = "";
+            bool mchoseQueried = false;
+            var batteryTrace = new List<string>();
+            if (recognitionEnabled)
             {
-                try
+            if (VendorProtocol.IsNeon75Air(vid, pid))
+            {
+                battery = ReadBattery("VGN Neon75 Air F7 状态查询", () => VendorProtocol.TryReadNeon75(vid, pid, !safeMode,
+                    out batteryCharging, out batteryStale), batteryTrace);
+                batterySource = safeMode ? "VGN 接收器上次状态（安全模式未发送查询）" : "VGN Neon75 Air 官方 F7 状态查询";
+            }
+            else
+            {
+            if (caps.FeatureReportByteLength > 1 && caps.UsagePage == 0x06 && caps.Usage == 0x20)
+            {
+                IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                if (h == IntPtr.Zero || h == new IntPtr(-1))
                 {
-                    if (caps.FeatureReportByteLength > 1 && caps.UsagePage == 0x06 && caps.Usage == 0x20)
+                    batteryTrace.Add($"标准电量接口打开失败 Win32={Marshal.GetLastWin32Error()}");
+                }
+                else
+                {
+                    try
                     {
                         var buf = new byte[caps.FeatureReportByteLength];
-                        if (HidD_GetFeature(h, buf, buf.Length) && buf[1] <= 100) battery = buf[1];
+                        if (!HidD_GetFeature(h, buf, buf.Length))
+                            batteryTrace.Add($"标准电量 GET_FEATURE 失败 Win32={Marshal.GetLastWin32Error()}");
+                        else if (buf[1] > 100)
+                            batteryTrace.Add($"标准电量返回值无效: {buf[1]}");
+                        else battery = buf[1];
                     }
+                    catch (Exception ex) { batteryTrace.Add("标准电量异常: " + ex.GetType().Name); }
+                    finally { CloseHandle(h); }
                 }
-                catch { }
-                finally { CloseHandle(h); }
             }
+            else batteryTrace.Add("本 HID 集合未暴露标准电池 Feature 用法");
+            if (safeMode) batteryTrace.Add("安全模式已跳过需要发送命令的厂商读取器");
 
             // 国产 2.4G 接收器（AULA/VXE 系）：走厂商 32 字节协议读电量
-            bool safeMode = false;
-            try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
-
             if (battery < 0 && !safeMode && VendorMap.KnownReceivers.ContainsKey(key))
             {
-                try { battery = VendorProtocol.TryReadBattery(vid, pid); } catch { }
+                battery = ReadBattery("通用 32 字节协议", () => VendorProtocol.TryReadBattery(vid, pid, out batteryCharging), batteryTrace);
+                batteryStale = battery >= 0 && VendorProtocol.IdentifyStale;
             }
 
             // 0xFFFF 厂商集合的只读状态（VGN Neon75 Air 这类键盘接收器只在这里报电量）
-            if (battery < 0)
+            if (battery < 0 && !VendorProtocol.IsNeon75Air(vid, pid))
             {
-                try { battery = VendorProtocol.TryReadStatus(vid, pid); } catch { }
+                battery = ReadBattery("只读状态 Feature", () => VendorProtocol.TryReadStatus(vid, pid, out batteryCharging), batteryTrace);
+                batteryStale = battery >= 0 && VendorProtocol.StatusStale;
             }
 
             // M HUB 家族（迈从 / RealTek 2.4G 接收器，e.g. 5253:1021 MCHOSE A7）
-            if (battery < 0)
+            if (battery < 0 && !safeMode)
             {
-                try { battery = VendorProtocol.TryReadMchose(vid, pid); } catch { }
+                if (VendorProtocol.IsMchoseModern(vid, pid) || (vid == 0x5253 && pid == 0x1021))
+                {
+                    mchoseQueried = true;
+                    if (buckets.TryGetValue(key, out var previous) && previous.MchoseQueried)
+                    {
+                        battery = previous.Battery;
+                        batteryCharging = previous.Charging;
+                        batterySource = previous.BatterySource;
+                        batteryTrace.Add("MCHOSE：复用本轮同一接收器的查询结果");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            battery = VendorProtocol.TryReadMchose(vid, pid, out batteryCharging, out batterySource);
+                            batteryTrace.Add(batterySource);
+                        }
+                        catch (Exception ex) { batteryTrace.Add("MCHOSE：" + ex.GetType().Name + " " + ex.Message); }
+                    }
+                }
             }
 
             // 第一批厂商读取器：写一帧读一帧，按 VID 分派，互不抢通道
-            if (battery < 0)
+            if (battery < 0 && !safeMode)
             {
                 try
                 {
-                    if (vid == 0x1532) battery = VendorProtocol.TryReadRazer(vid, pid);
-                    else if (vid == 0x0B05) battery = VendorProtocol.TryReadRog(vid, pid);
-                    else if (vid == 0x1038) battery = VendorProtocol.TryReadSteelSeries(vid, pid);
-                    else if (vid == 0x361D) battery = VendorProtocol.TryReadFinalmouse(vid, pid);
+                    if (vid == 0x1532) battery = ReadBattery("Razer", () => VendorProtocol.TryReadRazer(vid, pid), batteryTrace);
+                    else if (vid == 0x0B05) battery = ReadBattery("ROG", () => VendorProtocol.TryReadRog(vid, pid), batteryTrace);
+                    else if (vid == 0x1038) battery = ReadBattery("SteelSeries", () => VendorProtocol.TryReadSteelSeries(vid, pid), batteryTrace);
+                    else if (vid == 0x361D) battery = ReadBattery("Finalmouse", () => VendorProtocol.TryReadFinalmouse(vid, pid), batteryTrace);
                     else if (vid == 0x373B || vid == 0x3554 || vid == 0x33E4)
-                        battery = VendorProtocol.TryReadCompx(vid, pid);
+                        battery = ReadBattery("Compx", () => VendorProtocol.TryReadCompx(vid, pid), batteryTrace);
                 }
                 catch { }
             }
 
             // 第二批：帧形已确认的厂商读取器（AUSDOM / AM Infinity / ZYNOO / AULA SC525 / RIDLAG·VGN / 雷柏）
-            if (battery < 0)
+            if (battery < 0 && !safeMode)
             {
-                try { battery = VendorProtocol.TryReadFamily(vid, pid); } catch { }
+                battery = ReadBattery("厂商 Family", () => VendorProtocol.TryReadFamily(vid, pid), batteryTrace);
             }
 
             // 第三批：报告 ID / 命令字是变量的，靠试探 + 强校验确定
-            if (battery < 0)
+            if (battery < 0 && !safeMode)
             {
-                try { battery = VendorProtocol.TryReadExtra(vid, pid); } catch { }
+                battery = ReadBattery("厂商 Extra", () => VendorProtocol.TryReadExtra(vid, pid), batteryTrace);
             }
 
             // 按接口形状认的两家（WEBBRANDS F83 / 达尔优 A980），VID 不固定，回包头必须完全对上
-            if (battery < 0 && caps.UsagePage >= 0xFF00)
+            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
             {
-                try { battery = VendorProtocol.TryReadByShape(vid, pid); } catch { }
+                battery = ReadBattery("接口形状协议", () => VendorProtocol.TryReadByShape(vid, pid), batteryTrace);
             }
 
             // 第四批：G-Wolves / ipi / RAWM / passive 型（AULA SC900、雷柏 VT2 MAX）
-            if (battery < 0)
+            if (battery < 0 && !safeMode)
             {
-                try { battery = VendorProtocol.TryReadThird(vid, pid); } catch { }
+                battery = ReadBattery("厂商 Third", () => VendorProtocol.TryReadThird(vid, pid), batteryTrace);
             }
 
             // 形状型老协议：WLMouse Beast X（report4 + CRC16）、Angry Miao（report F7）
-            if (battery < 0 && caps.UsagePage >= 0xFF00)
+            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
             {
-                try { battery = VendorProtocol.TryReadLegacyShape(vid, pid); } catch { }
+                battery = ReadBattery("Legacy 接口形状协议", () => VendorProtocol.TryReadLegacyShape(vid, pid), batteryTrace);
             }
 
             // 前行者（X87 三模及全系）。两套协议：
             //   CH315  16 字节 report 8，cmd 0x04，校验 0x55 - sum
             //   北赢   63 字节，cmd 0x87，校验 255 - sum%256
             // 协议抄自 hub.eweadn.cn 和 new-hub.eweadn.cn 两套网页驱动。
-            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsEweadnVid(vid))
+            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 && VendorProtocol.IsEweadnVid(vid))
             {
-                try { battery = VendorProtocol.TryReadEweadn(vid, pid); } catch { }
+                battery = ReadBattery("Eweadn", () => VendorProtocol.TryReadEweadn(vid, pid), batteryTrace);
             }
 
             // VGN（391D 号段）。64 字节帧，[0]=0x0D ThreeMode，[1]=0x01 GetBasicInfo，
             // 无校验，响应 [4] 是电量。协议抄自 VGN VHUB 里带的方案商 SDK 源码。
-            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsVgnVid(vid))
+            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 && VendorProtocol.IsVgnVid(vid))
             {
-                try { battery = VendorProtocol.TryReadVgn(vid, pid); } catch { }
+                battery = ReadBattery("VGN", () => VendorProtocol.TryReadVgn(vid, pid), batteryTrace);
             }
 
             // 黑爵 AJAZZ（0x1A2C 号段）。命令 0xAA，响应 [4]==14 表状态帧，
             // [5] 电量、[6] 在线、[7] 充电。协议抄自 ajazz.shinetek-ic.net 网页驱动。
-            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsAjazzVid(vid))
+            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 && VendorProtocol.IsAjazzVid(vid))
             {
-                try { battery = VendorProtocol.TryReadAjazz(vid, pid); } catch { }
+                battery = ReadBattery("AJAZZ", () => VendorProtocol.TryReadAjazz(vid, pid), batteryTrace);
             }
 
             // 瓦尔基里（VK87 / VK99 / Valkyrie 75）。feature report 上的 F7 命令：
             //   响应 [0]=可读 [1]=键盘电量 [2]=鼠标电量 [3]=键盘在线(0) [4]=鼠标在线(0)
             // 05AC:024F 是 Apple 公版号，多家共用，只能靠产品名认。
-            if (battery < 0 && VendorProtocol.IsValkyrieDevice(vid, pid, product))
+            if (battery < 0 && !safeMode && VendorProtocol.IsValkyrieDevice(vid, pid, product))
             {
-                try { battery = VendorProtocol.TryReadValkyrie(vid, pid, kind == DeviceKind.Keyboard); } catch { }
+                battery = ReadBattery("Valkyrie", () => VendorProtocol.TryReadValkyrie(vid, pid, kind == DeviceKind.Keyboard), batteryTrace);
             }
+
+            }
+            }
+            else batteryTrace.Add("用户已取消识别：仅保留设备管理条目，未发起电量查询");
 
             if (!buckets.TryGetValue(key, out Bucket bucket))
             {
@@ -375,7 +558,16 @@ namespace MouseDock.Services.Detection
             }
             if (!string.IsNullOrWhiteSpace(product) && string.IsNullOrWhiteSpace(bucket.Product))
                 bucket.Product = product;
-            if (battery > bucket.Battery) bucket.Battery = battery;
+            if (battery > bucket.Battery)
+            {
+                bucket.Battery = battery;
+                bucket.Charging = batteryCharging;
+                bucket.ReadStale = batteryStale;
+                bucket.BatterySource = batterySource;
+            }
+            bucket.MchoseQueried |= mchoseQueried;
+            if (battery < 0) bucket.BatteryFailures.UnionWith(batteryTrace);
+            LastDiagnostics.Add($"{key} 电量={(battery >= 0 ? battery + "%" : "未读到")} 读取过程={string.Join("；", batteryTrace)} 路径={path}");
 
             return true;
         }
@@ -388,14 +580,29 @@ namespace MouseDock.Services.Detection
             return path.Substring(i, 5);
         }
 
-        private static bool IsNoise(ushort vid, string product)
+        internal static void InvalidateDeviceHints(string id)
         {
-            if (vid == 0x06CB || vid == 0xFFAA) return true;   // 触摸板 / 腾讯虚拟 HID
-            if (vid == 0x048D) return true;                    // ITE 键盘 RGB 控制器，不是独立外设
-            if (string.IsNullOrWhiteSpace(product)) return false;
-            string p = product.ToLowerInvariant();
-            return p.Contains("virtual") || p.Contains("虚拟") || p.Contains("touchpad")
-                   || p.Contains("ite device");
+            string[] parts = id.Split('-');
+            if (parts.Length != 3 || !parts[0].Equals("hid", StringComparison.OrdinalIgnoreCase) ||
+                !ushort.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out ushort vid) ||
+                !ushort.TryParse(parts[2], System.Globalization.NumberStyles.HexNumber, null, out ushort pid)) return;
+            lock (_logiHints) _logiHints.Remove($"{vid:X4}:{pid:X4}");
+        }
+
+        private static int ReadBattery(string reader, Func<int> read, List<string> trace)
+        {
+            try
+            {
+                int value = read();
+                if (value >= 0 && value <= 100)
+                {
+                    trace.Add($"{reader}: {value}%");
+                    return value;
+                }
+                trace.Add(reader + ": 未返回有效电量（未匹配接口或未取得有效响应）");
+            }
+            catch (Exception ex) { trace.Add(reader + ": " + ex.GetType().Name + " " + ex.Message); }
+            return -1;
         }
 
         private static string Unicode(Func<IntPtr, IntPtr, int, bool> getter, IntPtr h)
@@ -424,6 +631,11 @@ namespace MouseDock.Services.Detection
             public readonly HashSet<string> Interfaces = new HashSet<string>();
             public DeviceKind Kind = DeviceKind.Other;
             public int Battery = -1;
+            public bool Charging;
+            public bool ReadStale;
+            public bool MchoseQueried;
+            public string BatterySource = "";
+            public readonly HashSet<string> BatteryFailures = new HashSet<string>();
             public readonly Dictionary<DeviceKind, int> Counts = new Dictionary<DeviceKind, int>();
 
             public DetectedDevice ToDevice()
@@ -453,7 +665,7 @@ namespace MouseDock.Services.Detection
                 }
 
                 // 罗技 HID++ 自报的型号最可信，压过接收器的占位名（「罗技无线接收器」）
-                bool charging = false;
+                bool charging = Charging;
                 if (Vid == 0x046D)
                 {
                     (int Battery, string Name, bool Charging) hint;
@@ -496,7 +708,9 @@ namespace MouseDock.Services.Detection
                 // 有线鼠标不会这样，用它判断 2.4G 比猜产品串靠谱
                 bool peerKeyboard = Kind == DeviceKind.Mouse && Counts.ContainsKey(DeviceKind.Keyboard);
 
-                string transport = bt ? "蓝牙"
+                bool usbHeadset = VendorMap.TryUsbHeadset(Vid, Pid, out string headsetName);
+                if (usbHeadset) { name = headsetName; kind = DeviceKind.Headset; }
+                string transport = bt ? "蓝牙" : usbHeadset ? "USB"
                     : (dongle || receiverProduct || LooksWireless(Product) || peerKeyboard ||
                        (HasVendor && Interfaces.Count >= 2) ? "2.4G" : "有线");
 
@@ -508,14 +722,14 @@ namespace MouseDock.Services.Detection
                     Transport = transport,
                     Level = Battery,
                     Charging = charging,
+                    IsStale = ReadStale,
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = physicalKey,
                     Note = Battery >= 0
-                        ? ""
-                        : (transport == "2.4G"
-                            ? "2.4G 走厂商 32 字节协议读取（Identify 应答里的电量字节），与官方驱动同源"
-                            : "该 HID 设备没有暴露标准电池用法")
+                        ? BatterySource
+                        : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
+                            : "尚未取得有效电量，请查看设备报告中的读取诊断")
                 };
             }
 

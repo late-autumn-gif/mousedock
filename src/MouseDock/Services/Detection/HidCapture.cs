@@ -37,6 +37,9 @@ namespace MouseDock.Services.Detection
             public ushort Usage; public ushort UsagePage;
             public ushort InputReportByteLength; public ushort OutputReportByteLength; public ushort FeatureReportByteLength;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)] public ushort[] Reserved;
+            public ushort NumberLinkCollectionNodes, NumberInputButtonCaps, NumberInputValueCaps, NumberInputDataIndices;
+            public ushort NumberOutputButtonCaps, NumberOutputValueCaps, NumberOutputDataIndices;
+            public ushort NumberFeatureButtonCaps, NumberFeatureValueCaps, NumberFeatureDataIndices;
         }
 
         [StructLayout(LayoutKind.Sequential)]

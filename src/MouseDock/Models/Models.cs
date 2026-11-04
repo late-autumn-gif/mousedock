@@ -21,12 +21,18 @@ namespace MouseDock.Models
         private bool _connected = true;
         private bool _selected = true;
         private bool _stale;
+        private bool _hidden;
+        private bool _recognitionEnabled = true;
+        public string[] DetectionIds { get; set; } = Array.Empty<string>();
 
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
-        public string Name { get; set; } = "";
-        public DeviceKind Kind { get; set; } = DeviceKind.Mouse;
+        private string _name = "";
+        private DeviceKind _kind = DeviceKind.Mouse;
+        private string _transport = "";
+        public string Name { get => _name; set { if (_name == value) return; _name = value; Raise(nameof(Name)); } }
+        public DeviceKind Kind { get => _kind; set { if (_kind == value) return; _kind = value; Raise(nameof(Kind)); Raise(nameof(KindLabel)); Raise(nameof(MetaLabel)); } }
         public string Source { get; set; } = "demo";
-        public string Transport { get; set; } = "";
+        public string Transport { get => _transport; set { if (_transport == value) return; _transport = value; Raise(nameof(Transport)); Raise(nameof(MetaLabel)); } }
         public string Detail { get; set; } = "";
 
         private string _note = "";
@@ -57,28 +63,33 @@ namespace MouseDock.Models
         public bool Charging
         {
             get => _charging;
-            set { if (_charging == value) return; _charging = value; Raise(nameof(Charging)); Raise(nameof(StatusText)); }
+            set { if (_charging == value) return; _charging = value; Raise(nameof(Charging)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); }
         }
 
         public bool Connected
         {
             get => _connected;
-            set
-            {
-                if (_connected == value) return;
-                _connected = value;
-                Raise(nameof(Connected));
-                Raise(nameof(StatusText));
-                Raise(nameof(LevelText));
-                Raise(nameof(MiniText));
-            }
+            set { if (_connected == value) return; _connected = value; Raise(nameof(Connected)); Raise(nameof(LevelText)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); Raise(nameof(IsDisplayEligible)); Raise(nameof(MiniText)); }
         }
 
         public bool Selected
         {
             get => _selected;
-            set { if (_selected == value) return; _selected = value; Raise(nameof(Selected)); }
+            set { if (_selected == value) return; _selected = value; Raise(nameof(Selected)); Raise(nameof(IsDisplayEligible)); Raise(nameof(ManagementStatus)); }
         }
+
+        public bool Hidden
+        {
+            get => _hidden;
+            set { if (_hidden == value) return; _hidden = value; Raise(nameof(Hidden)); Raise(nameof(IsDisplayEligible)); Raise(nameof(ManagementStatus)); }
+        }
+        public bool RecognitionEnabled
+        {
+            get => _recognitionEnabled;
+            set { if (_recognitionEnabled == value) return; _recognitionEnabled = value; Raise(nameof(RecognitionEnabled)); Raise(nameof(IsDisplayEligible)); Raise(nameof(ManagementStatus)); }
+        }
+        public bool IsDisplayEligible => Connected && Selected && !Hidden && RecognitionEnabled;
+        public string ManagementStatus => !RecognitionEnabled ? "已取消识别 · 右键可重新识别" : Hidden ? "已隐藏 · 勾选可恢复" : Selected ? "已显示" : "未显示";
 
         public bool HasLevel => _level >= 0;
 
@@ -96,6 +107,8 @@ namespace MouseDock.Models
                 _stale = value;
                 Raise(nameof(IsStale));
                 Raise(nameof(ValueOpacity));
+                Raise(nameof(IsChargingActive));
+                Raise(nameof(StatusText));
             }
         }
 
@@ -113,7 +126,8 @@ namespace MouseDock.Models
             _ => "设备"
         };
 
-        public string StatusText => _connected ? "已连接" + (_charging ? " · 充电中" : "") : "待机";
+        public bool IsChargingActive => _connected && _charging && !_stale;
+        public string StatusText => !_connected ? "待机" : _stale ? "已连接 · 状态待刷新" : _charging ? "已连接 · 充电中" : "已连接";
 
         public string MetaLabel => KindLabel + (string.IsNullOrWhiteSpace(Transport) ? "" : " · " + Transport);
 

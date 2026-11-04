@@ -52,7 +52,7 @@ internal static class AuditChecks
         list.Add(second);
         merged = assembly.GetType("MouseDock.Services.Detection.AutoDetectSource")!
             .GetMethod("MergeGroup", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, [list])!;
-        Require(merged.Charging && merged.Level == 80, "Charging and the valid level must survive channel merging.");
+        Require(!merged.Charging && merged.Level == 80, "A channel without a reading must not override the active channel.");
     }
 
     internal static void PollInterval()
@@ -103,7 +103,7 @@ internal static class AuditChecks
         typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, battery);
         typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
         for (int i = 0; i < 5; i++)
-            battery.Devices.Add(new DeviceInfo { Name = $"Device {i + 1}", Level = 50 });
+            battery.VisibleDevices.Add(new DeviceInfo { Name = $"Device {i + 1}", Level = 50 });
         var mini = new MiniWindow { Left = -2000, ShowActivated = false };
         try
         {
@@ -142,7 +142,7 @@ internal static class AuditChecks
         typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, battery);
         typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
         var device = new DeviceInfo { Name = "Audit mouse", Level = 75 };
-        battery.Devices.Add(device);
+        battery.VisibleDevices.Add(device);
         var mini = new MiniWindow { Left = -2000, ShowActivated = false };
         try
         {
@@ -223,17 +223,9 @@ internal static class AuditChecks
     {
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         settings = new AppSettings { Provider = "json", JsonPath = "nonexistent-audit-fixture.json", RefreshSeconds = refreshSeconds };
-        var battery = new BatteryService(settings);
-        var frame = new DispatcherFrame();
-        EventHandler handler = (_, _) => frame.Continue = false;
-        battery.Refreshed += handler;
-        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        timeout.Tick += (_, _) => frame.Continue = false;
-        timeout.Start();
-        Dispatcher.PushFrame(frame);
-        timeout.Stop();
-        battery.Refreshed -= handler;
-        return battery;
+        return (BatteryService)Activator.CreateInstance(typeof(BatteryService),
+            BindingFlags.Instance | BindingFlags.NonPublic, null,
+            new object?[] { settings, null, false }, null)!;
     }
 
     private static void Require(bool condition, string message)

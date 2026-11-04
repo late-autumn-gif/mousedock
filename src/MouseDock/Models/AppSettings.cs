@@ -16,11 +16,16 @@ namespace MouseDock.Models
 
         // 监视的设备 id（最多 4 台用于迷你视图，主卡片最多 6 行）
         public List<string> SelectedDeviceIds { get; set; } = new List<string>();
+        public bool DeviceSelectionInitialized { get; set; }
         public bool HasDeviceSelection { get; set; }
+        public List<string> HiddenDeviceIds { get; set; } = new List<string>();
+        public List<string> DisabledRecognitionDeviceIds { get; set; } = new List<string>();
 
         // 悬浮图标形态：mini | character | photo
         public string IconMode { get; set; } = "photo";
         public string CharacterAsset { get; set; } = "";
+        public string AnimatedCharacter { get; set; } = "otter";
+        public bool AnimatedPhotoBackground { get; set; }
         public string PhotoAsset { get; set; } = "";
         public double PhotoZoom { get; set; } = 1.0;
         public double PhotoOffsetX { get; set; }
@@ -101,10 +106,14 @@ namespace MouseDock.Models
                 CustomAccent = CustomAccent,
                 CustomSurface = CustomSurface,
                 SelectedDeviceIds = new List<string>(SelectedDeviceIds),
-                HasDeviceSelection = HasDeviceSelection,
+                DeviceSelectionInitialized = DeviceSelectionInitialized,
+                HiddenDeviceIds = new List<string>(HiddenDeviceIds),
+                DisabledRecognitionDeviceIds = new List<string>(DisabledRecognitionDeviceIds),
                 IconMode = IconMode,
                 CharacterAsset = CharacterAsset,
                 PhotoAsset = PhotoAsset,
+                AnimatedCharacter = AnimatedCharacter,
+                AnimatedPhotoBackground = AnimatedPhotoBackground,
                 PhotoZoom = PhotoZoom,
                 PhotoOffsetX = PhotoOffsetX,
                 PhotoOffsetY = PhotoOffsetY,

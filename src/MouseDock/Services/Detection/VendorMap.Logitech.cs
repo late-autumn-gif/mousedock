@@ -97,6 +97,9 @@ namespace MouseDock.Services.Detection
 
         /// <summary>换电池的型号：只掉电，不存在充电状态，UI 不要显示充电。</summary>
         internal static readonly HashSet<string> ReplaceableBatteryMice =
+            // G700/G700s support USB charging despite having removable cells:
+            // https://www.logitech.com/assets/32643/2/g700620-002446003403qsg-amr.pdf
+            // https://www.logitech.com/assets/47990/2/g700s-rechargeable-gaming-mouse-quick-start-guide.pdf
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "G300",
@@ -108,8 +111,6 @@ namespace MouseDock.Services.Detection
                 "G602",
                 "G603",
                 "G7",
-                "G700",
-                "G700s",
                 "G9",
                 "G9x",
                 "G9x [Call of Duty MW3 Edition]",
@@ -141,7 +142,10 @@ namespace MouseDock.Services.Detection
         {
             if (string.IsNullOrWhiteSpace(name)) return false;
             foreach (var k in ReplaceableBatteryMice)
-                if (name.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                foreach (string model in k.Split('/'))
+                    if (System.Text.RegularExpressions.Regex.IsMatch(name,
+                        @"(?<![A-Za-z0-9])" + System.Text.RegularExpressions.Regex.Escape(model.Trim()) + @"(?![A-Za-z0-9])",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)) return true;
             return false;
         }
     }

@@ -16,13 +16,20 @@ namespace MouseDock.Services.Detection
 
         private readonly Dictionary<string, DeviceInfo> _known = new Dictionary<string, DeviceInfo>();
         private readonly object _gate = new object();
+        private readonly DevicePreferences _preferences;
+        public AutoDetectSource(DevicePreferences preferences = null) => _preferences = preferences;
 
         public IEnumerable<DeviceInfo> Read()
         {
             List<DetectedDevice> detected;
-            try { detected = Detect(); }
+            try { detected = Detect(_preferences); }
             catch { detected = new List<DetectedDevice>(); }
 
+            return UpdateFromDetection(detected);
+        }
+
+        internal List<DeviceInfo> UpdateFromDetection(List<DetectedDevice> detected)
+        {
             lock (_gate)
             {
                 var aliveIds = new HashSet<string>();
@@ -50,6 +57,9 @@ namespace MouseDock.Services.Detection
                     // 换电池的型号（G304/G305、G602/G603、办公 Nano 鼠）没有充电状态，
                     // 别让任何读取路径把「电量低」画成「充电中」。
                     device.Charging = merged.Charging && !VendorMap.IsReplaceableBattery(merged.Name);
+                    device.IsStale = merged.IsStale;
+                    device.DetectionIds = group.SelectMany(d => new[] { d.Id, d.PhysicalKey })
+                        .Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 }
 
                 // 这一轮没出现的设备直接移除，列表里只留「现在连接中的」
@@ -61,15 +71,24 @@ namespace MouseDock.Services.Detection
                 return _known.Values
                     .OrderByDescending(d => UsageMap.Priority(d.Kind))
                     .ThenBy(d => d.Name, StringComparer.CurrentCulture)
+                    // Background detection must not mutate the objects already bound to the UI.
+                    // BatteryService needs the previous snapshot intact when a later query times out.
+                    .Select(d => new DeviceInfo
+                    {
+                        Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
+                        Transport = d.Transport, Detail = d.Detail, Note = d.Note,
+                        Connected = d.Connected, Level = d.Level, Charging = d.Charging, IsStale = d.IsStale,
+                        DetectionIds = d.DetectionIds.ToArray()
+                    })
                     .ToList();
             }
         }
 
-        private static List<DetectedDevice> Detect()
+        private static List<DetectedDevice> Detect(DevicePreferences preferences)
         {
             var list = new List<DetectedDevice>();
 
-            try { list.AddRange(HidDiscovery.Enumerate()); } catch { }
+            try { list.AddRange(HidDiscovery.Enumerate(preferences)); } catch { }
 
             // 蓝牙设备常常不给 Appearance，用 HID 里已经识别出的同名设备当提示
             var hints = new Dictionary<string, DeviceKind>(StringComparer.OrdinalIgnoreCase);
@@ -79,7 +98,7 @@ namespace MouseDock.Services.Detection
             try
             {
                 var bt = BluetoothDiscovery.EnumerateAsync(1500, name =>
-                    name != null && hints.TryGetValue(name, out var k) ? k : (DeviceKind?)null)
+                    name != null && hints.TryGetValue(name, out var k) ? k : (DeviceKind?)null, preferences)
                     .GetAwaiter().GetResult();
                 if (bt != null) list.AddRange(bt);
             }
@@ -89,9 +108,10 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>同一台设备可能同时出现在 HID 与蓝牙里：优先蓝牙的连接状态，电量谁有取谁。</summary>
-        private static DetectedDevice MergeGroup(List<DetectedDevice> group)
+        internal static DetectedDevice MergeGroup(List<DetectedDevice> group)
         {
             var best = group.OrderByDescending(d => d.Level >= 0 ? 1 : 0)
+                            .ThenBy(d => d.IsStale)
                             .ThenByDescending(d => d.Transport == "蓝牙" || d.Transport == "蓝牙 LE")
                             .First();
 
@@ -102,7 +122,8 @@ namespace MouseDock.Services.Detection
                 Kind = best.Kind,
                 Transport = best.Transport,
                 Level = best.Level,
-                Charging = group.Any(d => d.Connected && d.Charging),
+                Charging = best.Charging,
+                IsStale = best.IsStale,
                 Connected = best.Connected,
                 Detail = best.Detail,
                 Note = best.Note
@@ -113,6 +134,8 @@ namespace MouseDock.Services.Detection
                 if (merged.Level < 0 && item.Level >= 0)
                 {
                     merged.Level = item.Level;
+                    merged.Charging = item.Charging;
+                    merged.IsStale = item.IsStale;
                     merged.Note = item.Note;                  // 有电量时用能读到的那条通道的说明
                 }
                 if (merged.Kind == DeviceKind.Other && item.Kind != DeviceKind.Other) merged.Kind = item.Kind;

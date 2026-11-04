@@ -62,6 +62,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border x:Name="Row" CornerRadius="12" Padding="6,5,6,5" Margin="0,0,0,3"
+                                c:DeviceActions.Enabled="True"
                                 Background="Transparent" SnapsToDevicePixels="True"
                                 ToolTip="{Binding Note}" ToolTipService.ShowDuration="12000">
                             <Grid>
@@ -82,9 +83,10 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <c:ChargingGlyph Active="{Binding IsChargingActive}" Width="18" Height="17" Margin="0,0,4,0" VerticalAlignment="Center" />
                                     <TextBlock x:Name="Pct" Text="{Binding LevelText}" FontSize="17" FontWeight="Bold" Opacity="{Binding ValueOpacity}"
                                                Margin="0,0,7,0" VerticalAlignment="Center" />
-                                    <c:MeterBar Width="62" Height="9" Value="{Binding LevelFraction}"
+                                    <c:MeterBar Width="48" Height="9" Value="{Binding LevelFraction}"
                                                 Accent="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 Accent2="{Binding Accent2Color, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 TrackBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -103,6 +105,20 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+
+            <TextBlock Grid.Row="1" Text="未选择显示设备，可在设置中勾选" FontSize="10.5" Opacity="0.55" Margin="6,12"
+                       x:Name="EmptyDeviceHint" HorizontalAlignment="Center">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasItems, ElementName=DeviceList}" Value="False">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
 
             <!-- 底栏 -->
             <Grid Grid.Row="2" Margin="2,7,2,0">

@@ -22,6 +22,12 @@ jobs:
       - name: Build
         run: dotnet build src/MouseDock/MouseDock.csproj -c Release --no-restore
 
+      - name: Offline protocol regression
+        run: dotnet run --project tests/MouseDock.ProtocolTests/MouseDock.ProtocolTests.csproj -c Release
+
+      - name: Offline discovery and feedback report regression
+        run: pwsh -NoProfile -File tests/feedback-report-regression.ps1
+
       - name: Publish (self-contained single file)
         run: >
           dotnet publish src/MouseDock/MouseDock.csproj

@@ -1,6 +1,7 @@
 <Window x:Class="MouseDock.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:MouseDock.Controls"
         Title="MouseDock 设置"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="True" Topmost="False" ResizeMode="NoResize"
@@ -180,7 +181,7 @@
             <Grid Grid.Row="0" MouseLeftButtonDown="OnDragWindow" Margin="0,0,0,4">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="设置" FontSize="15" FontWeight="SemiBold" />
-                    <TextBlock x:Name="VersionText" Text="  v1.3.0" FontSize="10.5" Opacity="0.45" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                    <TextBlock x:Name="VersionText" FontSize="10.5" Opacity="0.45" VerticalAlignment="Bottom" Margin="0,0,0,2" />
                 </StackPanel>
                 <Border x:Name="CloseButton" HorizontalAlignment="Right" Width="24" Height="24" CornerRadius="8" Background="#12FFFFFF" Cursor="Hand" PreviewMouseLeftButtonDown="OnCloseClick">
                     <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.8" />
@@ -237,7 +238,7 @@
 
                     
 
-                    <TextBlock Text="显示设备（任务栏与迷你视图最多 5 台）" Style="{StaticResource Section}" />
+                    <TextBlock Text="显示设备 · 全部视图同步（最多 6 台）" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <Grid Margin="0,0,0,6">
@@ -249,14 +250,19 @@
                             <ItemsControl x:Name="DeviceChecks" Foreground="{DynamicResource TextBrush}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay}"
-                                                  Checked="OnDeviceChecked" Unchecked="OnDeviceChecked" Foreground="{DynamicResource TextBrush}" />
+                                        <Border c:DeviceActions.Enabled="True" Background="Transparent" Padding="0,3">
+                                            <StackPanel>
+                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          Checked="OnDeviceChecked" Unchecked="OnDeviceChecked" Foreground="{DynamicResource TextBrush}" />
+                                                <TextBlock Text="{Binding ManagementStatus}" FontSize="9.5" Opacity="0.5" Margin="23,2,0,0" />
+                                            </StackPanel>
+                                        </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
                     </Border>
-                    <TextBlock x:Name="DeviceHint" Text="勾选后同步到迷你视图；同类设备可多台" FontSize="10" Opacity="0.42" Margin="3,0,0,2" />
+                    <TextBlock x:Name="DeviceHint" Text="勾选同步到所有视图；右键可隐藏或重新识别" FontSize="10" Opacity="0.42" Margin="3,0,0,2" TextWrapping="Wrap" />
 
                     <TextBlock Text="显示方式" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">

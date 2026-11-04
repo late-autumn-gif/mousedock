@@ -166,6 +166,9 @@ namespace MouseDock.Services
             public ushort FeatureReportByteLength;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)]
             public ushort[] Reserved;
+            public ushort NumberLinkCollectionNodes, NumberInputButtonCaps, NumberInputValueCaps, NumberInputDataIndices;
+            public ushort NumberOutputButtonCaps, NumberOutputValueCaps, NumberOutputDataIndices;
+            public ushort NumberFeatureButtonCaps, NumberFeatureValueCaps, NumberFeatureDataIndices;
         }
 
         [DllImport("hid.dll")] private static extern bool HidD_GetAttributes(IntPtr h, ref HIDD_ATTRIBUTES a);
@@ -301,35 +304,46 @@ namespace MouseDock.Services
         private readonly Dictionary<string, int> _absent = new Dictionary<string, int>();
         private readonly Dictionary<string, (int Level, DateTime At)> _lastKnown = new Dictionary<string, (int, DateTime)>();
         private int _refreshSeconds = 5;
-        private AppSettings _settings;
+        private DevicePreferences _preferences;
+        private bool _applyingPreferences;
+        private bool _refreshRequested;
+        private bool _disposed;
+        private readonly HashSet<string> _pendingCacheReset = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public ObservableCollection<DeviceInfo> Devices { get; } = new ObservableCollection<DeviceInfo>();
+        public const int DisplayDeviceLimit = 6;
+        public ObservableCollection<DeviceInfo> VisibleDevices { get; } = new ObservableCollection<DeviceInfo>();
+        internal DevicePreferences Preferences => _preferences;
+        public event EventHandler PreferencesChanged;
 
         public event EventHandler Refreshed;
         public event EventHandler SourceChanged;
         public IBatterySource Source => _source;
 
-        public BatteryService(AppSettings settings)
+        public BatteryService(AppSettings settings) : this(settings, null, true) { }
+
+        internal BatteryService(AppSettings settings, IBatterySource source, bool start)
         {
-            _settings = settings;
-            _source = CreateSource(settings);
+            _preferences = new DevicePreferences(settings);
+            _source = source ?? CreateSource(settings, _preferences);
             _refreshSeconds = Math.Max(5, settings.RefreshSeconds);
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_refreshSeconds) };
             _timer.Tick += (_, __) => Poll();
-            _timer.Start();
-            Poll();
+            if (start) { _timer.Start(); Poll(); }
         }
 
         public void Configure(AppSettings settings)
         {
-            _settings = settings;
             string key = settings.Provider ?? "auto";
-            if (_source == null || _source.Key != key)
+            bool changedSettings = !_preferences.IsFor(settings);
+            if (changedSettings) _preferences = new DevicePreferences(settings);
+            if (changedSettings || _source == null || _source.Key != key)
             {
-                _source = CreateSource(settings);
-                foreach (var d in Devices) d.Selected = false;
+                _source = CreateSource(settings, _preferences);
+                foreach (var d in Devices) d.PropertyChanged -= OnDeviceChanged;
                 _mirror.Clear();
                 Devices.Clear();
+                VisibleDevices.Clear();
                 SourceChanged?.Invoke(this, EventArgs.Empty);
             }
             _refreshSeconds = Math.Max(5, settings.RefreshSeconds);
@@ -337,7 +351,7 @@ namespace MouseDock.Services
             Poll();
         }
 
-        private static IBatterySource CreateSource(AppSettings settings)
+        private static IBatterySource CreateSource(AppSettings settings, DevicePreferences preferences)
         {
             switch ((settings.Provider ?? "auto").ToLowerInvariant())
             {
@@ -350,7 +364,7 @@ namespace MouseDock.Services
                 case "hid":
                     return new HidBatterySource();
                 default:
-                    return new Detection.AutoDetectSource();
+                    return new Detection.AutoDetectSource(preferences);
             }
         }
 
@@ -361,34 +375,57 @@ namespace MouseDock.Services
         /// <summary>探测要访问 P/Invoke 与 WinRT，放到线程池跑，避免卡住 UI。</summary>
         public async System.Threading.Tasks.Task PollAsync()
         {
-            if (_polling) return;
+            if (_disposed) return;
+            if (_polling) { _refreshRequested = true; return; }
             _polling = true;
+            try { await PollCoreAsync(); }
+            finally
+            {
+                _polling = false;
+                if (_refreshRequested && !_disposed)
+                {
+                    _refreshRequested = false;
+                    _ = _timer.Dispatcher.BeginInvoke(new Action(Poll));
+                }
+            }
+        }
 
+        private async System.Threading.Tasks.Task PollCoreAsync()
+        {
             var source = _source;
+            int generation = _preferences.Generation;
+            string[] reset = _pendingCacheReset.ToArray();
+            _pendingCacheReset.Clear();
             List<DeviceInfo> snapshot = null;
             try
             {
-                // Sources may reuse mutable objects. Keep them separate from UI-bound devices and cached readings.
-                snapshot = await System.Threading.Tasks.Task.Run(() => source.Read()?.Select(d => new DeviceInfo
+                snapshot = await System.Threading.Tasks.Task.Run(() =>
                 {
-                    Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
-                    Transport = d.Transport, Detail = d.Detail, Note = d.Note,
-                    Connected = d.Connected, Level = d.Level, Charging = d.Charging,
-                    Selected = d.Selected, IsStale = d.IsStale
-                }).ToList());
+                    foreach (string id in reset) Detection.HidDiscovery.InvalidateDeviceHints(id);
+                    return source.Read()?.Select(d => new DeviceInfo
+                    {
+                        Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
+                        Transport = d.Transport, Detail = d.Detail, Note = d.Note,
+                        Connected = d.Connected, Level = d.Level, Charging = d.Charging,
+                        Selected = d.Selected, IsStale = d.IsStale,
+                        DetectionIds = d.DetectionIds?.ToArray()
+                    }).ToList();
+                });
             }
             catch { }
-            finally { _polling = false; }
-
+            if (_disposed || !ReferenceEquals(source, _source)) return;
+            if (generation != _preferences.Generation) { _refreshRequested = true; return; }
             if (snapshot == null) return;
 
             foreach (var incoming in snapshot)
             {
+                _preferences.Apply(incoming);
+                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.Charging = false; incoming.IsStale = false; }
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
 
                 // 设备还在，只是这一次没读到（厂商通道忙/设备刚唤醒）：
-                // 保留上一次的有效读数，避免百分比闪成「—」。
-                if (existing != null && incoming.Level < 0 && existing.Level >= 0)
+                // 保留上一次的有效读数，避免百分比闪成「—」；连续 6 次读不到再清零
+                if (incoming.RecognitionEnabled && existing != null && incoming.Level < 0 && existing.Level >= 0)
                 {
                     // 设备休眠 / 通道忙：一直沿用上一次成功的读数，只标记为「旧值」，
                     // 这样鼠标静止十秒、几分钟都不会突然变成 —
@@ -397,9 +434,10 @@ namespace MouseDock.Services
                     misses++;
                     _misses[incoming.Id] = misses;
                     incoming.Level = existing.Level;
-                    incoming.IsStale = misses > 2;      // 连续 3 次（约 15 秒）没刷新就转半透明
+                    incoming.Charging = existing.Charging;
+                    incoming.IsStale = true; // Cached charge flags must not keep a live charging animation running.
                 }
-                else if (incoming.Level >= 0)
+                else if (incoming.Level >= 0 && !incoming.IsStale)
                 {
                     _misses[incoming.Id] = 0;
                     incoming.IsStale = false;
@@ -407,19 +445,20 @@ namespace MouseDock.Services
                 }
 
                 _absent[incoming.Id] = 0;
+                if (incoming.IsStale && incoming.Level >= 0)
+                    incoming.Note = "上次有效电量，待刷新（不是实时读数）。" + incoming.Note;
 
                 if (existing == null)
                 {
-                    if (_settings.HasDeviceSelection || _settings.SelectedDeviceIds.Count > 0)
-                        incoming.Selected = _settings.SelectedDeviceIds.Contains(incoming.Id);
                     // 短暂掉线后重新出现：如果几分钟内读过，先用旧值顶上，避免界面闪成 —
-                    if (incoming.Level < 0 && _lastKnown.TryGetValue(incoming.Id, out var last)
+                    if (incoming.RecognitionEnabled && incoming.Level < 0 && _lastKnown.TryGetValue(incoming.Id, out var last)
                         && (DateTime.UtcNow - last.At).TotalMinutes < 10)
                     {
                         incoming.Level = last.Level;
                         incoming.IsStale = true;
                     }
                     _mirror.Add(incoming);
+                    incoming.PropertyChanged += OnDeviceChanged;
                     Devices.Add(incoming);
                     continue;
                 }
@@ -434,6 +473,8 @@ namespace MouseDock.Services
                     existing.Detail = incoming.Detail;
                     existing.Note = incoming.Note;
                     existing.IsStale = incoming.IsStale;
+                    existing.DetectionIds = incoming.DetectionIds;
+                    ApplyPreferences(existing);
                 }
             }
 
@@ -450,18 +491,112 @@ namespace MouseDock.Services
                 _absent[Devices[i].Id] = missTimes;
                 if (missTimes < 3) continue;
                 _mirror.Remove(Devices[i]);
+                Devices[i].PropertyChanged -= OnDeviceChanged;
                 Devices.RemoveAt(i);
             }
 
             var target = TimeSpan.FromSeconds(_refreshSeconds);
             if (_timer.Interval != target) _timer.Interval = target;
 
+            RefreshVisible();
+        }
+
+        private void ApplyPreferences(DeviceInfo device)
+        {
+            _applyingPreferences = true;
+            try { _preferences.Apply(device); }
+            finally { _applyingPreferences = false; }
+        }
+
+        private void OnDeviceChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (_applyingPreferences) return;
+            if (e.PropertyName == nameof(DeviceInfo.Selected))
+            {
+                var device = (DeviceInfo)sender;
+                bool refresh = device.Selected && _preferences.Enable(device);
+                SaveSelection();
+                if (refresh) Poll();
+            }
+        }
+
+        public void SaveSelection()
+        {
+            _preferences.CaptureSelection(Devices);
+            foreach (var d in Devices) ApplyPreferences(d);
+            RefreshVisible();
+            PreferencesChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void SetSelected(DeviceInfo device, bool selected)
+        {
+            device.Selected = selected;
+        }
+
+        public void HideDevice(DeviceInfo device)
+        {
+            _preferences.Hide(device);
+            _applyingPreferences = true;
+            try { device.Selected = false; }
+            finally { _applyingPreferences = false; }
+            SaveSelection();
+        }
+
+        public void CancelRecognition(DeviceInfo device)
+        {
+            _preferences.Disable(device);
+            ClearReading(device);
+            _applyingPreferences = true;
+            try { device.Selected = false; }
+            finally { _applyingPreferences = false; }
+            SaveSelection();
+            Poll();
+        }
+
+        public void Reidentify(DeviceInfo device)
+        {
+            _preferences.Enable(device, forceRefresh: true);
+            foreach (string key in DevicePreferences.Keys(device)) _pendingCacheReset.Add(key);
+            // Query again without deleting the last real percentage or confirmed
+            // identity. An asleep device must not turn a rescan into permanent "—".
+            device.Charging = false;
+            device.IsStale = device.HasLevel;
+            device.Note = device.HasLevel ? "正在重新识别；待刷新，保留上次有效电量。" : "正在重新识别；尚未取得有效电量。";
+            _applyingPreferences = true;
+            try { device.Selected = true; }
+            finally { _applyingPreferences = false; }
+            SaveSelection();
+            Poll();
+        }
+
+        private void ClearReading(DeviceInfo device)
+        {
+            _lastKnown.Remove(device.Id);
+            _misses.Remove(device.Id);
+            device.Level = -1;
+            device.Charging = false;
+            device.IsStale = false;
+        }
+
+        private void RefreshVisible()
+        {
+            var wanted = Devices.Where(d => d.IsDisplayEligible).Take(DisplayDeviceLimit).ToList();
+            for (int i = VisibleDevices.Count - 1; i >= 0; i--)
+                if (!wanted.Contains(VisibleDevices[i])) VisibleDevices.RemoveAt(i);
+            for (int i = 0; i < wanted.Count; i++)
+            {
+                int at = VisibleDevices.IndexOf(wanted[i]);
+                if (at < 0) VisibleDevices.Insert(i, wanted[i]);
+                else if (at != i) VisibleDevices.Move(at, i);
+            }
             Refreshed?.Invoke(this, EventArgs.Empty);
         }
 
         public void Dispose()
         {
+            _disposed = true;
             _timer?.Stop();
+            foreach (var d in Devices) d.PropertyChanged -= OnDeviceChanged;
         }
     }
 }

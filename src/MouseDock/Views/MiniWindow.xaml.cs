@@ -37,12 +37,10 @@ namespace MouseDock.Views
             };
         }
 
-        /// <summary>迷你视图只显示被勾选的设备，最多 5 台。</summary>
+        /// <summary>迷你视图只显示被勾选的设备，最多 6 台。</summary>
         public void Rebuild()
         {
-            var selected = App.SelectedDevices
-                .Take(5)
-                .ToList();
+            var selected = App.Battery.VisibleDevices.ToList();
 
             if (selected.Count == _visible.Count && selected.SequenceEqual(_visible)) return;
 

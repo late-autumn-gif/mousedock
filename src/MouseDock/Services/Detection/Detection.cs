@@ -13,6 +13,7 @@ namespace MouseDock.Services.Detection
         public string Transport { get; set; } = "";   // 蓝牙 / 蓝牙 LE / 2.4G / USB / 内置
         public int Level { get; set; } = -1;
         public bool Charging { get; set; }
+        public bool IsStale { get; set; }
         public bool Connected { get; set; } = true;
         public string Detail { get; set; } = "";      // VID:PID 或地址，供排查
         public string Note { get; set; } = "";        // 电量读不到的原因，直接给用户看
@@ -41,11 +42,20 @@ namespace MouseDock.Services.Detection
             [0x3142] = "Mad Catz",
             [0x36B0] = "ATK",
             [0x3673] = "MCHOSE",
+            [0x3837] = "MCHOSE",
+            [0x5253] = "MCHOSE",
             [0x05AC] = "Apple",
             [0x8087] = "Intel"
         };
 
         public static string Brand(ushort vid) => Brands.TryGetValue(vid, out var b) ? b : null;
+
+        internal static bool TryUsbHeadset(ushort vid, ushort pid, out string name)
+        {
+            // Confirmed locally: USB audio endpoints and Consumer Control HID share this composite device.
+            name = vid == 0x4C4A && pid == 0x4155 ? "竹林鸟玄武（ZhuAudio ZG2）" : null;
+            return name != null;
+        }
 
         /// <summary>
         /// 已知接收器 → 它背后真正的外设。接收器自身只报 "Wireless-Receiver"，

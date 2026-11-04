@@ -6,6 +6,10 @@ bin/
 obj/
 publish/
 
+# 仓库本地 .NET SDK（MouseDock.cmd 首次运行会装到这里）
+.dotnet/
+.dotnet-install.ps1
+
 # 开发期抓包与截图
 usbcapture/
 *.pcap

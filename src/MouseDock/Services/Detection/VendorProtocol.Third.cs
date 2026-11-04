@@ -333,13 +333,7 @@ namespace MouseDock.Services.Detection
         /// <summary>只写不读，给分片协议用。</summary>
         private static bool WriteFrame(IntPtr h, IntPtr ev, byte[] frame)
         {
-            var ov = new NativeOverlapped { EventHandle = ev };
-            if (!WriteFile(h, frame, frame.Length, IntPtr.Zero, ref ov) &&
-                Marshal.GetLastWin32Error() != 997) return false;
-            WaitForSingleObject(ev, 300);
-            GetOverlappedResult(h, ref ov, out _, false);
-            ResetEvent(ev);
-            return true;
+            return Transfer(h, ev, frame, true, 300, out _);
         }
     }
 }

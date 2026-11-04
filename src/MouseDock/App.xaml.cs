@@ -38,10 +38,8 @@ namespace MouseDock
         public static string DefaultBackgroundAsset { get; private set; }
         public static bool StartHidden { get; private set; }
 
-        public static IEnumerable<DeviceInfo> SelectedDevices =>
-            Battery?.Devices.Where(d => d.Selected && d.Connected) ?? Enumerable.Empty<DeviceInfo>();
-
-        public static DeviceInfo PrimaryDevice => SelectedDevices.FirstOrDefault();
+        public static DeviceInfo PrimaryDevice =>
+            Battery?.VisibleDevices.FirstOrDefault();
 
         private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar);
         private static DispatcherTimer _trayClickTimer;
@@ -105,7 +103,6 @@ namespace MouseDock
             if (Settings.Version < 5)
             {
                 Settings.Version = 5;
-                Settings.SurfaceMode = "taskbar";
                 SettingsStore.Save(Settings);
             }
             ResolveAssets();
@@ -114,7 +111,12 @@ namespace MouseDock
             ExtractedAccent = extracted;
 
             Battery = new BatteryService(Settings);
-            RestoreSelection();
+            Battery.PreferencesChanged += (_, __) =>
+            {
+                RefreshDeviceViews();
+                UpdateTrayIcon();
+                SaveSettings();
+            };
             Battery.Poll();
 
             if (e.Args.Contains("--shot"))
@@ -196,14 +198,6 @@ namespace MouseDock
             DefaultBackgroundAsset = File.Exists(bg) ? bg : null;
         }
 
-        private static void RestoreSelection()
-        {
-            var ids = Settings.SelectedDeviceIds;
-            bool hasAny = Settings.HasDeviceSelection || (ids != null && ids.Count > 0);
-            foreach (var d in Battery.Devices)
-                d.Selected = !hasAny || ids.Contains(d.Id);
-        }
-
         private void BuildWindows()
         {
             Dock = new DockWindow();
@@ -228,7 +222,7 @@ namespace MouseDock
             if (Settings.ShowDock && !StartHidden) Dock.Show();
             if (Settings.ShowMini && !StartHidden) Mini.Show();
             if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
-            if (Settings.SurfaceMode == "taskbar") Taskbar.Show();
+            if (Settings.SurfaceMode == "taskbar" && !StartHidden) Taskbar.Show();
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -381,32 +375,34 @@ namespace MouseDock
 
         private static System.Windows.Forms.Timer _trayBlink;
         private static bool _trayBlinkOn;
+        private static int _trayAnimationFrame;
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
 
         /// <summary>托盘图标跟着电量走：正常绿、低电量红（还会闪）、充电绿、未知灰。</summary>
         private static void UpdateTrayIcon()
         {
             if (_tray == null) return;
 
-            DeviceInfo dev = null;
-            foreach (var d in SelectedDevices)
-            {
-                if (d.Connected && d.HasLevel) { dev = d; break; }
-            }
+            var dev = Battery.VisibleDevices
+                .OrderByDescending(d => d.IsChargingActive).ThenByDescending(d => d.HasLevel).FirstOrDefault();
 
             int level = dev?.Level ?? -1;
-            bool charging = dev?.Charging ?? false;
+            bool charging = dev?.IsChargingActive ?? false;
             bool low = level >= 0 && !charging && level <= Settings.LowBatteryWarn;
 
             try
             {
+                var previousIcon = _tray.Icon;
                 _tray.Icon = RenderTrayIcon(level, charging, low && _trayBlinkOn);
-                _tray.Text = level >= 0
+                previousIcon?.Dispose();
+                string trayText = level >= 0
                     ? $"MouseDock · {dev.Name} {level}%" + (charging ? "（充电中）" : "")
-                    : "MouseDock · 电量，一起看见（双击唤起）";
+                    : charging ? $"MouseDock · {dev.Name}（充电中，电量未知）" : "MouseDock · 电量，一起看见（双击唤起）";
+                _tray.Text = trayText.Length <= 63 ? trayText : trayText.Substring(0, 60) + "…";
             }
             catch { }
 
-            if (low)
+            if (low || charging)
             {
                 if (_trayBlink == null)
                 {
@@ -414,15 +410,18 @@ namespace MouseDock
                     _trayBlink.Tick += (_, __) =>
                     {
                         _trayBlinkOn = !_trayBlinkOn;
+                        _trayAnimationFrame = (_trayAnimationFrame + 1) % 6;
                         UpdateTrayIcon();
                     };
                 }
+                _trayBlink.Interval = charging ? 300 : 600;
                 if (!_trayBlink.Enabled) _trayBlink.Start();
             }
             else
             {
                 if (_trayBlink != null) _trayBlink.Stop();
                 _trayBlinkOn = false;
+                _trayAnimationFrame = 0;
             }
         }
 
@@ -441,7 +440,7 @@ namespace MouseDock
                     ? System.Drawing.Color.FromArgb(0x7F, 0xE7, 0xC4)
                     : level < 0
                         ? System.Drawing.Color.FromArgb(0x8A, 0x8A, 0x8A)
-                        : level <= Settings.LowBatteryWarn
+                        : level <= (Settings?.LowBatteryWarn ?? 20)
                             ? System.Drawing.Color.FromArgb(0xFF, 0x6B, 0x6B)
                             : System.Drawing.Color.FromArgb(0x7F, 0xE7, 0xC4);
                 if (dim) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
@@ -450,6 +449,17 @@ namespace MouseDock
                 using (var fill = new System.Drawing.SolidBrush(bg))
                     g.FillPath(fill, path);
 
+                if (charging)
+                {
+                    using var outline = new System.Drawing.Pen(System.Drawing.Color.FromArgb(0x12, 0x1A, 0x18), 1.8f);
+                    using var cell = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x12, 0x1A, 0x18));
+                    g.DrawRectangle(outline, 5, 9, 20, 13);
+                    g.FillRectangle(cell, 26, 13, 2, 5);
+                    int filled = _trayAnimationFrame / 2 + 1;
+                    for (int i = 0; i < filled; i++) g.FillRectangle(cell, 8 + i * 5, 12, 3, 7);
+                }
+                else
+                {
                 string txt = level >= 0 ? level.ToString() : "—";
                 float px = txt.Length >= 3 ? 12f : 15f;
                 using var font = new System.Drawing.Font("Segoe UI", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
@@ -458,8 +468,11 @@ namespace MouseDock
                 g.DrawString(txt, font, fg,
                     (size - sz.Width) / 2f,
                     (size - sz.Height) / 2f + 1f);
+                }
             }
-            return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+            IntPtr handle = bmp.GetHicon();
+            try { using var borrowed = System.Drawing.Icon.FromHandle(handle); return (System.Drawing.Icon)borrowed.Clone(); }
+            finally { DestroyIcon(handle); }
         }
 
         private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(System.Drawing.Rectangle r, int radius)
@@ -600,6 +613,28 @@ namespace MouseDock
             menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
             menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量环", () => SetSurface("taskbar")));
             menu.Items.Add(new Separator());
+            if (owner == Icon)
+            {
+                foreach (var (character, label) in new[] { ("otter", "充电水獭"), ("rikka", "六花"), ("roxy", "洛琪希") })
+                {
+                    menu.Items.Add(Item("动态形象 · " + label, () =>
+                    {
+                        Settings.AnimatedCharacter = character;
+                        Settings.AnimatedPhotoBackground = true;
+                        Settings.IconMode = "photo";
+                        Icon.ApplyStyle("photo", true);
+                        SaveSettings();
+                    }));
+                }
+                menu.Items.Add(Item("背景 · 原照片", () =>
+                {
+                    Settings.AnimatedPhotoBackground = false;
+                    Settings.IconMode = "photo";
+                    Icon.ApplyStyle("photo", true);
+                    SaveSettings();
+                }));
+                menu.Items.Add(new Separator());
+            }
             foreach (var p in ThemePreset.Presets)
             {
                 var preset = p;
@@ -683,8 +718,7 @@ namespace MouseDock
 
         public static void SaveDeviceSelection()
         {
-            Settings.SelectedDeviceIds = Battery.Devices.Where(d => d.Selected).Select(d => d.Id).ToList();
-            Settings.HasDeviceSelection = true;
+            Battery.SaveSelection();
             RefreshDeviceViews();
             UpdateTrayIcon();
             SaveSettings();
@@ -862,7 +896,11 @@ namespace MouseDock
         public static void ExitApp()
         {
             SaveWindowPositions();
-            if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
+            SaveDeviceSelection();
+            _trayClickTimer?.Stop();
+            _trayBlink?.Stop();
+            _trayBlink?.Dispose();
+            if (_tray != null) { _tray.Visible = false; _tray.Icon?.Dispose(); _tray.Dispose(); }
             Current.Shutdown();
         }
 

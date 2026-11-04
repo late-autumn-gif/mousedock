@@ -31,6 +31,8 @@ namespace MouseDock.Services
                     if (s != null)
                     {
                         s.SelectedDeviceIds ??= new System.Collections.Generic.List<string>();
+                        s.HiddenDeviceIds ??= new System.Collections.Generic.List<string>();
+                        s.DisabledRecognitionDeviceIds ??= new System.Collections.Generic.List<string>();
                         return s;
                     }
                 }

@@ -1,6 +1,8 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Rfcomm;
@@ -30,8 +32,22 @@ namespace MouseDock.Services.Detection
             catch (Exception ex) { trace?.Invoke("异常: " + ex.GetType().Name + " " + ex.Message); return -1; }
         }
 
+        /// <summary>按蓝牙地址打开目标，避免同名耳机互相串读；字符串入口仅保留给命令行。</summary>
+        public static int TryRead(ulong bluetoothAddress, int timeoutMs = 5000, Action<string> trace = null)
+        {
+            if (bluetoothAddress == 0 || bluetoothAddress > 0xFFFFFFFFFFFFUL) return -1;
+            try
+            {
+                trace?.Invoke($"目标地址: {bluetoothAddress:X12}");
+                return ReadDeviceAsync(() => BluetoothDevice.FromBluetoothAddressAsync(bluetoothAddress).AsTask(),
+                    timeoutMs, trace).GetAwaiter().GetResult();
+            }
+            catch (Exception ex) { trace?.Invoke("异常: " + ex.GetType().Name + " " + ex.Message); return -1; }
+        }
+
         private static async Task<int> TryReadAsync(string nameHint, int timeoutMs, Action<string> trace)
         {
+            if (string.IsNullOrWhiteSpace(nameHint)) return -1;
             var infos = await DeviceInformation.FindAllAsync(BluetoothDevice.GetDeviceSelector()).AsTask()
                 .WaitAsync(TimeSpan.FromMilliseconds(1200)).ConfigureAwait(false);
 
@@ -40,10 +56,17 @@ namespace MouseDock.Services.Detection
             if (target == null) { trace?.Invoke("找不到设备 " + nameHint); return -1; }
             trace?.Invoke("目标: " + target.Name);
 
+            return await ReadDeviceAsync(() => BluetoothDevice.FromIdAsync(target.Id).AsTask(),
+                timeoutMs, trace).ConfigureAwait(false);
+        }
+
+        private static async Task<int> ReadDeviceAsync(Func<Task<BluetoothDevice>> openDevice,
+            int timeoutMs, Action<string> trace)
+        {
             BluetoothDevice device = null;
             try
             {
-                device = await BluetoothDevice.FromIdAsync(target.Id).AsTask()
+                device = await openDevice()
                     .WaitAsync(TimeSpan.FromMilliseconds(1200)).ConfigureAwait(false);
                 if (device == null) { trace?.Invoke("FromIdAsync 返回 null"); return -1; }
                 trace?.Invoke("连接状态: " + device.ConnectionStatus);
@@ -65,27 +88,20 @@ namespace MouseDock.Services.Detection
                 catch (Exception ex) { trace?.Invoke("连接失败: " + ex.Message); return -1; }
                 trace?.Invoke("已连接，开始握手");
 
-                var reader = new DataReader(socket.InputStream) { InputStreamOptions = InputStreamOptions.Partial };
-                var writer = new DataWriter(socket.OutputStream);
+                using var reader = new DataReader(socket.InputStream) { InputStreamOptions = InputStreamOptions.Partial };
+                using var writer = new DataWriter(socket.OutputStream);
+                using var readTimeout = new CancellationTokenSource(Math.Max(1, timeoutMs));
+                var token = readTimeout.Token;
                 var sb = new StringBuilder();
-                var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
                 bool brsfDone = false, slcDone = false;
 
-                while (DateTime.UtcNow < deadline)
+                while (!token.IsCancellationRequested)
                 {
-                    byte[] chunk = null;
-                    try
-                    {
-                        var load = reader.LoadAsync(256).AsTask();
-                        if (await Task.WhenAny(load, Task.Delay(300)).ConfigureAwait(false) == load)
-                        {
-                            uint n = await load.ConfigureAwait(false);
-                            if (n > 0) { chunk = new byte[n]; reader.ReadBytes(chunk); }
-                        }
-                    }
-                    catch { break; }
-
-                    if (chunk == null) continue;
+                    // 同一时刻只有一次读取；超时取消该 WinRT 操作，而不是遗留读取再发起下一次。
+                    uint n = await reader.LoadAsync(256).AsTask(token).ConfigureAwait(false);
+                    if (n == 0) return -1;
+                    var chunk = new byte[n];
+                    reader.ReadBytes(chunk);
                     sb.Append(Encoding.ASCII.GetString(chunk));
                     string all = sb.ToString();
 
@@ -98,8 +114,8 @@ namespace MouseDock.Services.Detection
                         writer.WriteString("AT+CMER=3,0,0,1\r\n");
                         writer.WriteString("AT+XAPL=0000-0000-0100,0\r");
                         writer.WriteString("AT+IPHONEACCEV=1,0\r");
-                        await writer.StoreAsync().AsTask().ConfigureAwait(false);
-                        await writer.FlushAsync().AsTask().ConfigureAwait(false);
+                        await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
+                        await writer.FlushAsync().AsTask(token).ConfigureAwait(false);
                         trace?.Invoke("已发送 AG 全套应答 + XAPL");
                         brsfDone = true;
                         slcDone = true;
@@ -109,44 +125,76 @@ namespace MouseDock.Services.Detection
                     {
                         writer.WriteString("+CIND: (\"service\",(0-1)),(\"call\",(0-1)),(\"callsetup\",(0-3))," +
                                            "(\"callheld\",(0-2)),(\"signal\",(0-5)),(\"roam\",(0-1)),(\"battchg\",(0-5))\r\nOK\r\n");
-                        await writer.StoreAsync().AsTask().ConfigureAwait(false);
+                        await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
                         writer.WriteString("AT+CMER=3,0,0,1\r\n");
-                        await writer.StoreAsync().AsTask().ConfigureAwait(false);
+                        await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
 
                         // 关键：先由 AG 宣告 Apple 扩展，耳机才会回自己的 AT+XAPL / AT+IPHONEACCEV
                         writer.WriteString("AT+XAPL=0000-0000-0100,0\r");
-                        await writer.StoreAsync().AsTask().ConfigureAwait(false);
+                        await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
                         writer.WriteString("AT+IPHONEACCEV=1,0\r");
-                        await writer.StoreAsync().AsTask().ConfigureAwait(false);
-                        await writer.FlushAsync().AsTask().ConfigureAwait(false);
+                        await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
+                        await writer.FlushAsync().AsTask(token).ConfigureAwait(false);
                         slcDone = true;
                     }
 
-                    // AT+IPHONEACCEV=<count>,<key>,<value>；key=1 是电量，value 0–9
-                    var m = System.Text.RegularExpressions.Regex.Match(all, @"AT\+IPHONEACCEV=\d+\s*,\s*1\s*,\s*(\d)");
-                    if (m.Success)
-                    {
-                        int raw = int.Parse(m.Groups[1].Value);
-                        if (raw >= 0 && raw <= 9)
-                        {
-                            int pct = (int)Math.Round(raw / 9.0 * 100);
-                            return Math.Clamp(pct, 1, 100);
-                        }
-                    }
-
-                    // 个别固件回 +IPHONEACCEV: 1,<level>
-                    var m2 = System.Text.RegularExpressions.Regex.Match(all, @"\+IPHONEACCEV:\s*1\s*,\s*(\d{1,3})");
-                    if (m2.Success)
-                    {
-                        int pct = int.Parse(m2.Groups[1].Value);
-                        if (pct >= 0 && pct <= 100) return Math.Clamp(pct, 1, 100);
-                    }
+                    if (TryParseBatteryResponse(all, out int level)) return level;
                 }
 
-                try { socket.Dispose(); } catch { }
                 return -1;
             }
+            catch (OperationCanceledException) { trace?.Invoke("HFP 电量读取超时"); return -1; }
             finally { device?.Dispose(); }
         }
+
+        /// <summary>只解析 CR/LF 结束的完整行，避免把分包中的 10 误读成档位 1。</summary>
+        internal static bool TryParseBatteryResponse(string transcript, out int level)
+        {
+            level = -1;
+            if (string.IsNullOrEmpty(transcript)) return false;
+            int start = 0;
+            for (int i = 0; i < transcript.Length; i++)
+            {
+                if (transcript[i] != '\r' && transcript[i] != '\n') continue;
+                string line = transcript.Substring(start, i - start).Trim();
+                start = i + 1;
+                const string command = "AT+IPHONEACCEV=";
+                const string response = "+IPHONEACCEV:";
+                if (line.StartsWith(command, StringComparison.OrdinalIgnoreCase))
+                {
+                    var fields = line.Substring(command.Length).Split(',');
+                    if (fields.Length % 2 != 1 || !TryReadNumber(fields[0], out int count)
+                        || count != (fields.Length - 1) / 2) continue;
+                    int raw = -1;
+                    bool valid = true;
+                    for (int j = 1; j < fields.Length; j += 2)
+                    {
+                        if (!TryReadNumber(fields[j], out int key) || !TryReadNumber(fields[j + 1], out int value))
+                        { valid = false; break; }
+                        if (key != 1) continue;
+                        if (value > 9 || raw >= 0) { valid = false; break; }
+                        raw = value;
+                    }
+                    if (valid && raw >= 0)
+                    {
+                        // 保留已有档位换算；0 不再被伪造为 1%。
+                        level = (int)Math.Round(raw / 9.0 * 100);
+                        return true;
+                    }
+                }
+                else if (line.StartsWith(response, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 保留已有固件兼容格式，其 value 已是百分比。
+                    var fields = line.Substring(response.Length).Split(',');
+                    if (fields.Length == 2 && TryReadNumber(fields[0], out int key) && key == 1
+                        && TryReadNumber(fields[1], out int value) && value <= 100)
+                    { level = value; return true; }
+                }
+            }
+            return false;
+        }
+
+        private static bool TryReadNumber(string text, out int value) =>
+            int.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 }

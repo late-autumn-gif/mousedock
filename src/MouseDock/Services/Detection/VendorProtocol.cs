@@ -26,12 +26,13 @@ namespace MouseDock.Services.Detection
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr tmpl);
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool WriteFile(IntPtr h, byte[] buf, int len, IntPtr written, ref NativeOverlapped ov);
+        private static extern bool WriteFile(IntPtr h, IntPtr buf, int len, IntPtr written, IntPtr ov);
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool ReadFile(IntPtr h, byte[] buf, int len, IntPtr read, ref NativeOverlapped ov);
+        private static extern bool ReadFile(IntPtr h, IntPtr buf, int len, IntPtr read, IntPtr ov);
         [DllImport("kernel32.dll")] private static extern IntPtr CreateEvent(IntPtr a, bool manual, bool init, IntPtr name);
         [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(IntPtr h, uint ms);
-        [DllImport("kernel32.dll")] private static extern bool GetOverlappedResult(IntPtr h, ref NativeOverlapped ov, out uint transferred, bool wait);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetOverlappedResult(IntPtr h, IntPtr ov, out uint transferred, bool wait);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CancelIoEx(IntPtr h, IntPtr ov);
         [DllImport("kernel32.dll")] private static extern bool ResetEvent(IntPtr h);
         [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
         [DllImport("hid.dll")] private static extern void HidD_GetHidGuid(out Guid guid);
@@ -41,6 +42,7 @@ namespace MouseDock.Services.Detection
         private static extern bool SetupDiEnumDeviceInterfaces(IntPtr set, IntPtr info, ref Guid guid, uint index, ref SP_DEVICE_INTERFACE_DATA data);
         [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data, IntPtr detail, int size, out int needed, IntPtr info);
+        [DllImport("setupapi.dll")] private static extern bool SetupDiDestroyDeviceInfoList(IntPtr set);
         [DllImport("hid.dll")] private static extern bool HidD_GetAttributes(IntPtr h, ref HIDD_ATTRIBUTES attr);
         [DllImport("hid.dll")] private static extern bool HidD_GetFeature(IntPtr h, byte[] buf, int len);
         [DllImport("hid.dll")] private static extern bool HidD_SetFeature(IntPtr h, byte[] buf, int len);
@@ -63,8 +65,12 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>读一次 2.4G 电量；失败返回 -1。接收器偶尔回 status=0x02，每次重试用新句柄。</summary>
-        public static int TryReadBattery(ushort vid, ushort pid)
+        public static int TryReadBattery(ushort vid, ushort pid) => TryReadBattery(vid, pid, out _);
+
+        public static int TryReadBattery(ushort vid, ushort pid, out bool charging)
         {
+            charging = false;
+            IdentifyStale = false;
             var paths = Paths(vid, pid);
 
             for (int attempt = 0; attempt < 3; attempt++)
@@ -79,7 +85,7 @@ namespace MouseDock.Services.Detection
                     {
                         var caps = Caps(h);
                         if (caps.OutputReportByteLength != 33) continue;   // 只处理 32 字节厂商集合
-                        int level = Session(h, $"{vid:X4}:{pid:X4}");
+                        int level = Session(h, $"{vid:X4}:{pid:X4}", out charging);
                         if (level >= 0) return level;
                     }
                     catch { }
@@ -98,8 +104,11 @@ namespace MouseDock.Services.Detection
         /// 两个通道回同一份状态：00 64 00 01 01 01 01 …（在这里读到 byte1 = 100）。
         /// 只认「首字节 0x00、次字节 1..100、第三字节 0/1」这一种形状，对不上就返回 -1，不猜。
         /// </summary>
-        public static int TryReadStatus(ushort vid, ushort pid)
+        public static int TryReadStatus(ushort vid, ushort pid) => TryReadStatus(vid, pid, out _);
+
+        public static int TryReadStatus(ushort vid, ushort pid, out bool charging)
         {
+            charging = false;
             LoadBatteryCache();
             string key = $"{vid:X4}:{pid:X4}";
 
@@ -131,6 +140,7 @@ namespace MouseDock.Services.Detection
                             int charge = buf[at + 2];
                             if (pct >= 1 && pct <= 100 && charge <= 1)
                             {
+                                charging = charge == 1;
                                 if (!_lastGood.TryGetValue(key, out int old) || old != pct)
                                 {
                                     _lastGood[key] = pct;
@@ -161,6 +171,7 @@ namespace MouseDock.Services.Detection
 
         /// <summary>最近一次 TryReadStatus 的结果是不是「上次值兜底」。调用方读它来标注。</summary>
         public static bool StatusStale { get; private set; }
+        public static bool IdentifyStale { get; private set; }
 
         // ── 上次值落盘：跨进程也要能兜底（--detect 每次都是新进程，内存缓存活不过去）──
         private static bool _cacheLoaded;
@@ -202,8 +213,9 @@ namespace MouseDock.Services.Detection
         ///   body[8]&amp;7 = 连接模式（0/1/2），模式 1 且 body[8]&amp;8==0 表示鼠标休眠
         ///   body[9] = 电量百分比，body[10] = 充电标志
         /// </summary>
-        public static int TryReadMchose(ushort vid, ushort pid)
+        private static int TryReadMchoseLegacy(ushort vid, ushort pid, out bool charging)
         {
+            charging = false;
             foreach (var path in Paths(vid, pid))
             {
                 IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -214,34 +226,22 @@ namespace MouseDock.Services.Detection
                 {
                     var caps = Caps(h);
                     if (caps.UsagePage != 0xFF01) continue;
-                    if (caps.FeatureReportByteLength < 21) continue;
+                    if (caps.FeatureReportByteLength < 21 || caps.FeatureReportByteLength > 1024) continue;
 
-                    var req = new byte[21];
+                    var req = new byte[caps.FeatureReportByteLength];
                     req[0] = 0x11;
                     req[1] = 0xF9;
-                    for (int i = 2; i < req.Length; i++) req[i] = 0xFF;
+                    for (int i = 2; i < 21; i++) req[i] = 0xFF;
 
                     if (!HidD_SetFeature(h, req, req.Length)) continue;
 
                     for (int attempt = 0; attempt < 3; attempt++)
                     {
                         Thread.Sleep(80);
-                        var resp = new byte[21];
+                        var resp = new byte[caps.FeatureReportByteLength];
                         resp[0] = 0x11;
                         if (!HidD_GetFeature(h, resp, resp.Length)) continue;
-                        if (resp[0] != 0x11 || resp[1] != 0xF9) continue;
-
-                        var body = new byte[19];
-                        for (int i = 0; i < body.Length; i++) body[i] = (byte)(resp[2 + i] ^ 0xFF);
-
-                        int vendorId = body[0] | (body[1] << 8);
-                        if (vendorId != 0x5253 && vendorId != 0x3837) continue;
-
-                        int mode = body[8] & 0x07;
-                        if (mode == 1 && (body[8] & 0x08) == 0) return -1;   // 休眠
-
-                        int pct = body[9];
-                        if (pct >= 1 && pct <= 100) return pct;
+                        if (TryParseMchoseLegacy(resp, vid, pid, out int pct, out charging)) return pct;
                     }
                 }
                 catch { }
@@ -304,18 +304,35 @@ namespace MouseDock.Services.Detection
         }
 
 
-        private static int Session(IntPtr h, string key)
+        internal static bool TryParseIdentifyBattery(ReadOnlySpan<byte> report, out int level, out bool charging)
         {
+            level = -1; charging = false;
+            int at = report.Length > 1 && report[0] == 0 && report[1] == 0x30 ? 1 : 0;
+            if (report.Length < at + 15 || report[at] != 0x30 || report[at + 1] != 0 || report[at + 2] != 1 ||
+                report[at + 12] > 1 || report[at + 13] > 100 || report[at + 14] > 1) return false;
+            // A valid identify includes the model; an empty response is not a 0% reading.
+            bool hasModel = false;
+            for (int i = 4; i < 8; i++) hasModel |= report[at + i] != 0;
+            if (!hasModel) return false;
+            level = report[at + 13]; charging = report[at + 12] == 1;
+            return true;
+        }
+
+        private static int Session(IntPtr h, string key, out bool charging)
+        {
+            charging = false;
             IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
             try
             {
                 // 1) Identify：应答 30 00 01 0B "Mxxx" … charge[12] battery[13] online[14]
                 var r30 = Exchange(h, ev, 0x30, 0x00);
-                if (r30 != null && r30.Length >= 3 && r30[0] == 0x30 && r30[1] == 0x02)
+                int statusAt = r30 != null && r30.Length > 1 && r30[0] == 0 && r30[1] == 0x30 ? 1 : 0;
+                if (r30 != null && r30.Length >= statusAt + 3 && r30[statusAt] == 0x30 && r30[statusAt + 1] == 0x02)
                 {
                     // 实测：鼠标静默后接收器只回 30 02 01 00 …（32 字节全零状态），
                     // 这不是协议坏了，是鼠标在休眠。用上次读到的值顶上。
-                    return _lastGood.TryGetValue(key, out int prev) ? prev : -1;
+                    if (_lastGood.TryGetValue(key, out int prev)) { IdentifyStale = true; return prev; }
+                    return -1;
                 }
                 if (r30 != null && r30.Length >= 16)
                 {
@@ -328,9 +345,10 @@ namespace MouseDock.Services.Detection
 
                         // online 位在鼠标静默几秒后会变 0，但电量字节仍是鼠标最后上报的值，
                         // 这里照样采用，避免「每隔几秒掉一次电量」
-                        int v = r30[at + 13];
-                        if (v >= 1 && v <= 100)
+                        if (TryParseIdentifyBattery(r30, out int v, out charging))
                         {
+                            IdentifyStale = r30[at + 14] == 0;
+                            if (IdentifyStale) charging = false;
                             _lastGood[key] = v;
                             return v;
                         }
@@ -368,22 +386,16 @@ namespace MouseDock.Services.Detection
             frame[2] = sub;
             frame[3] = 0x01;
 
-            var ov = new NativeOverlapped { EventHandle = ev };
-            if (!WriteFile(h, frame, frame.Length, IntPtr.Zero, ref ov) && Marshal.GetLastWin32Error() != 997) return null;
-            WaitForSingleObject(ev, 400);
-            GetOverlappedResult(h, ref ov, out _, false);
-            ResetEvent(ev);
+            if (!Transfer(h, ev, frame, true, 400, out _)) return null;
             return ReadReport(h, ev, 400);
         }
 
         private static byte[] ReadReport(IntPtr h, IntPtr ev, int ms)
         {
-            var buf = new byte[128];
-            var ov = new NativeOverlapped { EventHandle = ev };
-            if (!ReadFile(h, buf, buf.Length, IntPtr.Zero, ref ov) && Marshal.GetLastWin32Error() != 997) return null;
-            if (WaitForSingleObject(ev, (uint)ms) != 0) { ResetEvent(ev); return null; }
-            GetOverlappedResult(h, ref ov, out uint got, false);
-            ResetEvent(ev);
+            int inputLength = Caps(h).InputReportByteLength;
+            if (inputLength <= 0 || inputLength > 4096) return null;
+            var buf = new byte[inputLength];
+            if (!Transfer(h, ev, buf, false, ms, out int got)) return null;
             if (got == 0) return null;
             var slice = new byte[got];
             Array.Copy(buf, slice, got);
@@ -395,12 +407,49 @@ namespace MouseDock.Services.Detection
         /// <summary>写一帧再读一帧。frame 含报告 ID，读不到返回 null。</summary>
         private static byte[] Transact(IntPtr h, IntPtr ev, byte[] frame, int timeoutMs)
         {
-            var ov = new NativeOverlapped { EventHandle = ev };
-            if (!WriteFile(h, frame, frame.Length, IntPtr.Zero, ref ov) && Marshal.GetLastWin32Error() != 997) return null;
-            WaitForSingleObject(ev, 300);
-            GetOverlappedResult(h, ref ov, out _, false);
-            ResetEvent(ev);
+            if (!Transfer(h, ev, frame, true, 300, out _)) return null;
             return ReadReport(h, ev, timeoutMs);
+        }
+
+        /// <summary>Own native I/O memory until completion, including cancellation completion.</summary>
+        internal static bool Transfer(IntPtr h, IntPtr ev, byte[] buffer, bool write, int timeoutMs, out int count)
+        {
+            count = 0;
+            IntPtr nativeBuffer = Marshal.AllocHGlobal(buffer.Length);
+            IntPtr overlapped = IntPtr.Zero;
+            bool outstanding = false;
+            try
+            {
+                overlapped = Marshal.AllocHGlobal(Marshal.SizeOf<NativeOverlapped>());
+                Marshal.StructureToPtr(new NativeOverlapped { EventHandle = ev }, overlapped, false);
+                if (write) Marshal.Copy(buffer, 0, nativeBuffer, buffer.Length);
+                ResetEvent(ev);
+                bool started = write
+                    ? WriteFile(h, nativeBuffer, buffer.Length, IntPtr.Zero, overlapped)
+                    : ReadFile(h, nativeBuffer, buffer.Length, IntPtr.Zero, overlapped);
+                if (!started && Marshal.GetLastWin32Error() != 997) return false;
+                outstanding = true;
+                if (WaitForSingleObject(ev, (uint)timeoutMs) != 0) return false;
+                if (!GetOverlappedResult(h, overlapped, out uint transferred, false)) return false;
+                outstanding = false;
+                if (transferred > buffer.Length) return false;
+                count = (int)transferred;
+                if (!write && count > 0) Marshal.Copy(nativeBuffer, buffer, 0, count);
+                return !write || count == buffer.Length;
+            }
+            finally
+            {
+                if (outstanding)
+                {
+                    // CancelIoEx only requests cancellation. The driver may still
+                    // access both pointers until GetOverlappedResult finishes.
+                    // Never reset/reuse the event or free memory while pending.
+                    CancelIoEx(h, overlapped);
+                    GetOverlappedResult(h, overlapped, out _, true);
+                }
+                if (overlapped != IntPtr.Zero) Marshal.FreeHGlobal(overlapped);
+                Marshal.FreeHGlobal(nativeBuffer);
+            }
         }
 
         /// <summary>
@@ -663,7 +712,7 @@ namespace MouseDock.Services.Detection
                     finally { Marshal.FreeHGlobal(buf); }
                 }
             }
-            finally { CloseHandle(set); }
+            finally { SetupDiDestroyDeviceInfoList(set); }
             return list;
         }
     }

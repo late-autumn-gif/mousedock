@@ -64,6 +64,7 @@ namespace MouseDock.Views
 
         public void Reload()
         {
+            VersionText.Text = "  v" + typeof(App).Assembly.GetName().Version?.ToString(3);
             _loading = true;
             try
             {
@@ -123,9 +124,9 @@ namespace MouseDock.Views
         private void UpdateDeviceHint()
         {
             int selected = App.Battery.Devices.Count(d => d.Selected);
-            DeviceHint.Text = selected > 4
-                ? $"已勾选 {selected} 台，任务栏与迷你视图显示前 5 台"
-                : $"已勾选 {selected} 台";
+            DeviceHint.Text = selected > BatteryService.DisplayDeviceLimit
+                ? $"已勾选 {selected} 台，各视图只显示前 {BatteryService.DisplayDeviceLimit} 台；右键可管理设备"
+                : "勾选同步到所有视图；隐藏或取消识别后，仍可在这里恢复";
         }
 
         public void ScrollToBottom()
@@ -223,7 +224,8 @@ namespace MouseDock.Views
         private void OnDeviceChecked(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
-            App.SaveDeviceSelection();
+            if (sender is CheckBox check && check.DataContext is DeviceInfo device)
+                App.Battery.SetSelected(device, check.IsChecked == true);
             UpdateDeviceHint();
         }
 
@@ -262,6 +264,7 @@ namespace MouseDock.Views
                 Filter = "图片|*.png;*.jpg;*.jpeg;*.webp;*.bmp"
             };
             if (dlg.ShowDialog(this) != true) return;
+            App.Settings.AnimatedPhotoBackground = false;
             App.Settings.PhotoAsset = dlg.FileName;
             App.Settings.PhotoZoom = 1.0;
             App.Settings.PhotoOffsetX = 0;

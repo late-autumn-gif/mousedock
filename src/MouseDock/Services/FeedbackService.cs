@@ -149,22 +149,20 @@ namespace MouseDock.Services
         public static string ExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected, string zipPath = null)
         {
             if (string.IsNullOrWhiteSpace(zipPath)) zipPath = DefaultExportPath;
-            zipPath = Path.GetFullPath(zipPath);
-            bool touched = false;
+            string temporaryPath = null;
 
             try
             {
+                zipPath = Path.GetFullPath(zipPath);
                 string dir = Path.GetDirectoryName(zipPath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
                 var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
 
-                // 直接写进目标 zip，不再先摊一个临时目录出来：
-                // 少一次复制，也不会在用户的目录里留下 work-xxxx 之类的残骸。
-                using (var stream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                temporaryPath = Path.Combine(dir, $".mousedock-{Guid.NewGuid():N}.tmp");
+                using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    touched = true;
                     AddText(zip, "hid-devices.txt", BuildHidReport(detectedList));
                     AddText(zip, "summary.txt", BuildSummary(settings, detectedList));
 
@@ -178,13 +176,17 @@ namespace MouseDock.Services
                     }
                 }
 
+                File.Move(temporaryPath, zipPath, overwrite: true);
+                temporaryPath = null;
                 return zipPath;
             }
-            catch
+            catch { return null; }
+            finally
             {
-                // 写了一半失败的话别留下一个坏 zip 让用户当附件发出去
-                if (touched) { try { File.Delete(zipPath); } catch { } }
-                return null;
+                if (temporaryPath != null)
+                {
+                    try { File.Delete(temporaryPath); } catch { }
+                }
             }
         }
 
@@ -208,8 +210,9 @@ namespace MouseDock.Services
             sb.AppendLine("生成时间: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine();
 
-            // 已经被 MouseDock 认出来、读到电量的
-            sb.AppendLine("========== 已识别（能读到电量） ==========");
+            // 能发现设备与能读到电量是两个独立结果。
+            sb.AppendLine("========== 已发现设备（含电量未读到） ==========");
+            sb.AppendLine($"电量已读到: {detected.Count(d => d.Level >= 0)}；电量未读到: {detected.Count(d => d.Level < 0)}");
             if (detected.Count == 0)
             {
                 sb.AppendLine("  （无）");
@@ -219,16 +222,23 @@ namespace MouseDock.Services
                 foreach (var d in detected)
                 {
                     sb.AppendLine($"  [{d.Kind}] {d.Name}");
-                    if (!string.IsNullOrWhiteSpace(d.Detail)) sb.AppendLine($"      编号     = {d.Detail}");
+                    sb.AppendLine($"      设备 ID  = {d.Id}");
+                    if (!string.IsNullOrWhiteSpace(d.Detail)) sb.AppendLine($"      标识     = {d.Detail}");
                     sb.AppendLine($"      通道     = {d.Transport}");
                     sb.AppendLine($"      电量     = {(d.Level < 0 ? "读不到" : d.Level + "%")}");
+                    sb.AppendLine($"      连接     = {(d.Connected ? "已连接" : "未连接")}");
+                    if (d.IsStale) sb.AppendLine("      读数状态 = 上一次成功读取的缓存值");
+                    if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine($"      读取说明 = {d.Note}");
+                    else if (d.Level < 0) sb.AppendLine("      读取说明 = 未记录具体失败原因，请参阅下方扫描诊断");
                     sb.AppendLine();
                 }
             }
 
             // 全部 HID 设备
-            sb.AppendLine("========== 本机全部 HID 设备 ==========");
+            sb.AppendLine("========== 本机全部 HID 集合 ==========");
             sb.AppendLine("格式: VID:PID  产品名  [用法页/用法]  能力(in/out/feature)");
+            sb.AppendLine("同一物理设备可暴露多个集合；集合数量不等于物理设备数量。");
+            sb.AppendLine("上方标识可能是蓝牙地址，不一定是 VID:PID。");
             sb.AppendLine();
 
             try
@@ -239,7 +249,7 @@ namespace MouseDock.Services
 
                 foreach (var n in nodes)
                 {
-                    string key = $"{n.Vid:X4}:{n.Pid:X4}|{n.Product}|{n.Caps.UsagePage}|{n.Caps.Usage}";
+                    string key = n.Path;
                     if (!seen.Add(key)) continue;
 
                     idx++;
@@ -256,10 +266,7 @@ namespace MouseDock.Services
 
                     sb.AppendLine($"  {idx:D2}. {n.Vid:X4}:{n.Pid:X4}  {n.Product}");
                     sb.AppendLine($"      用法页 {up}/{us}  {caps}{tag}");
-                    if (n.Caps.UsagePage >= 0xFF00)
-                    {
-                        sb.AppendLine($"      路径: {n.Path}");
-                    }
+                    sb.AppendLine($"      路径: {n.Path}");
                     sb.AppendLine();
                 }
 
@@ -269,6 +276,19 @@ namespace MouseDock.Services
             {
                 sb.AppendLine("  枚举异常: " + ex.Message);
             }
+
+            sb.AppendLine();
+            sb.AppendLine("========== 最近一次 HID 自动扫描诊断 ==========");
+            sb.AppendLine("包含过滤依据与读取结果；来自最近一次扫描，可能早于本次报告导出。");
+            var diagnostics = Detection.HidDiscovery.LastDiagnostics.ToArray();
+            if (diagnostics.Length == 0) sb.AppendLine("  （本次运行尚无 HID 扫描诊断）");
+            foreach (string line in diagnostics) sb.AppendLine("  " + line);
+
+            sb.AppendLine();
+            sb.AppendLine("========== 最近一次蓝牙自动扫描诊断 ==========");
+            var bluetoothDiagnostics = Detection.BluetoothDiscovery.LastErrors.ToArray();
+            if (bluetoothDiagnostics.Length == 0) sb.AppendLine("  （本次运行尚无蓝牙扫描诊断）");
+            foreach (string line in bluetoothDiagnostics) sb.AppendLine("  " + line);
 
             return sb.ToString();
         }
@@ -285,20 +305,23 @@ namespace MouseDock.Services
             sb.AppendLine("运行时长: " + (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMinutes.ToString("F0") + " 分钟");
             sb.AppendLine();
             sb.AppendLine("已识别设备: " + detected.Count + " 台");
+            sb.AppendLine("电量已读到: " + detected.Count(d => d.Level >= 0) + " 台；未读到: " + detected.Count(d => d.Level < 0) + " 台");
             foreach (var d in detected)
             {
                 sb.AppendLine($"  - [{d.Kind}] {d.Name}  {(d.Level < 0 ? "读不到" : d.Level + "%")}");
+                if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("      读取说明: " + d.Note);
             }
             sb.AppendLine();
             sb.AppendLine("设置:");
             sb.AppendLine("  刷新间隔 = " + settings?.RefreshSeconds + " 秒");
             sb.AppendLine("  低电量提醒 = " + settings?.LowBatteryWarn + "%");
             sb.AppendLine("  自动更新 = " + (settings?.AutoUpdate == true ? "开" : "关"));
+            sb.AppendLine("  安全模式 = " + (settings?.SafeMode == true ? "开（跳过需要发送命令的厂商读取）" : "关"));
             sb.AppendLine();
             sb.AppendLine("说明:");
-            sb.AppendLine("  hid-devices.txt 里列出了本机全部 HID 设备。");
-            sb.AppendLine("  如果某台设备电量显示「—」，把它的 VID:PID 和产品名发我就能补。");
-            sb.AppendLine("  只有型号名不行 —— 同型号不同批次可能换芯片。");
+            sb.AppendLine("  hid-devices.txt 列出 HID 集合、完整路径及最近扫描中的过滤/读取诊断。");
+            sb.AppendLine("  电量显示「—」表示尚未取得有效读数；设备已发现并不代表电量协议已适配。");
+            sb.AppendLine("  反馈时请提供报告、型号和连接方式；适配可能仍需官方协议或实际响应数据。");
 
             return sb.ToString();
         }

@@ -5,14 +5,14 @@
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$exe = Join-Path $root "dist\MouseDock.exe"
+$exe = Join-Path $root "app\MouseDock.exe"
 
 if (-not (Test-Path $exe)) {
     Write-Host "[1/4] build + publish ..." -ForegroundColor Cyan
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "build.ps1")
     if (-not (Test-Path $exe)) { throw "build failed: $exe not found" }
 } else {
-    Write-Host "[1/4] dist\MouseDock.exe exists, skip build" -ForegroundColor DarkGray
+    Write-Host "[1/4] app\MouseDock.exe exists, skip build" -ForegroundColor DarkGray
 }
 
 $desktopLnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "MouseDock.lnk"
@@ -56,3 +56,4 @@ Write-Host ("  desktop   : " + $desktopLnk)
 Write-Host ("  detect    : " + $exe + " --detect")
 Write-Host ("  capture   : " + $exe + " --capture24g 10")
 Write-Host ("  background: " + $exe + " --tray")
+

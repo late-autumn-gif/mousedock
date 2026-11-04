@@ -21,6 +21,7 @@
             <DropShadowEffect x:Name="RootShadow" BlurRadius="20" ShadowDepth="6" Opacity="0.42" Color="#000000" />
         </Border.Effect>
 
+        <Grid>
         <ItemsControl x:Name="CellList">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -29,12 +30,15 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border x:Name="Cell" CornerRadius="12" Margin="3" Padding="9,7" Background="#0DFFFFFF">
+                    <Border x:Name="Cell" CornerRadius="12" Margin="3" Padding="9,7" Background="#0DFFFFFF" c:DeviceActions.Enabled="True">
                         <StackPanel>
                             <c:DeviceGlyph Kind="{Binding Kind}" Width="13" Height="13" HorizontalAlignment="Left"
                                            Opacity="0.6" Margin="0,0,0,3"
                                            GlyphBrush="{Binding GlyphBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
-                            <TextBlock Text="{Binding MiniText}" FontSize="18" FontWeight="Bold" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding MiniText}" FontSize="18" FontWeight="Bold" />
+                                <c:ChargingGlyph Active="{Binding IsChargingActive}" Width="18" Height="17" Margin="4,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Text="{Binding Name}" FontSize="8.5" Opacity="0.45"
                                        TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
                         </StackPanel>
@@ -47,5 +51,18 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
+        <TextBlock x:Name="EmptyDeviceHint" Text="未选择显示设备" FontSize="10.5" Margin="6,12" Opacity="0.55" HorizontalAlignment="Center">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasItems, ElementName=CellList}" Value="False">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+        </Grid>
     </Border>
 </Window>

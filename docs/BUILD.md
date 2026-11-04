@@ -28,6 +28,15 @@ dotnet publish src/MouseDock/MouseDock.csproj `
 
 ## 校验
 
+### 离线协议回归
+
+```powershell
+dotnet run --project tests/MouseDock.ProtocolTests/MouseDock.ProtocolTests.csproj -c Release
+pwsh -NoProfile -File tests/feedback-report-regression.ps1
+```
+
+该程序直接测试产品的解析器与合并逻辑，不枚举或读写硬件。覆盖 MHUB v2 请求、可选校验、接收器/本体 PID、无效帧、0% 电量、Legacy 兼容、充电状态和原生结构大小。它不能代替目标设备实测。
+
 ```powershell
 Get-FileHash dist\MouseDock.exe -Algorithm SHA256
 ```

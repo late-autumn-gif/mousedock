@@ -34,16 +34,24 @@ namespace MouseDock.Services.Detection
         /// 全部过程放到线程池：WinRT 的 await 续体一旦回到 WPF 的 Dispatcher 上下文，
         /// 在同步等待（GetAwaiter().GetResult()）时会被卡住，所以这里必须 ConfigureAwait(false)。
         /// </summary>
-        public static Task<List<DetectedDevice>> EnumerateAsync(int perDeviceTimeoutMs = 1500, Func<string, Models.DeviceKind?> hint = null)
+        public static Task<List<DetectedDevice>> EnumerateAsync(int perDeviceTimeoutMs = 1500, Func<string, Models.DeviceKind?> hint = null,
+            DevicePreferences preferences = null)
         {
             return Task.Run(async () =>
             {
                 LastErrors.Clear();
                 Trace("EnumerateAsync 进入(线程池)");
                 var result = new List<DetectedDevice>();
+                var systemBattery = await BtSystemBattery.ReadAsync().ConfigureAwait(false);
+                foreach (var entry in systemBattery)
+                {
+                    Trace($"Windows 电量属性 {entry.Address:X12} {entry.Name}: " +
+                        (entry.Level >= 0 ? entry.Level + "%" : "未提供有效电量"));
+                    foreach (string detail in entry.Extra) Trace("  " + detail);
+                }
 
-                await SafeAsync(() => CollectBle(result, perDeviceTimeoutMs, hint), "BLE").ConfigureAwait(false);
-                await SafeAsync(() => CollectClassic(result), "经典蓝牙").ConfigureAwait(false);
+                await SafeAsync(() => CollectBle(result, perDeviceTimeoutMs, hint, systemBattery, preferences), "BLE").ConfigureAwait(false);
+                await SafeAsync(() => CollectClassic(result, systemBattery, preferences), "经典蓝牙").ConfigureAwait(false);
 
                 Trace($"EnumerateAsync 结束，命中 {result.Count}");
                 return result;
@@ -56,7 +64,8 @@ namespace MouseDock.Services.Detection
             catch (Exception ex) { Trace(stage + " 失败: " + ex.GetType().FullName + " " + ex.Message); }
         }
 
-        private static async Task CollectBle(List<DetectedDevice> sink, int timeoutMs, Func<string, Models.DeviceKind?> hint)
+        private static async Task CollectBle(List<DetectedDevice> sink, int timeoutMs, Func<string, Models.DeviceKind?> hint,
+            List<BtSystemBattery.Entry> systemBattery, DevicePreferences preferences)
         {
             Trace("BLE 开始枚举");
             string selector = BluetoothLEDevice.GetDeviceSelector();
@@ -77,14 +86,19 @@ namespace MouseDock.Services.Detection
 
                 try
                 {
+                    bool recognitionEnabled = preferences?.CanRead("ble-" + device.BluetoothAddress.ToString("X"),
+                        VendorMap.PhysicalKeyFromName(info.Name)) ?? true;
                     var kind = KindFromAppearance(device, info.Name);
                     if (kind == null && hint != null) kind = hint(info.Name);
-                    if (kind == null) kind = await KindFromGattAsync(device, timeoutMs).ConfigureAwait(false);
+                    if (kind == null && recognitionEnabled) kind = await KindFromGattAsync(device, timeoutMs).ConfigureAwait(false);
+                    if (kind == null && !recognitionEnabled) kind = VendorMap.KindFromName(info.Name) ?? DeviceKind.Other;
 
                     // Appearance 常常是 0x0000（国产外设基本不填），不能因此直接丢掉：
                     // 先试读一次 GATT 电量，能读到就按名字推类型照样显示
-                    int earlyLevel = -1;
-                    if (kind == null && device.ConnectionStatus == BluetoothConnectionStatus.Connected)
+                    var systemReading = systemBattery.FirstOrDefault(e => e.Address == device.BluetoothAddress && e.Level >= 0 && e.Level <= 100);
+                    int earlyLevel = recognitionEnabled ? systemReading?.Level ?? -1 : -1;
+                    if (kind == null && earlyLevel >= 0) kind = VendorMap.KindFromName(info.Name);
+                    if (recognitionEnabled && kind == null && earlyLevel < 0 && device.ConnectionStatus == BluetoothConnectionStatus.Connected)
                     {
                         earlyLevel = await ReadBatteryAsync(device, timeoutMs).ConfigureAwait(false);
                         if (earlyLevel >= 0)
@@ -108,7 +122,7 @@ namespace MouseDock.Services.Detection
                         continue;
                     }
 
-                    int level = earlyLevel >= 0 ? earlyLevel : await ReadBatteryAsync(device, timeoutMs).ConfigureAwait(false);
+                    int level = !recognitionEnabled ? -1 : earlyLevel >= 0 ? earlyLevel : await ReadBatteryAsync(device, timeoutMs).ConfigureAwait(false);
 
                     sink.Add(new DetectedDevice
                     {
@@ -117,10 +131,11 @@ namespace MouseDock.Services.Detection
                         Kind = kind.Value,
                         Transport = "蓝牙 LE",
                         Level = level,
+                        Charging = systemReading != null && earlyLevel >= 0 && systemReading.Charging,
                         Connected = connected,
                         Detail = device.BluetoothAddress.ToString("X12"),
                         PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name),
-                        Note = level >= 0 ? "" : (connected
+                        Note = !recognitionEnabled ? "用户已取消识别，未查询电量" : level >= 0 ? (systemReading != null ? "Windows 系统电量" : "BLE GATT 电池服务") : (connected
                             ? "已连接但没读到 GATT 电量服务（0x180F）"
                             : "设备待机中，连上后才能读 GATT 电量")
                     });
@@ -130,7 +145,7 @@ namespace MouseDock.Services.Detection
             }
         }
 
-        private static async Task CollectClassic(List<DetectedDevice> sink)
+        private static async Task CollectClassic(List<DetectedDevice> sink, List<BtSystemBattery.Entry> systemBattery, DevicePreferences preferences)
         {
             Trace("经典蓝牙开始枚举");
             var infos = await DeviceInformation.FindAllAsync(BluetoothDevice.GetDeviceSelector()).AsTask().ConfigureAwait(false);
@@ -166,23 +181,32 @@ namespace MouseDock.Services.Detection
 
                     // 耳机：走 HFP 的 Apple 扩展（AT+IPHONEACCEV）读电量。
                     // HFP 通道被 Windows 占用时连不上，直接返回 -1，不影响其它设备。
-                    int hfpLevel = -1;
-                    if (kind == Models.DeviceKind.Headset && !string.IsNullOrWhiteSpace(info.Name))
+                    var systemReading = systemBattery.FirstOrDefault(e => e.Address == device.BluetoothAddress && e.Level >= 0 && e.Level <= 100);
+                    bool recognitionEnabled = preferences?.CanRead("bt-" + device.BluetoothAddress.ToString("X"),
+                        VendorMap.PhysicalKeyFromName(info.Name)) ?? true;
+                    int hfpLevel = recognitionEnabled ? systemReading?.Level ?? -1 : -1;
+                    string batterySource = hfpLevel >= 0 ? "Windows 系统电量" : "";
+                    bool safeMode = App.Settings?.SafeMode ?? false;
+                    if (recognitionEnabled && hfpLevel < 0 && !safeMode && kind == Models.DeviceKind.Headset && !string.IsNullOrWhiteSpace(info.Name))
                     {
-                        try { hfpLevel = HfpBattery.TryRead(info.Name, 5200); } catch { }
+                        try { hfpLevel = HfpBattery.TryRead(device.BluetoothAddress, 5200, Trace); } catch { }
+                        if (hfpLevel >= 0) batterySource = "HFP 扩展上报";
 
                         // 第二选择：厂商私有 RFCOMM 服务（配置过协议就直接读）
                         if (hfpLevel < 0)
                         {
                             try { hfpLevel = VendorBt.TryRead(info.Name); } catch { }
+                            if (hfpLevel >= 0) batterySource = "已配置的蓝牙厂商协议";
                         }
 
                         // 都没有 → 这台设备第一次出现时，后台自动跑一次协议探测并记住结果
                         if (hfpLevel < 0 && !VendorBt.AlreadyProbed(info.Name))
                         {
                             string devName = info.Name;
+                            string devKey = "bt-" + device.BluetoothAddress.ToString("X");
                             _ = Task.Run(() =>
                             {
+                                if (!(preferences?.CanRead(devKey, VendorMap.PhysicalKeyFromName(devName)) ?? true)) return;
                                 try
                                 {
                                     int v = VendorBt.AutoLearnAsync(devName, Trace).GetAwaiter().GetResult();
@@ -200,14 +224,14 @@ namespace MouseDock.Services.Detection
                         Kind = kind,
                         Transport = "蓝牙",
                         Level = hfpLevel,
+                        Charging = recognitionEnabled && (systemReading?.Charging ?? false),
                         Connected = true,
                         Detail = device.BluetoothAddress.ToString("X12"),
                         PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name),
-                        Note = hfpLevel >= 0
-                            ? "HFP 扩展上报（AT+IPHONEACCEV）"
-                            : (kind == Models.DeviceKind.Headset
-                                ? "HFP 通道被 Windows 免提占用，读不到电量（禁用免提节点后可读）"
-                                : "经典蓝牙 HID：只有设备另走 BLE 电池服务时才能读到电量")
+                        Note = !recognitionEnabled ? "用户已取消识别，未查询电量" : hfpLevel >= 0
+                            ? batterySource
+                            : (safeMode ? "安全模式：系统未提供电量，已跳过蓝牙写命令查询"
+                                : "Windows 未提供有效电量，已尝试的读取通道未返回电量；设备可能不支持或通道暂不可用")
                     });
                 }
                 catch { }

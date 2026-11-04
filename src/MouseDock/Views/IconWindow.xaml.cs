@@ -30,6 +30,7 @@ namespace MouseDock.Views
             _photoTransform.Children.Add(_photoScale);
             _photoTransform.Children.Add(_photoOffset);
             PhotoBrush.RelativeTransform = _photoTransform;
+            OtterScene.IsVisibleChanged += (_, __) => UpdateCharacterAnimation();
 
             App.Battery.Refreshed += (_, __) => UpdateValue();
             Loaded += (_, __) =>
@@ -97,7 +98,16 @@ namespace MouseDock.Views
             PlainLayer.Visibility = style == "plain" ? Visibility.Visible : Visibility.Collapsed;
             MultiLayer.Visibility = style == "multi" ? Visibility.Visible : Visibility.Collapsed;
 
-            if (style == "photo") LoadPhoto();
+            bool animatedPhoto = style == "photo" && App.Settings.AnimatedPhotoBackground;
+            RikkaArt.Visibility = App.Settings.AnimatedCharacter == "rikka" ? Visibility.Visible : Visibility.Collapsed;
+            RoxyArt.Visibility = App.Settings.AnimatedCharacter == "roxy" ? Visibility.Visible : Visibility.Collapsed;
+            OtterArt.Visibility = RikkaArt.Visibility == Visibility.Visible || RoxyArt.Visibility == Visibility.Visible
+                ? Visibility.Collapsed : Visibility.Visible;
+            OtterScene.Visibility = animatedPhoto ? Visibility.Visible : Visibility.Collapsed;
+            CharacterDevicePanel.Visibility = OtterScene.Visibility;
+            PhotoLayer.Background = animatedPhoto ? Brushes.Transparent : PhotoBrush;
+            if (style == "photo" && !animatedPhoto) LoadPhoto();
+            UpdateCharacterAnimation();
 
             // 非照片款按形状收放，照片款按设备名撑宽
             if (RootGrid != null && style != "photo")
@@ -125,6 +135,53 @@ namespace MouseDock.Views
             var bmp = Palette.Load(path);
             CharBrush.ImageSource = bmp;
             CharBrush.Stretch = Stretch.UniformToFill;
+        }
+
+        private void UpdateCharacterAnimation()
+        {
+            OtterEyes.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            RikkaClosedEye.BeginAnimation(OpacityProperty, null);
+            RoxyClosedEyes.BeginAnimation(OpacityProperty, null);
+            RikkaLeftEar.BeginAnimation(RotateTransform.AngleProperty, null);
+            RikkaRightEar.BeginAnimation(RotateTransform.AngleProperty, null);
+            if (!OtterScene.IsVisible || !SystemParameters.ClientAreaAnimation) return;
+
+            if (OtterArt.Visibility == Visibility.Visible)
+            {
+                OtterEyes.BeginAnimation(ScaleTransform.ScaleYProperty, MakeBlink(1, 0.12));
+                return;
+            }
+
+            if (RikkaArt.Visibility == Visibility.Visible)
+            {
+                RikkaClosedEye.BeginAnimation(OpacityProperty, MakeBlink(0, 1));
+                RikkaLeftEar.BeginAnimation(RotateTransform.AngleProperty, MakeSway(-6, 1.5));
+                RikkaRightEar.BeginAnimation(RotateTransform.AngleProperty, MakeSway(7, 1.8));
+            }
+            else
+            {
+                RoxyClosedEyes.BeginAnimation(OpacityProperty, MakeBlink(0, 1));
+            }
+        }
+
+        private static DoubleAnimation MakeSway(double amount, double seconds) => new DoubleAnimation(0, amount, TimeSpan.FromSeconds(seconds))
+        {
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        };
+
+        private static DoubleAnimationUsingKeyFrames MakeBlink(double open, double closed)
+        {
+            var blink = new DoubleAnimationUsingKeyFrames
+            {
+                Duration = TimeSpan.FromSeconds(4.7),
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            blink.KeyFrames.Add(new DiscreteDoubleKeyFrame(open, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(4.3))));
+            blink.KeyFrames.Add(new LinearDoubleKeyFrame(closed, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(4.38))));
+            blink.KeyFrames.Add(new LinearDoubleKeyFrame(open, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(4.51))));
+            return blink;
         }
 
         public void LoadPhoto()
@@ -155,7 +212,7 @@ namespace MouseDock.Views
 
         public void UpdateValue()
         {
-            var devices = App.SelectedDevices.Take(5).ToList();
+            var devices = App.Battery.VisibleDevices.ToList();
             var dev = App.PrimaryDevice;
 
             if (DeviceList != null) DeviceList.ItemsSource = devices;
@@ -207,7 +264,7 @@ namespace MouseDock.Views
             if (MultiPanel != null)
             {
                 MultiPanel.Children.Clear();
-                var multi = devices.Take(4).ToList();
+                var multi = devices;
                 if (multi.Count == 0)
                 {
                     MultiPanel.Children.Add(new TextBlock
@@ -266,12 +323,18 @@ namespace MouseDock.Views
                 width = Math.Clamp(Math.Max(baseW, text + 74), 96, 250);
             }
 
-            double height = Math.Clamp(baseH + Math.Max(0, count - 1) * 20, baseH, 200);
+            int rows = (count + 1) / 2;
+            bool character = OtterScene.Visibility == Visibility.Visible;
+            if (character) width = Math.Max(144, width);
+            double height = character
+                ? 61 + rows * 23
+                : Math.Clamp(baseH + Math.Max(0, rows - 1) * 21, baseH, 200);
 
             RootGrid.Width = width;
             RootGrid.Height = height;
             if (CharLayer != null) { CharLayer.Width = width; CharLayer.Height = height; }
             if (PhotoLayer != null) { PhotoLayer.Width = width; PhotoLayer.Height = height; }
+            OtterScene.Height = 57;
             if (MiniLayer != null) { MiniLayer.Width = width; MiniLayer.Height = height; }
         }
 
@@ -389,7 +452,7 @@ namespace MouseDock.Views
 
         private void OnWheel(object sender, MouseWheelEventArgs e)
         {
-            if (PhotoLayer.Visibility != Visibility.Visible) return;
+            if (PhotoLayer.Visibility != Visibility.Visible || App.Settings.AnimatedPhotoBackground) return;
             e.Handled = true;
             double factor = e.Delta > 0 ? 1.08 : 1 / 1.08;
             App.Settings.PhotoZoom = Math.Clamp(App.Settings.PhotoZoom * factor, 1.0, 4.0);

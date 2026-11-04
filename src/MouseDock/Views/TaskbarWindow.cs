@@ -67,14 +67,14 @@ namespace MouseDock.Views
                 light = key?.GetValue("SystemUsesLightTheme") is int value && value == 1;
             }
             catch { }
-            foreach (var device in App.SelectedDevices.Take(5))
+            foreach (var device in App.Battery.VisibleDevices)
             {
                 string status = device.HasLevel ? device.Level + "%" : "电量未知";
-                if (device.Charging) status += " · 充电中";
+                if (device.IsChargingActive) status += " · 充电中";
                 if (device.IsStale) status += " · 上次读数";
                 var ring = new DeviceBatteryRing
                 {
-                    Kind = device.Kind, Level = device.Level, Charging = device.Charging,
+                    Kind = device.Kind, Level = device.Level, Charging = device.IsChargingActive,
                     LowBatteryThreshold = App.Settings.LowBatteryWarn,
                     GlyphBrush = light ? Brushes.Black : Brushes.WhiteSmoke,
                     Opacity = device.ValueOpacity,
@@ -93,6 +93,7 @@ namespace MouseDock.Views
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi, out bool suppressed))
             {
                 Opacity = 0;
+                IsHitTestVisible = false;
                 return;
             }
             Opacity = suppressed || _devices.Children.Count == 0 ? 0 : 1;
