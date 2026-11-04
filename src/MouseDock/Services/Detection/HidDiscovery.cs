@@ -558,7 +558,8 @@ namespace MouseDock.Services.Detection
             // M HUB 家族（迈从 / RealTek 2.4G 接收器，e.g. 5253:1021 MCHOSE A7）
             if (battery < 0 && !safeMode)
             {
-                if (VendorProtocol.IsMchoseModern(vid, pid) || (vid == 0x5253 && pid == 0x1021))
+                if (VendorProtocol.IsMchoseModern(vid, pid) || VendorProtocol.IsMchoseA7V2(vid, pid) ||
+                    (vid == 0x5253 && pid == 0x1021))
                 {
                     mchoseQueried = true;
                     if (buckets.TryGetValue(key, out var previous) && previous.MchoseQueried)
