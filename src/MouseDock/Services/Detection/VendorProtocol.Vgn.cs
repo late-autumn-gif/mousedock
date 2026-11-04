@@ -64,30 +64,36 @@ namespace MouseDock.Services.Detection
                 IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
                 try
                 {
+                    var caps = Caps(h);
+                    if (!IsVgnQueryInterface(caps.UsagePage, caps.OutputReportByteLength)) continue;
+
                     var frame = new byte[VgnFrameBytes];
                     frame[0] = VgnCmdThreeMode;
                     frame[1] = VgnSubGetBasicInfo;
 
                     var resp = Transact(h, ev, frame, 600);
-                    if (resp == null || resp.Length < 5) continue;
-
-                    // 有些固件回包首字节是 report id，剥一位再对齐
-                    int off = resp.Length >= 6 && resp[0] != VgnCmdThreeMode && resp[1] == VgnCmdThreeMode ? 1 : 0;
-                    if (resp.Length < off + 5) continue;
-
-                    if (resp[off] != VgnCmdThreeMode) continue;
-
-                    int charge  = resp[off + 3];
-                    int battery = resp[off + 4];
-
-                    _ = charge;   // 充电位暂不向上暴露，MouseDock 目前只显示百分比
-
-                    if (battery >= 1 && battery <= 100) return battery;
+                    int battery = ParseVgnBattery(resp);
+                    if (battery >= 0) return battery;
                 }
                 catch { }
                 finally { CloseHandle(ev); CloseHandle(h); }
             }
             return -1;
+        }
+
+        private static bool IsVgnQueryInterface(ushort usagePage, ushort outputLength) =>
+            usagePage >= 0xFF00 && outputLength == VgnFrameBytes;
+
+        private static int ParseVgnBattery(byte[] response)
+        {
+            if (response == null) return -1;
+            int offset = response.Length == VgnFrameBytes ? 0
+                : response.Length == VgnFrameBytes + 1 && response[0] == 0 ? 1 : -1;
+            if (offset < 0 || response[offset] != VgnCmdThreeMode ||
+                response[offset + 1] != VgnSubGetBasicInfo)
+                return -1;
+            int battery = response[offset + 4];
+            return battery <= 100 ? battery : -1;
         }
     }
 }

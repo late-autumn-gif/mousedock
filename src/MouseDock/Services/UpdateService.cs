@@ -20,7 +20,7 @@ namespace MouseDock.Services
     ///   3. 有新版 → 通知界面询问用户
     ///   4. 用户同意 → 下载 asset 到 %TEMP%\MouseDock-update\
     ///   5. 解压（zip）或直接落盘（exe）
-    ///   6. 写一个 .bat，退出当前进程，由 bat 覆盖 exe 并重启
+    ///   6. 写入替换脚本，等待当前进程退出后覆盖 exe 并重启
     ///
     /// 安全约定：
     ///   - 只访问 api.github.com 和 github.com / objects.githubusercontent.com
@@ -233,38 +233,67 @@ namespace MouseDock.Services
 
             try
             {
-                // 脚本：等一会儿 → 覆盖 → 启动 → 删自己
-                string bat = Path.Combine(work, "apply.bat");
-                string log = Path.Combine(work, "apply.log");
-
-                string script =
-                    "@echo off\r\n" +
-                    "chcp 65001 >nul\r\n" +
-                    $"echo waiting > \"{log}\"\r\n" +
-                    "ping 127.0.0.1 -n 4 >nul\r\n" +
-                    $"copy /Y \"{newExe}\" \"{currentExe}\" >> \"{log}\" 2>&1\r\n" +
-                    "if errorlevel 1 (\r\n" +
-                    "  echo copy failed >> \"" + log + "\"\r\n" +
-                    "  exit /b 1\r\n" +
-                    ")\r\n" +
-                    $"start \"\" \"{currentExe}\"\r\n" +
-                    "ping 127.0.0.1 -n 2 >nul\r\n" +
-                    $"rd /s /q \"{work}\" 2>nul\r\n";
-
-                File.WriteAllText(bat, script, System.Text.Encoding.Default);
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = bat,
-                    UseShellExecute = true,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    WorkingDirectory = work
-                });
-
-                return true;
+                using var installer = Process.Start(CreateApplyStartInfo(work, newExe, currentExe, Environment.ProcessId));
+                return installer != null;
             }
             catch { return false; }
+        }
+
+        private static ProcessStartInfo CreateApplyStartInfo(string work, string newExe, string currentExe, int processId)
+        {
+            work = Path.GetFullPath(work);
+            string scriptPath = Path.Combine(work, "apply.ps1");
+            File.WriteAllText(Path.Combine(work, "apply.json"), JsonSerializer.Serialize(new
+            {
+                ProcessId = processId,
+                NewExe = Path.GetFullPath(newExe),
+                CurrentExe = Path.GetFullPath(currentExe)
+            }));
+            // Paths are JSON data, never interpolated into executable shell syntax.
+            const string script = """
+                $ErrorActionPreference = 'Stop'
+                try {
+                    $job = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'apply.json') -Encoding UTF8 -Raw | ConvertFrom-Json
+                    $work = [IO.Path]::GetFullPath($PSScriptRoot)
+                    $prefix = $work.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+                    $source = [IO.Path]::GetFullPath($job.NewExe)
+                    $target = [IO.Path]::GetFullPath($job.CurrentExe)
+                    if (!$source.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+                        $target.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                        throw 'Invalid update paths.'
+                    }
+                    $oldProcess = Get-Process -Id $job.ProcessId -ErrorAction SilentlyContinue
+                    if ($null -ne $oldProcess) {
+                        try { $oldProcess.WaitForExit() } finally { $oldProcess.Dispose() }
+                    }
+                    Copy-Item -LiteralPath $source -Destination $target -Force
+                    $start = New-Object System.Diagnostics.ProcessStartInfo
+                    $start.FileName = $target
+                    $start.WorkingDirectory = [IO.Path]::GetDirectoryName($target)
+                    $start.UseShellExecute = $true
+                    $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+                    $replacement = [Diagnostics.Process]::Start($start)
+                    if ($null -ne $replacement) { $replacement.Dispose() }
+                    Remove-Item -LiteralPath $work -Recurse -Force
+                    exit 0
+                } catch {
+                    $_ | Out-String | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'apply.log') -Encoding UTF8
+                    exit 1
+                }
+                """;
+            File.WriteAllText(scriptPath, script, new System.Text.UTF8Encoding(true));
+            var start = new ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+                    @"WindowsPowerShell\v1.0\powershell.exe"),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = Path.GetTempPath()
+            };
+            foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+                start.ArgumentList.Add(argument);
+            return start;
         }
     }
 }

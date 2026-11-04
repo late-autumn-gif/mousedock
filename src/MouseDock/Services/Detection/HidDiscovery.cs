@@ -25,8 +25,7 @@ namespace MouseDock.Services.Detection
 
         private static readonly Guid GUID_DEVINTERFACE_HID = new Guid("4D1E55B2-F16F-11CF-88CB-001111000030");
 
-        /// <summary>罗技 HID++ 自报的型号和电量，键是 "VID:PID"。
-        /// 厂商集合（FF00）接口会在 usage 检查时被跳过，所以在那里先捞，存这儿等 ToDevice 用。</summary>
+        /// <summary>HID++ identity survives failed reads; battery and charging belong to the current scan.</summary>
         private static readonly Dictionary<string, (int Battery, string Name, bool Charging)> _logiHints =
             new Dictionary<string, (int, string, bool)>();
 
@@ -83,6 +82,7 @@ namespace MouseDock.Services.Detection
         {
             LastDiagnostics.Clear();
             var buckets = new Dictionary<string, Bucket>();
+            var vendorCollections = new List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
             IntPtr set = IntPtr.Zero;
@@ -111,7 +111,7 @@ namespace MouseDock.Services.Detection
                         if (!IsRunning(set, ref devInfo)) { notRunning++; continue; }
 
                         int before = buckets.Count;
-                        var verdict = TryCollect(path, buckets, out bool wasNoise);
+                        var verdict = TryCollect(path, buckets, vendorCollections, out bool wasNoise);
                         if (verdict) collected++;
                         else if (wasNoise) noise++;
                         else kindRejected++;
@@ -126,6 +126,13 @@ namespace MouseDock.Services.Detection
             }
 
             LastDiagnostics.Add($"接口={interfaces} 打开失败={noOpen} 未运行={notRunning} 用法不符={kindRejected} 噪音={noise} 采集={collected} 归并={buckets.Count}");
+
+            QueryVendorCollections(buckets, vendorCollections, App.Settings?.SafeMode ?? false,
+                path =>
+                {
+                    var result = LogitechHidpp.Probe(path);
+                    return (result.Battery, result.Name, result.Charging);
+                }, ReadVendorCollection);
 
             // Query once per keyboard after merging its standard HID collections.
             foreach (var bucket in buckets.Values)
@@ -172,7 +179,9 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>返回 true 表示这台设备被采集（鼠标/键盘/手柄）。</summary>
-        private static bool TryCollect(string path, Dictionary<string, Bucket> buckets, out bool wasNoise)
+        private static bool TryCollect(string path, Dictionary<string, Bucket> buckets,
+            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> vendorCollections,
+            out bool wasNoise)
         {
             wasNoise = false;
 
@@ -215,25 +224,11 @@ namespace MouseDock.Services.Detection
             }
             finally { CloseHandle(probe); }
 
-            // 罗技 HID++ 挂在厂商集合（FF00）接口上，这些不是鼠标/键盘用法，下面会被跳过。
-            // 先在这里把型号和电量捞出来，存进提示表，等 ToDevice 按 VID:PID 取。
-            if (vid == 0x046D && caps.UsagePage == 0xFF00)
-            {
-                string hintKey = $"{vid:X4}:{pid:X4}";
-                lock (_logiHints)
-                {
-                    _logiHints.TryGetValue(hintKey, out var prev);
-                    if (prev.Battery == 0 && string.IsNullOrEmpty(prev.Name)) prev = (-1, null, false);
-                    if (prev.Battery < 0 || string.IsNullOrWhiteSpace(prev.Name))
-                    {
-                        var lr = LogitechHidpp.Probe(path);
-                        _logiHints[hintKey] = (
-                            prev.Battery >= 0 ? prev.Battery : lr.Battery,
-                            !string.IsNullOrWhiteSpace(prev.Name) ? prev.Name : lr.Name,
-                            prev.Charging || lr.Charging);
-                    }
-                }
-            }
+            if (IsExcludedInterface(vid, pid, product, path)) { wasNoise = true; return false; }
+
+            // Keep vendor metadata without turning a vendor-only collection into a visible peripheral.
+            if (caps.UsagePage >= 0xFF00)
+                vendorCollections.Add((path, vid, pid, caps.UsagePage, product));
 
             if (!UsageMap.TryKind(caps.UsagePage, caps.Usage, out DeviceKind kind))
             {
@@ -241,21 +236,6 @@ namespace MouseDock.Services.Detection
                     LastDiagnostics.Add($"usage 跳过 UPage=0x{caps.UsagePage:X2} Usage=0x{caps.Usage:X2} feat={caps.FeatureReportByteLength}");
                 return false;
             }
-
-            if (IsNoise(vid, product)) { wasNoise = true; return false; }
-
-            // 只显示外接外设：内置键盘/触摸板/摄像头一律排除
-            string lowerPath = path.ToLowerInvariant();
-            if (lowerPath.Contains("acpi\\") || lowerPath.Contains("hidi2c") ||
-                lowerPath.Contains("syna") || lowerPath.Contains("isensor") ||
-                lowerPath.Contains("camera") || lowerPath.Contains("vid_04f2"))
-            {
-                wasNoise = true;
-                return false;
-            }
-
-            // BLE HID 集合常常读不到 VID/PID（全 0），这类交给蓝牙链路那条去报
-            if (vid == 0 && pid == 0) { wasNoise = true; return false; }
 
             string key = $"{vid:X4}:{pid:X4}";
 
@@ -325,45 +305,10 @@ namespace MouseDock.Services.Detection
                 try { battery = VendorProtocol.TryReadExtra(vid, pid); } catch { }
             }
 
-            // 按接口形状认的两家（WEBBRANDS F83 / 达尔优 A980），VID 不固定，回包头必须完全对上
-            if (battery < 0 && caps.UsagePage >= 0xFF00)
-            {
-                try { battery = VendorProtocol.TryReadByShape(vid, pid); } catch { }
-            }
-
             // 第四批：G-Wolves / ipi / RAWM / passive 型（AULA SC900、雷柏 VT2 MAX）
             if (battery < 0)
             {
                 try { battery = VendorProtocol.TryReadThird(vid, pid); } catch { }
-            }
-
-            // 形状型老协议：WLMouse Beast X（report4 + CRC16）、Angry Miao（report F7）
-            if (battery < 0 && caps.UsagePage >= 0xFF00)
-            {
-                try { battery = VendorProtocol.TryReadLegacyShape(vid, pid); } catch { }
-            }
-
-            // 前行者（X87 三模及全系）。两套协议：
-            //   CH315  16 字节 report 8，cmd 0x04，校验 0x55 - sum
-            //   北赢   63 字节，cmd 0x87，校验 255 - sum%256
-            // 协议抄自 hub.eweadn.cn 和 new-hub.eweadn.cn 两套网页驱动。
-            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsEweadnVid(vid))
-            {
-                try { battery = VendorProtocol.TryReadEweadn(vid, pid); } catch { }
-            }
-
-            // VGN（391D 号段）。64 字节帧，[0]=0x0D ThreeMode，[1]=0x01 GetBasicInfo，
-            // 无校验，响应 [4] 是电量。协议抄自 VGN VHUB 里带的方案商 SDK 源码。
-            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsVgnVid(vid))
-            {
-                try { battery = VendorProtocol.TryReadVgn(vid, pid); } catch { }
-            }
-
-            // 黑爵 AJAZZ（0x1A2C 号段）。命令 0xAA，响应 [4]==14 表状态帧，
-            // [5] 电量、[6] 在线、[7] 充电。协议抄自 ajazz.shinetek-ic.net 网页驱动。
-            if (battery < 0 && caps.UsagePage >= 0xFF00 && VendorProtocol.IsAjazzVid(vid))
-            {
-                try { battery = VendorProtocol.TryReadAjazz(vid, pid); } catch { }
             }
 
             // 瓦尔基里（VK87 / VK99 / Valkyrie 75）。feature report 上的 F7 命令：
@@ -401,6 +346,90 @@ namespace MouseDock.Services.Detection
             if (battery > bucket.Battery) bucket.Battery = battery;
 
             return true;
+        }
+
+        private static void QueryVendorCollections(Dictionary<string, Bucket> buckets,
+            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> collections,
+            bool safeMode, Func<string, (int Battery, string Name, bool Charging)> probeLogitech,
+            Func<string, ushort, ushort, int> readVendor)
+        {
+            lock (_logiHints)
+            {
+                foreach (var key in _logiHints.Keys.ToArray())
+                    _logiHints[key] = (-1, _logiHints[key].Name, false);
+            }
+
+            var probedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var queriedDevices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var collection in collections)
+            {
+                if (collection.UsagePage < 0xFF00 ||
+                    IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
+                    continue;
+
+                string key = $"{collection.Vid:X4}:{collection.Pid:X4}";
+                if (!buckets.TryGetValue(key, out var bucket) ||
+                    IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path))
+                    continue;
+
+                if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00)
+                {
+                    if (!probedPaths.Add(collection.Path)) continue;
+                    (int Battery, string Name, bool Charging) current;
+                    lock (_logiHints)
+                    {
+                        if (!_logiHints.TryGetValue(key, out current)) current = (-1, null, false);
+                    }
+                    if (current.Battery >= 0 && !string.IsNullOrWhiteSpace(current.Name)) continue;
+                    try
+                    {
+                        var result = probeLogitech(collection.Path);
+                        bool usable = result.Battery >= 0 && result.Battery <= 100;
+                        lock (_logiHints)
+                            _logiHints[key] = (
+                                current.Battery >= 0 ? current.Battery : usable ? result.Battery : -1,
+                                !string.IsNullOrWhiteSpace(result.Name) ? result.Name : current.Name,
+                                current.Battery >= 0 ? current.Charging : usable && result.Charging);
+                    }
+                    catch { }
+                    continue;
+                }
+
+                if (safeMode || bucket.Battery >= 0 || queriedDevices.Contains(key)) continue;
+                string route = null;
+                if (VendorProtocol.IsVgnVid(collection.Vid)) route = "vgn";
+                else if (VendorProtocol.IsAjazzVid(collection.Vid) && VendorProtocol.IsAjazzPid(collection.Pid))
+                    route = "ajazz";
+
+                // Eweadn decoding and shape-only protocol identification still need verification.
+                if (route == null) continue;
+                queriedDevices.Add(key);
+                try
+                {
+                    int level = readVendor(route, collection.Vid, collection.Pid);
+                    if (level >= 0 && level <= 100) bucket.Battery = level;
+                }
+                catch { }
+            }
+        }
+
+        private static int ReadVendorCollection(string route, ushort vid, ushort pid)
+        {
+            return route switch
+            {
+                "vgn" => VendorProtocol.TryReadVgn(vid, pid),
+                "ajazz" => VendorProtocol.TryReadAjazz(vid, pid),
+                _ => -1
+            };
+        }
+
+        private static bool IsExcludedInterface(ushort vid, ushort pid, string product, string path)
+        {
+            if (IsNoise(vid, product) || (vid == 0 && pid == 0)) return true;
+            string lowerPath = (path ?? "").ToLowerInvariant();
+            return lowerPath.Contains("acpi\\") || lowerPath.Contains("hidi2c") ||
+                lowerPath.Contains("syna") || lowerPath.Contains("isensor") ||
+                lowerPath.Contains("camera") || lowerPath.Contains("vid_04f2");
         }
 
         private static string InterfaceTag(string path)
@@ -477,6 +506,7 @@ namespace MouseDock.Services.Detection
                 }
 
                 // 罗技 HID++ 自报的型号最可信，压过接收器的占位名（「罗技无线接收器」）
+                int battery = Battery;
                 bool charging = Charging;
                 if (Vid == 0x046D)
                 {
@@ -490,7 +520,7 @@ namespace MouseDock.Services.Detection
                             name = hint.Name;
                             physicalKey = VendorMap.PhysicalKeyFromName(name);
                         }
-                        if (Battery < 0 && hint.Battery >= 0) Battery = hint.Battery;
+                        if (battery < 0 && hint.Battery >= 0) battery = hint.Battery;
                         charging = hint.Charging;
                     }
                 }
@@ -530,12 +560,12 @@ namespace MouseDock.Services.Detection
                     Name = name,
                     Kind = kind,
                     Transport = transport,
-                    Level = Battery,
+                    Level = battery,
                     Charging = charging,
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = physicalKey,
-                    Note = Battery >= 0
+                    Note = battery >= 0
                         ? ""
                         : (transport == "2.4G"
                             ? "2.4G 走厂商 32 字节协议读取（Identify 应答里的电量字节），与官方驱动同源"

@@ -23,6 +23,22 @@ internal static class Program
         }
         var checks = new (string Name, Action Check)[]
         {
+            ("Tray redraws release native icon resources", RuntimeAuditChecks.TrayResources),
+            ("Update waits for the old process before replacement and restart", RuntimeAuditChecks.UpdateWaitsForExit),
+            ("Corrupt card backgrounds recover without crashing", () => VisualAuditChecks.BackgroundRecovery("dock")),
+            ("Corrupt mini backgrounds recover without crashing", () => VisualAuditChecks.BackgroundRecovery("mini")),
+            ("Corrupt icon photos recover without crashing", VisualAuditChecks.PhotoRecovery),
+            ("Icon opacity remains adjustable after its entrance animation", VisualAuditChecks.IconOpacity),
+            ("Card warning color follows live readings", VisualAuditChecks.DockLiveWarning),
+            ("Card warning color follows the configured threshold", VisualAuditChecks.DockWarningThreshold),
+            ("Logitech HID readings refresh across scans", HidAuditChecks.LogitechRefresh),
+            ("Failed Logitech scans do not masquerade as fresh readings", HidAuditChecks.LogitechFailure),
+            ("Logitech scan deduplication preserves current generic readings", HidAuditChecks.LogitechDedupAndPreference),
+            ("Known vendor battery routes survive HID collection filtering", HidAuditChecks.VendorRoutes),
+            ("Vendor routes reject unrelated interfaces and honor safe mode", HidAuditChecks.VendorGuards),
+            ("VGN parser rejects unrelated or invalid battery replies", HidAuditChecks.VgnResponses),
+            ("AJAZZ parser validates battery and device identity", HidAuditChecks.AjazzResponses),
+            ("Vendor query interfaces require compatible report descriptors", HidAuditChecks.VendorQueryInterfaces),
             ("New settings open the taskbar surface", () =>
                 Require(new AppSettings().SurfaceMode == "taskbar", "Expected the taskbar surface.")),
             ("Taskbar placement stays inside a scaled taskbar", CheckPlacement),
@@ -77,6 +93,8 @@ internal static class Program
             ("Detection preserves explicit offline evidence", ConnectionSwitchChecks.OfflinePropagation),
             ("Connection switches immediately remove the old channel", ConnectionSwitchChecks.ImmediateRemoval)
         };
+        if (args.Length == 2 && args[0] == "--filter")
+            checks = checks.Where(c => c.Name.Contains(args[1], StringComparison.OrdinalIgnoreCase)).ToArray();
         int failures = 0;
         foreach (var (name, check) in checks)
         {

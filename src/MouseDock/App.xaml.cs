@@ -403,7 +403,11 @@ namespace MouseDock
 
             try
             {
-                _tray.Icon = RenderTrayIcon(level, charging, low && _trayBlinkOn);
+                var replacement = RenderTrayIcon(level, charging, low && _trayBlinkOn);
+                var previous = _tray.Icon;
+                try { _tray.Icon = replacement; }
+                catch { replacement.Dispose(); throw; }
+                previous?.Dispose();
                 _tray.Text = level >= 0
                     ? $"MouseDock · {dev.Name} {level}%" + (charging ? "（充电中）" : "")
                     : "MouseDock · 电量，一起看见（双击唤起）";
@@ -463,7 +467,21 @@ namespace MouseDock
                     (size - sz.Width) / 2f,
                     (size - sz.Height) / 2f + 1f);
             }
-            return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+            return OwnBitmapIcon(bmp);
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool DestroyIcon(IntPtr icon);
+
+        private static System.Drawing.Icon OwnBitmapIcon(System.Drawing.Bitmap bitmap)
+        {
+            IntPtr handle = bitmap.GetHicon();
+            try
+            {
+                using var borrowed = System.Drawing.Icon.FromHandle(handle);
+                return (System.Drawing.Icon)borrowed.Clone();
+            }
+            finally { DestroyIcon(handle); }
         }
 
         private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(System.Drawing.Rectangle r, int radius)
@@ -487,7 +505,7 @@ namespace MouseDock
                 {
                     using var bmp = new System.Drawing.Bitmap(path);
                     using var sized = new System.Drawing.Bitmap(bmp, 32, 32);
-                    return System.Drawing.Icon.FromHandle(sized.GetHicon());
+                    return OwnBitmapIcon(sized);
                 }
             }
             catch { }
@@ -504,11 +522,11 @@ namespace MouseDock
                     using var accent = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(255, 0xB4, 0x9C, 0xFF));
                     g.FillRectangle(accent, 9, 13, 14, 8);
                 }
-                return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+                return OwnBitmapIcon(bmp);
             }
             catch
             {
-                return System.Drawing.SystemIcons.Application;
+                return (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
             }
         }
 
@@ -871,7 +889,15 @@ namespace MouseDock
         public static void ExitApp()
         {
             SaveWindowPositions();
-            if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
+            _trayBlink?.Stop();
+            if (_tray != null)
+            {
+                var icon = _tray.Icon;
+                _tray.Visible = false;
+                _tray.Dispose();
+                _tray = null;
+                icon?.Dispose();
+            }
             Current.Shutdown();
         }
 
@@ -1112,9 +1138,7 @@ namespace MouseDock
 
                     if (ok)
                     {
-                        MessageBox.Show("更新已下载，程序即将重启完成安装。", "MouseDock 更新",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
-                        Shutdown();
+                        ExitApp();
                     }
                     else
                     {

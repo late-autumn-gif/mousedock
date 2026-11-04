@@ -426,6 +426,7 @@ namespace MouseDock.Views
         {
             if (!(sender is Button b) || !(b.Tag is string tag) || !int.TryParse(tag, out int pct)) return;
             App.Settings.LowBatteryWarn = pct;
+            App.Dock?.ApplyTheme(App.Theme, false);
             App.Taskbar?.UpdateDevices();
             App.Edge?.UpdateDevices();
             ApplyWarnButtons(pct);
