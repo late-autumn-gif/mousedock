@@ -462,4 +462,41 @@ var replaceable = source.UpdateFromDetection(new List<DetectedDevice> { new() { 
 Check(!replaceable.Charging, "A replaceable-battery mouse must never show a charge animation");
 Check(!VendorMap.IsReplaceableBattery("Logitech G502 Hero Wireless") && !VendorMap.IsReplaceableBattery("Logitech G903 Hero"), "Short wired-model names must not suppress another model's charging state");
 Check(!VendorMap.IsReplaceableBattery("Logitech G700") && !VendorMap.IsReplaceableBattery("Logitech G700s"), "USB-rechargeable models must not be excluded merely because their rechargeable battery is removable");
+
+// 单设备报告：只包含选中的一台，带 device/probe 两份附加文件。
+var fakeTarget = new DeviceInfo
+{
+    Id = "hid-FFFF-FFFF", Name = "测试设备", Detail = "FFFF:FFFF",
+    Transport = "2.4G", Kind = DeviceKind.Mouse, Level = -1, Note = "测试用"
+};
+var fakeOther = new DeviceInfo
+{
+    Id = "hid-EEEE-EEEE", Name = "另一台设备", Detail = "EEEE:EEEE",
+    Transport = "2.4G", Kind = DeviceKind.Keyboard, Level = 50
+};
+string targetZip = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+    "mousedock-target-" + Guid.NewGuid().ToString("N") + ".zip");
+try
+{
+    var targetReport = FeedbackService.TryExportReport(new AppSettings(),
+        new[] { fakeTarget, fakeOther }, targetZip, fakeTarget);
+    Check(targetReport.Succeeded, "Single-device report writes: " + targetReport.Detail);
+    using (var archive = System.IO.Compression.ZipFile.OpenRead(targetZip))
+    {
+        var names = archive.Entries.Select(e => e.FullName).ToArray();
+        Check(names.Contains("summary.txt") && names.Contains("hid-devices.txt") &&
+              names.Contains("device.txt") && names.Contains("probe.txt") &&
+              names.Contains("probe-events.jsonl"), "Single-device report includes device/probe files");
+        using var reader = new System.IO.StreamReader(
+            archive.GetEntry("hid-devices.txt").Open(), System.Text.Encoding.UTF8);
+        string text = reader.ReadToEnd();
+        Check(text.Contains("测试设备") && !text.Contains("另一台设备"),
+            "Single-device report excludes other detected devices");
+        using var deviceReader = new System.IO.StreamReader(
+            archive.GetEntry("device.txt").Open(), System.Text.Encoding.UTF8);
+        Check(deviceReader.ReadToEnd().Contains("FFFF:FFFF"), "device.txt keeps the selected VID:PID");
+    }
+}
+finally { try { System.IO.File.Delete(targetZip); } catch { } }
+
 Console.WriteLine($"PASS {assertions} offline protocol/integration assertions; no hardware I/O.");

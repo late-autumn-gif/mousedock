@@ -164,6 +164,33 @@ namespace MouseDock
                 return;
             }
 
+            if (e.Args.Contains("--probe"))
+            {
+                AttachConsole(-1);
+                int at = Array.IndexOf(e.Args, "--probe");
+                string hint = at >= 0 && at + 1 < e.Args.Length ? e.Args[at + 1] : "";
+                ushort vid = 0, pid = 0;
+                var parts = hint.Split(':', '-');
+                if (parts.Length >= 2)
+                {
+                    ushort.TryParse(parts[0], System.Globalization.NumberStyles.HexNumber, null, out vid);
+                    ushort.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out pid);
+                }
+                if (vid == 0 || pid == 0)
+                {
+                    Console.WriteLine("用法: MouseDock.exe --probe 089D:062F");
+                }
+                else
+                {
+                    var result = Services.Detection.VendorProtocol.ProbeDevice(vid, pid,
+                        $"命令行 {vid:X4}:{pid:X4}", false);
+                    Console.WriteLine(result.Text);
+                    Console.WriteLine("报告已输出；probe-events.jsonl 在错误报告 zip 里。");
+                }
+                Shutdown();
+                return;
+            }
+
             if (e.Args.Contains("--detect"))
             {
                 RunDetectReport();
