@@ -32,6 +32,11 @@ namespace MouseDock.Services.Detection
             (product.IndexOf("Rainy", StringComparison.OrdinalIgnoreCase) >= 0 ||
              product.IndexOf("WOB", StringComparison.OrdinalIgnoreCase) >= 0);
 
+        // Official F99 OemDrv.exe FUN_00491210 (xref of "GetPower failed" 0x49143b)
+        // performs exactly this 520-byte Feature transaction: 09 chk 09 01 01 seq len_lo len_hi,
+        // and copies the payload byte at reply[8]. The checksum is sum(reply[2..519]) & 0xFF.
+        // Real 3554:FA09 2.4G receiver exposes no 520-byte Feature collection (max 8),
+        // so F99 2.4G stays unknown; this path needs the wired 258A:010C collection.
         internal static byte[] BuildAulaF99BatteryRequest()
         {
             var request = new byte[520];

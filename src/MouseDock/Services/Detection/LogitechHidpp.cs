@@ -214,8 +214,12 @@ namespace MouseDock.Services.Detection
         {
             level = -1;
             note = "";
-            // 1004 function 0 is capabilities, function 1 is status.
-            foreach (ushort feature in new ushort[] { 0x1004, 0x1000, 0x1001 })
+            // Official G HUB uses the voltage model for the original GPW, so try 0x1001
+            // first there; a device-reported 0x1000 percentage must not short-circuit it.
+            ushort[] features = originalGpw
+                ? new ushort[] { 0x1001, 0x1004, 0x1000 }
+                : new ushort[] { 0x1004, 0x1000, 0x1001 };
+            foreach (ushort feature in features)
             {
                 byte fi = FeatureIndex(link, deviceIndex, feature);
                 if (fi == 0) continue;
