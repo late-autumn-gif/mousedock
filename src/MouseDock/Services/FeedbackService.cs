@@ -266,13 +266,16 @@ namespace MouseDock.Services
                         AddText(zip, "probe-events.jsonl", probe.Jsonl);
                     }
 
-                    // 现有的缓存与诊断文件，有就捎上
-                    foreach (var name in new[] { "settings.json", "battery-cache.json", "vendor-identity.json",
-                                                 "detect.txt", "hid-probe.txt", "ble-scan.txt" })
+                    // 全量报告才捎带全局缓存；单设备报告只留选中设备的文件。
+                    if (target == null)
                     {
-                        string src = Path.Combine(DataDir, name);
-                        if (!File.Exists(src)) continue;
-                        try { zip.CreateEntryFromFile(src, name, CompressionLevel.Optimal); } catch { }
+                        foreach (var name in new[] { "settings.json", "battery-cache.json", "vendor-identity.json",
+                                                     "detect.txt", "hid-probe.txt", "ble-scan.txt" })
+                        {
+                            string src = Path.Combine(DataDir, name);
+                            if (!File.Exists(src)) continue;
+                            try { zip.CreateEntryFromFile(src, name, CompressionLevel.Optimal); } catch { }
+                        }
                     }
                 }
 

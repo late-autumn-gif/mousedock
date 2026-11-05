@@ -173,7 +173,8 @@ namespace MouseDock.Services.Detection
             text.AppendLine("GPW: 046D + FF00 + HID++ 0x1001 电压" +
                             ((vid == 0x046D && hasFf00) ? " 已满足" : " 缺少"));
             text.AppendLine("AULA SC630 Pro: 产品串含 SC630 + FF01/0001 41B Feature" +
-                            (hasFeature41 ? " 已满足" : " 缺少"));
+                            ((hasFeature41 && (requestedName ?? "").IndexOf("SC630", StringComparison.OrdinalIgnoreCase) >= 0)
+                                ? " 已满足" : " 缺少"));
             text.AppendLine("AULA F99: 520B Feature（2.4G 接收器通常没有）" +
                             (hasFeature520 ? " 已满足" : " 缺少"));
             text.AppendLine("HyperX Cloud III S: 03F0 + FF13/0001 + 0x1D" +
@@ -181,7 +182,9 @@ namespace MouseDock.Services.Detection
             text.AppendLine("英菲克 IN9 Pro: 1D57:FA60/FA65 + 000A/000B 分集合" +
                             (hasInphicSplit ? " 已满足" : " 缺少"));
             text.AppendLine("迈从 G7: 3837/A8A4 + FF01/0010 + 64/65" +
-                            (hasFf01 ? " 已满足" : " 缺少"));
+                            (((vid == 0x3837 || vid == 0xA8A4) && hasFf01 &&
+                              (requestedName ?? "").IndexOf("G7", StringComparison.OrdinalIgnoreCase) >= 0)
+                                ? " 已满足" : " 缺少"));
             text.AppendLine("迈从 V9 Pro: 291D:385D + 产品串 MCHOSE V9 PRO + FF90/0001" +
                             (hasFf90 ? " 已满足" : " 缺少"));
             text.AppendLine();
