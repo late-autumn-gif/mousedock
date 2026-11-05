@@ -1032,8 +1032,8 @@ namespace MouseDock.Services.Detection
             }
 
             /// <summary>
-            /// 一个接收器可能同时暴露鼠标和键盘集合。优先使用产品名，
-            /// 最后按集合数量判断。
+            /// 明确键盘特征优先。只有鼠标和键盘集合的接收器保留主功能优先级，
+            /// 辅助键盘集合数量不能证明它是一把键盘；其它复合设备沿用计数兜底。
             /// </summary>
             private DeviceKind RefineKind(string name)
             {
@@ -1063,6 +1063,8 @@ namespace MouseDock.Services.Detection
                     return DeviceKind.Keyboard;
 
                 if (Counts.Count == 0) return Kind;
+                if (Counts.Count == 2 && Counts.ContainsKey(DeviceKind.Mouse) &&
+                    Counts.ContainsKey(DeviceKind.Keyboard)) return Kind;
 
                 return Counts.OrderByDescending(pair => pair.Value)
                              .ThenByDescending(pair => UsageMap.Priority(pair.Key))
