@@ -15,6 +15,9 @@ function Get-Method([string]$Source, [string]$Signature) {
 $classifier = Get-Method $hid 'internal static string ExclusionReason('
 $report = Get-Method $feedback 'private static string BuildHidReport('
 $summary = Get-Method $feedback 'private static string BuildSummary('
+$sameDevice = Get-Method $feedback 'private static bool SameDevice('
+$tryVidPid = Get-Method $feedback 'private static bool TryGetVidPid('
+$mentionsDevice = Get-Method $feedback 'private static bool MentionsDevice('
 $caps = [regex]::Match($hid, '(?s)\[StructLayout\(LayoutKind.Sequential\)\]\s+private struct HIDP_CAPS\s*\{.*?\r?\n        \}').Value
 if (-not $caps) { throw 'Missing HIDP_CAPS structure' }
 
@@ -53,6 +56,9 @@ namespace Regression {
         __CLASSIFIER__
         __REPORT__
         __SUMMARY__
+        __SAMEDEVICE__
+        __TRYVIDPID__
+        __MENTIONS__
         private static int checks;
         private static void Assert(bool value, string name) { if (!value) throw new Exception(name); checks++; }
         public static int Run() {
@@ -83,6 +89,10 @@ namespace Regression {
             Assert(text.Contains("集合数量不等于物理设备数量"), "HID collection counting explained");
             Assert(text.Contains("蓝牙地址，不一定是 VID:PID"), "Bluetooth identifier not labeled VID/PID");
             Assert(text.Contains("3837:1018 GET_FEATURE failed Win32=5"), "Latest scan diagnostics included");
+            string single = BuildHidReport(devices, devices[0]);
+            Assert(single.Contains("只抓这一台") && !single.Contains("bt-headset"), "Single-device report excludes other devices");
+            string singleSum = BuildSummary(new AppSettings { SafeMode = true }, devices, devices[0]);
+            Assert(singleSum.Contains("抓取目标") && !singleSum.Contains("ROSE Ceramics U"), "Single-device summary excludes other devices");
             string sum = BuildSummary(new AppSettings { SafeMode = true }, devices);
             Assert(sum.Contains("安全模式 = 开"), "Summary states safety mode");
             Assert(sum.Contains("协议或实际响应数据") && !sum.Contains("发我就能补"), "Summary does not promise unsupported battery protocol");
@@ -91,7 +101,7 @@ namespace Regression {
     }
 }
 '@
-$source = $source.Replace('__CAPS__', $caps).Replace('__CLASSIFIER__', $classifier).Replace('__REPORT__', $report).Replace('__SUMMARY__', $summary)
+$source = $source.Replace('__CAPS__', $caps).Replace('__CLASSIFIER__', $classifier).Replace('__REPORT__', $report).Replace('__SUMMARY__', $summary).Replace('__SAMEDEVICE__', $sameDevice).Replace('__TRYVIDPID__', $tryVidPid).Replace('__MENTIONS__', $mentionsDevice)
 Add-Type -TypeDefinition $source -Language CSharp
 $checks = [Regression.Checks]::Run()
 Write-Output "PASS: $checks hardware-free discovery/feedback regression checks"
