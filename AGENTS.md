@@ -7,6 +7,8 @@
   and preserve remote changes.
 - Include a concrete list of changes and verification results in the commit
   description. Distinguish verified fixes from unresolved device limitations.
+- 后续上传说明统一使用中文，包括 Git 提交标题与正文、PR 标题与正文、
+  发布说明及更新日志；代码标识符、命令和专有名称可保留原文。
 - Upload source and project documentation only. Keep personal settings, hardware
   captures, diagnostic output, SDKs, downloaded drivers, and build output local.
 - Never infer battery percentages or charging flags from unverified device bytes.
