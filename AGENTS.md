@@ -30,8 +30,9 @@
 - For a release build, run `.\build.ps1 -Configuration Release -Runtime win-x64`.
   The current script produces `app\MouseDock.exe` as a compressed, self-contained
   single file, including native libraries and content for extraction.
-- Run the relevant checks in `tests/MouseDock.Checks`,
-  `tests/MouseDock.ProtocolTests`, and `tests/feedback-report-regression.ps1`.
-  Record actual results and keep device verification limits explicit.
+- 2026-11-05 起项目已清空旧实现，仅保留依赖、项目配置、打包工具和提示词。
+  不从历史版本自动恢复旧业务代码；新功能按用户后续要求重新开发。
+- 旧测试随旧实现移除。后续为新实现建立相应检查，验证记录留在本地，
+  并明确区分离线检查与设备实测。
 - Source synchronization or workspace cleanup alone does not require packaging
   a new release. Keep the running application and its settings intact.

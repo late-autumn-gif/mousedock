@@ -17,5 +17,5 @@ MouseDock 对系统的影响面被刻意限制在以下几点，任何 PR 都不
 ## 供应链
 
 - 无 NuGet 第三方依赖（仅 .NET BCL 与 Windows SDK 投影）
-- 构建可复现：见 [BUILD.md](BUILD.md)
-- 发布产物附带 SHA-256；签名流程见 [SIGNING.md](SIGNING.md)
+- 构建配置：见 [BUILD.md](docs/BUILD.md)
+- 发布产物附带 SHA-256；签名流程见 [SIGNING.md](docs/SIGNING.md)

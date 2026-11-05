@@ -20,33 +20,24 @@ jobs:
         run: dotnet restore src/MouseDock/MouseDock.csproj
 
       - name: Build
+        if: hashFiles('src/**/*.cs', 'src/**/*.xaml') != ''
         run: dotnet build src/MouseDock/MouseDock.csproj -c Release --no-restore
 
-      - name: Offline protocol regression
-        run: dotnet run --project tests/MouseDock.ProtocolTests/MouseDock.ProtocolTests.csproj -c Release
-
-      - name: Offline discovery and feedback report regression
-        run: pwsh -NoProfile -File tests/feedback-report-regression.ps1
-
       - name: Publish (self-contained single file)
-        run: >
-          dotnet publish src/MouseDock/MouseDock.csproj
-          -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:DebugType=none
-          -p:EnableCompressionInSingleFile=true
-          -o dist
+        if: hashFiles('src/**/*.cs', 'src/**/*.xaml') != ''
+        run: ./build.ps1 -Configuration Release -Runtime win-x64
 
       - name: Hash
+        if: hashFiles('app/MouseDock.exe') != ''
         run: |
-          $h = (Get-FileHash dist\MouseDock.exe -Algorithm SHA256).Hash
-          "SHA256=$h" | Tee-Object -FilePath dist\SHA256.txt
+          $h = (Get-FileHash app\MouseDock.exe -Algorithm SHA256).Hash
+          "SHA256=$h" | Tee-Object -FilePath app\SHA256.txt
           Write-Output "::notice title=SHA256::$h"
 
       - uses: actions/upload-artifact@v4
+        if: hashFiles('app/MouseDock.exe') != ''
         with:
           name: MouseDock-win-x64
           path: |
-            dist/MouseDock.exe
-            dist/SHA256.txt
+            app/MouseDock.exe
+            app/SHA256.txt

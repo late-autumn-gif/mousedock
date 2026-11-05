@@ -12,6 +12,9 @@ $proj  = Join-Path $root "src\MouseDock\MouseDock.csproj"
 $exe   = Join-Path $root "app\MouseDock.exe"
 $dist  = Join-Path $root "app"
 $local = Join-Path $root ".dotnet"
+$sources = @(Get-ChildItem (Join-Path $root "src\MouseDock") -Recurse -File |
+    Where-Object { $_.Extension -in ".cs", ".xaml" -and $_.FullName -notmatch '[\\/](bin|obj)[\\/]' })
+if ($sources.Count -eq 0) { throw "旧代码已清空，请先添加新的应用入口后再启动。" }
 
 function Write-Step($n, $text) {
     Write-Host ("[" + $n + "] " + $text) -ForegroundColor Cyan
@@ -114,5 +117,4 @@ Write-Host ""
 Write-Host "好了。" -ForegroundColor Green
 Write-Host ("  程序  : " + $exe)
 Write-Host  "  桌面  : MouseDock.lnk"
-Write-Host ("  后台  : " + '"' + $exe + '" --tray')
 

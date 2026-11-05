@@ -1,10 +1,13 @@
-param(
+﻿param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$sources = @(Get-ChildItem (Join-Path $root "src\MouseDock") -Recurse -File |
+    Where-Object { $_.Extension -in ".cs", ".xaml" -and $_.FullName -notmatch '[\\/](bin|obj)[\\/]' })
+if ($sources.Count -eq 0) { throw "旧代码已清空，请先在 src\MouseDock 中添加新的应用入口后再打包。" }
 $dotnet = Join-Path $root ".dotnet\dotnet.exe"
 if (-not (Test-Path $dotnet)) {
     $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
@@ -28,4 +31,3 @@ Write-Host "[MouseDock] publish -> app（单文件、自包含）..." -Foregroun
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
 Write-Host "[MouseDock] done: $root\app\MouseDock.exe" -ForegroundColor Green
-Write-Host "  自检截图:  $root\app\MouseDock.exe --shot" -ForegroundColor DarkGray

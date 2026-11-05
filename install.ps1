@@ -44,7 +44,7 @@ if (-not $NoShortcut) {
 if ($AutoStart) {
     Write-Host "[4/4] autostart ..." -ForegroundColor Cyan
     $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-    Set-ItemProperty -Path $run -Name "MouseDock" -Value ('"' + $exe + '" --tray')
+    Set-ItemProperty -Path $run -Name "MouseDock" -Value ('"' + $exe + '"')
 } else {
     Write-Host "[4/4] autostart not enabled (use -AutoStart)" -ForegroundColor DarkGray
 }
@@ -53,7 +53,4 @@ Write-Host ""
 Write-Host "done:" -ForegroundColor Green
 Write-Host ("  exe       : " + $exe)
 Write-Host ("  desktop   : " + $desktopLnk)
-Write-Host ("  detect    : " + $exe + " --detect")
-Write-Host ("  capture   : " + $exe + " --capture24g 10")
-Write-Host ("  background: " + $exe + " --tray")
 

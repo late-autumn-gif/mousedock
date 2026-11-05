@@ -55,11 +55,11 @@
 `scripts/sign.ps1` 是签名模板，接自己的证书即可：
 
 ```powershell
-./scripts/sign.ps1 -Exe dist\MouseDock.exe -Pfx cert.pfx -Password $env:PFX_PASS
+./scripts/sign.ps1 -Exe app\MouseDock.exe -Pfx cert.pfx -Password $env:PFX_PASS
 ```
 
 签名后务必验证：
 
 ```powershell
-Get-AuthenticodeSignature dist\MouseDock.exe | Format-List Status, SignerCertificate
+Get-AuthenticodeSignature app\MouseDock.exe | Format-List Status, SignerCertificate
 ```

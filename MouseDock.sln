@@ -7,10 +7,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MouseDock", "src\MouseDock\MouseDock.csproj", "{450705BF-A164-42A5-851C-F97475FCBF27}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "probe-winrt", "probe-winrt", "{87B515E0-B234-69AC-EA0C-1729119B4357}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "probe", "probe-winrt\probe.csproj", "{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,24 +29,11 @@ Global
 		{450705BF-A164-42A5-851C-F97475FCBF27}.Release|x64.Build.0 = Release|Any CPU
 		{450705BF-A164-42A5-851C-F97475FCBF27}.Release|x86.ActiveCfg = Release|Any CPU
 		{450705BF-A164-42A5-851C-F97475FCBF27}.Release|x86.Build.0 = Release|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Debug|x64.Build.0 = Debug|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Debug|x86.Build.0 = Debug|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Release|x64.ActiveCfg = Release|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Release|x64.Build.0 = Release|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Release|x86.ActiveCfg = Release|Any CPU
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{450705BF-A164-42A5-851C-F97475FCBF27} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{4AB2A7D5-85E2-4C1D-A1CB-7FF1ABB9726D} = {87B515E0-B234-69AC-EA0C-1729119B4357}
 	EndGlobalSection
 EndGlobal
