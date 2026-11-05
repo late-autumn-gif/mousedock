@@ -95,8 +95,9 @@ namespace MouseDock.Services.Detection
         public static List<DetectedDevice> Enumerate(DevicePreferences preferences = null)
         {
             LastDiagnostics.Clear();
+            int scanStarted = Environment.TickCount;
             var buckets = new Dictionary<string, Bucket>();
-            var vendorCollections = new List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)>();
+            var vendorCollections = new List<VendorCollectionInfo>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
             IntPtr set = IntPtr.Zero;
@@ -156,7 +157,8 @@ namespace MouseDock.Services.Detection
                     bool sc630 = VendorProtocol.IsAulaSc630(bucket.Product);
                     bool f99 = VendorProtocol.IsAulaF99(bucket.Vid, bucket.Pid, bucket.Product);
                     bool weikav = VendorProtocol.IdentifyWeikav(bucket.Vid, bucket.Pid, bucket.Product) != null;
-                    if (bucket.Battery >= 0 || !(inphic || atk || atkV75 || mchoseV9 || mchoseG7 || rapooVt7 || rainy || sc630 || f99 || weikav)) continue;
+                    bool freq = VendorProtocol.IsFreqMouse(bucket.Vid, bucket.Pid, bucket.Product);
+                    if (bucket.Battery >= 0 || !(inphic || atk || atkV75 || mchoseV9 || mchoseG7 || rapooVt7 || rainy || sc630 || f99 || weikav || freq)) continue;
                     string id = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
                     if (!(preferences?.CanRead(id, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
 
@@ -169,7 +171,9 @@ namespace MouseDock.Services.Detection
                         : rainy ? (VendorProtocol.IsRainy75Wired(bucket.Vid, bucket.Pid)
                             ? "Rainy 75 有线电量查询" : "Rainy 75 2.4G 电量查询")
                         : f99 ? "AULA F99 Feature 09 电量查询"
-                        : weikav ? "维咖 DriveAll 设备信息查询" : "英菲克 2.4G 接收器状态上报";
+                        : weikav ? "维咖 DriveAll 设备信息查询"
+                        : freq ? "前行者 FREQ 0x30 电量查询"
+                        : "英菲克 2.4G 接收器状态上报";
                     bucket.Battery = ReadBattery(source, () =>
                     {
                         if (sc630) return VendorProtocol.TryReadAulaSc630(bucket.Vid, bucket.Pid, bucket.Product, out charging);
@@ -181,6 +185,13 @@ namespace MouseDock.Services.Detection
                         if (rainy) return VendorProtocol.TryReadRainy75Wired(bucket.Vid, bucket.Pid, out charging);
                         if (f99) return VendorProtocol.TryReadAulaF99(bucket.Vid, bucket.Pid);
                         if (weikav) return VendorProtocol.TryReadWeikavBattery(bucket.Vid, bucket.Pid, bucket.Product);
+                        if (freq)
+                        {
+                            int level = VendorProtocol.TryReadFreqMouse(bucket.Vid, bucket.Pid, bucket.Product,
+                                out charging, out string freqDiagnostic);
+                            if (!string.IsNullOrEmpty(freqDiagnostic)) trace.Add("前行者 FREQ：" + freqDiagnostic);
+                            return level;
+                        }
                         return VendorProtocol.TryReadInphic(bucket.Vid, bucket.Pid, out charging);
                     }, trace);
                     bucket.Identity = VendorProtocol.IdentityFor(bucket.Vid, bucket.Pid) ?? bucket.Identity;
@@ -211,7 +222,7 @@ namespace MouseDock.Services.Detection
                     foreach (var bucket in buckets.Values)
                         if (path.IndexOf($"vid_{bucket.Vid:x4}&pid_{bucket.Pid:x4}", StringComparison.OrdinalIgnoreCase) >= 0)
                             bucket.BatterySource = result.BatteryNote;
-                return (result.Battery, result.Name, result.Charging);
+                return (result.Battery, result.Name, result.Charging, result.Diagnostic);
             }, ReadVendorCollection);
 
             // MCHOSE K87 V3：2.4G 键盘的 QHW 电量在独立厂商集合上，按整机身份读一次。
@@ -227,6 +238,8 @@ namespace MouseDock.Services.Detection
                 }
                 LastDiagnostics.Add($"MCHOSE K87 V3 QHW: battery={result.Level}, charging={result.Charging}");
             }
+
+            LastDiagnostics.Add($"扫描完成 用时={Environment.TickCount - scanStarted}ms 设备={buckets.Count}");
 
             return buckets.Values.Select(b =>
             {
@@ -294,6 +307,15 @@ namespace MouseDock.Services.Detection
                 if (id.StartsWith("LGHUBDEVICE\\", StringComparison.Ordinal) ||
                     service == "logi_joy_vir_hid" || service == "logi_joy_bus_enum")
                     return "罗技 G HUB 虚拟输入设备（PnP 证据）";
+                // 同一套虚拟 HID 在别的主机/驱动版本上挂的是 LOGIDEVICE 容器和
+                // LGVirHid / LGBusEnum 服务名（用户反馈 1.4.3 报告里的 C232 就是这种）。
+                // 只认 LGHUBDEVICE 会漏掉它，让一条没有硬件的幽灵占掉面板配额。
+                if (id.StartsWith("LOGIDEVICE\\", StringComparison.Ordinal) ||
+                    service == "lgvirhid" || service == "lgbusenum")
+                    return "罗技 G HUB 虚拟输入设备（PnP 证据）";
+                // 软件创建的 HID 总线（远程/串流工具的 "Virtual Multitouch Device"）。
+                if (service == "gvinput")
+                    return "虚拟输入设备（软件创建的 HID 总线）";
                 // 在 USB / 蓝牙传输层停止。其上游控制器最终也会挂到 ACPI，不能据此排除外设。
                 if (id.StartsWith("USB\\", StringComparison.Ordinal) ||
                     id.StartsWith("BTHENUM\\", StringComparison.Ordinal) ||
@@ -360,7 +382,7 @@ namespace MouseDock.Services.Detection
         /// <summary>返回 true 表示这台设备被采集（鼠标/键盘/手柄）。</summary>
         private static bool TryCollect(string path, List<(string InstanceId, string Service)> ancestors, bool integratedUsb,
             Dictionary<string, Bucket> buckets, DevicePreferences preferences,
-            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> vendorCollections,
+            List<VendorCollectionInfo> vendorCollections,
             out bool wasNoise)
         {
             wasNoise = false;
@@ -439,7 +461,17 @@ namespace MouseDock.Services.Detection
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
             if (recognitionEnabled && caps.UsagePage >= 0xFF00)
-                vendorCollections.Add((path, vid, pid, caps.UsagePage, product));
+                vendorCollections.Add(new VendorCollectionInfo
+                {
+                    Path = path,
+                    Vid = vid,
+                    Pid = pid,
+                    UsagePage = caps.UsagePage,
+                    Input = caps.InputReportByteLength,
+                    Output = caps.OutputReportByteLength,
+                    Feature = caps.FeatureReportByteLength,
+                    Product = product
+                });
 
             if (!TryDeviceKind(vid, pid, caps.UsagePage, caps.Usage, out DeviceKind kind, product))
             {
@@ -701,8 +733,8 @@ namespace MouseDock.Services.Detection
 
         /// <summary>厂商集合上的电量读取：设备本体归并完之后，每台最多读一次。</summary>
         private static void QueryVendorCollections(Dictionary<string, Bucket> buckets,
-            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> collections,
-            bool safeMode, Func<string, (int Battery, string Name, bool Charging)> probeLogitech,
+            List<VendorCollectionInfo> collections, bool safeMode,
+            Func<string, (int Battery, string Name, bool Charging, string Diagnostic)> probeLogitech,
             Func<string, ushort, ushort, int> readVendor)
         {
             // 上一轮读到的电量只属于上一次扫描；型号和名称留着，电量作废。
@@ -714,6 +746,66 @@ namespace MouseDock.Services.Detection
 
             var probedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var queriedDevices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // 罗技 HID++ 单独一段：一个接收器最多试两条接口，整体限时。
+            // 1.4.3 就是在这里卡住的：C539 的三条 FF00 集合逐条同步写，其中一次写不返回，
+            // 整轮扫描（含后面的设备列表）就永远出不来。
+            var logiPaths = collections
+                .Where(c => c.Vid == 0x046D && c.UsagePage == 0xFF00 &&
+                            !IsExcludedInterface(c.Vid, c.Pid, c.Product, c.Path))
+                .GroupBy(c => $"{c.Vid:X4}:{c.Pid:X4}", StringComparer.OrdinalIgnoreCase)
+                .SelectMany(g => g.GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase)
+                                  .Select(x => x.First())
+                                  .OrderByDescending(LogiInterfaceRank)
+                                  .ThenBy(c => c.Path, StringComparer.Ordinal)
+                                  .Take(2))
+                .ToList();
+
+            if (logiPaths.Count > 0)
+                LastDiagnostics.Add($"罗技 HID++ 探针 候选={logiPaths.Count} 安全模式={(safeMode ? "开" : "关")}");
+
+            int logiStarted = Environment.TickCount;
+            foreach (var collection in logiPaths)
+            {
+                if (safeMode) break;
+                string key = $"{collection.Vid:X4}:{collection.Pid:X4}";
+                if (!buckets.TryGetValue(key, out var bucket) ||
+                    IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path)) continue;
+
+                (int Battery, string Name, bool Charging) current;
+                lock (_logiHints)
+                {
+                    if (!_logiHints.TryGetValue(key, out current)) current = (-1, null, false);
+                }
+                if (current.Battery >= 0 && !string.IsNullOrWhiteSpace(current.Name)) continue;
+                if (Environment.TickCount - logiStarted > 4500)
+                {
+                    LastDiagnostics.Add($"{key} 罗技 HID++ 探针总时长超限（{Environment.TickCount - logiStarted}ms），跳过剩余接口");
+                    break;
+                }
+                if (!probedPaths.Add(collection.Path)) continue;
+
+                int started = Environment.TickCount;
+                try
+                {
+                    var result = probeLogitech(collection.Path);
+                    bool usable = result.Battery >= 0 && result.Battery <= 100;
+                    lock (_logiHints)
+                        _logiHints[key] = (
+                            current.Battery >= 0 ? current.Battery : usable ? result.Battery : -1,
+                            !string.IsNullOrWhiteSpace(result.Name) ? result.Name : current.Name,
+                            current.Battery >= 0 ? current.Charging : usable && result.Charging);
+                    LastDiagnostics.Add($"{key} HID++ 探针 路径={collection.Path} 用时={Environment.TickCount - started}ms " +
+                        $"名称={result.Name ?? "（无）"} 电量={(usable ? result.Battery + "%" : "未读到")} {result.Diagnostic}");
+                    // 同一接收器只认第一个报出名字的接口；后面的接口通常是同一条通道的别名。
+                    if (!string.IsNullOrWhiteSpace(result.Name)) continue;
+                }
+                catch (Exception ex)
+                {
+                    LastDiagnostics.Add($"{key} HID++ 探针异常 {ex.GetType().Name} 路径={collection.Path}");
+                }
+            }
+
             foreach (var collection in collections)
             {
                 if (collection.UsagePage < 0xFF00 ||
@@ -725,29 +817,8 @@ namespace MouseDock.Services.Detection
                     IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path))
                     continue;
 
-                if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00)
-                {
-                    if (safeMode) continue;
-                    if (!probedPaths.Add(collection.Path)) continue;
-                    (int Battery, string Name, bool Charging) current;
-                    lock (_logiHints)
-                    {
-                        if (!_logiHints.TryGetValue(key, out current)) current = (-1, null, false);
-                    }
-                    if (current.Battery >= 0 && !string.IsNullOrWhiteSpace(current.Name)) continue;
-                    try
-                    {
-                        var result = probeLogitech(collection.Path);
-                        bool usable = result.Battery >= 0 && result.Battery <= 100;
-                        lock (_logiHints)
-                            _logiHints[key] = (
-                                current.Battery >= 0 ? current.Battery : usable ? result.Battery : -1,
-                                !string.IsNullOrWhiteSpace(result.Name) ? result.Name : current.Name,
-                                current.Battery >= 0 ? current.Charging : usable && result.Charging);
-                    }
-                    catch { }
-                    continue;
-                }
+                // 罗技已经在上面单独处理过。
+                if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00) continue;
 
                 if (safeMode || bucket.Battery >= 0 || queriedDevices.Contains(key)) continue;
                 string route = null;
@@ -765,6 +836,15 @@ namespace MouseDock.Services.Detection
                 }
                 catch { }
             }
+        }
+
+        /// <summary>HID++ 长报文（20 字节）接口优先，其次 7 字节短报文；32 字节那类不是 HID++ 通道。</summary>
+        internal static int LogiInterfaceRank(VendorCollectionInfo collection)
+        {
+            if (collection.Input == 20 || collection.Output == 20 ||
+                (collection.Feature >= 20 && collection.Feature <= 21)) return 3;
+            if (collection.Input == 7 || collection.Output == 7) return 2;
+            return 1;
         }
 
         private static int ReadVendorCollection(string route, ushort vid, ushort pid) => route switch
@@ -846,6 +926,23 @@ namespace MouseDock.Services.Detection
             }
             catch { return null; }
             finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); }
+        }
+
+        /// <summary>
+        /// 一个厂商私有 HID 集合。除了路径和 VID:PID，还带上报文长度：
+        /// 罗技的 HID++ 只挂在 20 字节（长报文）或 7 字节（短报文）通道上，
+        /// 32 字节那类不是 HID++，先读它等于白等超时。
+        /// </summary>
+        internal sealed class VendorCollectionInfo
+        {
+            public string Path;
+            public ushort Vid;
+            public ushort Pid;
+            public ushort UsagePage;
+            public ushort Input;
+            public ushort Output;
+            public ushort Feature;
+            public string Product;
         }
 
         internal sealed class Bucket

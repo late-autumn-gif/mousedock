@@ -51,7 +51,10 @@ internal static class OfficialIntegrationRegression
         Check(LogitechHidpp.TryParseBattery(0x1000,battery,out pct,out _) && pct==77, "HID++1000 is battery percentage");
         battery[4]=0x10;battery[5]=0x5A;
         Check(!LogitechHidpp.TryParseBattery(0x1000,new byte[3],out _,out _), "HID++ truncated replies rejected");
-        Check(!LogitechHidpp.TryParseBattery(0x1001,battery,out _,out _), "A generic receiver cannot borrow the GPW curve");
+        Check(LogitechHidpp.TryParseBattery(0x1001,battery,out pct,out _) && pct==100,
+            "0x1001 is documented as voltage; a plausible mV reading is usable before 0x0005 name confirmation");
+        battery[4]=0x01;battery[5]=0x00;
+        Check(!LogitechHidpp.TryParseBattery(0x1001,battery,out _,out _), "0x1001 outside the voltage range cannot borrow the GPW curve");
         battery[4]=0x0E;battery[5]=0xD8;battery[6]=0;
         Check(LogitechHidpp.TryParseBattery(0x1001,battery,out pct,out _,true) && pct==47, "GPW uses big endian 3800mV and official energy model");
         battery[4]=0x10;battery[5]=0x16;battery[6]=0x80;

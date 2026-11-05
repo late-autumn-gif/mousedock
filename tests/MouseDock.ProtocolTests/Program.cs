@@ -220,6 +220,8 @@ assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
 assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
+assertions += LogitechReceiverRegression.Run();
+assertions += FreqRegression.Run();
 
 // ── HyperX（飓风 3）：03F0:06BE 的六个集合原来全被判成 usage 跳过 ──
 Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, 0xFF13, 0x0001, out var hxKind1) && hxKind1 == DeviceKind.Headset,
