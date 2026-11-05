@@ -5,10 +5,10 @@
   `https://github.com/JEFF-dev-ui/mousedock`.
 - The user has authorized these routine uploads. Use normal fast-forward pushes
   and preserve remote changes.
-- Include a concrete list of changes and verification results in the commit
-  description. Distinguish verified fixes from unresolved device limitations.
 - 后续上传说明统一使用中文，包括 Git 提交标题与正文、PR 标题与正文、
   发布说明及更新日志；代码标识符、命令和专有名称可保留原文。
+- 上传说明只描述具体改动及其效果，不写验证结果、测试数量、执行过程或排查经过。
+  必要检查仍照常执行，验证记录保留在本地；改动描述不得夸大已实现的范围。
 - Upload source and project documentation only. Keep personal settings, hardware
   captures, diagnostic output, SDKs, downloaded drivers, and build output local.
 - Never infer battery percentages or charging flags from unverified device bytes.
