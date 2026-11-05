@@ -16,8 +16,6 @@
     <Product>MouseDock</Product>
     <Description>MouseDock Windows application</Description>
     <Copyright>MIT License</Copyright>
-    <RepositoryUrl>https://github.com/JEFF-dev-ui/mousedock</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -28,6 +26,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\Characters\Rikka.jpg;Assets\Characters\Roxy.jpg" />
+    <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
     <Content Include="Assets\*.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

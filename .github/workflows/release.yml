@@ -22,7 +22,6 @@ jobs:
 
       # ── 可选：代码签名 ────────────────────────────────────────────
       # 未配置证书时这步会被跳过，产物仍可发布（用户会看到 SmartScreen 提示）。
-      # 申请免费 OSS 签名见 docs/SIGNING.md。
       #
       # - name: Sign (SignPath)
       #   if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
@@ -54,4 +53,3 @@ jobs:
           generate_release_notes: true
           body: |
             > 未签名的构建会让 SmartScreen 显示「未知发布者」。校验方法见 SHA256.txt。
-            > 杀软误报请附源码链接提交厂商复核，步骤见 docs/SIGNING.md。

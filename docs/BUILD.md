@@ -1,35 +1,60 @@
-# 构建与重新开发
+# 构建
 
-旧业务实现已清空。当前保留的是项目与打包配置，尚无应用入口，不能直接生成可运行的新版本。
+## 环境
 
-## 保留内容
+| 项 | 版本 |
+|---|---|
+| Windows | 10 1809+ / 11 |
+| .NET SDK | **10.0.200+**（`dotnet --list-sdks` 确认） |
+| 依赖 | 无。不引用任何 NuGet 包 |
 
-- `.dotnet/`：本机 .NET 10 SDK 与框架包，不上传 Git。
-- `src/MouseDock/MouseDock.csproj`：Windows .NET 10、WPF、WinForms 配置。
-- `src/MouseDock/app.manifest`、`Assets/app.ico`：应用清单与打包图标。
-- `build.ps1`、`install.ps1`、`MouseDock.cmd`、`tools/bootstrap.ps1`：构建、安装和启动入口。
-- `scripts/sign.ps1`、`docs/SIGNING.md`：签名工具与说明。
-- `.github/workflows/`：构建与发布流程。
-- `AGENTS.md`：后续开发、上传说明和打包约定。
-
-项目没有额外的第三方 NuGet 包依赖。新代码放入 `src/MouseDock/`，需提供 WPF `App.xaml` 或其它有效应用入口。
-
-## 恢复依赖
+## 一条命令
 
 ```powershell
-.\.dotnet\dotnet.exe restore .\src\MouseDock\MouseDock.csproj
+./build.ps1
 ```
 
-## 打包
-
-添加新的应用代码后运行：
+等价于：
 
 ```powershell
-.\build.ps1 -Configuration Release -Runtime win-x64
+dotnet publish src/MouseDock/MouseDock.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:IncludeAllContentForSelfExtract=true `
+  -p:DebugType=none -p:EnableCompressionInSingleFile=true `
+  -o app
 ```
 
-产物为 `app\MouseDock.exe`：Windows x64、压缩、自包含单文件，原生库和内容随包解压。可用 `scripts/sign.ps1` 为产物签名。
+产物：`app\MouseDock.exe`（单文件、自包含，目标机无需安装 .NET）。
 
-空项目的 CI 仍恢复依赖，跳过编译和产物上传。发布流程需要存在新的应用源码。
+## 校验
 
-旧版本和文档可从 Git 历史查阅；根目录 README 暂保留历史内容，不代表重建后的功能清单。
+### 离线协议回归
+
+```powershell
+dotnet run --project tests/MouseDock.ProtocolTests/MouseDock.ProtocolTests.csproj -c Release
+pwsh -NoProfile -File tests/feedback-report-regression.ps1
+```
+
+该程序直接测试产品的解析器与合并逻辑，不枚举或读写硬件。覆盖 MHUB v2 请求、可选校验、接收器/本体 PID、无效帧、0% 电量、Legacy 兼容、充电状态和原生结构大小。它不能代替目标设备实测。
+
+```powershell
+Get-FileHash app\MouseDock.exe -Algorithm SHA256
+```
+
+把结果贴到 Release 说明里，用户下载后可自行比对。
+
+## 可复现性说明
+
+本程序**不混淆、不加壳、不裁剪元数据**，IL 可被 dnSpy / ILSpy 直接读取。
+相同 SDK 版本下重复构建，`app\MouseDock.exe` 的 IL 部分应当一致；单文件打包的时间戳会导致整体哈希略有差异，
+因此校验以 **Release 页公示的哈希** 为准。
+
+## 目录
+
+```
+src/MouseDock/            应用
+tools/                    开发期工具（pcap 解析等，不参与构建）
+docs/                     文档
+.github/workflows/        CI
+```

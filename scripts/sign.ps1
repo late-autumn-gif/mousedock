@@ -6,7 +6,6 @@ param(
 )
 
 # 代码签名模板：接自己的 PFX 证书即可。
-# 申请免费开源签名的路径见 docs/SIGNING.md。
 $ErrorActionPreference = "Stop"
 
 $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
@@ -25,7 +24,7 @@ if (-not $signtool) {
 Write-Host "使用 $signtool"
 
 & $signtool sign /fd SHA256 /td SHA256 /tr $Timestamp /f $Pfx /p $Password `
-    /d "MouseDock" /du "https://github.com/late-autumn-gif/MouseDock" $Exe
+    /d "MouseDock" $Exe
 
 if ($LASTEXITCODE -ne 0) { Write-Error "签名失败"; exit $LASTEXITCODE }
 

@@ -1,0 +1,382 @@
+﻿source,brand,name,vid,pid,protocol,battery
+reader,,beast_x,,,battery_wlmouse_cube,`data[8]`，0–100 直接用
+reader,BYKC/AULA,bykc_sc525,32c2,0027,battery_aula_sc525,`raw[8] & 0x7F`；`raw[8]&0x80`→charging；`raw[9]&0x80`==0→sleep
+reader,PixArt (Sora/SC900),bykc_sc900,093a,522c,battery_aula_sc900,`raw[1] & 0x7F`；`raw[1]&0x80`→charging
+reader,AUSDOM,ausdom_g03,363c,ff99,battery_ausdom,`raw[18]`（0–100）；`raw[17]&1`→charging；`raw[20]`==1 视为已连接
+reader,,dareu_a980pro,,,battery_dareu_a980pro,"`b[8]`；`b[8]==0`→NotOnline；`b[7] ∈ {1,2}`→charging；`b[1]&0x0F` 是状态(0/1)"
+reader,,exx_alpha7,,,battery_exx,状态通知（0xD1）：`b[4]`=online、`b[5]`=电量、`b[6]`=charging（exx.notification）；设备信息里的电量偏移未确认
+reader,Finalmouse,finalmouse_ulx,361d,0100,battery_finalmouse,cmd=38：payload[0]（payload=`b[4:4+size]`）0–100；cmd=5：payload[0:2] 小端 mV（2500–4600）查表插值 3000→0.2%、3620→5、3660→10、3740→25、3
+reader,,finalmouse_slx,,,battery_finalmouse,同上
+reader,,gwolves_getbatper,,,battery_gwolves_feature,"`b[7]`；`b[6]`∈{0,1} 充电标志"
+reader,,gwolves_old,,,battery_gwolves_feature,"`b[5]`；`b[4]`∈{0,1} 充电标志"
+reader,ATK,compx,373b,12e9,battery_atk_nk / battery_lamzu_crystal / battery_gwolves_feature,`b[6]` 百分比，`b[7]&1`→charging
+reader,Compx (VGN/Lamzu/Ninjutso),compx,3554,f50d,battery_atk_nk / battery_lamzu_crystal / battery_gwolves_feature,`b[6]` 百分比，`b[7]&1`→charging
+reader,G-Wolves,compx,33e4,3854,battery_atk_nk / battery_lamzu_crystal / battery_gwolves_feature,`b[6]` 百分比，`b[7]&1`→charging
+reader,AM Infinity,infinity100_d6,3151,5007,battery_infinity100,`b[3]`；`b[2]==0`→sleep；`b[2]==0xFF`→无效
+reader,MediaTek (AM35),infinity97_am35,0e8d,0703,battery_infinity97,RACE payload：`payload[2]`=电量、`payload[1]`=充电、`payload[4]==0`→sleep（infinity97.battery）
+reader,Logitech,hidpp_1004,046d,c54f,battery_logitech_x3,"先 `call(0,0,(16,4))` 发现 feature 0x1004，索引=响应[4]；再统一电池 getStatus：`level=响应[4]`、`state=响应[6]`，state∈{1,2,4}→charging"
+reader,,mchose_mhub,,,battery_mchose_v2,"`body=b[8:]`；`body[12]`=百分比；`body[11]`∈{0,1} 充电状态；body[0:4]=VID/PID，须命中 0x3837+PID 表"
+reader,,pulsar_cmouse,,,battery_pulsar_bibimbap,电压 mV 组合 `b[7]`/`b[8]`（高低位未确认）→电压表 3050/3420/…/4200 阶梯；充电取 `b[10]` 的位（read 里 6/7/8/9/10 一组常量）
+reader,Rapoo,rapoo_vt2max,24ae,1423,battery_rapoo_short,"`b[8]`；`b[7]`：0→sleep、1→online、2→charging；`b[1]&0x0F`∈{0,1,2} 是帧类型"
+reader,Rapoo,rapoo_aa,24ae,14a5,battery_rapoo_v2,走 protocols.decode('rapoo')：`b[7]` 状态(0/1/2)、`b[8]` 百分比
+reader,,rawm_hub,,,battery_rawm,响应是 JSON 文本，电量取字段 `battery`、充电取 `chr`（rawm.exchange / query_info）
+reader,Razer,razer_carbon,1532,00f0,battery_razer_carbon,`响应[10]`；`响应[1]`：0/1=未就绪（继续等）、2=成功、其它=失败
+reader,RIDLAG,ridlag_owl,362d,ff09,battery_ridlag_owl,`b[20] & 0x7F`；`b[20]&0x80`→charging
+reader,,rog_8k,,,battery_rog_8k,"`b[5]`（0→sleep）；`b[10]`∈{0,1} 充电标志"
+reader,,rog_standard,,,battery_rog_miao,`b[2:4]`=`12 07`；`b[4]`=电量（0→sleep）；`b[9]`≠0→charging
+reader,,rog_omni,,,battery_rog_miao,`b[5]` 电量（0→sleep）；`b[10]`≠0→charging
+reader,,angrymiao,,,battery_rog_miao,`b[0]==0xF7`→电量 `b[2]`；`b[0]==0 && b[1]==0xF7`→电量 `b[3]`；0→unresponsive
+reader,,scyrox_scenter,,,battery_scyrox_s,`b[4]` 电量；`b[5]`≠0→charging；`b[6]==0`→sleep；`b[62]` 须为 1；设备 ID=`b[12:14]|b[14:16]<<16`
+reader,PixArt (Sora/SC900),sora_v3,093a,eb02,battery_sora_v3,按命令查表（17/18/19 ↔ charging/battery/connection 三个字段），映射表没在反汇编里展开，字节偏移未确认
+reader,,steelseries_aerox,,,battery_steelseries,`b[1]&0x7F`=step(1–21) → `(step-1)*5` 百分比；`b[1]&0x80`→charging；step==0→sleep
+reader,VGN,vgn_kc2,391d,1a23,battery_vgn_kc2,`b[20] & 0x7F`；`b[20]&0x80`→charging
+reader,VGN,vgn_ld,391d,102e,battery_vgn_ld,`b[3]` 百分比（percent 校验 0–100）；充电状态标记 `vgn_ld_charging_unknown`（不做猜测）
+reader,ZYNOO,zynoo_gp1,3886,ca02,battery_zynoo,`b[10] & 0x7F`；`b[10]&0x80`→charging；`b[11]==0`→sleep
+reader,,waizowl_ogm,,,battery_waizowl,`b[6]` 百分比（decode_battery）
+reader,,webbrands_f83,,,battery_webbrands,"回包 `(b[0],b[1],b[4],b[6])==(0,0xA1,2,0x83)`；`b[8]`=电量、`b[7]`=充电（decode）；`b[1]==0xA0`→sleep"
+reader,,webbrands_ipi,,,battery_webbrands,未确认（decode 的 ipi_pix 分支只到 b[0]==3、b[4]==2 的校验）
+reader,,webbrands_akko,,,battery_webbrands,未确认
+commercial,Unknown(0x373b),ATK F1 Ultimate,373b,1031,compx,
+commercial,Unknown(0x373b),ATK F1 Ultimate,373b,102e,compx,
+commercial,Unknown(0x373b),ATK A9 Ultimate,373b,11d9,compx,
+commercial,Unknown(0x373b),ATK A9 Ultimate,373b,11b6,compx,
+commercial,Unknown(0x3554),VGN F2 Pro Max,3554,fb3e,compx,
+commercial,Unknown(0x3554),VGN F2 Pro Max,3554,fb3d,compx,
+commercial,Unknown(0x3554),前行者 Z7,3554,f517,compx,
+commercial,Unknown(0x395a),塞洛斯 V12M,395a,0006,scyrox12,
+commercial,Unknown(0x373b),ATK Zero,373b,11d8,compx,
+commercial,Unknown(0x373b),ATK F1 V3 Ultimate+,373b,1278,compx,
+commercial,Unknown(0x24ae),雷柏 VT9S V2,24ae,1453,rapoo,
+commercial,Unknown(0x373b),ATK Zero,373b,1155,nordic54,
+commercial,Unknown(0x373b),ATK Zero,373b,124f,nordic54,
+commercial,Unknown(0x373b),ATK Zero,373b,1154,nordic54,
+commercial,Unknown(0x1915),Sora V2,1915,ae8a,sora,
+commercial,Unknown(0x1915),Sora V2,1915,ae1c,sora,
+commercial,Unknown(0x1915),Sora V2,1915,ae11,sora,
+commercial,Unknown(0x1915),Sora V2 8K,1915,ae8c,sora,
+commercial,Unknown(0x3554),VXE R1 Pro Max,3554,f58a,compx,
+commercial,Unknown(0x3554),VXE R1 Pro Max,3554,f58c,compx,
+commercial,Unknown(0x3554),VXE R1 SE+,3554,f58e,compx,
+commercial,Unknown(0x3554),VXE R1 SE+,3554,f58f,compx,
+commercial,Unknown(0x3554),VGN F1 Pro,3554,f503,compx,
+commercial,Unknown(0x3554),VGN F1 Pro,3554,f502,compx,
+commercial,Unknown(0x3554),Scyrox V6 / V8,3554,f5f7,compx,
+commercial,Unknown(0x3554),Scyrox V6 / V8,3554,f5f6,compx,
+libratbag,ASUS,ASUS ROG GX860 Buzzard Mouse,0b05,1816,asus,unknown
+libratbag,ASUS,ASUS ROG Chakram Core,0b05,1958,asus,unknown
+libratbag,ASUS,ASUS ROG Chakram X,0b05,1a18,asus,unknown
+libratbag,ASUS,ASUS ROG Chakram X,0b05,1a1a,asus,unknown
+libratbag,ASUS,ASUS ROG Chakram,0b05,18e3,asus,unknown
+libratbag,ASUS,ASUS ROG Chakram,0b05,18e5,asus,unknown
+libratbag,ASUS,ASUS ROG Gladius II Origin PNK LTD,0b05,18cd,asus,unknown
+libratbag,ASUS,ASUS ROG Gladius II Origin,0b05,1877,asus,unknown
+libratbag,ASUS,ASUS ROG Gladius II,0b05,1845,asus,unknown
+libratbag,ASUS,ASUS ROG Harpe Wireless,0b05,1a92,asus,unknown
+libratbag,ASUS,ASUS ROG Keris Wireless AimPoint,0b05,1a66,asus,unknown
+libratbag,ASUS,ASUS ROG Keris Wireless AimPoint,0b05,1a68,asus,unknown
+libratbag,ASUS,ASUS ROG Keris Wireless,0b05,195e,asus,unknown
+libratbag,ASUS,ASUS ROG Keris Wireless,0b05,1960,asus,unknown
+libratbag,ASUS,ASUS ROG Keris,0b05,195c,asus,unknown
+libratbag,ASUS,ASUS ROG Omni Receiver,0b05,1ace,asus,unknown
+libratbag,ASUS,ASUS ROG Pugio,0b05,1846,asus,unknown
+libratbag,ASUS,ASUS ROG Spatha X,0b05,1979,asus,unknown
+libratbag,ASUS,ASUS ROG Spatha X,0b05,1977,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Carry,0b05,18b4,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Impact,0b05,1847,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Impact II Wireless,0b05,1947,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Impact II Wireless,0b05,1949,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Impact II,0b05,18e1,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Impact III Wireless,0b05,1ad7,asus,unknown
+libratbag,ASUS,ASUS ROG Strix Impact III,0b05,1a88,asus,unknown
+libratbag,ASUS,ASUSTeK TUF GAMING M3 GEN II,0b05,1a9b,asus,unknown
+libratbag,ASUS,ASUS TUF GAMING M4 AIR,0b05,1a03,asus,unknown
+libratbag,ASUS,ASUS TUF GAMING MINI WL MOUSE MIKU,0b05,1c56,asus,unknown
+libratbag,ASUS,ASUS TUF GAMING MINI WL MOUSE MIKU,0b05,1c57,asus,unknown
+libratbag,Unknown(1ea7),Etekcity Scroll Alpha,1ea7,4011,etekcity,unknown
+libratbag,SinoWealth,Glorious Model D,258a,0033,sinowealth,unknown
+libratbag,Unknown(3794),Glorious Model O Eternal,3794,a000,sinowealth,unknown
+libratbag,SinoWealth,Glorious Model O/O-,258a,0036,sinowealth,unknown
+libratbag,Unknown(28da),G.Skill MX-780,28da,3101,gskill,unknown
+libratbag,Logitech,Logitech M325,046d,400a,hidpp20,unknown
+libratbag,Logitech,Logitech M500s,046d,c093,hidpp20,unknown
+libratbag,Logitech,Logitech M545,046d,4052,hidpp20,unknown
+libratbag,Logitech,Logitech M570,046d,1028,hidpp10,unknown
+libratbag,Logitech,Logitech M585/M590,046d,406b,hidpp20,unknown
+libratbag,Logitech,Logitech M705,046d,101b,hidpp10,unknown
+libratbag,Logitech,Logitech M720,046d,405e,hidpp20,unknown
+libratbag,Logitech,Logitech MX Anywhere 3,046d,4090,hidpp20,unknown
+libratbag,Logitech,Logitech MX Anywhere 2,046d,404a,hidpp20,unknown
+libratbag,Logitech,Logitech MX Anywhere 2,046d,4072,hidpp20,unknown
+libratbag,Logitech,Logitech MX Anywhere 2,046d,4063,hidpp20,unknown
+libratbag,Logitech,Logitech MX Anywhere 2S,046d,406a,hidpp20,unknown
+libratbag,Logitech,Logitech MX Ergo,046d,406f,hidpp20,unknown
+libratbag,Logitech,Logitech MX Master 2S,046d,4069,hidpp20,unknown
+libratbag,Logitech,Logitech MX Master 3,046d,4082,hidpp20,unknown
+libratbag,Logitech,Logitech MX Master,046d,4041,hidpp20,unknown
+libratbag,Logitech,Logitech MX Master,046d,4060,hidpp20,unknown
+libratbag,Logitech,Logitech MX Master,046d,4071,hidpp20,unknown
+libratbag,Logitech,Logitech MX Vertical,046d,407b,hidpp20,unknown
+libratbag,Logitech,Logitech MX Vertical,046d,c08a,hidpp20,unknown
+libratbag,Logitech,Logitech MX Vertical,046d,c077,hidpp20,unknown
+libratbag,Logitech,MX518,046d,c08e,hidpp20,unknown
+libratbag,Logitech,Logitech Marathon M705,046d,406d,hidpp20,unknown
+libratbag,Logitech,Logitech T650,046d,4101,hidpp20,unknown
+libratbag,Logitech,Logitech Wireless Touchpad,046d,4011,hidpp20,unknown
+libratbag,Logitech,Logitech G Powerplay,046d,405f,hidpp20,unknown
+libratbag,Logitech,Logitech G PRO Keyboard,046d,c339,hidpp20,unknown
+libratbag,Logitech,Logitech G Pro Wireless,046d,4079,hidpp20,unknown
+libratbag,Logitech,Logitech G Pro Wireless,046d,c088,hidpp20,unknown
+libratbag,Logitech,Logitech G Pro X Wireless Superlight,046d,4093,hidpp20,unknown
+libratbag,Logitech,Logitech G Pro X Wireless Superlight,046d,c094,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G Pro,046d,c085,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G Pro,046d,c08c,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G102/G103/G203,046d,c084,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G102/G103/G203,046d,c092,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G102/G103/G203,046d,c09d,hidpp20,unknown
+libratbag,Logitech,Logitech G300,046d,c246,logitech_g300,unknown
+libratbag,Logitech,Logitech Gaming Mouse G302,046d,c07f,hidpp20,unknown
+libratbag,Logitech,Logitech G303 Shroud Edition,046d,c097,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G303,046d,c080,hidpp20,unknown
+libratbag,Logitech,Logitech Gaming Mouse G305,046d,4074,hidpp20,unknown
+libratbag,Logitech,Logitech G402 Gaming Mouse,046d,c07e,hidpp20,unknown
+libratbag,Logitech,Logitech G403 Hero,046d,c08f,hidpp20,unknown
+libratbag,Logitech,Logitech G403 Wireless,046d,405d,hidpp20,unknown
+libratbag,Logitech,Logitech G403 Wireless,046d,c082,hidpp20,unknown
+libratbag,Logitech,Logitech G403,046d,c083,hidpp20,unknown
+libratbag,Logitech,Logitech G413,046d,c33a,hidpp20,unknown
+libratbag,Logitech,Logitech G5,046d,c049,hidpp10,unknown
+libratbag,Logitech,G5,046d,c041,hidpp10,unknown
+libratbag,Logitech,Logitech G500,046d,c068,hidpp10,unknown
+libratbag,Logitech,Logitech G500s,046d,c24e,hidpp10,unknown
+libratbag,Logitech,Logitech G502 Hero Wireless,046d,407f,hidpp20,unknown
+libratbag,Logitech,Logitech G502 Hero Wireless,046d,c08d,hidpp20,unknown
+libratbag,Logitech,Logitech G502 Hero,046d,c08b,hidpp20,unknown
+libratbag,Logitech,Logitech G502 Proteus Core,046d,c07d,hidpp20,unknown
+libratbag,Logitech,Logitech G502 Proteus Spectrum,046d,c332,hidpp20,unknown
+libratbag,Logitech,Logitech G502 X PLUS,046d,4099,hidpp20,unknown
+libratbag,Logitech,Logitech G502 X PLUS,046d,c095,hidpp20,unknown
+libratbag,Logitech,Logitech G502 X Wireless,046d,c098,hidpp20,unknown
+libratbag,Logitech,Logitech G502 X Wireless,046d,409f,hidpp20,unknown
+libratbag,Logitech,Logitech G502 X,046d,c099,hidpp20,unknown
+libratbag,Logitech,Logitech G513,046d,c33c,hidpp20,unknown
+libratbag,Logitech,Logitech G600,046d,c24a,logitech_g600,unknown
+libratbag,Logitech,Logitech G602,046d,402c,hidpp20,unknown
+libratbag,Logitech,Logitech G603,046d,406c,hidpp20,unknown
+libratbag,Logitech,Logitech G604,046d,4085,hidpp20,unknown
+libratbag,Logitech,Logitech G635,046d,0a89,hidpp20,unknown
+libratbag,Logitech,Logitech G7,046d,c51a,hidpp10,unknown
+libratbag,Logitech,Logitech G700,046d,c531,hidpp10,unknown
+libratbag,Logitech,Logitech G700,046d,c06b,hidpp10,unknown
+libratbag,Logitech,Logitech G700s,046d,c07c,hidpp10,unknown
+libratbag,Logitech,Logitech G703 Hero,046d,4086,hidpp20,unknown
+libratbag,Logitech,Logitech G703 Hero,046d,c090,hidpp20,unknown
+libratbag,Logitech,Logitech G703,046d,c087,hidpp20,unknown
+libratbag,Logitech,Logitech G703,046d,4070,hidpp20,unknown
+libratbag,Logitech,Logitech G705,046d,c096,hidpp20,unknown
+libratbag,Logitech,Logitech G705,046d,409d,hidpp20,unknown
+libratbag,Logitech,Logitech G733 Gaming Headset,046d,0ab5,hidpp20,unknown
+libratbag,Logitech,Logitech G733 Gaming Headset,046d,0afe,hidpp20,unknown
+libratbag,Logitech,Logitech G815,046d,c33f,hidpp20,unknown
+libratbag,Logitech,Logitech G9,046d,c048,hidpp10,unknown
+libratbag,Logitech,Logitech G900,046d,c081,hidpp20,unknown
+libratbag,Logitech,Logitech G900,046d,4053,hidpp20,unknown
+libratbag,Logitech,Logitech G903 Hero,046d,c091,hidpp20,unknown
+libratbag,Logitech,Logitech G903 Hero,046d,4087,hidpp20,unknown
+libratbag,Logitech,Logitech G903,046d,c086,hidpp20,unknown
+libratbag,Logitech,Logitech G903,046d,4067,hidpp20,unknown
+libratbag,Logitech,Logitech G910,046d,c335,hidpp20,unknown
+libratbag,Logitech,Logitech G915 TKL,046d,c343,hidpp20,unknown
+libratbag,Logitech,Logitech G915,046d,c33e,hidpp20,unknown
+libratbag,Logitech,Logitech G935,046d,0a87,hidpp20,unknown
+libratbag,Logitech,Logitech G9x [Call of Duty MW3 Edition],046d,c249,hidpp10,unknown
+libratbag,Logitech,G9x [Original],046d,c066,hidpp10,unknown
+libratbag,Unknown(04d9),Mars Gaming MM4,04d9,fa58,marsgaming,unknown
+libratbag,SinoWealth,Nubwo x7 spectrum,258a,0012,sinowealth_nubwo,unknown
+libratbag,OpenInput,openinput,1d50,616a,openinput,unknown
+libratbag,ROCCAT,Roccat Kone EMP,1e7d,2e24,roccat-kone-emp,unknown
+libratbag,ROCCAT,Roccat Kone Pure,1e7d,2dc2,roccat-kone-pure,unknown
+libratbag,ROCCAT,Roccat Kone Pure,1e7d,2dbe,roccat-kone-pure,unknown
+libratbag,ROCCAT,Roccat Kone Pure,1e7d,2dcb,roccat-kone-pure,unknown
+libratbag,ROCCAT,Roccat Kone XTD,1e7d,2e22,roccat,unknown
+libratbag,SinoWealth,SinoWealth Generic Mouse (0027),258a,0027,sinowealth,unknown
+libratbag,SinoWealth,SinoWealth Generic Mouse (0029),258a,0029,sinowealth,unknown
+libratbag,SinoWealth,Sinowealth Generic Mouse (0051),258a,0051,sinowealth,unknown
+libratbag,SinoWealth,SinoWealth Generic Mouse (1007),258a,1007,sinowealth,unknown
+libratbag,SteelSeries,SteelSeries Kinzu V2 Pro Edition,1038,1366,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Kinzu V2,1038,1378,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Kinzu V3,1038,1388,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 100/105,1038,1702,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 100/105,1038,170a,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 100/105,1038,170b,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 100/105,1038,170c,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 100/105,1038,1814,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 310,1038,1720,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 600,1038,1724,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 650 Wireless,1038,172b,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival 650 Wireless,1038,1726,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1384,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1392,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1710,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1712,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,171c,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1394,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,171a,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1716,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1714,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Rival,1038,1718,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Sensei 310,1038,1722,steelseries,unknown
+libratbag,SteelSeries,SteelSeries Sensei Raw,1038,1369,steelseries,unknown
+openrazer,Razer,Razer Viper Mini,1532,008a,razer,no
+openrazer,Razer,Razer Lancehead Wireless (Wired),1532,0070,razer,yes
+openrazer,Razer,Razer Lancehead Wireless (Receiver),1532,006f,razer,no
+openrazer,Razer,Razer Lancehead (Wired),1532,0059,razer,yes
+openrazer,Razer,Razer Lancehead (Wireless),1532,005a,razer,no
+openrazer,Razer,Razer DeathAdder Essential (White Edition),1532,0071,razer,no
+openrazer,Razer,Razer Abyssus Elite (D.Va Edition),1532,006a,razer,no
+openrazer,Razer,Razer Abyssus Essential,1532,006b,razer,no
+openrazer,Razer,Razer Lancehead Tournament Edition,1532,0060,razer,no
+openrazer,Razer,Razer Mamba Chroma (Wireless),1532,0045,razer,yes
+openrazer,Razer,Razer Mamba Chroma (Wired),1532,0044,razer,yes
+openrazer,Razer,Razer Mamba Tournament Edition,1532,0046,razer,no
+openrazer,Razer,Razer Abyssus,1532,0042,razer,no
+openrazer,Razer,Razer Imperator 2012,1532,002f,razer,no
+openrazer,Razer,Razer Ouroboros,1532,0032,razer,yes
+openrazer,Razer,Razer Orochi 2013,1532,0039,razer,no
+openrazer,Razer,Razer Orochi (Wired),1532,0048,razer,no
+openrazer,Razer,Razer DeathAdder Chroma,1532,0043,razer,no
+openrazer,Razer,Razer DeathAdder 2000,1532,004f,razer,no
+openrazer,Razer,Razer DeathAdder 2013,1532,0037,razer,no
+openrazer,Razer,Razer Naga Hex V2,1532,0050,razer,no
+openrazer,Razer,Razer Naga,1532,0015,razer,no
+openrazer,Razer,Razer Naga 2012,1532,002e,razer,no
+openrazer,Razer,Razer Naga Chroma,1532,0053,razer,no
+openrazer,Razer,Razer Naga Trinity,1532,0067,razer,no
+openrazer,Razer,Razer Naga Hex,1532,0041,razer,no
+openrazer,Razer,Razer Naga Hex (Red),1532,0036,razer,no
+openrazer,Razer,Razer Taipan,1532,0034,razer,no
+openrazer,Razer,Razer DeathAdder Elite,1532,005c,razer,no
+openrazer,Razer,Razer Diamondback Chroma,1532,004c,razer,no
+openrazer,Razer,Razer DeathAdder 3.5G,1532,0016,razer,no
+openrazer,Razer,Razer DeathAdder 3.5G Black,1532,0029,razer,no
+openrazer,Razer,Razer Mamba 2012 (Wireless),1532,0025,razer,yes
+openrazer,Razer,Razer Mamba 2012 (Wired),1532,0024,razer,yes
+openrazer,Razer,Razer Mamba Wireless (Wired),1532,0073,razer,yes
+openrazer,Razer,Razer Mamba Wireless (Receiver),1532,0072,razer,no
+openrazer,Razer,Razer Naga 2014,1532,0040,razer,no
+openrazer,Razer,Razer Orochi 2011,1532,0013,razer,no
+openrazer,Razer,Razer Abyssus V2,1532,005b,razer,no
+openrazer,Razer,Razer Abyssus 1800,1532,0020,razer,no
+openrazer,Razer,Razer Abyssus 2000,1532,005e,razer,no
+openrazer,Razer,Razer DeathAdder 3500,1532,0054,razer,no
+openrazer,Razer,Razer Viper Ultimate (Wired),1532,007a,razer,yes
+openrazer,Razer,Razer Viper Ultimate (Wireless),1532,007b,razer,no
+openrazer,Razer,Razer Viper,1532,0078,razer,no
+openrazer,Razer,Razer DeathAdder Essential,1532,006e,razer,no
+openrazer,Razer,Razer DeathAdder Essential (2021),1532,0098,razer,no
+openrazer,Razer,Razer Mamba Elite,1532,006c,razer,no
+openrazer,Razer,Razer Naga Left Handed Edition 2020,1532,008d,razer,no
+openrazer,Razer,Razer Naga Pro (Wired),1532,008f,razer,yes
+openrazer,Razer,Razer Naga Pro (Wireless),1532,0090,razer,no
+openrazer,Razer,Razer Naga V2 Pro (Wired),1532,00a7,razer,yes
+openrazer,Razer,Razer Naga V2 Pro (Wireless),1532,00a8,razer,no
+openrazer,Razer,Razer DeathAdder 1800,1532,0038,razer,no
+openrazer,Razer,Razer Basilisk,1532,0064,razer,no
+openrazer,Razer,Razer Basilisk Essential,1532,0065,razer,no
+openrazer,Razer,Razer Basilisk Ultimate,1532,0086,razer,yes
+openrazer,Razer,RazerBasiliskUltimateReceiver,1532,0088,razer,no
+openrazer,Razer,Razer Basilisk V2,1532,0085,razer,no
+openrazer,Razer,Razer Basilisk V3,1532,0099,razer,no
+openrazer,Razer,Razer DeathAdder V2,1532,0084,razer,no
+openrazer,Razer,Razer DeathAdder V2 Pro (Wired),1532,007c,razer,yes
+openrazer,Razer,Razer DeathAdder V2 Pro (Wireless),1532,007d,razer,no
+openrazer,Razer,Razer Atheris (Receiver),1532,0062,razer,yes
+openrazer,Razer,Razer Basilisk X HyperSpeed,1532,0083,razer,yes
+openrazer,Razer,Razer Orochi V2 (Receiver),1532,0094,razer,yes
+openrazer,Razer,Razer Orochi V2 (Bluetooth),1532,0095,razer,no
+openrazer,Razer,Razer Naga X,1532,0096,razer,no
+openrazer,Razer,Razer DeathAdder V2 Mini,1532,008c,razer,no
+openrazer,Razer,Razer Viper 8KHz,1532,0091,razer,no
+openrazer,Razer,Razer Viper Mini SE (Wired),1532,009e,razer,yes
+openrazer,Razer,Razer Viper Mini SE (Wireless),1532,009f,razer,no
+openrazer,Razer,Razer Naga Epic Chroma (Wired),1532,003e,razer,yes
+openrazer,Razer,Razer Naga Epic Chroma (Wireless),1532,003f,razer,no
+openrazer,Razer,Razer Pro Click (Receiver),1532,0077,razer,yes
+openrazer,Razer,Razer Pro Click (Wired),1532,0080,razer,no
+openrazer,Razer,Razer DeathAdder V2 X HyperSpeed,1532,009c,razer,yes
+openrazer,Razer,Razer Naga Epic,1532,001f,razer,yes
+openrazer,Razer,Razer Viper V2 Pro (Wired),1532,00a5,razer,yes
+openrazer,Razer,Razer Viper V2 Pro (Wireless),1532,00a6,razer,no
+openrazer,Razer,Razer Cobra Pro (Wired),1532,00af,razer,yes
+openrazer,Razer,Razer Cobra Pro (Wireless),1532,00b0,razer,no
+openrazer,Razer,Razer Cobra HyperSpeed,1532,00da,razer,yes
+openrazer,Razer,Razer Cobra HyperSpeed Receiver,1532,00db,razer,no
+openrazer,Razer,Razer DeathAdder V3,1532,00b2,razer,no
+openrazer,Razer,Razer DeathAdder V3 Pro (Wired),1532,00b6,razer,yes
+openrazer,Razer,Razer DeathAdder V3 Pro (Wireless),1532,00b7,razer,no
+openrazer,Razer,Razer DeathAdder V3 Pro (Wired),1532,00c2,razer,no
+openrazer,Razer,Razer DeathAdder V3 Pro (Wireless),1532,00c3,razer,no
+openrazer,Razer,Razer Basilisk V3 Pro (Wired),1532,00aa,razer,yes
+openrazer,Razer,Razer Basilisk V3 Pro (Wireless),1532,00ab,razer,no
+openrazer,Razer,Razer Basilisk V3 Pro 35K (Wired),1532,00cc,razer,yes
+openrazer,Razer,Razer Basilisk V3 Pro 35K (Wireless),1532,00cd,razer,no
+openrazer,Razer,Razer Basilisk V3 Pro 35K Phantom Green Edition (Wired),1532,00d6,razer,yes
+openrazer,Razer,Razer Basilisk V3 Pro 35K Phantom Green Edition (Wireless),1532,00d7,razer,no
+openrazer,Razer,Razer Basilisk V3 35K,1532,00cb,razer,no
+openrazer,Razer,Razer HyperPolling Wireless Dongle,1532,00b3,razer,yes
+openrazer,Razer,Razer Pro Click Mini (Receiver),1532,009a,razer,yes
+openrazer,Razer,Razer DeathAdder V2 Lite,1532,00a1,razer,no
+openrazer,Razer,Razer Cobra,1532,00a3,razer,no
+openrazer,Razer,Razer Naga V2 HyperSpeed (Receiver),1532,00b4,razer,yes
+openrazer,Razer,Razer Viper V3 HyperSpeed,1532,00b8,razer,yes
+openrazer,Razer,Razer Basilisk V3 X HyperSpeed,1532,00b9,razer,yes
+openrazer,Razer,Razer Basilisk Mobile (Wired),1532,00d3,razer,yes
+openrazer,Razer,Razer Basilisk Mobile (Receiver),1532,00d4,razer,no
+openrazer,Razer,Razer DeathAdder V4 Pro (Wired),1532,00be,razer,yes
+openrazer,Razer,Razer DeathAdder V4 Pro (Wireless),1532,00bf,razer,no
+openrazer,Razer,Razer Viper V3 Pro (Wired),1532,00c0,razer,yes
+openrazer,Razer,Razer Viper V3 Pro (Wireless),1532,00c1,razer,no
+openrazer,Razer,Razer Viper V3 Pro SE (Wired),1532,00de,razer,yes
+openrazer,Razer,Razer Viper V3 Pro SE (Wireless),1532,00df,razer,no
+openrazer,Razer,Razer DeathAdder V3 HyperSpeed (Wired),1532,00c4,razer,yes
+openrazer,Razer,Razer DeathAdder V3 HyperSpeed (Wireless),1532,00c5,razer,no
+openrazer,Razer,Razer Pro Click V2 Vertical Edition (Wired),1532,00c7,razer,yes
+openrazer,Razer,Razer Pro Click V2 Vertical Edition (Wireless),1532,00c8,razer,no
+openrazer,Razer,Razer Pro Click V2 (Wired),1532,00d0,razer,yes
+openrazer,Razer,Razer Pro Click V2 (Wireless),1532,00d1,razer,no
+solaar,Logitech,G915 TKL LIGHTSPEED Wireless RGB Mechanical Gaming Keyboard,046d,c343,hidpp4.2,unknown
+solaar,Logitech,Illuminated Keyboard,046d,c318,hidpp1.0,unknown
+solaar,Logitech,G213 Prodigy Gaming Keyboard,046d,c336,hidpp,unknown
+solaar,Logitech,G512 RGB Mechanical Gaming Keyboard,046d,c33c,hidpp,unknown
+solaar,Logitech,G815 Mechanical Keyboard,046d,c33f,hidpp,unknown
+solaar,Logitech,K845 Mechanical Keyboard,046d,c341,hidpp,unknown
+solaar,Logitech,G700 Gaming Mouse,046d,c06b,hidpp1.0,yes
+solaar,Logitech,G700s Gaming Mouse,046d,c07c,hidpp1.0,yes
+solaar,Logitech,MX Vertical Wireless Mouse,046d,c08a,hidpp4.5,yes
+solaar,Logitech,PRO X Wireless,046d,c094,hidpp,unknown
+solaar,Logitech,G9 Laser Mouse,046d,c048,hidpp1.0,yes
+solaar,Logitech,G9x Laser Mouse,046d,c066,hidpp1.0,yes
+solaar,Logitech,G502 Gaming Mouse,046d,c07d,hidpp,yes
+solaar,Logitech,G402 Gaming Mouse,046d,c07e,hidpp,yes
+solaar,Logitech,G900 Chaos Spectrum Gaming Mouse,046d,c081,hidpp,yes
+solaar,Logitech,G403 Gaming Mouse,046d,c082,hidpp,yes
+solaar,Logitech,G903 Lightspeed Gaming Mouse,046d,c086,hidpp,yes
+solaar,Logitech,G703 Lightspeed Gaming Mouse,046d,c087,hidpp,yes
+solaar,Logitech,GPro Gaming Mouse,046d,c088,hidpp,yes
+solaar,Logitech,G502 SE Hero Gaming Mouse,046d,c08b,hidpp,yes
+solaar,Logitech,G502 Lightspeed Gaming Mouse,046d,c08d,hidpp,yes
+solaar,Logitech,MX518 Gaming Mouse,046d,c08e,hidpp,yes
+solaar,Logitech,G703 Hero Gaming Mouse,046d,c090,hidpp,yes
+solaar,Logitech,G903 Hero Gaming Mouse,046d,c091,hidpp,yes
+solaar,Logitech,(unnamed),046d,c092,hidpp,unknown
+solaar,Logitech,M500S Mouse,046d,c093,hidpp,yes
+solaar,Logitech,(unnamed),046d,c24a,hidpp,yes
+solaar,Logitech,G500 Gaming Mouse,046d,c068,hidpp1.0,yes
+solaar,Logitech,G500s Gaming Mouse,046d,c24e,hidpp1.0,yes
+solaar,Logitech,G502 Proteus Spectrum Optical Mouse,046d,c332,hidpp,yes
+solaar,Logitech,Logitech PRO Gaming Keyboard,046d,c339,hidpp,unknown
+solaar,Logitech,G533 Gaming Headset,046d,0a66,hidpp2.0,unknown
+solaar,Logitech,G535 Gaming Headset,046d,0ac4,hidpp2.0,unknown
+solaar,Logitech,G935 Gaming Headset,046d,0a87,hidpp2.0,unknown
+solaar,Logitech,G733 Gaming Headset,046d,0ab5,hidpp2.0,unknown
+solaar,Logitech,G733 Gaming Headset,046d,0afe,hidpp2.0,unknown
+solaar,Logitech,PRO X Wireless Gaming Headset,046d,0aba,hidpp2.0,unknown

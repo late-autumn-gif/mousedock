@@ -1,27 +1,47 @@
 # 参与贡献
 
-项目正在重新开发，旧业务实现和测试已移除。请先阅读 [AGENTS.md](AGENTS.md) 中的项目约定。
+## 提 Issue
 
-## 开发基础
+请附上：
 
-- 目标框架为 `net10.0-windows10.0.26100.0`，保留 WPF 与 WinForms 配置。
-- 新应用代码放入 `src/MouseDock/`，从新的应用入口开始。
-- 供 Windows PowerShell 调用的中文 `.ps1` 文件使用 UTF-8 BOM 编码。
-- 不自动恢复旧实现，不把历史文档中的功能当作当前需求。
-- 为新实现建立相应检查；个人设置、硬件记录和构建产物不提交。
+1. `设置 → 数据源 → 查看探测报告` 导出的文本（含设备树与失败原因）
+2. 设备型号 + 连接方式（2.4G / 蓝牙 / 有线）
+3. 系统版本
 
-## 打包
+## 新增一款设备的电量支持
 
-应用入口完成后运行：
+多数情况只需要一行：
 
-```powershell
-.\build.ps1 -Configuration Release -Runtime win-x64
+```csharp
+// Services/Detection/Detection.cs → VendorMap.KnownReceivers
+["089D:062F"] = ("狼蛛 SC580", DeviceKind.Mouse, "aula-sc580"),
 ```
 
-产物为 `app/MouseDock.exe`。详细配置见 [构建说明](docs/BUILD.md)，签名方式见 [签名说明](docs/SIGNING.md)。
+若对方命令号不同，需要抓包还原，流程见 [PROTOCOL.md](PROTOCOL.md)：
 
-## 提交与 PR
+```powershell
+# 1. 装 USBPcap（需要管理员，且重启一次让过滤驱动挂到根集线器）
+# 2. 抓 25 秒，期间启动厂商驱动
+USBPcapCMD.exe -d \\.\USBPcap1 -o cap.pcap -A -s 65535
+# 3. 解包看命令帧
+tools/parse-len.ps1 -Pcap cap.pcap -Lens 32,64
+```
 
-- 一次改动聚焦一个明确目标。
-- 标题和正文使用中文，只描述具体改动及其效果。
-- 必要检查照常执行，验证记录保留在本地，不写入上传说明。
+## 代码约定
+
+- 目标框架 `net10.0-windows10.0.26100.0`，**不引入第三方 NuGet**
+- UTF-8 **带 BOM** 保存 `.ps1`（否则 Windows PowerShell 会误读中文）
+- 任何设备读写都必须 `try/catch` 兜底，失败只能降级为 `—`，不能抛到 UI
+- 不新增网络调用、不提权、不注入其它进程（见 [SECURITY.md](SECURITY.md)）
+
+## 提交前自检
+
+```powershell
+./build.ps1
+./app/MouseDock.exe --detect        # 控制台输出真实设备列表
+```
+
+## PR
+
+- 一个 PR 只做一件事
+- 标题与正文使用中文，只描述具体改动及其效果；验证记录留在本地

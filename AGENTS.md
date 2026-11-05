@@ -1,10 +1,10 @@
 # Project Workflow
 
-- After each completed round of code changes, run the relevant checks, update
-  `CHANGELOG.md`, and commit and push the reviewed changes to the user's repository:
-  `https://github.com/JEFF-dev-ui/mousedock`.
-- The user has authorized these routine uploads. Use normal fast-forward pushes
-  and preserve remote changes.
+- 源码从用户指定的 `https://github.com/late-autumn-gif/mousedock` 获取，
+  对应只读上游 `upstream`；本地 SDK、打包规则和提示词优先保留。
+- 每轮修改完成后检查、更新日志并提交到用户的仓库
+  `https://github.com/JEFF-dev-ui/mousedock`（`origin`）。
+  推送前确认目标仓库，使用正常快进推送并保留远程改动，不向上游仓库推送。
 - 后续上传说明统一使用中文，包括 Git 提交标题与正文、PR 标题与正文、
   发布说明及更新日志；代码标识符、命令和专有名称可保留原文。
 - 上传说明只描述具体改动及其效果，不写验证结果、测试数量、执行过程或排查经过。
@@ -25,14 +25,14 @@
 - Use this project root as the Git working directory. Fetch and preserve remote
   changes before editing or pushing; do not create another upload copy under
   `artifacts/`.
-- Follow the agreements in the project's "识别项目类型" chat. Do not resume
-  IN9 Pro adaptation unless the user explicitly requests it.
+- 保留现有打包约定；同步上游源码时按其实际依赖补充项目配置，不擅自恢复其它历史实现。
 - For a release build, run `.\build.ps1 -Configuration Release -Runtime win-x64`.
   The current script produces `app\MouseDock.exe` as a compressed, self-contained
   single file, including native libraries and content for extraction.
-- 2026-11-05 起项目已清空旧实现，仅保留依赖、项目配置、打包工具和提示词。
-  不从历史版本自动恢复旧业务代码；新功能按用户后续要求重新开发。
-- 旧测试随旧实现移除。后续为新实现建立相应检查，验证记录留在本地，
+- 2026-11-05 按用户要求接入上游 `main` 的 v1.4.3 源码。
+  后续功能按用户要求开发，不继续 IN9 Pro 适配，除非用户明确要求。
+- 运行适用的 `tests/MouseDock.Checks`、`tests/MouseDock.ProtocolTests` 和
+  `tests/feedback-report-regression.ps1`，验证记录留在本地，
   并明确区分离线检查与设备实测。
 - Source synchronization or workspace cleanup alone does not require packaging
   a new release. Keep the running application and its settings intact.
