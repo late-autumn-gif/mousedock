@@ -196,10 +196,79 @@ Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_045E&PID_0000", "HidUsb"),
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_0000&PID_0000", ""), (@"USB\VID_0000&PID_0000", "") }) == null, "Preserve unknown USB IDs");
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_06CB&PID_1234", "HidUsb"), (@"USB\VID_06CB&PID_1234", "") }) == null, "No vendor-wide blacklist");
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_048D&PID_1234", "HidUsb"), (@"USB\VID_048D&PID_1234", "") }) == null, "Preserve ITE external input");
+// 罗技 G HUB 会挂两条没有硬件的 LGHUBDEVICE 虚拟 HID（C231 鼠标 / C232 键盘），
+// 它们带着 0x01 用法混进面板，会白占两台设备配额。真实接收器走 USB 那条链，不能误伤。
+Check(HidDiscovery.ExclusionReason(new[] {
+        (@"HID\VID_046D&PID_C231", "mouhid"),
+        (@"LGHUBDEVICE\VID_046D&PID_C231\1&79F5D87&2&02", "logi_joy_vir_hid"),
+        (@"ROOT\SYSTEM\0001", "logi_joy_bus_enum") }) != null,
+    "Filter the Logitech G HUB virtual HID");
+Check(HidDiscovery.ExclusionReason(new[] {
+        (@"HID\VID_046D&PID_C231", "mouhid"),
+        (@"LGHUBDEVICE\VID_046D&PID_C231\1&79F5D87&2&02", "") }) != null,
+    "LGHUBDEVICE ancestry alone is enough");
+Check(HidDiscovery.ExclusionReason(new[] {
+        (@"HID\VID_046D&PID_C539&MI_01&COL01", "mouhid"),
+        (@"USB\VID_046D&PID_C539&MI_01", "HidUsb") }) == null,
+    "Keep the real Logitech receiver on a machine that also runs G HUB");
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_045E&PID_0000", ""), (@"BTHLEDEVICE\ABC", ""), (@"ACPI\PNP0A08", "") }) == null, "Preserve Bluetooth despite upstream ACPI");
 assertions += BluetoothRegression.Run();
 assertions += HfpRegression.Run();
 assertions += InphicRegression.Run();
+assertions += OfficialInphicAulaRegression.Run();
+assertions += AtkOfficialRegression.Run();
+assertions += MchoseRapooRegression.Run();
+assertions += OfficialIntegrationRegression.Run();
+assertions += LogitechGpwRegression.Run();
+
+// ── HyperX（飓风 3）：03F0:06BE 的六个集合原来全被判成 usage 跳过 ──
+Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, 0xFF13, 0x0001, out var hxKind1) && hxKind1 == DeviceKind.Headset,
+    "HyperX private page resolves to a headset");
+// 反馈包里 03F0:06BE 就是这六个集合，逐个过一遍，一个都不许再落成「usage 跳过」。
+foreach (var (page, usage) in new (ushort, ushort)[]
+{
+    (0x01C0, 0x0001), (0x170F, 0x0202), (0x000C, 0x0001),
+    (0xFF13, 0x0001), (0x000B, 0x0005), (0xFFC0, 0x0202)
+})
+{
+    Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, page, usage, out DeviceKind hxKind) &&
+        hxKind == DeviceKind.Headset,
+        $"HyperX 0x{page:X4}/0x{usage:X4} resolves to a headset");
+}
+Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, 0x01C0, 0x0001, out var hxKind2) && hxKind2 == DeviceKind.Headset,
+    "HyperX vendor-defined page resolves to a headset");
+Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, 0x000C, 0x0001, out var hxKind3) && hxKind3 == DeviceKind.Headset,
+    "HyperX consumer control resolves to a headset");
+Check(!HidDiscovery.TryDeviceKind(0x03F0, 0x1234, 0xFF13, 0x0001, out _),
+    "An unknown 03F0 product is not claimed as a headset");
+Check(VendorProtocol.IsHyperXHeadset(0x03F0, 0x06BE) && !VendorProtocol.IsHyperXHeadset(0x03F0, 0x1234),
+    "HyperX headset PID list");
+Check(VendorMap.TryUsbHeadset(0x03F0, 0x06BE, out string hxName) && hxName.Contains("Cloud III S"),
+    "HyperX Cloud III S keeps its model name");
+Check(!VendorMap.TryUsbHeadset(0x03F0, 0x1234, out _), "Unknown 03F0 stays unknown");
+Check(VendorProtocol.IsCloud3SControlCollection(0xFF13, 0x0001, 62, 62) &&
+    !VendorProtocol.IsCloud3SControlCollection(0xFFC0, 0x0202, 32, 32),
+    "Cloud III S only uses the FF13 control collection");
+var cloudRequest = VendorProtocol.BuildCloud3SRequest(62, VendorProtocol.Cloud3SBatteryCommand);
+Check(cloudRequest.Length == 62 &&
+    cloudRequest.Take(6).SequenceEqual(new byte[] { 0x0C, 0x02, 0x03, 0x01, 0x00, 0x1D }),
+    "Cloud III S battery command is Airoha GET_BATTERY_INFO 0x1D");
+var cloudReply = new byte[62];
+cloudReply[0] = 0x0C; cloudReply[1] = 0x02; cloudReply[2] = 0x03; cloudReply[3] = 1; cloudReply[5] = 0x1D;
+cloudReply[6] = 64; cloudReply[7] = 1;
+Check(VendorProtocol.TryParseCloud3SBattery(cloudReply, cloudRequest, out int cloudLevel, out bool cloudCharging) &&
+    cloudLevel == 64 && !cloudCharging, "Cloud III S battery does not invent adjacent charge flag");
+Check(!VendorProtocol.TryParseCloud3SBattery(cloudRequest, cloudRequest, out _, out _),
+    "Cloud III S rejects the request echo");
+cloudReply[6] = 101;
+Check(!VendorProtocol.TryParseCloud3SBattery(cloudReply, cloudRequest, out _, out _),
+    "Cloud III S rejects an out-of-range level");
+var cloudInfoRequest = VendorProtocol.BuildCloud3SRequest(62, VendorProtocol.Cloud3SDeviceInfoCommand);
+Check(cloudInfoRequest[5] == 0x02, "Cloud III S device-info command");
+Check(HidDiscovery.Bucket.NamesOtherSharedBrand("ATK V75X 2.4G Dongle") &&
+    !HidDiscovery.Bucket.NamesOtherSharedBrand("Wireless Gaming Keyboard"),
+    "Shared 0x5088 keeps the other brands' names");
+
 var atkReceiver = new HidDiscovery.Bucket
 {
     Vid = 0x373B, Pid = 0x1155, Product = "Wireless mouse 8k dongle-L1", Kind = DeviceKind.Mouse
@@ -216,8 +285,9 @@ Check(VendorProtocol.IsAtkZeroBatteryCollection(0xFF05, 1, 64, 64) &&
 Check(VendorProtocol.BuildAtkZeroRequest(0x07, true).Take(8)
     .SequenceEqual(new byte[] { 0x08, 0x7D, 0x72, 2, 0, 1, 7, 1 }), "ATK wireless battery request");
 Check(VendorProtocol.BuildAtkZeroRequest(0x89, true).Take(8)
-    .SequenceEqual(new byte[] { 0x08, 0x09, 0x72, 8, 0, 0, 0x89, 6 }), "ATK shared receiver identity request");
+    .SequenceEqual(new byte[] { 0x08, 0x0A, 0x72, 8, 0, 1, 0x89, 6 }), "ATK shared receiver identity request");
 var atkResponse = new byte[64];
+atkResponse[0] = 8;
 atkResponse[5] = 0x89;
 atkResponse[8] = 1;
 atkResponse[9] = 1;
@@ -232,6 +302,22 @@ Check(!VendorProtocol.TryParseAtkZeroBattery(atkResponse, out _), "ATK ignored r
 atkResponse[2] = 0;
 atkResponse[7] = 101;
 Check(!VendorProtocol.TryParseAtkZeroBattery(atkResponse, out _), "ATK out-of-range level");
+// 第二布局：命令退到 [4]、电量退到 [6]、身份 [7..11]，整帧前移一格。
+var atkShifted = new byte[64];
+atkShifted[4] = 0x07;
+atkShifted[6] = 66;
+Check(!VendorProtocol.TryParseAtkZeroBattery(atkShifted, out _),
+    "ATK rejects unsupported shifted payload");
+atkShifted[1] = 0xFF;
+Check(!VendorProtocol.TryParseAtkZeroBattery(atkShifted, out _), "ATK 0xFF status frame is not a reading");
+atkShifted[1] = 0x02;
+Check(!VendorProtocol.TryParseAtkZeroBattery(atkShifted, out _), "ATK status 2 is an error frame in either layout");
+var atkIdentityShifted = new byte[64];
+atkIdentityShifted[4] = 0x89;
+atkIdentityShifted[7] = 1;
+atkIdentityShifted[8] = 1;
+Check(!VendorProtocol.IsAtkZeroPairedModel(atkIdentityShifted),
+    "ATK rejects a shifted identity without Windows report ID");
 Check(VendorProtocol.IsAulaF99(0x3554, 0xFA09, "AULA F99") &&
     !VendorProtocol.IsAulaF99(0x3554, 0xFA09, "Wireless Gaming Keyboard"),
     "AULA F99 requires a matching name on the shared ID");
@@ -243,12 +329,41 @@ f99[8] = 57;
 Check(VendorProtocol.TryParseAulaF99Battery(f99, out int f99Level) && f99Level == 57, "F99 level field");
 Check(VendorProtocol.IsRainy75Wired(0x320F, 0x5055) && !VendorProtocol.IsRainy75Wired(0x320F, 0x5088),
     "Rainy wired reader never claims the shared wireless PID");
+Check(VendorProtocol.IsRainy75Wireless(0x320F, 0x5088) && VendorProtocol.IsRainy75Candidate(0x320F, 0x5088),
+    "Rainy wireless candidate is separate from the wired verdict");
+Check(VendorProtocol.IsRainy75Candidate(0x320F, 0x5055),
+    "Both Rainy transports are queried");
+Check(VendorProtocol.IsRainy75Name("WOB Rainy75") && !VendorProtocol.IsRainy75Name("Wireless Gaming Keyboard"),
+    "Shared 0x5088 only takes the Rainy name when the product says so");
+Check(VendorProtocol.IsAulaF99Wired(0x3554, 0xFA09, "AULA F99 Wired") &&
+    !VendorProtocol.IsAulaF99Wired(0x3554, 0xFA09, "AULA F99"),
+    "F99 wired variant is told apart from the 2.4G one");
 var rainy = VendorProtocol.BuildRainy75BatteryRequest();
 Check(!VendorProtocol.TryParseRainy75Battery(rainy, out _, out _), "Rainy rejects the request echo");
 rainy[8] = 48;
 rainy[9] = 1;
 Check(VendorProtocol.TryParseRainy75Battery(rainy, out int rainyLevel, out bool rainyCharging) &&
     rainyLevel == 48 && rainyCharging, "Rainy wired battery and charge fields");
+// 首字节 00 是官方驱动抓到的另一种写法，33 字节集合也走同一套解析。
+var rainyReply = new byte[64];
+rainyReply[0] = 0x00;
+rainyReply[1] = 0x20;
+rainyReply[3] = 0x1A;
+rainyReply[4] = 0x06;
+rainyReply[8] = 72;
+Check(!VendorProtocol.TryParseRainy75Battery(rainyReply, out _, out _),
+    "Rainy rejects an unverified report ID");
+var rainy33 = new byte[33];
+rainy33[0] = 0x04;
+rainy33[1] = 0x20;
+rainy33[3] = 0x1A;
+rainy33[4] = 0x06;
+rainy33[8] = 33;
+Check(!VendorProtocol.TryParseRainy75Battery(rainy33, out _, out _),
+    "Rainy rejects unsupported 33-byte layout");
+rainyReply[1] = 0x21;
+Check(!VendorProtocol.TryParseRainy75Battery(rainyReply, out _, out _), "Rainy rejects a different command echo");
+Check(!VendorProtocol.TryParseRainy75Battery(new byte[64], out _, out _), "Rainy rejects an all-zero frame");
 foreach (var (pid, product, model) in new (ushort, string, string)[]
 {
     (0x880C, "NUT75", "NUT75"), (0x880C, "NUT87", "NUT87"),

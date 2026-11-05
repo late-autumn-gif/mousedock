@@ -79,6 +79,9 @@ namespace MouseDock.Services.Detection
         public static bool IsInphicDevice(ushort vid, ushort pid, string product)
         {
             if (!IsInphicDevice(vid, pid)) return false;
+            // 1D57:FA65 is also used by DELUX's official Pro driver. Do not claim it
+            // when the product string identifies another brand.
+            if (vid == InphicHubVid && pid == 0xFA65 && LooksLikeDeluxReceiver(product)) return false;
             if (pid != InphicReceiverPid) return true;
             return !LooksLikeAjazzReceiver(product);
         }
@@ -87,10 +90,15 @@ namespace MouseDock.Services.Detection
             !string.IsNullOrEmpty(product) &&
             product.IndexOf("AJ159", StringComparison.OrdinalIgnoreCase) >= 0;
 
+        private static bool LooksLikeDeluxReceiver(string product) =>
+            !string.IsNullOrEmpty(product) &&
+            (product.IndexOf("DELUX", StringComparison.OrdinalIgnoreCase) >= 0 ||
+             product.IndexOf("多彩", StringComparison.Ordinal) >= 0);
+
         // ---------- 对外入口 ----------
 
         internal static bool IsInphicSplitReceiver(ushort vid, ushort pid) =>
-            vid == InphicHubVid && pid == 0xFA60;
+            vid == InphicHubVid && pid is 0xFA60 or 0xFA65;
 
         public static int TryReadInphic(ushort vid, ushort pid) => TryReadInphic(vid, pid, out _);
 
@@ -109,13 +117,63 @@ namespace MouseDock.Services.Detection
             if (IsInphicSplitReceiver(vid, pid))
                 return TryReadInphicSplitReceiver(vid, pid, out charging);
 
-            int pct = TryReadInphicPush(vid, pid, InphicPushWindowMs, out charging);
+            // 0x248A / 0x249A 的 5C2F 与 AJAZZ AJ159 系列撞号。名字认不出来时旧流程要在这里
+            // 耗 1.5s 被动 + 0.8s 唤醒 + 0.6s SC525 才让给黑爵，一轮扫描白拖三秒。
+            // 撞号号段只开一个短窗口，拿不到立刻退出。
+            int legacy = TryReadInphicLegacy(vid, pid, out charging);
+            if (legacy >= 0) return legacy;
+
+            bool contested = pid == InphicReceiverPid;
+            int pct = TryReadInphicPush(vid, pid,
+                contested ? InphicContestedWindowMs : InphicPushWindowMs, out charging);
             if (pct >= 0) return pct;
+            if (contested) return -1;
 
             pct = TryReadInphicWake(vid, pid, out charging);
             if (pct >= 0) return pct;
 
             return TryReadInphicSc525(vid, pid, out charging);
+        }
+
+        // Official Inphic Mouse 1.0.2.5: FUN_0044a5c0 sends report0/command10,
+        // FUN_0044c700 strips report0; FUN_00432b80 passes payload[13]/[12]
+        // to BatteryCtrl and reads model[4..7]. config.xml maps these four IDs.
+        internal static bool TryParseInphicLegacy(ReadOnlySpan<byte> report,
+            out int level, out bool charging, out string model)
+        {
+            level = -1; charging = false; model = null;
+            int at = report.Length > 1 && report[0] == 0 && report[1] == 0x10 ? 1 : 0;
+            if (report.Length < at + 15 || report[at] != 0x10 || report[at + 1] != 0 ||
+                report[at + 12] > 1 || report[at + 13] > 100 || report[at + 14] != 1) return false;
+            string id = System.Text.Encoding.ASCII.GetString(report.Slice(at + 4, 4));
+            if (id is not ("M909" or "M910" or "IN90" or "M900")) return false;
+            model = id; level = report[at + 13]; charging = report[at + 12] == 1;
+            return true;
+        }
+
+        internal static int TryReadInphicLegacy(ushort vid, ushort pid, out bool charging)
+        {
+            charging = false;
+            if ((vid != InphicVid && vid != InphicAltVid) || Array.IndexOf(InphicPids, pid) < 0) return -1;
+            foreach (string path in Paths(vid, pid))
+            {
+                if (path.IndexOf("mi_02", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                IntPtr handle = OpenOverlapped(path, out IntPtr signal);
+                if (handle == IntPtr.Zero) continue;
+                try
+                {
+                    var caps = Caps(handle);
+                    if (signal == IntPtr.Zero || caps.OutputReportByteLength != 33) continue;
+                    var request = new byte[33]; request[1] = 0x10;
+                    var reply = Transact(handle, signal, request, 600);
+                    if (!TryParseInphicLegacy(reply, out int level, out charging, out string model)) continue;
+                    _identity[$"{vid:X4}:{pid:X4}"] = model;
+                    SaveIdentities();
+                    return level;
+                }
+                finally { CloseHandle(signal); CloseHandle(handle); }
+            }
+            return -1;
         }
 
         // FA60 的初始化和电量上报分属同一 USB 接口下的两个顶层集合。
@@ -186,7 +244,7 @@ namespace MouseDock.Services.Detection
                         }
                     }
 
-                    int level = ListenForStatus(handle, signal, InphicPushWindowMs, out charging);
+                    int level = ListenForStatus(handle, signal, InphicPushWindowMs, out charging, $"{vid:X4}:{pid:X4}");
                     if (level >= 0) return level;
                 }
                 finally
@@ -212,10 +270,13 @@ namespace MouseDock.Services.Detection
 
         private const int InphicSliceMs = 250;
 
+        /// <summary>撞号号段（248A/249A:5C2F）的短窗口，拿不到就让给 AJAZZ。</summary>
+        private const int InphicContestedWindowMs = 500;
+
         /// <summary>网页驱动 mouseNum 表里的机型号，用来压掉 0x40 撞到别的报告的概率。</summary>
         private static readonly byte[] InphicModelIds =
         {
-            1, 6, 7, 48, 61, 65, 66, 67, 77, 78, 85,
+            1, 6, 7, 16, 48, 61, 65, 66, 67, 77, 78, 85,
             113, 114, 115, 116, 133, 144, 146, 147,
             149, 152, 153, 177, 188, 190, 195, 201
         };
@@ -236,7 +297,7 @@ namespace MouseDock.Services.Detection
                 IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
                 try
                 {
-                    int pct = ListenForStatus(h, ev, windowMs, out charging);
+                    int pct = ListenForStatus(h, ev, windowMs, out charging, $"{vid:X4}:{pid:X4}");
                     if (pct >= 0) return pct;
                 }
                 catch { }
@@ -246,7 +307,7 @@ namespace MouseDock.Services.Detection
             return -1;
         }
 
-        private static int ListenForStatus(IntPtr h, IntPtr ev, int windowMs, out bool charging)
+        private static int ListenForStatus(IntPtr h, IntPtr ev, int windowMs, out bool charging, string identityKey)
         {
             charging = false;
 
@@ -266,8 +327,13 @@ namespace MouseDock.Services.Detection
                 if (!Transfer(h, ev, buf, false, slice, out int got)) continue;   // 超时就再等一轮
                 if (got < 4) continue;
 
-                if (TryParseInphicStatus(new ReadOnlySpan<byte>(buf, 0, got), out int level, out bool chg))
+                if (TryParseInphicStatus(new ReadOnlySpan<byte>(buf, 0, got), out int level, out bool chg, out byte model))
                 {
+                    if (model == InphicModelIn9Pro)
+                    {
+                        _identity[identityKey] = "I149";
+                        SaveIdentities();
+                    }
                     charging = chg;
                     return level;
                 }
@@ -325,7 +391,7 @@ namespace MouseDock.Services.Detection
                     var req = BuildInphicWakeRequest(len);
                     if (!HidD_SetFeature(h, req, len)) continue;
 
-                    int pct = ListenForStatus(h, ev, InphicWakeWindowMs, out charging);
+                    int pct = ListenForStatus(h, ev, InphicWakeWindowMs, out charging, $"{vid:X4}:{pid:X4}");
                     if (pct >= 0) return pct;
                 }
                 catch { }
@@ -342,8 +408,12 @@ namespace MouseDock.Services.Detection
         /// 统一按「先找到 0x40/0x41，再看它前一位是不是机型号」处理，两种都能中。
         /// 电量 &gt; 100 直接判假，避免把别的 0x40 当成电量。
         /// </summary>
-        public static bool TryParseInphicStatus(ReadOnlySpan<byte> report, out int level, out bool charging)
+        public static bool TryParseInphicStatus(ReadOnlySpan<byte> report, out int level, out bool charging) =>
+            TryParseInphicStatus(report, out level, out charging, out _);
+
+        private static bool TryParseInphicStatus(ReadOnlySpan<byte> report, out int level, out bool charging, out byte model)
         {
+            model = 0;
             level = -1;
             charging = false;
 
@@ -360,16 +430,19 @@ namespace MouseDock.Services.Detection
                     case InphicBatteryPercent when pct <= 100:
                         level = pct;
                         charging = false;
+                        model = report[i - 1];
                         return true;
 
                     case InphicBatteryFull:
                         level = 100;
                         charging = false;
+                        model = report[i - 1];
                         return true;
 
                     case InphicBatteryCharging when pct <= 100:
                         level = pct;
                         charging = true;
+                        model = report[i - 1];
                         return true;
                 }
             }

@@ -23,29 +23,54 @@ namespace MouseDock.Services.Detection
             request[0] = 0x08;
             request[2] = 0x72;
             request[3] = identity ? (byte)8 : (byte)2;
-            request[5] = receiver && !identity ? (byte)1 : (byte)0;
+            // Official BitMouse transferForResult targets the paired mouse for every
+            // receiver command, including GetMouseCidMidDangle (0x89).
+            request[5] = receiver ? (byte)1 : (byte)0;
             request[6] = command;
             request[7] = identity ? (byte)6 : (byte)1;
             request[1] = (byte)(request[2] + request[3] + request[5] + request[6] + request[7]);
             return request;
         }
 
-        internal static bool IsAtkZeroPairedModel(ReadOnlySpan<byte> response) =>
-            IsAtkZeroReply(response, AtkZeroPairedModelCommand) &&
-            response[8] == 1 && response[9] == 1 && response[10] == 0 && response[11] == 0 && response[12] == 0;
+        internal static bool IsAtkZeroPairedModel(ReadOnlySpan<byte> response)
+        {
+            int at = AtkReplyOffset(response, AtkZeroPairedModelCommand);
+            if (at < 0) return false;
+            int id = 8 - at;
+            return response[id] == 1 && response[id + 1] == 1 &&
+                   response[id + 2] == 0 && response[id + 3] == 0 && response[id + 4] == 0;
+        }
 
         internal static bool TryParseAtkZeroBattery(ReadOnlySpan<byte> response, out int level)
         {
             level = -1;
-            if (!IsAtkZeroReply(response, AtkZeroBatteryCommand) || response[7] > 100) return false;
-            level = response[7];
+            int at = AtkReplyOffset(response, AtkZeroBatteryCommand);
+            if (at < 0) return false;
+            int pct = response[7 - at];
+            if (pct > 100) return false;
+            level = pct;
             return true;
+        }
+
+        /// <summary>
+        /// 应答里命令字落在哪一位，返回「整帧前移了几格」：
+        ///   0 —— Windows 含 report ID 8：命令 [5]、电量 [7]、身份 [8..12]。
+        /// 官方 WebHID 的输入去掉 report ID 后命令在 [4]，并不是另一种线缆布局。
+        /// 只认整帧 64 字节、报告号 8、状态位不是 2 或 0xFF 的帧。
+        /// </summary>
+        internal static int AtkReplyOffset(ReadOnlySpan<byte> response, byte command)
+        {
+            if (response.Length != 64 || response[0] != 0x08) return -1;
+            // Windows includes report ID 8; the official WebHID payload command
+            // is at [4], battery at [6]. Do not guess a second shifted layout.
+            if (response[5] == command && response[2] is not (2 or 0xFF)) return 0;
+            return -1;
         }
 
         // WebHID removes the report ID. The official handler matches the command at
         // payload[4] and then prepends one byte before decoding the result.
         private static bool IsAtkZeroReply(ReadOnlySpan<byte> response, byte command) =>
-            response.Length == 64 && response[5] == command && response[2] is not (2 or 0xFF);
+            AtkReplyOffset(response, command) >= 0;
 
         internal static int TryReadAtkZero(ushort vid, ushort pid, out bool charging, out bool identified)
         {
@@ -71,7 +96,8 @@ namespace MouseDock.Services.Detection
                     if (!TryParseAtkZeroBattery(QueryAtkZero(handle, signal, AtkZeroBatteryCommand, receiver), out int level))
                         continue;
                     var charge = QueryAtkZero(handle, signal, AtkZeroChargeCommand, receiver);
-                    charging = IsAtkZeroReply(charge, AtkZeroChargeCommand) && charge[7] == 1;
+                    int chargeAt = AtkReplyOffset(charge, AtkZeroChargeCommand);
+                    charging = chargeAt >= 0 && charge[7 - chargeAt] == 1;
                     return level;
                 }
                 finally { CloseHandle(signal); CloseHandle(handle); }

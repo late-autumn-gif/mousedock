@@ -89,8 +89,9 @@ namespace MouseDock.Services.Detection
                 {
                     bool recognitionEnabled = preferences?.CanRead("ble-" + device.BluetoothAddress.ToString("X"),
                         VendorMap.PhysicalKeyFromName(info.Name)) ?? true;
-                    bool isIn9Pro = string.Equals(info.Name?.Trim(), "IN9 PRO", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(info.Name?.Trim(), "IN9PRO", StringComparison.OrdinalIgnoreCase);
+                    bool isIn9Pro = info.Name != null &&
+                        info.Name.IndexOf("IN9", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        info.Name.IndexOf("PRO", StringComparison.OrdinalIgnoreCase) >= 0;
                     var kind = isIn9Pro ? DeviceKind.Mouse : KindFromAppearance(device, info.Name);
                     if (kind == null && hint != null) kind = hint(info.Name);
                     if (kind == null && recognitionEnabled) kind = await KindFromGattAsync(device, timeoutMs).ConfigureAwait(false);

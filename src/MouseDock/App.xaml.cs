@@ -143,7 +143,7 @@ namespace MouseDock
                 AttachConsole(-1);
                 string hint = e.Args.Length > 1 && !e.Args[1].StartsWith("--") ? e.Args[1] : "Air Plus";
                 int v = Services.Detection.HfpBattery.TryRead(hint, 8000, Console.WriteLine);
-                Console.WriteLine("RESULT " + (v >= 0 ? v + "%" : "璇诲彇澶辫触"));
+                Console.WriteLine("RESULT " + (v >= 0 ? v + "%" : "读取失败"));
                 Shutdown();
                 return;
             }
@@ -156,10 +156,10 @@ namespace MouseDock
                 {
                     int v = Services.Detection.VendorProtocol.TryReadBattery(0x089D, 0x062F);
                     if (v >= 0) { ok++; Console.WriteLine($"  {i + 1}: {v}%"); }
-                    else Console.WriteLine($"  {i + 1}: 澶辫触");
+                    else Console.WriteLine($"  {i + 1}: 失败");
                     System.Threading.Thread.Sleep(400);
                 }
-                Console.WriteLine($"鎴愬姛 {ok}/{n}");
+                Console.WriteLine($"成功 {ok}/{n}");
                 Shutdown();
                 return;
             }
@@ -962,7 +962,7 @@ namespace MouseDock
             int known = Battery.Devices.FirstOrDefault(d => d.HasLevel)?.Level ?? -1;
             string text;
             try { text = Services.Detection.HidCapture.Run(known, seconds); }
-            catch (Exception ex) { text = "鎶撳彇澶辫触: " + ex.GetType().Name + " " + ex.Message; }
+            catch (Exception ex) { text = "抓取失败: " + ex.GetType().Name + " " + ex.Message; }
 
             string path = Path.Combine(SettingsStore.Dir, "capture24g.txt");
             try
@@ -988,7 +988,7 @@ namespace MouseDock
         public static string WriteDetectReport(out string content)
         {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("=== MouseDock 鏈満澶栬鎺㈡祴 ===");
+            sb.AppendLine("=== MouseDock 本机外设探测 ===");
             sb.AppendLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine();
 
@@ -999,7 +999,7 @@ namespace MouseDock
                 sb.AppendLine($"[HID] 命中 {hid.Count} 台");
                 foreach (var line in Services.Detection.HidDiscovery.LastDiagnostics) sb.AppendLine("    · " + line);
             }
-            catch (Exception ex) { sb.AppendLine("[HID] 澶辫触: " + ex.Message); }
+            catch (Exception ex) { sb.AppendLine("[HID] 失败: " + ex.Message); }
 
             var bt = new List<Services.Detection.DetectedDevice>();
             try
@@ -1008,15 +1008,15 @@ namespace MouseDock
                 sb.AppendLine($"[蓝牙] 命中 {bt.Count} 台");
                 foreach (var line in Services.Detection.BluetoothDiscovery.LastErrors) sb.AppendLine("    · " + line);
             }
-            catch (Exception ex) { sb.AppendLine("[钃濈墮] 澶辫触: " + ex.GetType().Name + ": " + ex.Message); }
+            catch (Exception ex) { sb.AppendLine("[蓝牙] 失败: " + ex.GetType().Name + ": " + ex.Message); }
 
             sb.AppendLine();
             foreach (var d in hid.Concat(bt))
             {
-                string level = d.Level >= 0 ? d.Level + "%" : "鏈煡";
+                string level = d.Level >= 0 ? d.Level + "%" : "未知";
                 string charge = d.Charging ? "  充电=是" : "";
                 sb.AppendLine($"[{d.Kind}] {d.Name}  电量={level}{charge}  连接={(d.Connected ? "是" : "否")}  通道={d.Transport}  ({d.Detail})");
-                if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("    璇存槑: " + d.Note);
+                if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("    说明: " + d.Note);
             }
 
             content = sb.ToString();
@@ -1037,7 +1037,8 @@ namespace MouseDock
             string dir = ShotDir();
             Directory.CreateDirectory(dir);
 
-            // 鎴浘瑕佸睍绀虹湡瀹炴帰娴嬬粨鏋?            Settings.Provider = "auto";
+            // 截图要展示真实探测结果
+            Settings.Provider = "auto";
             // 保留当前勾选，截图展示真实设备；没有勾选时按首次启动全选
             if (Settings.SelectedDeviceIds.Count == 0)
             {

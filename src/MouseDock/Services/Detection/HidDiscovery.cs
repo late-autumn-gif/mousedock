@@ -145,35 +145,53 @@ namespace MouseDock.Services.Detection
             {
                 foreach (var bucket in buckets.Values)
                 {
-                    bool inphic = VendorProtocol.IsInphicSplitReceiver(bucket.Vid, bucket.Pid);
+                    bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
-                    bool rainy = VendorProtocol.IsRainy75Wired(bucket.Vid, bucket.Pid);
+                    bool atkV75 = VendorProtocol.IsAtkV75X(bucket.Vid, bucket.Pid, bucket.Product);
+                    bool mchoseV9 = VendorProtocol.IsMchoseV9Pro(bucket.Vid, bucket.Pid, bucket.Product);
+                    bool mchoseG7 = VendorProtocol.IsMchoseG7(bucket.Vid, bucket.Pid, bucket.Product);
+                    bool rapooVt7 = VendorProtocol.IsRapooVt7(bucket.Vid, bucket.Pid);
+                    bool rainy = VendorProtocol.IsRainy75Candidate(bucket.Vid, bucket.Pid) &&
+                        !atkV75 && !Bucket.NamesOtherSharedBrand(bucket.Product);
+                    bool sc630 = VendorProtocol.IsAulaSc630(bucket.Product);
                     bool f99 = VendorProtocol.IsAulaF99(bucket.Vid, bucket.Pid, bucket.Product);
                     bool weikav = VendorProtocol.IdentifyWeikav(bucket.Vid, bucket.Pid, bucket.Product) != null;
-                    if (bucket.Battery >= 0 || !(inphic || atk || rainy || f99 || weikav)) continue;
+                    if (bucket.Battery >= 0 || !(inphic || atk || atkV75 || mchoseV9 || mchoseG7 || rapooVt7 || rainy || sc630 || f99 || weikav)) continue;
                     string id = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
                     if (!(preferences?.CanRead(id, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
 
                     var trace = new List<string>();
                     bool charging = false;
                     bool atkZeroIdentified = false;
-                    string source = atk ? "ATK HUB BITMOUSE 电量查询"
-                        : rainy ? "Rainy 75 有线电量查询"
+                    string source = sc630 ? "狼蛛 SC630 Pro 官方电量查询" : atkV75 ? "ATK V75X 官方电量查询" : mchoseV9 ? "MCHOSE V9 Pro 官方电量查询"
+                        : mchoseG7 ? "MCHOSE G7 官方电量查询" : rapooVt7 ? "雷柏 VT7 Report 7 状态推送"
+                        : atk ? "ATK HUB BITMOUSE 电量查询"
+                        : rainy ? (VendorProtocol.IsRainy75Wired(bucket.Vid, bucket.Pid)
+                            ? "Rainy 75 有线电量查询" : "Rainy 75 2.4G 电量查询")
                         : f99 ? "AULA F99 Feature 09 电量查询"
                         : weikav ? "维咖 DriveAll 设备信息查询" : "英菲克 2.4G 接收器状态上报";
                     bucket.Battery = ReadBattery(source, () =>
                     {
+                        if (sc630) return VendorProtocol.TryReadAulaSc630(bucket.Vid, bucket.Pid, bucket.Product, out charging);
+                        if (atkV75) return VendorProtocol.TryReadAtkV75X(bucket.Vid, bucket.Pid, bucket.Product, out charging);
+                        if (mchoseV9) return VendorProtocol.TryReadMchoseV9Pro(bucket.Vid, bucket.Pid, bucket.Product, out charging);
+                        if (mchoseG7) return VendorProtocol.TryReadMchoseG7(bucket.Vid, bucket.Pid, bucket.Product, out charging);
+                        if (rapooVt7) return VendorProtocol.TryReadRapooVt7(bucket.Vid, bucket.Pid, out charging);
                         if (atk) return VendorProtocol.TryReadAtkZero(bucket.Vid, bucket.Pid, out charging, out atkZeroIdentified);
                         if (rainy) return VendorProtocol.TryReadRainy75Wired(bucket.Vid, bucket.Pid, out charging);
                         if (f99) return VendorProtocol.TryReadAulaF99(bucket.Vid, bucket.Pid);
                         if (weikav) return VendorProtocol.TryReadWeikavBattery(bucket.Vid, bucket.Pid, bucket.Product);
                         return VendorProtocol.TryReadInphic(bucket.Vid, bucket.Pid, out charging);
                     }, trace);
+                    bucket.Identity = VendorProtocol.IdentityFor(bucket.Vid, bucket.Pid) ?? bucket.Identity;
                     if (atkZeroIdentified) bucket.Product = bucket.Pid == 0x1154 ? "ATK ZERO" : "ATK ZERO 2.4G Receiver";
                     if (bucket.Battery >= 0)
                     {
                         bucket.Charging = charging;
                         bucket.BatterySource = source;
+                        // Only a compatible Rainy frame may rename a shared 0x5055/0x5088 PID.
+                        if (rainy) bucket.RainyIdentified = true;
+                        // Compatible battery responses do not establish a brand on shared receivers.
                     }
                     else bucket.BatteryFailures.UnionWith(trace);
                     LastDiagnostics.Add($"{id} {string.Join("；", trace)}");
@@ -189,6 +207,10 @@ namespace MouseDock.Services.Detection
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
             {
                 var result = LogitechHidpp.Probe(path);
+                if (result.Battery >= 0 && !string.IsNullOrEmpty(result.BatteryNote))
+                    foreach (var bucket in buckets.Values)
+                        if (path.IndexOf($"vid_{bucket.Vid:x4}&pid_{bucket.Pid:x4}", StringComparison.OrdinalIgnoreCase) >= 0)
+                            bucket.BatterySource = result.BatteryNote;
                 return (result.Battery, result.Name, result.Charging);
             }, ReadVendorCollection);
 
@@ -267,6 +289,11 @@ namespace MouseDock.Services.Detection
                     id.StartsWith("ROOT\\MYAPPSVIRTUALBUS", StringComparison.Ordinal) ||
                     service == "myappshidbus" || service == "myappsusbcontroller")
                     return "腾讯 MyApps 虚拟输入设备（PnP 证据）";
+                // 罗技 G HUB 会挂两条 LGHUBDEVICE 虚拟 HID（C231 鼠标 / C232 键盘），
+                // 它们没有真实硬件，却带着 0x01/0x02、0x01/0x06 用法，以前会被当成两台外设占面板配额。
+                if (id.StartsWith("LGHUBDEVICE\\", StringComparison.Ordinal) ||
+                    service == "logi_joy_vir_hid" || service == "logi_joy_bus_enum")
+                    return "罗技 G HUB 虚拟输入设备（PnP 证据）";
                 // 在 USB / 蓝牙传输层停止。其上游控制器最终也会挂到 ACPI，不能据此排除外设。
                 if (id.StartsWith("USB\\", StringComparison.Ordinal) ||
                     id.StartsWith("BTHENUM\\", StringComparison.Ordinal) ||
@@ -292,12 +319,21 @@ namespace MouseDock.Services.Detection
             return ExclusionReason(ancestors, integratedUsb);
         }
 
-        internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind)
+        internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
-            if (VendorMap.TryUsbHeadset(vid, pid, out _) && usagePage == 0x0C && usage == 1)
+            if (VendorProtocol.IsMchoseV9Pro(vid, pid, product) &&
+                ((usagePage == 0xFF90 && usage == 1) || (usagePage == 0x0C && usage == 1)))
+            { kind = DeviceKind.Headset; return true; }
+            if (VendorMap.TryUsbHeadset(vid, pid, out _))
             {
-                kind = DeviceKind.Headset;
-                return true;
+                // 已确认是 USB 耳机的设备，除了消费者控制，还要把它的私有页一起认领。
+                // 不认的话 0xFF13 那条电量通道会被当成噪音丢掉。
+                if ((usagePage == 0x0C && usage == 1) ||
+                    usagePage is 0xFF13 or 0xFFC0 or 0x01C0 or 0x170F or 0x000B)
+                {
+                    kind = DeviceKind.Headset;
+                    return true;
+                }
             }
             return UsageMap.TryKind(usagePage, usage, out kind);
         }
@@ -405,7 +441,7 @@ namespace MouseDock.Services.Detection
             if (recognitionEnabled && caps.UsagePage >= 0xFF00)
                 vendorCollections.Add((path, vid, pid, caps.UsagePage, product));
 
-            if (!TryDeviceKind(vid, pid, caps.UsagePage, caps.Usage, out DeviceKind kind))
+            if (!TryDeviceKind(vid, pid, caps.UsagePage, caps.Usage, out DeviceKind kind, product))
             {
                 LastDiagnostics.Add($"{key} usage 跳过 UPage=0x{caps.UsagePage:X2} Usage=0x{caps.Usage:X2} feat={caps.FeatureReportByteLength} 路径={path}");
                 return false;
@@ -416,8 +452,32 @@ namespace MouseDock.Services.Detection
                 if (!buckets.TryGetValue(key, out var headset))
                     buckets[key] = headset = new Bucket { Vid = vid, Pid = pid, Product = headsetName, Vendor = vendor, Path = path, Kind = kind };
                 headset.Counts[kind] = headset.Counts.TryGetValue(kind, out int count) ? count + 1 : 1;
-                headset.BatteryFailures.Add("已识别 USB 耳机；电量协议尚未适配，当前电量未知");
-                LastDiagnostics.Add($"{key} 已识别 USB 耳机，未发送未知厂商查询命令 路径={path}");
+
+                // HyperX Cloud III 走 0xFF13 私有通道，一次读完整机就行，别的集合不再重复。
+                if (VendorProtocol.IsHyperXHeadset(vid, pid) && recognitionEnabled && !safeMode && !headset.HeadsetQueried && headset.Battery < 0)
+                {
+                    headset.HeadsetQueried = true;
+                    var headsetTrace = new List<string>();
+                    bool headsetCharging = false;
+                    int level = ReadBattery("HyperX Cloud III 私有通道查询", () =>
+                        VendorProtocol.TryReadCloud3S(vid, pid, out headsetCharging), headsetTrace);
+                    if (level >= 0)
+                    {
+                        headset.Battery = level;
+                        headset.Charging = headsetCharging;
+                        headset.BatterySource = "HyperX Cloud III 私有通道查询";
+                    }
+                    else headset.BatteryFailures.UnionWith(headsetTrace);
+                }
+                else if (safeMode)
+                {
+                    headset.BatteryFailures.Add("安全模式已跳过耳机电量查询");
+                }
+
+                if (headset.Battery < 0 && !VendorProtocol.IsHyperXHeadset(vid, pid))
+                    headset.BatteryFailures.Add("已识别 USB 耳机；电量协议尚未适配，当前电量未知");
+
+                LastDiagnostics.Add($"{key} 已识别 USB 耳机 电量={(headset.Battery >= 0 ? headset.Battery + "%" : "未读到")} 路径={path}");
                 return true;
             }
 
@@ -439,8 +499,11 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Wired(vid, pid) ||
-                VendorProtocol.IsAulaF99(vid, pid, product) || VendorProtocol.IdentifyWeikav(vid, pid, product) != null)
+            if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Candidate(vid, pid) ||
+                VendorProtocol.IsAulaF99(vid, pid, product) || VendorProtocol.IdentifyWeikav(vid, pid, product) != null ||
+                VendorProtocol.IsMchoseG7(vid, pid, product) || VendorProtocol.IsMchoseV9Pro(vid, pid, product) ||
+                VendorProtocol.IsRapooVt7(vid, pid) || VendorProtocol.IsAulaSc630(product) ||
+                VendorProtocol.IsInphicDevice(vid, pid, product))
             {
                 batteryTrace.Add(safeMode ? "安全模式已跳过专用电量查询" : "专用电量由归并后的设备读取");
             }
@@ -663,6 +726,7 @@ namespace MouseDock.Services.Detection
 
                 if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00)
                 {
+                    if (safeMode) continue;
                     if (!probedPaths.Add(collection.Path)) continue;
                     (int Battery, string Name, bool Charging) current;
                     lock (_logiHints)
@@ -788,6 +852,23 @@ namespace MouseDock.Services.Detection
             public ushort Vid, Pid;
             public string Product;
             public string Vendor;
+
+            /// <summary>
+            /// 320F:5088 是 Rainy 75、ATK V75X、VGN V98 Pro 共用的号。
+            /// 产品名里已经写明别家型号时，不能因为应答结构对得上就改叫 WOB Rainy 75。
+            /// </summary>
+            internal static bool NamesOtherSharedBrand(string product)
+            {
+                if (string.IsNullOrWhiteSpace(product)) return false;
+                return product.IndexOf("ATK", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("VGN", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("VXE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("V75", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("V98", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("V87", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("DELUX", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       product.IndexOf("多彩", StringComparison.Ordinal) >= 0;
+            }
             public string Path = "";
             public string Identity = "";
             public bool HasVendor;
@@ -797,6 +878,8 @@ namespace MouseDock.Services.Detection
             public bool Charging;
             public bool ReadStale;
             public bool MchoseQueried;
+            public bool HeadsetQueried;
+            public bool RainyIdentified;
             public string BatterySource = "";
             public readonly HashSet<string> BatteryFailures = new HashSet<string>();
             public readonly Dictionary<DeviceKind, int> Counts = new Dictionary<DeviceKind, int>();
@@ -822,13 +905,32 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Keyboard;
                     physicalKey = "weikav-" + weikav.Replace(" ", "").ToLowerInvariant();
                 }
+                else if (VendorProtocol.IsMchoseG7(Vid, Pid, Product))
+                {
+                    name = Product.Trim();
+                    if (name.StartsWith("MCHOSE", StringComparison.OrdinalIgnoreCase))
+                        name = "迈从" + name.Substring("MCHOSE".Length);
+                    kind = DeviceKind.Mouse;
+                    physicalKey = "mchose-g7";
+                }
+                else if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product))
+                { name = "迈从 V9 Pro"; kind = DeviceKind.Headset; physicalKey = "mchose-v9pro"; }
+                else if (VendorProtocol.IsRapooVt7(Vid, Pid))
+                { name = "雷柏 VT7"; kind = DeviceKind.Mouse; physicalKey = "rapoo-vt7"; }
                 else if (VendorProtocol.IsAulaF99(Vid, Pid, Product))
                 {
                     name = "AULA F99";
                     kind = DeviceKind.Keyboard;
                     physicalKey = "aula-f99";
                 }
-                else if (VendorProtocol.IsRainy75Wired(Vid, Pid))
+                else if (VendorProtocol.IsAtkV75X(Vid, Pid, Product))
+                {
+                    name = "ATK V75X";
+                    kind = DeviceKind.Keyboard;
+                    physicalKey = "atk-v75x";
+                }
+                else if (VendorProtocol.IsRainy75Candidate(Vid, Pid) &&
+                         (RainyIdentified || VendorProtocol.IsRainy75Name(Product)))
                 {
                     name = "WOBKEY Rainy 75";
                     kind = DeviceKind.Keyboard;
@@ -872,6 +974,7 @@ namespace MouseDock.Services.Detection
                 {
                     name = idName;
                     physicalKey = idKey;
+                    kind = DeviceKind.Mouse;
                 }
                 else if (!string.IsNullOrWhiteSpace(Identity))
                 {
@@ -893,12 +996,19 @@ namespace MouseDock.Services.Detection
 
                 bool usbHeadset = VendorMap.TryUsbHeadset(Vid, Pid, out string headsetName);
                 if (usbHeadset) { name = headsetName; kind = DeviceKind.Headset; }
+                bool f99Wired = VendorProtocol.IsAulaF99Wired(Vid, Pid, Product);
                 string transport = bt ? "蓝牙" : usbHeadset ? "USB"
                     : (dongle || receiverProduct || LooksWireless(Product) || peerKeyboard ||
-                       (Vid == 0x3554 && VendorProtocol.IsAulaF99(Vid, Pid, Product)) ||
+                       (Vid == 0x3554 && VendorProtocol.IsAulaF99(Vid, Pid, Product) && !f99Wired) ||
                        (HasVendor && Interfaces.Count >= 2) ? "2.4G" : "有线");
 
-                if (VendorProtocol.IsRainy75Wired(Vid, Pid)) transport = "有线";
+                if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product)) transport = "2.4G";
+                if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) transport = Vid == 0xA8A4 ? "有线" : "2.4G";
+                if (VendorProtocol.IsRapooVt7(Vid, Pid)) transport = Pid == 0x1413 ? "2.4G" : "有线";
+                if (VendorProtocol.IsAtkV75X(Vid, Pid, Product)) transport = Pid == 0x5055 ? "有线" : "2.4G";
+                else if (VendorProtocol.IsRainy75Wired(Vid, Pid)) transport = "有线";
+                else if (VendorProtocol.IsRainy75Wireless(Vid, Pid)) transport = "2.4G";
+                else if (f99Wired) transport = "有线";
                 else if (weikav != null) transport = Pid is 0xFEF9 or 0xFEFA ? "2.4G" : "有线";
 
                 return new DetectedDevice
@@ -929,6 +1039,13 @@ namespace MouseDock.Services.Detection
                 if (VendorProtocol.IsInphicSplitReceiver(Vid, Pid) && Counts.ContainsKey(DeviceKind.Mouse))
                     return DeviceKind.Mouse;
 
+                if (VendorProtocol.IsAtkZeroBitMouse(Vid, Pid) &&
+                    (string.Equals(Product, "ATK ZERO", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(Product, "ATK ZERO 2.4G Receiver", StringComparison.OrdinalIgnoreCase))) return DeviceKind.Mouse;
+                if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) return DeviceKind.Mouse;
+                if (VendorProtocol.IsAtkV75X(Vid, Pid, Product)) return DeviceKind.Keyboard;
+                if (VendorProtocol.IsRainy75Candidate(Vid, Pid) &&
+                    (RainyIdentified || VendorProtocol.IsRainy75Name(Product))) return DeviceKind.Keyboard;
                 string n = (name ?? "").ToLowerInvariant();
                 if (n.Contains("keyboard") || n.Contains("键盘") || n.Contains("keychron")) return DeviceKind.Keyboard;
 

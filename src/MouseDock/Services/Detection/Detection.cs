@@ -52,9 +52,30 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryUsbHeadset(ushort vid, ushort pid, out string name)
         {
+            name = null;
+
             // Confirmed locally: USB audio endpoints and Consumer Control HID share this composite device.
-            name = vid == 0x4C4A && pid == 0x4155 ? "竹林鸟玄武（ZhuAudio ZG2）" : null;
-            return name != null;
+            if (vid == 0x4C4A && pid == 0x4155) { name = "竹林鸟玄武（ZhuAudio ZG2）"; return true; }
+
+            // HyperX（惠普 03F0）。03F0:06BE 的反馈包里六个集合全部被判成「usage 跳过」，
+            // 设备连面板都上不去——耳机在 USB 上根本没有 0x01 取值的集合，只有
+            // 0x0C 消费者控制和几条 0xFF13 / 0xFFC0 / 0x01C0 私有页。
+            if (vid == 0x03F0)
+            {
+                name = pid switch
+                {
+                    0x06BE or 0x02CC => "HyperX Cloud III S Wireless",
+                    0x05B7 or 0x0C9D or 0x0FCC => "HyperX Cloud III Wireless",
+                    0x069F => "HyperX Cloud II Core Wireless",
+                    0x018B => "HyperX Cloud II Wireless",
+                    0x08BE => "HyperX Cloud Alpha 2",
+                    0x0AC1 => "HyperX Cloud Flight 2",
+                    _ => null
+                };
+                return name != null;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -106,6 +127,11 @@ namespace MouseDock.Services.Detection
             new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
             {
                 ["M137"] = ("狼蛛 SC580", "aula-sc580"),
+                ["M909"] = ("英菲克 IN9（3311）", "inphic-in9-3311"),
+                ["M910"] = ("英菲克 IN9（6827）", "inphic-in9-6827"),
+                ["IN90"] = ("英菲克 IN9（S205）", "inphic-in9-s205"),
+                ["M900"] = ("英菲克 A9", "inphic-a9"),
+                ["I149"] = ("英菲克 IN9 Pro", "inphic-in9pro"),
                 ["M230"] = ("前行者 X23 标准版", "x23-standard")
             };
 

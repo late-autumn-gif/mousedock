@@ -85,7 +85,20 @@ namespace MouseDock.Services.Detection
                         SocketProtectionLevel.BluetoothEncryptionAllowNullAuthentication).AsTask()
                         .WaitAsync(TimeSpan.FromMilliseconds(1200)).ConfigureAwait(false);
                 }
-                catch (Exception ex) { trace?.Invoke("连接失败: " + ex.Message); return -1; }
+                catch (Exception ex)
+                {
+                    string message = ex.Message ?? "";
+                    // RFCOMM 在同一时刻只能有一个客户端，Windows 音频栈会一直占着它。
+                    // 这不是设备不支持，也不是本程序的错，直接说清楚，省得用户以为耳机坏了。
+                    if (message.IndexOf("每个套接字地址", StringComparison.Ordinal) >= 0 ||
+                        message.IndexOf("only one usage of each socket address", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        message.IndexOf("10048", StringComparison.Ordinal) >= 0)
+                    {
+                        trace?.Invoke("连接失败: RFCOMM 通道被 Windows 音频栈占用（系统占用，不是设备问题）");
+                    }
+                    else trace?.Invoke("连接失败: " + message);
+                    return -1;
+                }
                 trace?.Invoke("已连接，开始握手");
 
                 using var reader = new DataReader(socket.InputStream) { InputStreamOptions = InputStreamOptions.Partial };

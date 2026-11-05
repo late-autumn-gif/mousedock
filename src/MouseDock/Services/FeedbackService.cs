@@ -217,7 +217,9 @@ namespace MouseDock.Services
             {
                 Directory.CreateDirectory(dir);
 
-                temporaryPath = Path.Combine(dir, $".mousedock-{Guid.NewGuid():N}.tmp");
+                // 临时文件也必须是 .zip：CanWriteTo 探的就是 .zip，按扩展名拦的杀软
+                // 放行 .tmp、拦 .zip，探针通过不等于这里能写。
+                temporaryPath = Path.Combine(dir, $".mousedock-{Guid.NewGuid():N}.zip");
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {

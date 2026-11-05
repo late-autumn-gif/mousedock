@@ -52,6 +52,7 @@ namespace MouseDock.Services.Detection
             public int Battery;
             public bool Charging;
             public string Name;
+            public string BatteryNote;
         }
 
         private sealed class Link
@@ -145,14 +146,15 @@ namespace MouseDock.Services.Detection
 
                 foreach (byte idx in new byte[] { 0x01, 0x02, 0xFF })
                 {
-                    if (result.Battery < 0)
+                    string name = ReadName(link, idx);
+                    bool gpw = IsOriginalGpwName(name) || path.IndexOf("vid_046d&pid_c088", StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool charging = ReadBattery(link, idx, out int level, out string note, gpw);
+                    if (level >= 0)
                     {
-                        bool charging = ReadBattery(link, idx, out int level);
-                        if (level >= 0) { result.Battery = level; result.Charging = charging; }
+                        result.Battery = level; result.Charging = charging; result.BatteryNote = note;
+                        result.Name = name; break; // Battery and name always belong to the same receiver slot.
                     }
-                    if (string.IsNullOrWhiteSpace(result.Name))
-                        result.Name = ReadName(link, idx);
-                    if (result.Battery >= 0 && !string.IsNullOrWhiteSpace(result.Name)) break;
+                    if (string.IsNullOrWhiteSpace(result.Name)) result.Name = name;
                 }
                 return result;
             }
@@ -205,67 +207,50 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>
-        /// 读电量。返回是否在充电，level 是真实百分比（不做「充电就凑 100%」这种事）。
-        /// 官方实现：value = reply[0]，state = reply[2]，state 落在 1/2/4 算充电。
+        /// 读取设备百分比，或在已确认初代 GPW 时按官方电池模型推算。
+        /// 电压模型推算结果单独标注，不把电压的高字节误当百分比。
         /// </summary>
-        private static bool ReadBattery(Link link, byte deviceIndex, out int level)
+        private static bool ReadBattery(Link link, byte deviceIndex, out int level, out string note, bool originalGpw)
         {
             level = -1;
-
-            // 0x1004 Unified Battery：官方用 function 1，Solaar 用 function 0，两个都试
-            byte fi = FeatureIndex(link, deviceIndex, 0x1004);
-            if (fi != 0)
+            note = "";
+            // 1004 function 0 is capabilities, function 1 is status.
+            foreach (ushort feature in new ushort[] { 0x1004, 0x1000, 0x1001 })
             {
-                foreach (byte fn in new byte[] { 0x01, 0x00 })
+                byte fi = FeatureIndex(link, deviceIndex, feature);
+                if (fi == 0) continue;
+                var r = Call(link, deviceIndex, fi, feature == 0x1004 ? (byte)1 : (byte)0);
+                if (TryParseBattery(feature, r, out level, out bool charging, originalGpw))
                 {
-                    var r = Call(link, deviceIndex, fi, fn);
-                    if (r != null && r.Length >= 7 && r[4] >= 1 && r[4] <= 100)
-                    {
-                        level = r[4];
-                        return IsChargingState(r[6]);
-                    }
-                }
-            }
-
-            // 0x1001 Battery Level Status：level 在 [4]
-            fi = FeatureIndex(link, deviceIndex, 0x1001);
-            if (fi != 0)
-            {
-                var r = Call(link, deviceIndex, fi, 0x00);
-                if (r != null && r.Length >= 7 && r[4] >= 1 && r[4] <= 100)
-                {
-                    level = r[4];
-                    return IsChargingState(r[6]);
-                }
-            }
-
-            // 0x1000 Battery Voltage：官方把 reply[0] 直接当百分比（G304 报 90），
-            // 只有超出 1..100 才按电压折算。
-            fi = FeatureIndex(link, deviceIndex, 0x1000);
-            if (fi != 0)
-            {
-                var r = Call(link, deviceIndex, fi, 0x00);
-                if (r != null)
-                {
-                    if (r[4] >= 1 && r[4] <= 100)
-                    {
-                        level = r[4];
-                        return r.Length >= 7 && IsChargingState(r[6]);
-                    }
-                    int mv = r[4] | (r[5] << 8);
-                    int pct = VoltageToPercent(mv);
-                    if (pct >= 0)
-                    {
-                        level = pct;
-                        return r.Length >= 7 && IsChargingState(r[6]);
-                    }
+                    note = feature == 0x1001 ? "Logitech GPW 官方电压模型推算（非设备直接百分比）" : "Logitech HID++ 设备电量";
+                    return charging;
                 }
             }
             return false;
         }
 
-        /// <summary>HID++ 的充电状态：1/2/4 都表示正在充或满电待机。</summary>
-        private static bool IsChargingState(byte state) => state == 1 || state == 2 || state == 4;
+        internal static bool TryParseBattery(ushort feature, ReadOnlySpan<byte> r, out int level, out bool charging, bool originalGpw = false)
+        {
+            level = -1; charging = false;
+            if (r.Length < 7 || r[0] is not (ReportLong or ReportShort)) return false;
+            if (feature == 0x1004 || feature == 0x1000)
+            {
+                if (r[4] > 100 || r[6] > 7) return false;
+                // BatteryStatus encodes 0 as unknown; Unified encodes 0 plus empty level as drained.
+                if (r[4] == 0 && (feature == 0x1000 || r[5] != 0)) return false;
+                level = r[4]; charging = r[6] is 1 or 2; return true;
+            }
+            if (feature != 0x1001) return false;
+            int millivolts = (r[4] << 8) | r[5]; // documented big-endian voltage, not a percentage byte
+            if ((r[6] & 0x80) != 0)
+            {
+                int status = r[6] & 7;
+                if (status > 2) return false;
+                if (status == 1) { if (!originalGpw) return false; level = 100; return true; }
+                charging = status == 0;
+            }
+            return originalGpw && LogitechGpwBattery.TryEstimateGpwPercentage(millivolts, charging, out level);
+        }
 
         private static string ReadName(Link link, byte deviceIndex)
         {
@@ -280,10 +265,10 @@ namespace MouseDock.Services.Detection
 
             var bytes = new byte[total];
             int filled = 0;
-            for (int offset = 0; offset < total; offset += 16)
+            for (int offset = 0; offset < total;)
             {
                 var req = new byte[link.Size];
-                req[0] = ReportLong;
+                req[0] = link.Size >= 20 ? ReportLong : ReportShort;
                 req[1] = deviceIndex;
                 req[2] = fi;
                 req[3] = (byte)((0x01 << 4) | SwId);   // function 1 = name chunk
@@ -293,8 +278,10 @@ namespace MouseDock.Services.Detection
                 var r = Await(link, deviceIndex, fi, 0x01);
                 if (r == null) break;
 
-                int n = Math.Min(16, total - offset);
+                int n = Math.Min(Math.Min(16, total - offset), r.Length - 4);
+                if (n <= 0) break;
                 for (int i = 0; i < n && filled < total; i++) bytes[filled++] = r[4 + i];
+                offset += n;
             }
 
             int end = filled;
@@ -312,27 +299,29 @@ namespace MouseDock.Services.Detection
         private static byte[] Await(Link link, byte deviceIndex, byte featureIndex, byte function, int timeoutMs = 400)
         {
             int deadline = Environment.TickCount + timeoutMs;
+            byte[] loose = null;
             while (Environment.TickCount < deadline)
             {
                 var r = link.Receive(120);
                 if (r == null) continue;
-                if (r.Length < 4) continue;
-                if (r[0] != ReportLong || r[1] != deviceIndex || r[2] != featureIndex) continue;
+                if (r.Length < 7) continue;
+                if (r[0] is not (ReportLong or ReportShort) || r[1] != deviceIndex || r[2] != featureIndex) continue;
 
                 byte head = r[3];
-                // HID++ 的 swId 在低 4 位、function 在高 4 位。有些接收器回的 swId 与请求不一致，
-                // 这里只放行 function，不拿 swId 当硬条件。
+                // HID++ 的 swId 在低 4 位、function 在高 4 位。优先要回显请求 swId 的帧，
+                // 但部分接收器不回显；没有严格匹配时，超时前退回只匹配 function 的旧行为。
                 byte fn = (byte)((head >> 4) & 0x0F);
-                if (fn != function && fn != 0x0F) continue;   // 0x0F = HID++ 错误响应
-                return r;
+                if (fn != function) continue;
+                if ((head & 0x0F) == SwId) return r;
+                if (loose == null) loose = r;
             }
-            return null;
+            return loose;
         }
 
         private static byte FeatureIndex(Link link, byte deviceIndex, ushort featureId)
         {
             var req = new byte[link.Size];
-            req[0] = ReportLong;
+            req[0] = link.Size >= 20 ? ReportLong : ReportShort;
             req[1] = deviceIndex;
             req[2] = 0x00;                                  // IRoot
             req[3] = (byte)((0x00 << 4) | SwId);            // getFeature
@@ -350,7 +339,7 @@ namespace MouseDock.Services.Detection
         private static byte[] Call(Link link, byte deviceIndex, byte featureIndex, byte function)
         {
             var req = new byte[link.Size];
-            req[0] = ReportLong;
+            req[0] = link.Size >= 20 ? ReportLong : ReportShort;
             req[1] = deviceIndex;
             req[2] = featureIndex;
             req[3] = (byte)((function << 4) | SwId);
@@ -358,13 +347,11 @@ namespace MouseDock.Services.Detection
             return Await(link, deviceIndex, featureIndex, function);
         }
 
-        /// <summary>锂电经验曲线：3.45V 约 0%，4.18V 满。换电池的型号不会走这里。</summary>
-        private static int VoltageToPercent(int millivolts)
+        internal static bool IsOriginalGpwName(string name)
         {
-            if (millivolts < 3000 || millivolts > 4500) return -1;
-            const int empty = 3450, full = 4180;
-            int pct = (int)Math.Round((millivolts - empty) * 100.0 / (full - empty));
-            return Math.Clamp(pct, 0, 100);
+            string clean = System.Text.RegularExpressions.Regex.Replace(name ?? "", "[^A-Za-z0-9]", "").ToUpperInvariant();
+            return clean is "GPROWIRELESS" or "GPROWIRELESSGAMINGMOUSE" or "PROWIRELESSGAMINGMOUSE"
+                or "LOGITECHGPROWIRELESS" or "LOGITECHGPROWIRELESSGAMINGMOUSE";
         }
     }
 }

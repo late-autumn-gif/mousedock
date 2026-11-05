@@ -18,6 +18,8 @@ internal static class InphicRegression
         Check(!VendorProtocol.IsInphicDevice(0x248A,0x1234),"Unknown PID under the shared OEM vendor id");
         Check(!VendorProtocol.IsInphicDevice(0x248A,0x5C2F,"AJAZZ AJ159 P"),"Do not claim the AJAZZ receiver that shares 248A:5C2F");
         Check(VendorProtocol.IsInphicDevice(0x248A,0x5C2F,"Wireless Receiver"),"Unnamed receiver stays with Inphic");
+        Check(!VendorProtocol.IsInphicDevice(0x1D57,0xFA65,"DELUX M900 Pro"),"FA65 shared with DELUX is not Inphic");
+        Check(VendorProtocol.IsInphicDevice(0x1D57,0xFA65,"Wireless Receiver"),"Unnamed FA65 stays with Inphic");
 
         // 原始报告：有编号报告多一个 report id 位；无编号报告直接从机型号开始。
         var numbered = new byte[] { 0x08, VendorProtocol.InphicModelIn9Pro, 0x40, 0x01, 0x50 };
@@ -70,6 +72,7 @@ internal static class InphicRegression
 
         // 报告中的 FA60 在 MI_02 上拆成独立 Feature 和 Input 集合。
         Check(VendorProtocol.IsInphicSplitReceiver(0x1D57, 0xFA60), "FA60 uses split HID collections");
+        Check(VendorProtocol.IsInphicSplitReceiver(0x1D57, 0xFA65), "FA65 uses split HID collections");
         Check(VendorProtocol.IsInphicSplitFeature(0x0B, 0, 262), "FA60 feature collection");
         Check(VendorProtocol.IsInphicSplitInput(0x0A, 0, 5), "FA60 input collection");
         Check(!VendorProtocol.IsInphicSplitInput(1, 2, 8), "Mouse movement is not a battery input report");
