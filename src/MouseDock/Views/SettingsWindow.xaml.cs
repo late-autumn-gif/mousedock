@@ -101,8 +101,8 @@ namespace MouseDock.Views
                 ApplyWarnButtons(s.LowBatteryWarn);
             AutoUpdateBox.IsChecked = s.AutoUpdate;
                 ApplySurfaceButtons(s.SurfaceMode);
-                TaskbarOffsetSlider.Value = Math.Clamp(s.TaskbarOffset, 0, 1200);
-                TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}";
+                TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
+                TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(s.EdgeGlyphColor));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
@@ -482,8 +482,8 @@ namespace MouseDock.Views
         private void OnTaskbarOffsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_loading || TaskbarOffsetValue == null) return;
-            App.Settings.TaskbarOffset = Math.Round(e.NewValue);
-            TaskbarOffsetValue.Text = $"{App.Settings.TaskbarOffset:0}";
+            App.Settings.TaskbarOffset = Math.Clamp(Math.Round(e.NewValue), 0, 100);
+            TaskbarOffsetValue.Text = $"{App.Settings.TaskbarOffset:0}%";
             App.Taskbar?.UpdateAnchor();
             App.SaveSettings();
         }

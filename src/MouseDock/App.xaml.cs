@@ -107,6 +107,18 @@ namespace MouseDock
                 Settings.Version = 5;
                 SettingsStore.Save(Settings);
             }
+            if (Settings.Version < 6)
+            {
+                // v6：任务栏偏移从 DIP 改成「可用长度的百分比」。
+                // 旧值按主屏 DIP 宽度减去一个 72 DIP 的电量条宽度折算；2K/150% 下
+                // 160 DIP 约等于 9.8%，换算后仍是原来的物理位置。
+                double screenDip = SystemParameters.PrimaryScreenWidth;
+                double free = Math.Max(1, screenDip - 72);
+                Settings.TaskbarOffset = Math.Clamp(
+                    (double.IsFinite(Settings.TaskbarOffset) ? Settings.TaskbarOffset : 0) / free * 100.0, 0, 100);
+                Settings.Version = 6;
+                SettingsStore.Save(Settings);
+            }
             ResolveAssets();
 
             Theme = Palette.ResolveTheme(Settings, out var extracted);

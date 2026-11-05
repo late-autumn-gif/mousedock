@@ -119,8 +119,16 @@ internal static class Program
     private static void CheckPlacement()
     {
         // 80x40 DIPs at 150% is 120x60 physical pixels, centered in a 72px taskbar.
-        var result = Place(new Rect(0, 1008, 1920, 72), 3, new Size(80, 40), 160, 1.5);
-        Require(result == new Rect(240, 1014, 120, 60), $"Unexpected placement: {result}");
+        // 8% of the remaining 1800px is 144px.
+        var result = Place(new Rect(0, 1008, 1920, 72), 3, new Size(80, 40), 8, 1.5);
+        Require(result == new Rect(144, 1014, 120, 60), $"Unexpected placement: {result}");
+
+        // Same percentage on a 2K taskbar: inset grows with taskbar length, strip stays inside.
+        var wide = Place(new Rect(0, 1368, 2560, 72), 3, new Size(80, 40), 8, 1.5);
+        Require(Math.Abs(wide.Left - 195.2) < 0.01 && wide.Right <= 2560 && wide.Bottom <= 1440,
+            $"2K percentage placement overflowed or did not scale: {wide}");
+        var flush = Place(new Rect(0, 1008, 1920, 72), 3, new Size(80, 40), 100, 1.5);
+        Require(flush.Right == 1920, $"100% must sit flush with the taskbar's right edge: {flush}");
     }
 
     private static void CheckEdges()
@@ -128,7 +136,7 @@ internal static class Program
         var bottom = Place(new Rect(-1920, 1040, 1920, 40), 3, new Size(80, 40), 9999, 1);
         Require(bottom == new Rect(-80, 1040, 80, 40), "Offset must clamp to the monitor edge.");
         var left = Place(new Rect(-48, 0, 48, 1080), 0, new Size(80, 40), 16, 1);
-        Require(left == new Rect(-44, 984, 40, 80), "Vertical taskbars need a vertical strip near the bottom.");
+        Require(left == new Rect(-44, 840, 40, 80), "Vertical taskbars need a vertical strip near the bottom.");
         var small = Place(new Rect(0, 0, 320, 24), 1, new Size(80, 40), 0, 1);
         Require(small == new Rect(0, 0, 48, 24), "A small taskbar must scale the whole strip.");
     }
@@ -327,7 +335,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         try
         {
-            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir])!;
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null])!;
             string kind = result.GetType().GetProperty("FailureKind")!.GetValue(result)!.ToString()!;
             Require(kind == "WriteFailed", $"A directory target must fail at the write step, got {kind}.");
 
@@ -347,7 +355,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         try
         {
-            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir])!;
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null])!;
             string log = result.GetType().GetProperty("LogPath")!.GetValue(result) as string ?? "";
             Require(!string.IsNullOrEmpty(log), "A failed export must report where its log went.");
             Require(File.Exists(log), $"The diagnostic log must exist, got {log}.");

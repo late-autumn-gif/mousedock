@@ -287,9 +287,10 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="48" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="左侧偏移" Style="{StaticResource RowText}" />
-                                <Slider x:Name="TaskbarOffsetSlider" Grid.Column="1" Minimum="0" Maximum="1200"
-                                        Width="Auto" Margin="14,0,8,0" SmallChange="4" LargeChange="40"
+                                <TextBlock Text="左侧偏移（%）" Style="{StaticResource RowText}" />
+                                <Slider x:Name="TaskbarOffsetSlider" Grid.Column="1" Minimum="0" Maximum="100"
+                                        Width="Auto" Margin="14,0,8,0" SmallChange="1" LargeChange="10"
+                                        ToolTip="相对任务栏可用长度的百分比；2K/4K 和高 DPI 自动等比缩放"
                                         ValueChanged="OnTaskbarOffsetChanged" />
                                 <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right"
                                            Style="{StaticResource RowText}" Opacity="0.65" />

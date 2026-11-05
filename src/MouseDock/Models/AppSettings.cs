@@ -5,7 +5,7 @@ namespace MouseDock.Models
     /// <summary>全部持久化状态，写到 %APPDATA%\MouseDock\settings.json。</summary>
     public sealed class AppSettings
     {
-        public int Version { get; set; } = 5;
+        public int Version { get; set; } = 6;
 
         public string ThemeId { get; set; } = "dusk";
 
@@ -64,7 +64,8 @@ namespace MouseDock.Models
         /// <summary>界面形态三选一：dock（主面板）/ mini（迷你）/ icon（悬浮图标）。</summary>
         public string SurfaceMode { get; set; } = "taskbar";
 
-        public double TaskbarOffset { get; set; } = 160;
+        /// <summary>任务栏左侧/底部偏移，相对任务栏可用长度的百分比（0-100，v6 起；旧版是 DIP，启动时迁移）。</summary>
+        public double TaskbarOffset { get; set; } = 8;
         public bool ShowBatteryNumber { get; set; } = true;
         public string EdgeGlyphColor { get; set; } = "#F5F5F5";
         public double EdgeVerticalPosition { get; set; } = 0.5;
