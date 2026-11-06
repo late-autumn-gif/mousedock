@@ -33,10 +33,10 @@ tools/parse-len.ps1 -Pcap cap.pcap -Lens 32,64
 
 ```powershell
 ./build.ps1
-./app/MouseDock.exe --detect        # 控制台输出真实设备列表
+./dist/MouseDock.exe --detect        # 控制台输出真实设备列表
 ```
 
 ## PR
 
 - 一个 PR 只做一件事
-- 标题与正文使用中文，只描述具体改动及其效果；验证记录留在本地
+- 涉及识别逻辑的改动，请在描述里贴 `--detect` 的前后对比

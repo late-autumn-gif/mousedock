@@ -20,12 +20,11 @@
 dotnet publish src/MouseDock/MouseDock.csproj `
   -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:IncludeAllContentForSelfExtract=true `
   -p:DebugType=none -p:EnableCompressionInSingleFile=true `
-  -o app
+  -o dist
 ```
 
-产物：`app\MouseDock.exe`（单文件、自包含，目标机无需安装 .NET）。
+产物：`dist\MouseDock.exe`（单文件、自包含，目标机无需安装 .NET）。
 
 ## 校验
 
@@ -39,7 +38,7 @@ pwsh -NoProfile -File tests/feedback-report-regression.ps1
 该程序直接测试产品的解析器与合并逻辑，不枚举或读写硬件。覆盖 MHUB v2 请求、可选校验、接收器/本体 PID、无效帧、0% 电量、Legacy 兼容、充电状态和原生结构大小。它不能代替目标设备实测。
 
 ```powershell
-Get-FileHash app\MouseDock.exe -Algorithm SHA256
+Get-FileHash dist\MouseDock.exe -Algorithm SHA256
 ```
 
 把结果贴到 Release 说明里，用户下载后可自行比对。
@@ -47,7 +46,7 @@ Get-FileHash app\MouseDock.exe -Algorithm SHA256
 ## 可复现性说明
 
 本程序**不混淆、不加壳、不裁剪元数据**，IL 可被 dnSpy / ILSpy 直接读取。
-相同 SDK 版本下重复构建，`app\MouseDock.exe` 的 IL 部分应当一致；单文件打包的时间戳会导致整体哈希略有差异，
+相同 SDK 版本下重复构建，`dist\MouseDock.exe` 的 IL 部分应当一致；单文件打包的时间戳会导致整体哈希略有差异，
 因此校验以 **Release 页公示的哈希** 为准。
 
 ## 目录
