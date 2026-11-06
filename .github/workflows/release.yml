@@ -39,17 +39,25 @@ jobs:
       #   if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
       #   run: Copy-Item signed\MouseDock.exe app\MouseDock.exe -Force
 
-      - name: Hash
+      - name: Package and hash
+        shell: pwsh
         run: |
-          $h = (Get-FileHash app\MouseDock.exe -Algorithm SHA256).Hash
-          "SHA256: $h" | Out-File -Encoding utf8 app\SHA256.txt
+          Copy-Item docs/DEVICE-SUPPORT-1.1.1.md,docs/DEVICE-CATALOGUE-1.1.1.csv,docs/SUPPORT-AUDIT-20261106.md app/
+          $package = "MouseDock-${{ github.ref_name }}-win-x64.zip"
+          Compress-Archive -Path app/* -DestinationPath $package
+          $digest = (Get-FileHash $package -Algorithm SHA256).Hash.ToLower()
+          "$digest  $package" | Out-File -Encoding utf8 SHA256.txt
+          $manifest = @{ tag_name="${{ github.ref_name }}"; draft=$false; prerelease=$false; assets=@(@{name=$package; browser_download_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$package";size=(Get-Item $package).Length;digest="sha256:$digest"}) }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath update.json -Encoding utf8
+
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/MouseDock.exe
-            app/SHA256.txt
-          generate_release_notes: true
+            MouseDock-${{ github.ref_name }}-win-x64.zip
+            SHA256.txt
+            update.json
+          generate_release_notes: false
           body: |
             > 未签名的构建会让 SmartScreen 显示「未知发布者」。校验方法见 SHA256.txt。

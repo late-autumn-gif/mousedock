@@ -9,9 +9,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>MouseDock</AssemblyName>
     <RootNamespace>MouseDock</RootNamespace>
-    <Version>1.4.3</Version>
-    <FileVersion>1.4.3.0</FileVersion>
-    <AssemblyVersion>1.4.3.0</AssemblyVersion>
+    <Version>1.1.1</Version>
+    <FileVersion>1.1.1.0</FileVersion>
+    <AssemblyVersion>1.1.1.0</AssemblyVersion>
     <Company>MouseDock</Company>
     <Product>MouseDock</Product>
     <Description>MouseDock Windows application</Description>
@@ -26,6 +26,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <EmbeddedResource Include="../../THIRD-PARTY-NOTICES.md" LogicalName="MouseDock.ThirdPartyNotices.md" />
+    <Content Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md"
+      CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Resource Include="Assets\Characters\Rikka.jpg;Assets\Characters\Roxy.jpg" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
     <Content Include="Assets\*.ico">

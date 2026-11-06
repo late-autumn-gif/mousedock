@@ -1,4 +1,4 @@
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services.Detection;
 
 internal static class OfficialIntegrationRegression
@@ -16,7 +16,7 @@ internal static class OfficialIntegrationRegression
         var generic = new HidDiscovery.Bucket { Vid=0x320F, Pid=0x5088, Product="Wireless Gaming Keyboard", Kind=DeviceKind.Keyboard };
         Check(!generic.ToDevice().Name.Contains("Rainy"), "A shared PID cannot establish Rainy identity without a compatible reply");
         var rainy = new HidDiscovery.Bucket { Vid=0x320F, Pid=0x5088, Product="Wireless Gaming Keyboard", Kind=DeviceKind.Keyboard, RainyIdentified=true };
-        Check(rainy.ToDevice().Name.Contains("Rainy") && rainy.ToDevice().Transport=="2.4G", "A compatible Rainy reply names the shared 2.4G keyboard");
+        Check(!rainy.ToDevice().Name.Contains("Rainy") && rainy.ToDevice().ConfirmedModel=="", "Shared battery replies alone cannot name Rainy75");
         foreach (var (vid,pid,product,transport) in new[]{
             ((ushort)0x320F,(ushort)0x5055,"ATK V75X","有线"),
             ((ushort)0x320F,(ushort)0x5088,"ATK V75X 2.4G Dongle","2.4G")})
@@ -40,18 +40,21 @@ internal static class OfficialIntegrationRegression
         Check(v9.ToDevice().Kind == DeviceKind.Headset && v9.ToDevice().Name.Contains("V9 Pro"), "V9 keeps its headset identity");
         var request=VendorProtocol.BuildCloud3SRequest(62,VendorProtocol.Cloud3SBatteryCommand);
         var response=(byte[])request.Clone(); response[6]=50;
-        Check(VendorProtocol.TryParseCloud3SBattery(response,request,out int pct,out bool charge) && pct==50 && !charge,
-            "HyperX battery response cannot invent charging from adjacent data");
+        Check(!VendorProtocol.TryParseCloud3SBattery(response,request,out int pct,out bool charge) && pct==-1 && !charge,
+            "Unverified HyperX wire layout cannot produce battery");
         response[5]=0x48;
         Check(!VendorProtocol.TryParseCloud3SBattery(response,request,out _,out _), "HyperX 0x48 game-chat setting is not a battery reply");
         var cloud3=new byte[62];cloud3[0]=0x66;cloud3[1]=0x89;cloud3[2]=1;cloud3[4]=80;
-        Check(VendorProtocol.TryParseCloud3Battery(cloud3,out pct) && pct==80, "Cloud III has a separate wire protocol");
+        Check(!VendorProtocol.TryParseCloud3Battery(cloud3,out pct) && pct==-1, "Cloud III legacy wire offset is not validated by III S evidence");
         Check(!VendorProtocol.TryParseCloud3SBattery(cloud3,request,out _,out _), "Cloud III cannot be decoded as III S");
         var battery=new byte[20];battery[0]=0x11;battery[4]=77;
         Check(LogitechHidpp.TryParseBattery(0x1000,battery,out pct,out _) && pct==77, "HID++1000 is battery percentage");
         battery[4]=0x10;battery[5]=0x5A;
         Check(!LogitechHidpp.TryParseBattery(0x1000,new byte[3],out _,out _), "HID++ truncated replies rejected");
-        Check(!LogitechHidpp.TryParseBattery(0x1001,battery,out _,out _), "A generic receiver cannot borrow the GPW curve");
+        Check(LogitechHidpp.TryParseBattery(0x1001,battery,out pct,out _) && pct==100,
+            "0x1001 is documented as voltage; a plausible mV reading is usable before 0x0005 name confirmation");
+        battery[4]=0x01;battery[5]=0x00;
+        Check(!LogitechHidpp.TryParseBattery(0x1001,battery,out _,out _), "0x1001 outside the voltage range cannot borrow the GPW curve");
         battery[4]=0x0E;battery[5]=0xD8;battery[6]=0;
         Check(LogitechHidpp.TryParseBattery(0x1001,battery,out pct,out _,true) && pct==47, "GPW uses big endian 3800mV and official energy model");
         battery[4]=0x10;battery[5]=0x16;battery[6]=0x80;

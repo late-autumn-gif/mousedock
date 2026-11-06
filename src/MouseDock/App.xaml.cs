@@ -34,11 +34,12 @@ namespace MouseDock
         public static TaskbarWindow Taskbar { get; private set; }
         public static ScreenEdgeWindow Edge { get; private set; }
         public static SettingsWindow SettingsView { get; private set; }
+        public static HeadsetAudioWindow HeadsetView { get; private set; }
 
         public static List<string> CharacterAssets { get; } = new List<string>();
         public static string DefaultPhotoAsset { get; private set; }
         public static string DefaultBackgroundAsset { get; private set; }
-        public static bool StartHidden { get; private set; }
+        public static bool QuietStartup { get; private set; }
 
         public static DeviceInfo PrimaryDevice =>
             Battery?.VisibleDevices.FirstOrDefault();
@@ -84,7 +85,7 @@ namespace MouseDock
                         if (!_showSignal.WaitOne(TimeSpan.FromSeconds(5))) continue;
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            ShowCurrentSurface();
+                            ShowLaunchSurface();
                         }));
                     }
                     catch { }
@@ -92,7 +93,8 @@ namespace MouseDock
             })
             { IsBackground = true, Name = "MouseDock.Wake" };
             wakeThread.Start();
-            StartHidden = e.Args.Contains("--tray");
+            // Keep existing startup entries: --tray skips launch settings, not battery surfaces.
+            QuietStartup = e.Args.Contains("--tray");
             if (Settings.Version < 4)
             {
                 // 老配置默认是演示数据；升级到自动检测真实设备
@@ -119,6 +121,8 @@ namespace MouseDock
                 Settings.Version = 6;
                 SettingsStore.Save(Settings);
             }
+            // Renumbered builds had previously disabled update checks.
+            if (SettingsStore.RestoreStartupUpdates(Settings)) SettingsStore.Save(Settings);
             ResolveAssets();
 
             Theme = Palette.ResolveTheme(Settings, out var extracted);
@@ -225,6 +229,8 @@ namespace MouseDock
 
             if (e.Args.Contains("--settings"))
                 ShowSettings(Dock);
+            else if (!QuietStartup)
+                ShowLaunchSurface();
         }
 
         private static void ResolveAssets()
@@ -260,12 +266,10 @@ namespace MouseDock
             ApplyAllStyles();
             ApplyWindowBehavior();
 
-            SyncSurfaceFlags();
-            if (Settings.ShowDock && !StartHidden) Dock.Show();
-            if (Settings.ShowMini && !StartHidden) Mini.Show();
-            if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
-            if (Settings.SurfaceMode == "taskbar" && !StartHidden) Taskbar.Show();
-            if (Settings.SurfaceMode == "edge" && !StartHidden) Edge.Show();
+            if (QuietStartup)
+                foreach (var window in new Window[] { Dock, Mini, Icon, Taskbar, Edge })
+                    window.ShowActivated = false;
+            ApplySurface();
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -359,6 +363,7 @@ namespace MouseDock
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
             menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("退出 MouseDock", null, (_, __) => ExitApp());
@@ -592,6 +597,15 @@ namespace MouseDock
             else ShowCurrentSurface();
         }
 
+        // An explicit launch must expose a usable window even with an empty,
+        // transparent taskbar/edge surface or stale device selection.
+        public static void ShowLaunchSurface()
+        {
+            ShowCurrentSurface();
+            if (Settings.SurfaceMode is "taskbar" or "edge" || Battery?.VisibleDevices.Count == 0)
+                ShowSettings(Dock);
+        }
+
         public static void ShowCurrentSurface()
         {
             ApplySurface();
@@ -638,6 +652,14 @@ namespace MouseDock
         {
             if (Icon == null) return;
             SetSurface("icon");
+        }
+
+        public static void ShowHeadsets()
+        {
+            HeadsetView ??= new HeadsetAudioWindow();
+            HeadsetView.ApplyTheme(Theme);
+            HeadsetView.Show();
+            HeadsetView.Activate();
         }
 
         public static void ShowSettings(Window owner)
@@ -706,6 +728,7 @@ namespace MouseDock
                 }));
             }
             menu.Items.Add(new Separator());
+            menu.Items.Add(Item("耳机控制…", ShowHeadsets));
             menu.Items.Add(Item("设置…", () => ShowSettings(owner)));
             menu.Items.Add(Item("退出", ExitApp));
 
@@ -733,6 +756,7 @@ namespace MouseDock
 
         public static void ApplyTheme(bool animate)
         {
+            HeadsetView?.ApplyTheme(Theme);
             Dock?.ApplyTheme(Theme, animate);
             Mini?.ApplyTheme(Theme, animate);
             Icon?.ApplyTheme(Theme, animate);
@@ -1188,6 +1212,7 @@ namespace MouseDock
 
         private Window _updateWin;
         private System.Windows.Controls.ProgressBar _updateBar;
+        private System.Windows.Controls.TextBlock _updateStatus;
 
         /// <summary>
         /// 启动后延迟检查更新。断网 / 超时 / 用户关掉开关都静默跳过。
@@ -1205,11 +1230,9 @@ namespace MouseDock
 
                 bool go = Dispatcher.Invoke(() =>
                 {
-                    var msg = "发现新版本 " + info.Version + "（当前 " + Services.UpdateService.CurrentVersionText + "）\n\n" +
-                              "安装包：" + info.AssetName + "（" + (info.AssetSize / 1024 / 1024) + " MB）\n\n" +
-                              "现在下载并安装吗？安装时程序会自动重启。";
-                    return MessageBox.Show(msg, "MouseDock 更新",
-                        MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK;
+                    var prompt=new UpdateAvailableWindow(info);
+                    prompt.ShowDialog();
+                    return prompt.DownloadRequested;
                 });
 
                 if (!go) return;
@@ -1220,7 +1243,11 @@ namespace MouseDock
                     try { Dispatcher.Invoke(() => UpdateProgressBar(p)); } catch { }
                 });
 
-                bool ok = await Services.UpdateService.DownloadAndApplyAsync(info, progress);
+                var status=new Progress<string>(text=>
+                {
+                    Dispatcher.BeginInvoke(new Action(()=>{if(_updateStatus!=null)_updateStatus.Text=text;}));
+                });
+                bool ok = await Services.UpdateService.DownloadAndApplyAsync(info, progress, status:status);
 
                 Dispatcher.Invoke(() =>
                 {
@@ -1253,9 +1280,9 @@ namespace MouseDock
                     Height = 8, Margin = new Thickness(24, 16, 24, 8)
                 };
 
-                var text = new System.Windows.Controls.TextBlock
+                var text = _updateStatus = new System.Windows.Controls.TextBlock
                 {
-                    Text = "正在下载更新…",
+                    Text = "正在连接GitHub…",
                     Margin = new Thickness(24, 20, 24, 0),
                     FontSize = 13
                 };
@@ -1291,6 +1318,7 @@ namespace MouseDock
             try { _updateWin?.Close(); } catch { }
             _updateWin = null;
             _updateBar = null;
+            _updateStatus = null;
         }
 
 

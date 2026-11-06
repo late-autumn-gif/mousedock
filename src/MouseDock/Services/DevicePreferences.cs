@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 using MouseDock.Models;
 
 namespace MouseDock.Services
@@ -45,6 +46,45 @@ namespace MouseDock.Services
                 (!_settings.DeviceSelectionInitialized || _settings.SelectedDeviceIds.Any(id => keys.Contains(id, StringComparer.OrdinalIgnoreCase)));
         }
 
+        internal bool MigrateLegacyIds(IEnumerable<DeviceInfo> devices)
+        {
+            bool changed = false;
+            lock (_gate)
+            {
+                foreach (var group in devices.Where(d => d.Connected)
+                    .GroupBy(LegacyId, StringComparer.OrdinalIgnoreCase).Where(g => g.Key != null))
+                {
+                    var ids = group.Select(d => d.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                    foreach (var choices in new[] { _settings.SelectedDeviceIds, _settings.HiddenDeviceIds, _settings.DisabledRecognitionDeviceIds })
+                    {
+                        // Never guess a display selection; exclusions must stay effective and individually reversible.
+                        if (ids.Length != 1 && ReferenceEquals(choices, _settings.SelectedDeviceIds)) continue;
+                        if (choices.RemoveAll(id => string.Equals(id, group.Key, StringComparison.OrdinalIgnoreCase)) == 0) continue;
+                        foreach (string id in ids)
+                            if (!choices.Contains(id, StringComparer.OrdinalIgnoreCase)) choices.Add(id);
+                        changed = true;
+                    }
+                }
+                if (changed)
+                {
+                    _disabled = Set(_settings.DisabledRecognitionDeviceIds);
+                    _generation++;
+                }
+            }
+            return changed;
+        }
+
+        private static string LegacyId(DeviceInfo device)
+        {
+            if (!device.Id.StartsWith("instance-", StringComparison.OrdinalIgnoreCase)) return null;
+            var parts = (device.Detail ?? "").Split(':');
+            if (parts.Length != 2 || parts[0].Length != 4 || parts[1].Length != 4 ||
+                !ushort.TryParse(parts[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort vid) ||
+                !ushort.TryParse(parts[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort pid))
+                return null;
+            return $"hid-{vid:X4}-{pid:X4}";
+        }
+
         public void CaptureSelection(IEnumerable<DeviceInfo> devices)
         {
             var selected = Set(_settings.SelectedDeviceIds);
@@ -52,6 +92,8 @@ namespace MouseDock.Services
             {
                 string[] keys = Keys(device);
                 selected.ExceptWith(keys);
+                string legacy = LegacyId(device);
+                if (legacy != null) selected.Remove(legacy);
                 if (device.Selected) selected.UnionWith(keys);
             }
             _settings.SelectedDeviceIds = selected.ToList();

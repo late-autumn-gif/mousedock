@@ -58,7 +58,7 @@ namespace MouseDock.Services.Detection
         // eS.getBatteryInfo, eS.addListeners, V.hid_write. G7 and G7 Pro share this driver.
         // Wireless receivers live under 0x3837; the wired body is 0xA8A4.
         internal static bool IsMchoseG7(ushort vid, ushort pid, string product) =>
-            (vid == 0x3837 || vid == 0xA8A4) &&
+            ((vid == 0x3837 && pid is 0x1014 or 0x1018) || (vid == 0xA8A4 && pid == 0x2255)) &&
             (string.Equals(product?.Trim(), "MCHOSE G7", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(product?.Trim(), "MCHOSE G7 Pro", StringComparison.OrdinalIgnoreCase));
 

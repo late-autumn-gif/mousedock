@@ -8,7 +8,8 @@ namespace MouseDock.Services
 {
     public static class SettingsStore
     {
-        public static string Dir => Path.Combine(
+        internal static string TestDirectory { get; set; }
+        public static string Dir => TestDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock");
 
         public static string FilePath => Path.Combine(Dir, "settings.json");
@@ -39,6 +40,14 @@ namespace MouseDock.Services
             }
             catch { /* 配置损坏时回落到默认值 */ }
             return new AppSettings();
+        }
+
+        internal static bool RestoreStartupUpdates(AppSettings settings)
+        {
+            if (settings.Version >= 7) return false;
+            settings.AutoUpdate = true;
+            settings.Version = 7;
+            return true;
         }
 
         public static void Save(AppSettings settings)

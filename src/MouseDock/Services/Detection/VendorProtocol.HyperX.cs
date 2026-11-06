@@ -9,9 +9,9 @@ namespace MouseDock.Services.Detection
         // 0x06 = COMPARE_PARTITION_STORAGE (FOTA) and 0x48 = GET_GAME_CHAT_BALANCE_SETTINGS.
         // The hub's hand-built 0C 02 03 01 00 06 frame belongs to the FOTA constructor group,
         // not to the battery API; the Airoha DLL itself emits 0x1D.
-        // Response layout below reply[6] is not recovered; do not invent a charge flag.
+        // Wire-level percentage/charging offsets are not recovered; old parsers stay retired.
         internal const byte Cloud3SBatteryCommand = 0x1D;
-        internal const byte Cloud3SDeviceInfoCommand = 0x02; // wireless link status
+        internal const byte Cloud3SDeviceInfoCommand = 0x02; // Legacy research opcode, not validated link status
 
         internal static bool IsHyperXHeadset(ushort vid, ushort pid) => vid == 0x03F0 &&
             pid is 0x06BE or 0x02CC or 0x05B7 or 0x0C9D or 0x0FCC or 0x069F or 0x018B or 0x08BE or 0x0AC1;
@@ -31,9 +31,10 @@ namespace MouseDock.Services.Detection
             out int level, out bool charging)
         {
             level = -1; charging = false;
-            if (!IsCloud3SReply(reply, request, Cloud3SBatteryCommand) || reply[6] > 100) return false;
-            level = reply[6];
-            return true; // charging is a separate 48 query, never reply[7].
+            // Retired speculative wire offset. The official enum proves command1D,
+            // but not that this envelope's byte6 is a percentage. Synthetic replies
+            // are not hardware evidence; audio-only policy must not resurrect it.
+            return false;
         }
 
         private static bool IsCloud3SReply(ReadOnlySpan<byte> reply, ReadOnlySpan<byte> request, byte command) =>
@@ -42,20 +43,18 @@ namespace MouseDock.Services.Detection
             reply[5] == command && reply[6] != 0xFF && !reply.SequenceEqual(request);
 
         internal static bool TryParseCloud3SDeviceInfo(ReadOnlySpan<byte> reply, ReadOnlySpan<byte> request) =>
-            IsCloud3SReply(reply, request, Cloud3SDeviceInfoCommand) && reply[6] == 2;
+            false; // No verified wire-level online mapping for this old research frame.
 
         internal static bool TryParseCloud3Battery(ReadOnlySpan<byte> reply, out int level)
         {
             level = -1;
-            if (reply.Length < 5 || reply[0] != 0x66 || reply[1] is not (0x89 or 0x0D) ||
-                (reply[2] == 0 && reply[3] == 0) || reply[4] > 100) return false;
-            level = reply[4];
-            return true;
+            return false; // Separate legacy protocol, not revalidated by Cloud3S DLL evidence.
         }
 
         internal static int TryReadCloud3S(ushort vid, ushort pid, out bool charging)
         {
             charging = false;
+            if (!RecognitionPolicy.CanQuery(vid,pid,null)) return -1;
             bool cloudS = IsCloud3S(vid, pid);
             if (!cloudS && !IsCloud3Wireless(vid, pid)) return -1;
             foreach (string path in Paths(vid, pid))

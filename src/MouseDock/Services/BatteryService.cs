@@ -404,6 +404,7 @@ namespace MouseDock.Services
                     foreach (string id in reset) Detection.HidDiscovery.InvalidateDeviceHints(id);
                     return source.Read()?.Select(d => new DeviceInfo
                     {
+                        RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note,
                         Connected = d.Connected, Level = d.Level, Charging = d.Charging,
@@ -417,6 +418,7 @@ namespace MouseDock.Services
             if (generation != _preferences.Generation) { _refreshRequested = true; return; }
             if (snapshot == null) return;
 
+            bool migratedPreferences = _preferences.MigrateLegacyIds(snapshot);
             foreach (var incoming in snapshot)
             {
                 _preferences.Apply(incoming);
@@ -484,6 +486,8 @@ namespace MouseDock.Services
                     existing.Detail = incoming.Detail;
                     existing.Note = incoming.Note;
                     existing.IsStale = incoming.IsStale;
+                    existing.RawName = incoming.RawName; existing.ConfirmedModel = incoming.ConfirmedModel;
+                    existing.InterfaceDiscovered = incoming.InterfaceDiscovered; existing.ReceiverDiscovered = incoming.ReceiverDiscovered; existing.PeripheralConfirmed = incoming.PeripheralConfirmed;
                     existing.DetectionIds = incoming.DetectionIds;
                     ApplyPreferences(existing);
                 }
@@ -510,6 +514,7 @@ namespace MouseDock.Services
             if (_timer.Interval != target) _timer.Interval = target;
 
             RefreshVisible();
+            if (migratedPreferences) PreferencesChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void ApplyPreferences(DeviceInfo device)

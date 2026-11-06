@@ -8,5 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MouseDock/MouseDock.csproj" />
+    <Content Include="Fixtures/reference-1.0.2-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures/x23se-freq-oracle.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -7,12 +7,29 @@ internal static class HidAuditChecks
     private static readonly Type Discovery = typeof(AppSettings).Assembly.GetType(
         "MouseDock.Services.Detection.HidDiscovery")!;
     private static readonly Type Bucket = Discovery.GetNestedType("Bucket", BindingFlags.NonPublic)!;
-    private static readonly List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> Logi =
-        [("usb#vid_046d&pid_c53f&mi_01", 0x046D, 0xC53F, 0xFF00, "USB Receiver")];
+
+    /// <summary>厂商集合的反射版：1.4.4 起带报文长度，罗技探针按长度挑通道。</summary>
+    private readonly record struct CollectionSpec(string Path, ushort Vid, ushort Pid, ushort UsagePage,
+        string Product, ushort Input = 20, ushort Output = 20, ushort Feature = 0);
+
+    private static readonly CollectionSpec[] Logi =
+        [new("usb#vid_046d&pid_c53f&mi_01", 0x046D, 0xC53F, 0xFF00, "USB Receiver")];
 
     private static void Require(bool condition, string message)
     {
         if (!condition) throw new Exception(message);
+    }
+
+    private static object MakeCollection(CollectionSpec spec)
+    {
+        var type = Discovery.GetNestedType("VendorCollectionInfo", BindingFlags.NonPublic)!;
+        var collection = Activator.CreateInstance(type)!;
+        foreach (var (field, value) in new (string, object)[]
+        {
+            ("Path", spec.Path), ("Vid", spec.Vid), ("Pid", spec.Pid), ("UsagePage", spec.UsagePage),
+            ("Input", spec.Input), ("Output", spec.Output), ("Feature", spec.Feature), ("Product", spec.Product)
+        }) type.GetField(field)!.SetValue(collection, value);
+        return collection;
     }
 
     private static object MakeBucket(ushort vid, ushort pid, string name = "Wireless Keyboard", int level = -1)
@@ -30,9 +47,8 @@ internal static class HidAuditChecks
     private static T Value<T>(object device, string name) =>
         (T)device.GetType().GetProperty(name)!.GetValue(device)!;
 
-    private static void Query(object[] buckets,
-        List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> collections,
-        Func<string, (int Battery, string Name, bool Charging)> probe,
+    private static void Query(object[] buckets, CollectionSpec[] collections,
+        Func<string, (int Battery, string Name, bool Charging, string Diagnostic)> probe,
         Func<string, ushort, ushort, int> read, bool safeMode = false)
     {
         var method = Discovery.GetMethod("QueryVendorCollections", BindingFlags.Static | BindingFlags.NonPublic);
@@ -44,7 +60,10 @@ internal static class HidAuditChecks
             var pid = (ushort)Bucket.GetField("Pid")!.GetValue(bucket)!;
             map.Add($"{vid:X4}:{pid:X4}", bucket);
         }
-        method!.Invoke(null, [map, collections, safeMode, probe, read]);
+        var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(
+            Discovery.GetNestedType("VendorCollectionInfo", BindingFlags.NonPublic)!))!;
+        foreach (var spec in collections) list.Add(MakeCollection(spec));
+        method!.Invoke(null, [map, list, safeMode, probe, read]);
     }
 
     private static void WithCleanHints(Action action)
@@ -64,11 +83,11 @@ internal static class HidAuditChecks
     public static void LogitechRefresh() => WithCleanHints(() =>
     {
         var first = MakeBucket(0x046D, 0xC53F);
-        Query([first], Logi, _ => (75, "G304", true), (_, _, _) => -1);
+        Query([first], Logi, _ => (75, "G304", true, ""), (_, _, _) => -1);
         Require(Value<int>(Device(first), "Level") == 75 && Value<bool>(Device(first), "Charging"),
             "First HID++ sample was not published.");
         var second = MakeBucket(0x046D, 0xC53F);
-        Query([second], Logi, _ => (12, "G304", false), (_, _, _) => -1);
+        Query([second], Logi, _ => (12, "G304", false, ""), (_, _, _) => -1);
         var current = Device(second);
         Require(Value<int>(current, "Level") == 12, "A successful first probe froze later battery samples.");
         Require(!Value<bool>(current, "Charging"), "Charging must clear when the current sample says false.");
@@ -76,9 +95,9 @@ internal static class HidAuditChecks
 
     public static void LogitechFailure() => WithCleanHints(() =>
     {
-        Query([MakeBucket(0x046D, 0xC53F)], Logi, _ => (75, "G304", true), (_, _, _) => -1);
+        Query([MakeBucket(0x046D, 0xC53F)], Logi, _ => (75, "G304", true, ""), (_, _, _) => -1);
         var failed = MakeBucket(0x046D, 0xC53F);
-        Query([failed], Logi, _ => (-1, null!, false), (_, _, _) => -1);
+        Query([failed], Logi, _ => (-1, null!, false, ""), (_, _, _) => -1);
         var current = Device(failed);
         Require(Value<string>(current, "Name") == "G304", "A transient read failure lost learned identity.");
         Require(Value<int>(current, "Level") == -1, "Old battery was mislabeled as a fresh sample.");
@@ -87,7 +106,7 @@ internal static class HidAuditChecks
         Query([missing], [], _ => throw new Exception("No interface should be queried."), (_, _, _) => -1);
         Require(Value<int>(Device(missing), "Level") == -1, "A missing vendor interface revived stale battery.");
         var invalid = MakeBucket(0x046D, 0xC53F);
-        Query([invalid], Logi, _ => (101, null!, true), (_, _, _) => -1);
+        Query([invalid], Logi, _ => (101, null!, true, ""), (_, _, _) => -1);
         Require(Value<int>(Device(invalid), "Level") == -1 && !Value<bool>(Device(invalid), "Charging"),
             "An invalid reading published battery or charging.");
     });
@@ -99,18 +118,18 @@ internal static class HidAuditChecks
         Query([bucket], [Logi[0], Logi[0]], _ =>
         {
             probes++;
-            return (12, "G304", false);
+            return (12, "G304", false, "");
         }, (_, _, _) => -1);
         Require(probes == 1, "The same HID++ interface was probed repeatedly in one scan.");
         Require(Value<int>(Device(bucket), "Level") == 41, "HID++ overrode an existing generic reading.");
         var fresh = MakeBucket(0x046D, 0xC53F);
-        Query([fresh], Logi, _ => { probes++; return (0, "G304", false); }, (_, _, _) => -1);
+        Query([fresh], Logi, _ => { probes++; return (0, "G304", false, ""); }, (_, _, _) => -1);
         Require(probes == 2 && Value<int>(Device(fresh), "Level") == 0,
             "Each scan must refresh and preserve a measured zero.");
         var fallback = MakeBucket(0x046D, 0xC53F);
         Query([fallback], [Logi[0],
-                ("usb#vid_046d&pid_c53f&mi_02", 0x046D, 0xC53F, 0xFF00, "USB Receiver")],
-            path => path.EndsWith("mi_01") ? (-1, null!, false) : (28, "G304", false), (_, _, _) => -1);
+                new CollectionSpec("usb#vid_046d&pid_c53f&mi_02", 0x046D, 0xC53F, 0xFF00, "USB Receiver")],
+            path => path.EndsWith("mi_01") ? (-1, null!, false, "") : (28, "G304", false, ""), (_, _, _) => -1);
         Require(Value<int>(Device(fallback), "Level") == 28,
             "An unusable first interface blocked another usable HID++ interface.");
     });
@@ -124,7 +143,7 @@ internal static class HidAuditChecks
         })
         {
             var bucket = MakeBucket(vid, pid, name);
-            var item = ($"usb#vid_{vid:x4}&pid_{pid:x4}&mi_01", vid, pid, (ushort)0xFF00, name);
+            var item = new CollectionSpec($"usb#vid_{vid:x4}&pid_{pid:x4}&mi_01", vid, pid, 0xFF00, name);
             int reads = 0;
             Query([bucket], [item, item], _ => throw new Exception("Wrong protocol."),
                 (selected, actualVid, actualPid) =>
@@ -158,16 +177,16 @@ internal static class HidAuditChecks
         {
             var bucket = MakeBucket(vid, pid, product, level);
             int calls = 0;
-            Query(hasBucket ? [bucket] : [], [(path, vid, pid, 0xFF00, product)],
-                _ => { calls++; return (92, "Unexpected", false); },
+            Query(hasBucket ? [bucket] : [], [new CollectionSpec(path, vid, pid, 0xFF00, product)],
+                _ => { calls++; return (92, "Unexpected", false, ""); },
                 (_, _, _) => { calls++; return 92; }, safe);
             Require(calls == 0, "Unsafe or redundant vendor query reached the hardware boundary.");
             Require(Value<int>(Device(bucket), "Level") == level, "Rejected query altered the battery.");
         }
         var wired = MakeBucket(0x9999, 1, "USB Keyboard");
         ((HashSet<string>)Bucket.GetField("Interfaces")!.GetValue(wired)!).Add("mi_00");
-        Query([wired], [("usb#vid_9999&pid_0001&mi_01", 0x9999, 1, 0xFF00, "USB Keyboard")],
-            _ => (-1, null!, false), (_, _, _) => -1);
+        Query([wired], [new CollectionSpec("usb#vid_9999&pid_0001&mi_01", 0x9999, 1, 0xFF00, "USB Keyboard")],
+            _ => (-1, null!, false, ""), (_, _, _) => -1);
         Require(Value<string>(Device(wired), "Transport") == "\u6709\u7ebf",
             "Vendor query metadata changed a wired device into a wireless receiver.");
     }

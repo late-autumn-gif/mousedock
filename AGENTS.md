@@ -31,6 +31,8 @@
   single file, including native libraries and content for extraction.
 - 2026-11-05 按用户要求接入上游 `main` 的 v1.4.3 源码。
   后续功能按用户要求开发，不继续 IN9 Pro 适配，除非用户明确要求。
+- 2026-11-06 同步上游 `84b40b8`，上游已将版本重新编号为 v1.1.1；
+  `--tray` 自启时显示保存的电量面板，仅跳过主动启动的设置窗口。
 - 运行适用的 `tests/MouseDock.Checks`、`tests/MouseDock.ProtocolTests` 和
   `tests/feedback-report-regression.ps1`，验证记录留在本地，
   并明确区分离线检查与设备实测。

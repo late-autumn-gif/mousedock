@@ -77,11 +77,19 @@ namespace MouseDock.Services
             var taskbar = FindWindow("Shell_TrayWnd", null);
             if (taskbar == IntPtr.Zero) return false;
             var data = new AppBarData { Size = (uint)Marshal.SizeOf<AppBarData>(), Window = taskbar };
-            if (SHAppBarMessage(5, ref data) == UIntPtr.Zero) return false; // ABM_GETTASKBARPOS
             if (!GetWindowRect(taskbar, out var actual)) return false;
             // Use the live parent origin, including its auto-hide animation position.
             bounds = Convert(actual);
-            edge = data.Edge;
+            if (SHAppBarMessage(5, ref data) != UIntPtr.Zero) // ABM_GETTASKBARPOS
+                edge = data.Edge;
+            else
+            {
+                // Explorer may expose its window before the appbar service is ready.
+                var screen = System.Windows.Forms.Screen.FromHandle(taskbar).Bounds;
+                edge = bounds.Width >= bounds.Height
+                    ? (Math.Abs(bounds.Top - screen.Top) < Math.Abs(bounds.Bottom - screen.Bottom) ? 1u : 3u)
+                    : (Math.Abs(bounds.Left - screen.Left) < Math.Abs(bounds.Right - screen.Right) ? 0u : 2u);
+            }
             dpi = Math.Max(96, GetDpiForWindow(taskbar)) / 96.0;
             return bounds.Width > 0 && bounds.Height > 0;
         }

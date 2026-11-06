@@ -20,6 +20,8 @@ namespace MouseDock.Models
         public bool HasDeviceSelection { get; set; }
         public List<string> HiddenDeviceIds { get; set; } = new List<string>();
         public List<string> DisabledRecognitionDeviceIds { get; set; } = new List<string>();
+        public string HeadsetOutputId { get; set; } = "";
+        public Dictionary<string, string> HeadsetMicrophoneBindings { get; set; } = new();
 
         // 悬浮图标形态：mini | character | photo
         public string IconMode { get; set; } = "photo";
@@ -72,7 +74,9 @@ namespace MouseDock.Models
         public double EdgeInset { get; set; } = 12;
 
         /// <summary>悬浮图标样式：photo（照片）/ tile（圆角方块）/ ring（环形刻度）/ pill（横向胶囊）/ battery（经典电池）。</summary>
-        public string IconStyle { get; set; } = "photo";
+        public string IconStyle { get; set; } = "ring";
+        public bool IconFollowTheme { get; set; }
+        public bool IconHideBackground { get; set; }
 
         /// <summary>悬浮图标外形：soft（圆角）/ circle（圆形）/ square（方角）/ pill（横向胶囊）。</summary>
         public string IconShape { get; set; } = "soft";
@@ -141,6 +145,7 @@ namespace MouseDock.Models
                 EdgeVerticalPosition = EdgeVerticalPosition,
                 EdgeInset = EdgeInset,
                 IconStyle = IconStyle,
+                IconFollowTheme=IconFollowTheme, IconHideBackground=IconHideBackground,
                 IconShape = IconShape,
                 DockBackground = DockBackground,
                 MiniBackground = MiniBackground,

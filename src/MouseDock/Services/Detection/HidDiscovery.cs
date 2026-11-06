@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -8,10 +8,10 @@ using MouseDock.Models;
 namespace MouseDock.Services.Detection
 {
     /// <summary>
-    /// SetupAPI + hid.dll 枚举「正在运行」的 HID 顶层集合，按 VID/PID 归并成一台设备，
+    /// SetupAPI + hid.dll 枚举「正在运行」的 HID 顶层集合，按物理实例归并成一台设备，
     /// 尝试标准电池用法（UsagePage 0x06 / Usage 0x20）与罗技 HID++，读不到就留 -1。
     /// </summary>
-    public static class HidDiscovery
+    public static partial class HidDiscovery
     {
         private const uint DIGCF_PRESENT = 0x02;
         private const uint DIGCF_DEVICEINTERFACE = 0x10;
@@ -95,8 +95,12 @@ namespace MouseDock.Services.Detection
         public static List<DetectedDevice> Enumerate(DevicePreferences preferences = null)
         {
             LastDiagnostics.Clear();
+            InstanceScope.BeginScan();
+            lock (_logiHints) _logiHints.Clear();
+            int scanStarted = Environment.TickCount;
             var buckets = new Dictionary<string, Bucket>();
-            var vendorCollections = new List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)>();
+            var vendorCollections = new List<VendorCollectionInfo>();
+            var pending = new List<(string Path, List<(string InstanceId, string Service)> Ancestors, bool Integrated)>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
             IntPtr set = IntPtr.Zero;
@@ -125,11 +129,8 @@ namespace MouseDock.Services.Detection
                         if (!IsRunning(set, ref devInfo)) { notRunning++; continue; }
 
                         var ancestors = ReadAncestors(devInfo.DevInst, out bool integratedUsb);
-                        var verdict = TryCollect(path, ancestors, integratedUsb, buckets, preferences,
-                            vendorCollections, out bool wasNoise);
-                        if (verdict) collected++;
-                        else if (wasNoise) noise++;
-                        else kindRejected++;
+                        InstanceScope.Register(path, ancestors);
+                        pending.Add((path, ancestors, integratedUsb));
                     }
                     finally { Marshal.FreeHGlobal(detail); }
                 }
@@ -140,11 +141,24 @@ namespace MouseDock.Services.Detection
                 if (set != IntPtr.Zero && set != new IntPtr(-1)) SetupDiDestroyDeviceInfoList(set);
             }
 
+            foreach (var item in pending)
+            {
+                var verdict = TryCollect(item.Path, item.Ancestors, item.Integrated, buckets, preferences,
+                    vendorCollections, out bool wasNoise);
+                if (verdict) collected++; else if (wasNoise) noise++; else kindRejected++;
+            }
+
             // 专用电量接口不会参与输入类型归并。按归并后的设备读取一次。
             if (!(App.Settings?.SafeMode ?? false))
             {
                 foreach (var bucket in buckets.Values)
                 {
+                    using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
+                    if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product) || ZeroRainyProtocol.Candidate(bucket.Vid,bucket.Pid,bucket.Product)) continue;
                     bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
                     bool atkV75 = VendorProtocol.IsAtkV75X(bucket.Vid, bucket.Pid, bucket.Product);
@@ -156,8 +170,9 @@ namespace MouseDock.Services.Detection
                     bool sc630 = VendorProtocol.IsAulaSc630(bucket.Product);
                     bool f99 = VendorProtocol.IsAulaF99(bucket.Vid, bucket.Pid, bucket.Product);
                     bool weikav = VendorProtocol.IdentifyWeikav(bucket.Vid, bucket.Pid, bucket.Product) != null;
-                    if (bucket.Battery >= 0 || !(inphic || atk || atkV75 || mchoseV9 || mchoseG7 || rapooVt7 || rainy || sc630 || f99 || weikav)) continue;
-                    string id = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                    bool freq = VendorProtocol.IsFreqMouse(bucket.Vid, bucket.Pid, bucket.Product);
+                    if (bucket.Battery >= 0 || !(inphic || atk || atkV75 || mchoseV9 || mchoseG7 || rapooVt7 || rainy || sc630 || f99 || weikav || freq)) continue;
+                    string id = bucket.InstanceId ?? $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
                     if (!(preferences?.CanRead(id, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
 
                     var trace = new List<string>();
@@ -169,7 +184,9 @@ namespace MouseDock.Services.Detection
                         : rainy ? (VendorProtocol.IsRainy75Wired(bucket.Vid, bucket.Pid)
                             ? "Rainy 75 有线电量查询" : "Rainy 75 2.4G 电量查询")
                         : f99 ? "AULA F99 Feature 09 电量查询"
-                        : weikav ? "维咖 DriveAll 设备信息查询" : "英菲克 2.4G 接收器状态上报";
+                        : weikav ? "维咖 DriveAll 设备信息查询"
+                        : freq ? "前行者 FREQ 0x30 电量查询"
+                        : "英菲克 2.4G 接收器状态上报";
                     bucket.Battery = ReadBattery(source, () =>
                     {
                         if (sc630) return VendorProtocol.TryReadAulaSc630(bucket.Vid, bucket.Pid, bucket.Product, out charging);
@@ -181,6 +198,13 @@ namespace MouseDock.Services.Detection
                         if (rainy) return VendorProtocol.TryReadRainy75Wired(bucket.Vid, bucket.Pid, out charging);
                         if (f99) return VendorProtocol.TryReadAulaF99(bucket.Vid, bucket.Pid);
                         if (weikav) return VendorProtocol.TryReadWeikavBattery(bucket.Vid, bucket.Pid, bucket.Product);
+                        if (freq)
+                        {
+                            int level = VendorProtocol.TryReadFreqMouse(bucket.Vid, bucket.Pid, bucket.Product,
+                                out charging, out string freqDiagnostic);
+                            if (!string.IsNullOrEmpty(freqDiagnostic)) trace.Add("前行者 FREQ：" + freqDiagnostic);
+                            return level;
+                        }
                         return VendorProtocol.TryReadInphic(bucket.Vid, bucket.Pid, out charging);
                     }, trace);
                     bucket.Identity = VendorProtocol.IdentityFor(bucket.Vid, bucket.Pid) ?? bucket.Identity;
@@ -203,20 +227,37 @@ namespace MouseDock.Services.Detection
             bool safeMode = false;
             try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
 
+            QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
+                VendorProtocol.ReadReferenceBattery);
+            QueryReportedX23SeCollections(buckets, vendorCollections, safeMode, preferences,
+                VendorProtocol.ReadReportedX23Se);
+            QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
+            QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
+            QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
+            QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
+            QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadOriginalGpw);
+
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
             {
                 var result = LogitechHidpp.Probe(path);
                 if (result.Battery >= 0 && !string.IsNullOrEmpty(result.BatteryNote))
                     foreach (var bucket in buckets.Values)
-                        if (path.IndexOf($"vid_{bucket.Vid:x4}&pid_{bucket.Pid:x4}", StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (bucket.InstanceId == InstanceScope.ForPath(path, ""))
                             bucket.BatterySource = result.BatteryNote;
-                return (result.Battery, result.Name, result.Charging);
+                return (result.Battery, result.Name, result.Charging, result.Diagnostic);
             }, ReadVendorCollection);
 
             // MCHOSE K87 V3：2.4G 键盘的 QHW 电量在独立厂商集合上，按整机身份读一次。
             foreach (var bucket in buckets.Values)
             {
+                using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
+                if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product) || ZeroRainyProtocol.Candidate(bucket.Vid,bucket.Pid,bucket.Product)) continue;
+                if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
                 if (result.Level >= 0)
@@ -228,10 +269,19 @@ namespace MouseDock.Services.Detection
                 LastDiagnostics.Add($"MCHOSE K87 V3 QHW: battery={result.Level}, charging={result.Charging}");
             }
 
+            LastDiagnostics.Add($"扫描完成 用时={Environment.TickCount - scanStarted}ms 设备={buckets.Count}");
+
             return buckets.Values.Select(b =>
             {
                 // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
-                var rk = RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
+                using var instanceScope = InstanceScope.Enter(b.InstanceId);
+                if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
+                if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
+                if (AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
+                if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product) || VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product) || ZeroRainyProtocol.Candidate(b.Vid,b.Pid,b.Product)) return b.ToDevice();
+                var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
+                    ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
+                if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
                 if (rk != null) LastDiagnostics.Add($"RK R98Pro V2: connected={rk.Connected}, battery={rk.Level}");
                 return rk ?? b.ToDevice();
             }).Where(d => d != null).ToList();
@@ -294,6 +344,15 @@ namespace MouseDock.Services.Detection
                 if (id.StartsWith("LGHUBDEVICE\\", StringComparison.Ordinal) ||
                     service == "logi_joy_vir_hid" || service == "logi_joy_bus_enum")
                     return "罗技 G HUB 虚拟输入设备（PnP 证据）";
+                // 同一套虚拟 HID 在别的主机/驱动版本上挂的是 LOGIDEVICE 容器和
+                // LGVirHid / LGBusEnum 服务名（用户反馈 1.4.3 报告里的 C232 就是这种）。
+                // 只认 LGHUBDEVICE 会漏掉它，让一条没有硬件的幽灵占掉面板配额。
+                if (id.StartsWith("LOGIDEVICE\\", StringComparison.Ordinal) ||
+                    service == "lgvirhid" || service == "lgbusenum")
+                    return "罗技 G HUB 虚拟输入设备（PnP 证据）";
+                // 软件创建的 HID 总线（远程/串流工具的 "Virtual Multitouch Device"）。
+                if (service == "gvinput")
+                    return "虚拟输入设备（软件创建的 HID 总线）";
                 // 在 USB / 蓝牙传输层停止。其上游控制器最终也会挂到 ACPI，不能据此排除外设。
                 if (id.StartsWith("USB\\", StringComparison.Ordinal) ||
                     id.StartsWith("BTHENUM\\", StringComparison.Ordinal) ||
@@ -321,6 +380,17 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if(ZeroRainyProtocol.Candidate(vid,pid,product) && ((usagePage==0xFF05&&usage==1)||(usagePage==0xFF1C&&usage==0x92))){kind=vid==0x373B?DeviceKind.Mouse:DeviceKind.Keyboard;return true;}
+            if (VendorProtocol.IsInphicSplitReceiver(vid,pid) && usagePage==0x000A && usage==0) { kind=DeviceKind.Mouse; return true; }
+            if (OriginalGpwProtocol.IsCandidate(vid, pid) && usagePage == 0xFF00 &&
+                (pid == 0xC539 ? usage == 2 : usage is 1 or 2))
+            { kind = DeviceKind.Mouse; return true; }
+            if ((vid == 0x089D && pid == 0x062F && usagePage == 0xFF02 && usage == 0) ||
+                (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product) && usagePage == 0xFF01 && usage == 1))
+            { kind = DeviceKind.Mouse; return true; }
+            if (VendorProtocol.IsReportedX23Se(vid, pid, product) && usagePage == 0xFF01 && usage == 0x10)
+            { kind = DeviceKind.Mouse; return true; }
+            if (ReferenceProfiles.Match(vid, pid, usagePage, usage) != null) { kind = DeviceKind.Mouse; return true; }
             if (VendorProtocol.IsMchoseV9Pro(vid, pid, product) &&
                 ((usagePage == 0xFF90 && usage == 1) || (usagePage == 0x0C && usage == 1)))
             { kind = DeviceKind.Headset; return true; }
@@ -360,7 +430,7 @@ namespace MouseDock.Services.Detection
         /// <summary>返回 true 表示这台设备被采集（鼠标/键盘/手柄）。</summary>
         private static bool TryCollect(string path, List<(string InstanceId, string Service)> ancestors, bool integratedUsb,
             Dictionary<string, Bucket> buckets, DevicePreferences preferences,
-            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> vendorCollections,
+            List<VendorCollectionInfo> vendorCollections,
             out bool wasNoise)
         {
             wasNoise = false;
@@ -420,9 +490,12 @@ namespace MouseDock.Services.Detection
             }
             finally { CloseHandle(probe); }
 
-            string key = $"{vid:X4}:{pid:X4}";
+            string legacyKey = $"{vid:X4}:{pid:X4}";
+            string key = InstanceScope.Register(path, ancestors);
+            using var instanceScope = InstanceScope.Enter(key);
             string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
             string exclusion = ExclusionReason(ancestors, integratedUsb);
+            if(IsKnownHubSwitch(vid,pid))exclusion="HM Lab扩展坞切换键HID，不是独立外设";
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
                 $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
             if (exclusion != null)
@@ -434,12 +507,23 @@ namespace MouseDock.Services.Detection
 
             bool safeMode = false;
             try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
-            bool recognitionEnabled = preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true;
+            bool recognitionEnabled = RecognitionPolicy.CanQuery(vid, pid, product) && (preferences?.CanRead(key, null) ?? true) && (preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true);
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
-            if (recognitionEnabled && caps.UsagePage >= 0xFF00)
-                vendorCollections.Add((path, vid, pid, caps.UsagePage, product));
+            if (recognitionEnabled && (caps.UsagePage >= 0xFF00 || VendorProtocol.IsScopedInphicChannel(vid,pid,product,path,caps.UsagePage,caps.Usage,caps.InputReportByteLength,caps.OutputReportByteLength)))
+                vendorCollections.Add(new VendorCollectionInfo
+                {
+                    Path = path,
+                    Vid = vid,
+                    Pid = pid,
+                    UsagePage = caps.UsagePage,
+                    Usage = caps.Usage,
+                    Input = caps.InputReportByteLength,
+                    Output = caps.OutputReportByteLength,
+                    Feature = caps.FeatureReportByteLength,
+                    Product = product
+                });
 
             if (!TryDeviceKind(vid, pid, caps.UsagePage, caps.Usage, out DeviceKind kind, product))
             {
@@ -450,7 +534,7 @@ namespace MouseDock.Services.Detection
             if (kind == DeviceKind.Headset && VendorMap.TryUsbHeadset(vid, pid, out string headsetName))
             {
                 if (!buckets.TryGetValue(key, out var headset))
-                    buckets[key] = headset = new Bucket { Vid = vid, Pid = pid, Product = headsetName, Vendor = vendor, Path = path, Kind = kind };
+                    buckets[key] = headset = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path, Kind = kind };
                 headset.Counts[kind] = headset.Counts.TryGetValue(kind, out int count) ? count + 1 : 1;
 
                 // HyperX Cloud III 走 0xFF13 私有通道，一次读完整机就行，别的集合不再重复。
@@ -499,7 +583,26 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Candidate(vid, pid) ||
+            if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
+            else if(VendorProtocol.IsScopedG7(vid,pid,product)){batteryTrace.Add("G7由本实例精确集合读取");}
+            else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
+            else if (OriginalGpwProtocol.IsCandidate(vid, pid))
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过 GPW 查询" : "一代 GPW 由本实例20字节长报文集合确认身份后查询，不走通用罗技探针");
+            }
+            else if (AulaBatteryProtocol.IsCandidate(vid, pid, product))
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过狼蛛专用查询" : "狼蛛专用电量由归并后的精确实例/集合读取，不走握手或形状兜底");
+            }
+            else if (VendorProtocol.IsReportedX23Se(vid, pid, product))
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过 X23SE 电量查询" : "X23SE 电量由本实例 MI_02 精确集合读取，不尝试通用协议");
+            }
+            else if (ReferenceProfiles.Find(vid, pid) != null)
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过参考协议查询" : "参考协议由归并后的实例按精确集合读取一次");
+            }
+            else if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Candidate(vid, pid) ||
                 VendorProtocol.IsAulaF99(vid, pid, product) || VendorProtocol.IdentifyWeikav(vid, pid, product) != null ||
                 VendorProtocol.IsMchoseG7(vid, pid, product) || VendorProtocol.IsMchoseV9Pro(vid, pid, product) ||
                 VendorProtocol.IsRapooVt7(vid, pid) || VendorProtocol.IsAulaSc630(product) ||
@@ -542,7 +645,7 @@ namespace MouseDock.Services.Detection
             if (safeMode) batteryTrace.Add("安全模式已跳过需要发送命令的厂商读取器");
 
             // 国产 2.4G 接收器（AULA/VXE 系）：走厂商 32 字节协议读电量
-            if (battery < 0 && !safeMode && VendorMap.KnownReceivers.ContainsKey(key))
+            if (battery < 0 && !safeMode && VendorMap.KnownReceivers.ContainsKey(legacyKey))
             {
                 battery = ReadBattery("通用 32 字节协议", () => VendorProtocol.TryReadBattery(vid, pid, out batteryCharging), batteryTrace);
                 batteryStale = battery >= 0 && VendorProtocol.IdentifyStale;
@@ -551,7 +654,7 @@ namespace MouseDock.Services.Detection
             // 0xFFFF 厂商集合的只读状态（VGN Neon75 Air 这类键盘接收器只在这里报电量）
             if (battery < 0 && !VendorProtocol.IsNeon75Air(vid, pid))
             {
-                battery = ReadBattery("只读状态 Feature", () => VendorProtocol.TryReadStatus(vid, pid, out batteryCharging), batteryTrace);
+                batteryTrace.Add("未确认协议：通用形状 Feature 读取已禁用");
                 batteryStale = battery >= 0 && VendorProtocol.StatusStale;
             }
 
@@ -611,7 +714,7 @@ namespace MouseDock.Services.Detection
             // 按接口形状认的两家（WEBBRANDS F83 / 达尔优 A980），VID 不固定，回包头必须完全对上
             if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
             {
-                battery = ReadBattery("接口形状协议", () => VendorProtocol.TryReadByShape(vid, pid), batteryTrace);
+                batteryTrace.Add("未确认协议：形状读取已禁用");
             }
 
             // 第四批：G-Wolves / ipi / RAWM / passive 型（AULA SC900、雷柏 VT2 MAX）
@@ -623,7 +726,7 @@ namespace MouseDock.Services.Detection
             // 形状型老协议：WLMouse Beast X（report4 + CRC16）、Angry Miao（report F7）
             if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
             {
-                battery = ReadBattery("Legacy 接口形状协议", () => VendorProtocol.TryReadLegacyShape(vid, pid), batteryTrace);
+                batteryTrace.Add("未确认协议：Legacy 形状读取已禁用");
             }
 
             // 前行者（X87 三模及全系）。两套协议：
@@ -663,12 +766,12 @@ namespace MouseDock.Services.Detection
 
             if (!buckets.TryGetValue(key, out Bucket bucket))
             {
-                bucket = new Bucket { Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };
+                bucket = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };
                 buckets[key] = bucket;
             }
 
             string identity = null;
-            try { identity = VendorProtocol.IdentityFor(vid, pid); } catch { }
+            try { if (!AulaBatteryProtocol.IsCandidate(vid, pid, product)) identity = VendorProtocol.IdentityFor(vid, pid); } catch { }
             if (!string.IsNullOrEmpty(identity)) bucket.Identity = identity;
 
             // 记录厂商集合和接口号：无线接收器通常横跨 mi_00/01/02，有线鼠标只有一个接口
@@ -676,6 +779,11 @@ namespace MouseDock.Services.Detection
             string miTag = InterfaceTag(path);
             if (miTag != null) bucket.Interfaces.Add(miTag);
 
+            bucket.ReferenceModel ??= ReferenceProfiles.Match(vid, pid, caps.UsagePage, caps.Usage);
+            bucket.AulaDescriptorRoute ??= AulaBatteryProtocol.Match(vid, pid, product, caps.UsagePage, caps.Usage,
+                caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength);
+            bucket.ReportedX23SeIdentified |= VendorProtocol.IsReportedX23SeCollection(vid, pid, product, path,
+                caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength);
             bucket.Counts[kind] = bucket.Counts.TryGetValue(kind, out int c) ? c + 1 : 1;
 
             if (UsageMap.Priority(kind) > UsageMap.Priority(bucket.Kind))
@@ -699,10 +807,189 @@ namespace MouseDock.Services.Detection
             return true;
         }
 
+        internal static void QueryOriginalGpwCollections(Dictionary<string, Bucket> buckets,
+            List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
+            Func<string, ushort, ushort, ReferenceBatteryProtocol.Reading> query)
+        {
+            foreach (var b in buckets.Values)
+            {
+                if (!OriginalGpwProtocol.IsCandidate(b.Vid,b.Pid) || AulaBatteryProtocol.IsCandidate(b.Vid,b.Pid,b.Product)) continue;
+                b.GpwHandled = true; b.GpwLive = false;
+                b.GpwModel = b.Pid == 0xC088 ? OriginalGpwProtocol.Model : null;
+                b.Battery = -1; b.Charging = false; b.ReadStale = false; b.BatterySource = ""; b.Identity = "";
+                string legacy = $"hid-{b.Vid:X4}-{b.Pid:X4}";
+                var channels = collections.Where(c => c.Vid == b.Vid && c.Pid == b.Pid &&
+                    InstanceScope.ForPath(c.Path, legacy) == b.InstanceId &&
+                    OriginalGpwProtocol.IsChannel(c.Vid,c.Pid,c.UsagePage,c.Usage,c.Input,c.Output,c.Feature))
+                    .GroupBy(c=>c.Path,StringComparer.OrdinalIgnoreCase).Select(g=>g.First()).ToList();
+                string reason = safeMode ? "安全模式未查询GPW" :
+                    !(preferences?.CanRead(b.InstanceId,null) ?? true) ||
+                    !(preferences?.CanRead(legacy,VendorMap.PhysicalKeyFromName(b.Product)) ?? true) ? "此实例识别已停用" :
+                    string.IsNullOrWhiteSpace(b.InstanceId) ? "没有物理实例标识，未查询" :
+                    channels.Count != 1 ? $"本实例精确HID++长报文集合={channels.Count}，必须唯一；不查询7字节短报文/32字节DFU集合" : null;
+                if (reason != null) { b.BatteryFailures.Add(reason); LastDiagnostics.Add($"{b.InstanceId} GPW边界：{reason}"); continue; }
+                ReferenceBatteryProtocol.Reading result;
+                using (InstanceScope.Enter(b.InstanceId))
+                {
+                    try { result = query(channels[0].Path,b.Vid,b.Pid); }
+                    catch(Exception ex) { result=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name+": "+ex.Message); }
+                }
+                result ??= ReferenceBatteryProtocol.Reading.Failed("GPW读取器没有返回结果");
+                if (result.Model == OriginalGpwProtocol.Model)
+                {
+                    b.GpwModel = result.Model;
+                    b.GpwLive = OriginalGpwProtocol.IsIdentityEvidence(result.Identity);
+                    if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                    {
+                        b.Battery=result.Level; b.Charging=result.ChargingKnown && result.Charging; b.GpwLive=true;
+                        b.BatterySource="GPW："+result.Diagnostic;
+                    }
+                }
+                if(b.Battery<0)b.BatteryFailures.Add("GPW："+result.Diagnostic);
+                LastDiagnostics.Add($"{b.InstanceId} GPW专用 状态={result.Status} 型号={result.Model} 电量={result.Level} {result.Diagnostic}");
+            }
+        }
+
+        internal static void QueryAulaCollections(Dictionary<string, Bucket> buckets,
+            List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
+            Func<AulaBatteryProtocol.Route, string, ushort, ushort, ReferenceBatteryProtocol.Reading> query)
+        {
+            foreach (var b in buckets.Values)
+            {
+                if (!AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) continue;
+                b.AulaHandled = true;
+                b.Battery = -1; b.Charging = false; b.ReadStale = false; b.Identity = ""; b.BatterySource = "";
+                b.AulaModel = null; b.AulaOnline = false;
+                string legacy = $"hid-{b.Vid:X4}-{b.Pid:X4}";
+                var channels = collections.Where(c => c.Vid == b.Vid && c.Pid == b.Pid &&
+                    InstanceScope.ForPath(c.Path, legacy) == b.InstanceId &&
+                    AulaBatteryProtocol.Match(c.Vid, c.Pid, c.Product, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature) != null)
+                    .GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+                if (channels.Count == 1)
+                {
+                    var c = channels[0];
+                    b.AulaDescriptorRoute = AulaBatteryProtocol.Match(c.Vid, c.Pid, c.Product, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature);
+                }
+                if (b.AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc630Pro) b.AulaModel = "AULA SC630 Pro";
+                string reason = safeMode ? "安全模式已跳过狼蛛电量查询" :
+                    !(preferences?.CanRead(b.InstanceId, null) ?? true) ||
+                    !(preferences?.CanRead(legacy, VendorMap.PhysicalKeyFromName(b.Product)) ?? true) ? "此实例识别已停用" :
+                    string.IsNullOrWhiteSpace(b.InstanceId) ? "缺少物理实例，未发送查询" :
+                    channels.Count != 1 ? $"本实例精确电量集合数量={channels.Count}，必须唯一，未发送查询" : null;
+                if (reason != null)
+                { b.BatteryFailures.Add(reason); LastDiagnostics.Add($"{b.InstanceId} 狼蛛边界：{reason}"); continue; }
+                var channel = channels[0];
+                ReferenceBatteryProtocol.Reading result;
+                using (InstanceScope.Enter(b.InstanceId))
+                {
+                    try { result = query(b.AulaDescriptorRoute.Value, channel.Path, b.Vid, b.Pid); }
+                    catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name + ": " + ex.Message); }
+                }
+                result ??= ReferenceBatteryProtocol.Reading.Failed("专用读取器没有返回结果");
+                if (result.Level is >= 0 and <= 100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging &&
+                    (b.AulaDescriptorRoute != AulaBatteryProtocol.Route.Sc580Receiver || result.Identity is "M137" or "M230"))
+                {
+                    b.Battery = result.Level; b.Charging = result.ChargingKnown && result.Charging;
+                    b.AulaModel = result.Model; b.AulaOnline = true;
+                    b.BatterySource = "狼蛛专用：" + result.Diagnostic;
+                }
+                else b.BatteryFailures.Add("狼蛛专用：" + result.Diagnostic);
+                LastDiagnostics.Add($"{b.InstanceId} 狼蛛路线={b.AulaDescriptorRoute} 状态={result.Status} 电量={result.Level} 型号={result.Model} {result.Diagnostic}");
+            }
+        }
+
+        internal static void QueryReportedX23SeCollections(Dictionary<string, Bucket> buckets,
+            List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
+            Func<string, ReferenceBatteryProtocol.Reading> query)
+        {
+            foreach (var bucket in buckets.Values)
+            {
+                if (!VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                string legacy = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                string instance = bucket.InstanceId ?? legacy;
+                bucket.Battery = -1; bucket.Charging = false; bucket.ReadStale = false; bucket.BatterySource = "";
+                var channel = collections.Where(c => InstanceScope.ForPath(c.Path, legacy) == instance &&
+                    VendorProtocol.IsReportedX23SeCollection(c.Vid, c.Pid, c.Product, c.Path, c.UsagePage,
+                        c.Usage, c.Input, c.Output, c.Feature)).OrderBy(c => c.Path, StringComparer.Ordinal).FirstOrDefault();
+                bucket.ReportedX23SeIdentified = channel != null;
+                string reason = safeMode ? "安全模式已跳过 X23SE 电量查询" :
+                    !(preferences?.CanRead(instance, legacy) ?? true) ? "用户已停用此实例的识别" :
+                    channel == null ? "缺少本实例的 EWEADN X23SE MI_02 FF01/0010 65/65/0 集合，未发送查询" : null;
+                if (reason != null)
+                {
+                    bucket.BatteryFailures.Add(reason);
+                    LastDiagnostics.Add($"{instance} X23SE 边界：{reason}");
+                    continue;
+                }
+                using var scope = InstanceScope.Enter(bucket.InstanceId);
+                ReferenceBatteryProtocol.Reading result;
+                try { result = query(channel.Path); }
+                catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name); }
+                result ??= ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
+                if (result.Level is >= 0 and <= 100 &&
+                    result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                {
+                    bucket.Battery = result.Level;
+                    bucket.Charging = result.ChargingKnown && result.Charging;
+                    bucket.BatterySource = "X23SE：" + result.Diagnostic;
+                }
+                else bucket.BatteryFailures.Add("X23SE：" + result.Diagnostic);
+                LastDiagnostics.Add($"{instance} X23SE 状态={result.Status} 电量={result.Level} {result.Diagnostic}");
+            }
+        }
+
         /// <summary>厂商集合上的电量读取：设备本体归并完之后，每台最多读一次。</summary>
+        internal static void QueryReferenceCollections(Dictionary<string, Bucket> buckets,
+            List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
+            Func<ReferenceProfiles.Profile, string, ReferenceBatteryProtocol.Reading> query)
+        {
+            foreach (var bucket in buckets.Values)
+            {
+                var profile = ReferenceProfiles.Find(bucket.Vid, bucket.Pid);
+                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (OriginalGpwProtocol.IsCandidate(bucket.Vid,bucket.Pid)) continue;
+                if (profile == null) continue;
+                string legacyId = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                string instance = bucket.InstanceId ?? legacyId;
+                if (safeMode || !(preferences?.CanRead(instance, null) ?? true) ||
+                    !(preferences?.CanRead(legacyId, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true))
+                {
+                    bucket.BatteryFailures.Add(safeMode ? "安全模式已跳过参考协议查询" : "此实例的识别已停用");
+                    continue;
+                }
+                var channel = collections.Where(c => c.Vid == bucket.Vid && c.Pid == bucket.Pid &&
+                    InstanceScope.ForPath(c.Path, legacyId) == instance &&
+                    ReferenceProfiles.AcceptsChannel(profile, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature))
+                    .OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if (channel == null)
+                {
+                    bucket.BatteryFailures.Add($"{profile.Model}：没有满足精确用法与报告长度的电量集合，未发送命令");
+                    continue;
+                }
+                using var scope = InstanceScope.Enter(bucket.InstanceId);
+                ReferenceBatteryProtocol.Reading result;
+                try { result = query(profile, channel.Path); }
+                catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name); }
+                if (result == null) result = ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
+                if (result.Level is >= 0 and <= 100 &&
+                    result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                {
+                    bucket.Battery = result.Level;
+                    bucket.Charging = result.ChargingKnown && result.Charging;
+                    bucket.ReadStale = false;
+                    bucket.BatterySource = $"{profile.Model} 电量：{result.Diagnostic}";
+                    bucket.ReferenceIdentity = result.Identity;
+                    bucket.ReferenceIdentityModel = result.Model;
+                }
+                else bucket.BatteryFailures.Add($"{profile.Model}：{result.Diagnostic}");
+                LastDiagnostics.Add($"{instance} 参考配置={profile.Model} 协议={profile.Battery} " +
+                    $"状态={result.Status} 电量={result.Level} 充电已知={result.ChargingKnown} {result.Diagnostic}");
+            }
+        }
+
         private static void QueryVendorCollections(Dictionary<string, Bucket> buckets,
-            List<(string Path, ushort Vid, ushort Pid, ushort UsagePage, string Product)> collections,
-            bool safeMode, Func<string, (int Battery, string Name, bool Charging)> probeLogitech,
+            List<VendorCollectionInfo> collections, bool safeMode,
+            Func<string, (int Battery, string Name, bool Charging, string Diagnostic)> probeLogitech,
             Func<string, ushort, ushort, int> readVendor)
         {
             // 上一轮读到的电量只属于上一次扫描；型号和名称留着，电量作废。
@@ -714,40 +1001,88 @@ namespace MouseDock.Services.Detection
 
             var probedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var queriedDevices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // 罗技 HID++ 单独一段：一个接收器最多试两条接口，整体限时。
+            // 1.4.3 就是在这里卡住的：C539 的三条 FF00 集合逐条同步写，其中一次写不返回，
+            // 整轮扫描（含后面的设备列表）就永远出不来。
+            var logiPaths = collections
+                .Where(c => c.Vid == 0x046D && c.UsagePage == 0xFF00 &&
+                            !AulaBatteryProtocol.IsCandidate(c.Vid, c.Pid, c.Product) &&
+                            !OriginalGpwProtocol.IsCandidate(c.Vid,c.Pid) &&
+                            !IsExcludedInterface(c.Vid, c.Pid, c.Product, c.Path))
+                .GroupBy(c => InstanceScope.ForPath(c.Path, $"{c.Vid:X4}:{c.Pid:X4}"), StringComparer.OrdinalIgnoreCase)
+                .SelectMany(g => g.GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase)
+                                  .Select(x => x.First())
+                                  .OrderByDescending(LogiInterfaceRank)
+                                  .ThenBy(c => c.Path, StringComparer.Ordinal)
+                                  .Take(2))
+                .ToList();
+
+            if (logiPaths.Count > 0)
+                LastDiagnostics.Add($"罗技 HID++ 探针 候选={logiPaths.Count} 安全模式={(safeMode ? "开" : "关")}");
+
+            int logiStarted = Environment.TickCount;
+            foreach (var collection in logiPaths)
+            {
+                if (safeMode) break;
+                if (!RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product)) continue;
+                string key = InstanceScope.ForPath(collection.Path, $"{collection.Vid:X4}:{collection.Pid:X4}");
+                using var instanceScope = InstanceScope.Enter(key);
+                if (!buckets.TryGetValue(key, out var bucket) ||
+                    IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path)) continue;
+
+                (int Battery, string Name, bool Charging) current;
+                lock (_logiHints)
+                {
+                    if (!_logiHints.TryGetValue(key, out current)) current = (-1, null, false);
+                }
+                if (current.Battery >= 0 && !string.IsNullOrWhiteSpace(current.Name)) continue;
+                if (Environment.TickCount - logiStarted > 4500)
+                {
+                    LastDiagnostics.Add($"{key} 罗技 HID++ 探针总时长超限（{Environment.TickCount - logiStarted}ms），跳过剩余接口");
+                    break;
+                }
+                if (!probedPaths.Add(collection.Path)) continue;
+
+                int started = Environment.TickCount;
+                try
+                {
+                    var result = probeLogitech(collection.Path);
+                    bool usable = result.Battery >= 0 && result.Battery <= 100;
+                    lock (_logiHints)
+                        _logiHints[key] = (
+                            current.Battery >= 0 ? current.Battery : usable ? result.Battery : -1,
+                            !string.IsNullOrWhiteSpace(result.Name) ? result.Name : current.Name,
+                            current.Battery >= 0 ? current.Charging : usable && result.Charging);
+                    LastDiagnostics.Add($"{key} HID++ 探针 路径={collection.Path} 用时={Environment.TickCount - started}ms " +
+                        $"名称={result.Name ?? "（无）"} 电量={(usable ? result.Battery + "%" : "未读到")} {result.Diagnostic}");
+                    // 同一接收器只认第一个报出名字的接口；后面的接口通常是同一条通道的别名。
+                    if (!string.IsNullOrWhiteSpace(result.Name)) continue;
+                }
+                catch (Exception ex)
+                {
+                    LastDiagnostics.Add($"{key} HID++ 探针异常 {ex.GetType().Name} 路径={collection.Path}");
+                }
+            }
+
             foreach (var collection in collections)
             {
-                if (collection.UsagePage < 0xFF00 ||
+                if (ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
+                    VendorProtocol.IsReportedX23Se(collection.Vid, collection.Pid, collection.Product) ||
+                    AulaBatteryProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
+                    OriginalGpwProtocol.IsCandidate(collection.Vid,collection.Pid) || VendorProtocol.IsScopedInphic(collection.Vid,collection.Pid,collection.Product) || VendorProtocol.IsScopedG7(collection.Vid,collection.Pid,collection.Product) || ZeroRainyProtocol.Candidate(collection.Vid,collection.Pid,collection.Product) ||
+                    !RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
                     IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
                     continue;
 
-                string key = $"{collection.Vid:X4}:{collection.Pid:X4}";
+                string key = InstanceScope.ForPath(collection.Path, $"{collection.Vid:X4}:{collection.Pid:X4}");
+                using var instanceScope = InstanceScope.Enter(key);
                 if (!buckets.TryGetValue(key, out var bucket) ||
                     IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path))
                     continue;
 
-                if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00)
-                {
-                    if (safeMode) continue;
-                    if (!probedPaths.Add(collection.Path)) continue;
-                    (int Battery, string Name, bool Charging) current;
-                    lock (_logiHints)
-                    {
-                        if (!_logiHints.TryGetValue(key, out current)) current = (-1, null, false);
-                    }
-                    if (current.Battery >= 0 && !string.IsNullOrWhiteSpace(current.Name)) continue;
-                    try
-                    {
-                        var result = probeLogitech(collection.Path);
-                        bool usable = result.Battery >= 0 && result.Battery <= 100;
-                        lock (_logiHints)
-                            _logiHints[key] = (
-                                current.Battery >= 0 ? current.Battery : usable ? result.Battery : -1,
-                                !string.IsNullOrWhiteSpace(result.Name) ? result.Name : current.Name,
-                                current.Battery >= 0 ? current.Charging : usable && result.Charging);
-                    }
-                    catch { }
-                    continue;
-                }
+                // 罗技已经在上面单独处理过。
+                if (collection.Vid == 0x046D && collection.UsagePage == 0xFF00) continue;
 
                 if (safeMode || bucket.Battery >= 0 || queriedDevices.Contains(key)) continue;
                 string route = null;
@@ -767,6 +1102,15 @@ namespace MouseDock.Services.Detection
             }
         }
 
+        /// <summary>HID++ 长报文（20 字节）接口优先，其次 7 字节短报文；32 字节那类不是 HID++ 通道。</summary>
+        internal static int LogiInterfaceRank(VendorCollectionInfo collection)
+        {
+            if (collection.Input == 20 || collection.Output == 20 ||
+                (collection.Feature >= 20 && collection.Feature <= 21)) return 3;
+            if (collection.Input == 7 || collection.Output == 7) return 2;
+            return 1;
+        }
+
         private static int ReadVendorCollection(string route, ushort vid, ushort pid) => route switch
         {
             "vgn" => VendorProtocol.TryReadVgn(vid, pid),
@@ -776,6 +1120,7 @@ namespace MouseDock.Services.Detection
 
         private static bool IsExcludedInterface(ushort vid, ushort pid, string product, string path)
         {
+            if(IsKnownHubSwitch(vid,pid))return true; // User-reported HM Lab USB hub switch HID.
             if (IsNoise(vid, product) || (vid == 0 && pid == 0)) return true;
             string lowerPath = (path ?? "").ToLowerInvariant();
             return lowerPath.Contains("acpi\\") || lowerPath.Contains("hidi2c") ||
@@ -783,6 +1128,7 @@ namespace MouseDock.Services.Detection
                 lowerPath.Contains("camera") || lowerPath.Contains("vid_04f2");
         }
 
+        internal static bool IsKnownHubSwitch(ushort vid,ushort pid)=>vid==0xC019&&pid==0x0401;
         private static bool IsNoise(ushort vid, string product)
         {
             if (vid == 0x06CB || vid == 0xFFAA) return true;   // 触摸板 / 腾讯虚拟 HID
@@ -803,6 +1149,8 @@ namespace MouseDock.Services.Detection
 
         internal static void InvalidateDeviceHints(string id)
         {
+            if (id.StartsWith("instance-", StringComparison.OrdinalIgnoreCase))
+            { lock (_logiHints) _logiHints.Remove(id); VendorProtocol.ForgetInstance(id); return; }
             string[] parts = id.Split('-');
             if (parts.Length != 3 || !parts[0].Equals("hid", StringComparison.OrdinalIgnoreCase) ||
                 !ushort.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out ushort vid) ||
@@ -848,6 +1196,24 @@ namespace MouseDock.Services.Detection
             finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); }
         }
 
+        /// <summary>
+        /// 一个厂商私有 HID 集合。除了路径和 VID:PID，还带上报文长度：
+        /// 罗技的 HID++ 只挂在 20 字节（长报文）或 7 字节（短报文）通道上，
+        /// 32 字节那类不是 HID++，先读它等于白等超时。
+        /// </summary>
+        internal sealed class VendorCollectionInfo
+        {
+            public string Path;
+            public ushort Vid;
+            public ushort Pid;
+            public ushort UsagePage;
+            public ushort Usage;
+            public ushort Input;
+            public ushort Output;
+            public ushort Feature;
+            public string Product;
+        }
+
         internal sealed class Bucket
         {
             public ushort Vid, Pid;
@@ -871,6 +1237,20 @@ namespace MouseDock.Services.Detection
                        product.IndexOf("多彩", StringComparison.Ordinal) >= 0;
             }
             public string Path = "";
+            public string ReferenceModel;
+            public string ReferenceIdentity;
+            public string ReferenceIdentityModel;
+            public bool ReportedX23SeIdentified;
+            public bool AulaHandled, AulaOnline, InphicHandled;
+            public AulaBatteryProtocol.Route? AulaDescriptorRoute;
+            public string AulaModel;
+            public bool ZeroRainyHandled;
+            public string ZeroRainyModel;
+            public bool G7Handled;
+            public string G7Model;
+            public bool GpwHandled, GpwLive;
+            public string GpwModel;
+            public string InstanceId;
             public string Identity = "";
             public bool HasVendor;
             public readonly HashSet<string> Interfaces = new HashSet<string>();
@@ -895,6 +1275,7 @@ namespace MouseDock.Services.Detection
                 if (string.IsNullOrWhiteSpace(name)) name = "未知设备";
 
                 var kind = RefineKind(name);
+                if (ReferenceModel != null) { name = ReferenceModel; kind = DeviceKind.Mouse; }
                 string physicalKey = null;
 
                 string weikav = VendorProtocol.IdentifyWeikav(Vid, Pid, Product)
@@ -931,7 +1312,7 @@ namespace MouseDock.Services.Detection
                     physicalKey = "atk-v75x";
                 }
                 else if (VendorProtocol.IsRainy75Candidate(Vid, Pid) &&
-                         (RainyIdentified || VendorProtocol.IsRainy75Name(Product)))
+                         VendorProtocol.IsRainy75Name(Product))
                 {
                     name = "WOBKEY Rainy 75";
                     kind = DeviceKind.Keyboard;
@@ -952,11 +1333,11 @@ namespace MouseDock.Services.Detection
 
                 // 罗技 HID++ 自报的型号最可信，压过接收器的占位名（「罗技无线接收器」）
                 bool charging = Charging;
-                if (Vid == 0x046D)
+                if (Vid == 0x046D && !GpwHandled)
                 {
                     (int Battery, string Name, bool Charging) hint;
                     bool hasHint;
-                    lock (_logiHints) hasHint = _logiHints.TryGetValue($"{Vid:X4}:{Pid:X4}", out hint);
+                    lock (_logiHints) hasHint = _logiHints.TryGetValue(InstanceId ?? $"{Vid:X4}:{Pid:X4}", out hint);
                     if (hasHint)
                     {
                         if (!string.IsNullOrWhiteSpace(hint.Name))
@@ -996,7 +1377,7 @@ namespace MouseDock.Services.Detection
                 bool peerKeyboard = Kind == DeviceKind.Mouse && Counts.ContainsKey(DeviceKind.Keyboard);
 
                 bool usbHeadset = VendorMap.TryUsbHeadset(Vid, Pid, out string headsetName);
-                if (usbHeadset) { name = headsetName; kind = DeviceKind.Headset; }
+                if (usbHeadset) { name = (Vid == 0x4C4A ? Product : headsetName) ?? "USB 音频设备（型号未确认）"; kind = DeviceKind.Headset; }
                 bool f99Wired = VendorProtocol.IsAulaF99Wired(Vid, Pid, Product);
                 string transport = bt ? "蓝牙" : usbHeadset ? "USB"
                     : (dongle || receiverProduct || LooksWireless(Product) || peerKeyboard ||
@@ -1012,9 +1393,42 @@ namespace MouseDock.Services.Detection
                 else if (f99Wired) transport = "有线";
                 else if (weikav != null) transport = Pid is 0xFEF9 or 0xFEFA ? "2.4G" : "有线";
 
+                if (ReferenceModel != null)
+                {
+                    name = ReferenceIdentity != null
+                        ? ReferenceIdentityModel ?? $"ATK 鼠标（CID/MID={ReferenceIdentity}，型号未收录）"
+                        : ReferenceModel;
+                    kind = DeviceKind.Mouse;
+                    transport = "2.4G";
+                }
+                if (ReportedX23SeIdentified) { name = Product.Trim(); kind = DeviceKind.Mouse; transport = "2.4G"; }
+                if (AulaHandled)
+                {
+                    name = AulaModel ?? (string.IsNullOrWhiteSpace(Product) ? "未确认型号的接收器" : Product.Trim());
+                    kind = DeviceKind.Mouse;
+                    transport = AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
+                    charging = Battery >= 0 && AulaOnline && Charging;
+                }
+                if(ZeroRainyHandled){name=ZeroRainyModel ?? Product ?? "未确认型号的设备";kind=VendorProtocol.IsAtkZeroBitMouse(Vid,Pid)?DeviceKind.Mouse:DeviceKind.Keyboard;transport=Pid is 0x1154 or 0x5055?"有线":"2.4G";charging=Battery>=0&&Charging;}
+                if(G7Handled){name=G7Model ?? Product ?? "未确认型号的接收器";kind=DeviceKind.Mouse;transport=Vid==0xA8A4?"有线":"2.4G";charging=Battery>=0 && Charging;}
+                if (GpwHandled)
+                {
+                    name=GpwModel ?? "罗技 Lightspeed 接收器（型号未确认）"; kind=DeviceKind.Mouse;
+                    transport=Pid==0xC539 ? "2.4G" : "有线";
+                    charging=Battery>=0 && GpwLive && Charging;
+                }
+
+                bool unresolved=kind==DeviceKind.Other && IsUnresolved8KReceiver();
+                if(unresolved)name=Product.Trim();
                 return new DetectedDevice
                 {
-                    Id = $"hid-{Vid:X4}-{Pid:X4}",
+                    Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
+                    RawName = Product ?? "",
+                    ConfirmedModel = unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                        : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
+                    InterfaceDiscovered = true,
+                    ReceiverDiscovered = unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    PeripheralConfirmed = unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,
@@ -1023,8 +1437,8 @@ namespace MouseDock.Services.Detection
                     IsStale = ReadStale,
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
-                    PhysicalKey = physicalKey,
-                    Note = Battery >= 0
+                    PhysicalKey = InstanceId,
+                    Note = unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
                             : "尚未取得有效电量，请查看设备报告中的读取诊断")
@@ -1046,7 +1460,7 @@ namespace MouseDock.Services.Detection
                 if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) return DeviceKind.Mouse;
                 if (VendorProtocol.IsAtkV75X(Vid, Pid, Product)) return DeviceKind.Keyboard;
                 if (VendorProtocol.IsRainy75Candidate(Vid, Pid) &&
-                    (RainyIdentified || VendorProtocol.IsRainy75Name(Product))) return DeviceKind.Keyboard;
+                    VendorProtocol.IsRainy75Name(Product)) return DeviceKind.Keyboard;
                 string n = (name ?? "").ToLowerInvariant();
                 if (n.Contains("keyboard") || n.Contains("键盘") || n.Contains("keychron")) return DeviceKind.Keyboard;
 
@@ -1054,8 +1468,12 @@ namespace MouseDock.Services.Detection
                     System.Text.RegularExpressions.Regex.IsMatch(n, @"\bmouse\b|鼠标"))
                     return DeviceKind.Mouse;
 
+                // Polling rate is marketing metadata, not a peripheral identity.
+                // Mixed generic receivers may expose many auxiliary collections.
+                if(IsUnresolved8KReceiver())return DeviceKind.Other;
+
                 // 键盘型号常见写法：Neon75 / F87 / K8 / MK870 之类
-                if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(f|k|mk|neon|kzz|akko)[\s-]?\d{2,4}\b"))
+                if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(f|mk|neon|kzz|akko)[\s-]?\d{2,4}\b") || (!Counts.ContainsKey(DeviceKind.Mouse) && System.Text.RegularExpressions.Regex.IsMatch(n, @"\bk[\s-]?\d{2,4}\b")))
                     return DeviceKind.Keyboard;
                 if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b\d{2,3}\s*(air|pro)?\b") &&
                     Counts.TryGetValue(DeviceKind.Keyboard, out int kc) &&
@@ -1077,6 +1495,9 @@ namespace MouseDock.Services.Detection
                 string n = name.ToLowerInvariant();
                 return n.Contains("2.4g") || n.Contains("dongle") || n.Contains("receiver") || n.Contains("wireless");
             }
+            private bool IsUnresolved8KReceiver() => Counts.ContainsKey(DeviceKind.Mouse) && Counts.ContainsKey(DeviceKind.Keyboard) &&
+                System.Text.RegularExpressions.Regex.IsMatch(Product??"", @"(?i)\b8[\s-]*k\b.*(receiver|dongle|接收器)") &&
+                !System.Text.RegularExpressions.Regex.IsMatch(Product??"", @"(?i)keyboard|键盘|\bmouse\b|鼠标");
         }
     }
 }

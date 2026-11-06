@@ -28,9 +28,7 @@ namespace MouseDock.Services.Detection
 
         /// <summary>产品名里出现 Rainy / WOB 才敢在共用号上直接挂型号。</summary>
         internal static bool IsRainy75Name(string product) =>
-            !string.IsNullOrEmpty(product) &&
-            (product.IndexOf("Rainy", StringComparison.OrdinalIgnoreCase) >= 0 ||
-             product.IndexOf("WOB", StringComparison.OrdinalIgnoreCase) >= 0);
+            ZeroRainyProtocol.RainyName(product);
 
         // Official F99 OemDrv.exe FUN_00491210 (xref of "GetPower failed" 0x49143b)
         // performs exactly this 520-byte Feature transaction: 09 chk 09 01 01 seq len_lo len_hi,

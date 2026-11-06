@@ -20,14 +20,14 @@ namespace MouseDock.Services
     ///   3. 有新版 → 通知界面询问用户
     ///   4. 用户同意 → 下载 asset 到 %TEMP%\MouseDock-update\
     ///   5. 解压（zip）或直接落盘（exe）
-    ///   6. 写入替换脚本，等待当前进程退出后覆盖 exe 并重启
+    ///   6. 等待旧进程退出，备份并替换程序包文件，失败回滚，成功重启
     ///
     /// 安全约定：
-    ///   - 只访问 api.github.com 和 github.com / objects.githubusercontent.com
+    ///   - 元数据来自GitHub；公开安装包直连失败且有SHA256时才使用GH-Proxy
     ///   - 不做任何遥测，不发送本机信息，请求只带一个固定的 User-Agent
     ///   - 任何一步失败都静默放弃，不打扰用户
     /// </summary>
-    internal static class UpdateService
+    internal static partial class UpdateService
     {
         private const string Owner = "late-autumn-gif";
         private const string Repo  = "mousedock";
@@ -51,7 +51,7 @@ namespace MouseDock.Services
         {
             get
             {
-                var v = Assembly.GetEntryAssembly()?.GetName().Version;
+                var v = typeof(UpdateService).Assembly.GetName().Version;
                 if (v == null) return "0.0.0";
                 return $"{v.Major}.{v.Minor}.{v.Build}";
             }
@@ -65,6 +65,7 @@ namespace MouseDock.Services
             public string AssetUrl { get; set; }
             public long   AssetSize { get; set; }
             public string Notes { get; set; }
+            public string Sha256 { get; set; }
 
             public override string ToString() => $"{Version} ({AssetName}, {AssetSize / 1024 / 1024} MB)";
         }
@@ -72,71 +73,62 @@ namespace MouseDock.Services
         /// <summary>
         /// 检查更新。无网 / 超时 / 解析失败全返回 null，绝不抛异常。
         /// </summary>
-        public static async Task<UpdateInfo> CheckAsync(CancellationToken ct = default)
+        public static Task<UpdateInfo> CheckAsync(CancellationToken ct = default) =>
+            CheckLatestAsync(_http,CurrentVersionText,ct);
+
+        internal static async Task<UpdateInfo> CheckLatestAsync(HttpClient client,string currentVersion,CancellationToken ct=default)
+        {
+            // Public GitHub API can return403 to anonymous desktop clients.
+            // The fallback manifest is another asset owned by this same repository,
+            // fetched directly from GitHub rather than trusting a mirror's metadata.
+            foreach(var url in new[]{ApiLatest,new Uri($"https://github.com/{Owner}/{Repo}/releases/latest/download/update.json")})
+            {
+                if(ct.IsCancellationRequested)return null;
+                try
+                {
+                    using var response=await client.GetAsync(url,ct).ConfigureAwait(false);
+                    if(!response.IsSuccessStatusCode)continue;
+                    string json=await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    return ParseRelease(json,currentVersion);
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        internal static UpdateInfo ParseRelease(string json, string currentVersion)
         {
             try
             {
-                using var resp = await _http.GetAsync(ApiLatest, ct).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) return null;
-
-                var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-
-                if (!root.TryGetProperty("tag_name", out var tagEl)) return null;
-                string tag = tagEl.GetString() ?? "";
+                if ((root.TryGetProperty("draft", out var draft) && draft.GetBoolean()) ||
+                    (root.TryGetProperty("prerelease", out var pre) && pre.GetBoolean())) return null;
+                string tag = root.GetProperty("tag_name").GetString() ?? "";
                 string ver = tag.TrimStart('v', 'V');
-
-                if (!IsNewer(ver, CurrentVersionText)) return null;
-
-                // 优先 zip，其次裸 exe
-                string assetName = null, assetUrl = null;
-                long assetSize = 0;
-
-                if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+                if (!IsNewer(ver, currentVersion)) return null;
+                UpdateInfo best = null;
+                int bestRank = 0;
+                foreach (var asset in root.GetProperty("assets").EnumerateArray())
                 {
-                    string fallbackName = null, fallbackUrl = null;
-                    long fallbackSize = 0;
-
-                    foreach (var a in assets.EnumerateArray())
-                    {
-                        string name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                        string url  = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
-                        long size   = a.TryGetProperty("size", out var s) ? s.GetInt64() : 0;
-
-                        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                        {
-                            assetName = name; assetUrl = url; assetSize = size;
-                            break;
-                        }
-                        if (fallbackName == null && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                        {
-                            fallbackName = name; fallbackUrl = url; fallbackSize = size;
-                        }
-                    }
-
-                    if (assetName == null && fallbackName != null)
-                    {
-                        assetName = fallbackName; assetUrl = fallbackUrl; assetSize = fallbackSize;
-                    }
+                    string name = asset.GetProperty("name").GetString() ?? "";
+                    string url = asset.GetProperty("browser_download_url").GetString() ?? "";
+                    long size = asset.GetProperty("size").GetInt64();
+                    // Exact package names exclude source/audit ZIPs, ARM and x86 builds.
+                    int rank = name.Equals($"MouseDock-v{ver}-win-x64.zip", StringComparison.OrdinalIgnoreCase) ? 3 :
+                        name.Equals($"MouseDock-v{ver}.zip", StringComparison.OrdinalIgnoreCase) ? 2 :
+                        name.Equals("MouseDock.exe", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                    if (rank <= bestRank || size <= 0 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                        uri.Scheme != "https" || !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                        !uri.AbsolutePath.StartsWith($"/{Owner}/{Repo}/releases/download/", StringComparison.OrdinalIgnoreCase)) continue;
+                    bestRank = rank;
+                    best = new UpdateInfo { Tag=tag, Version=ver, AssetName=name, AssetUrl=url, AssetSize=size,
+                        Notes=root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "",
+                        Sha256=ReadDigest(asset) };
                 }
-
-                if (string.IsNullOrEmpty(assetUrl)) return null;
-
-                string notes = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
-
-                return new UpdateInfo
-                {
-                    Tag = tag, Version = ver,
-                    AssetName = assetName, AssetUrl = assetUrl, AssetSize = assetSize,
-                    Notes = notes
-                };
+                return best;
             }
-            catch
-            {
-                // 无网、DNS 失败、超时、JSON 变形——一律当没有更新
-                return null;
-            }
+            catch { return null; }
         }
 
         /// <summary>比较版本，remote 比 current 大返回 true。</summary>
@@ -159,141 +151,11 @@ namespace MouseDock.Services
             return v;
         }
 
-        /// <summary>
-        /// 下载并应用更新。返回 true 表示已经把替换脚本排上队，调用方应立即退出进程。
-        /// </summary>
-        public static async Task<bool> DownloadAndApplyAsync(UpdateInfo info, IProgress<int> progress = null,
-            CancellationToken ct = default)
+        private static string ReadDigest(JsonElement asset)
         {
-            if (info == null || string.IsNullOrEmpty(info.AssetUrl)) return false;
-
-            string work = Path.Combine(Path.GetTempPath(), "MouseDock-update");
-            try
-            {
-                if (Directory.Exists(work)) Directory.Delete(work, true);
-            }
-            catch { /* 目录被占用就换个名字 */ work = Path.Combine(Path.GetTempPath(), "MouseDock-update-" + Guid.NewGuid().ToString("N").Substring(0, 8)); }
-            Directory.CreateDirectory(work);
-
-            string downloaded = Path.Combine(work, info.AssetName);
-
-            try
-            {
-                using var resp = await _http.GetAsync(info.AssetUrl, HttpCompletionOption.ResponseHeadersRead, ct)
-                    .ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) return false;
-
-                long total = resp.Content.Headers.ContentLength ?? info.AssetSize;
-                long done = 0;
-
-                using (var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-                using (var dst = File.Create(downloaded))
-                {
-                    var buf = new byte[81920];
-                    int n;
-                    while ((n = await src.ReadAsync(buf, 0, buf.Length, ct).ConfigureAwait(false)) > 0)
-                    {
-                        await dst.WriteAsync(buf, 0, n, ct).ConfigureAwait(false);
-                        done += n;
-                        if (total > 0) progress?.Report((int)(done * 100 / total));
-                    }
-                }
-            }
-            catch { return false; }
-
-            // 找出待替换的 exe
-            string newExe = null;
-            try
-            {
-                if (downloaded.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                {
-                    string extract = Path.Combine(work, "x");
-                    ZipFile.ExtractToDirectory(downloaded, extract);
-
-                    // zip 里可能嵌套一层目录，优先在顶层找 MouseDock.exe
-                    newExe = Path.Combine(extract, "MouseDock.exe");
-                    if (!File.Exists(newExe))
-                    {
-                        var found = Directory.GetFiles(extract, "MouseDock.exe", SearchOption.AllDirectories);
-                        if (found.Length > 0) newExe = found[0];
-                    }
-                }
-                else if (downloaded.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    newExe = downloaded;
-                }
-            }
-            catch { return false; }
-
-            if (newExe == null || !File.Exists(newExe)) return false;
-
-            // 当前 exe 路径
-            string currentExe = Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrEmpty(currentExe) || !File.Exists(currentExe)) return false;
-
-            try
-            {
-                using var installer = Process.Start(CreateApplyStartInfo(work, newExe, currentExe, Environment.ProcessId));
-                return installer != null;
-            }
-            catch { return false; }
+            string digest=asset.TryGetProperty("digest",out var value)?value.GetString()??"":"";
+            return System.Text.RegularExpressions.Regex.IsMatch(digest,@"^sha256:[a-fA-F0-9]{64}$")?digest.Substring(7).ToLowerInvariant():null;
         }
 
-        private static ProcessStartInfo CreateApplyStartInfo(string work, string newExe, string currentExe, int processId)
-        {
-            work = Path.GetFullPath(work);
-            string scriptPath = Path.Combine(work, "apply.ps1");
-            File.WriteAllText(Path.Combine(work, "apply.json"), JsonSerializer.Serialize(new
-            {
-                ProcessId = processId,
-                NewExe = Path.GetFullPath(newExe),
-                CurrentExe = Path.GetFullPath(currentExe)
-            }));
-            // Paths are JSON data, never interpolated into executable shell syntax.
-            const string script = """
-                $ErrorActionPreference = 'Stop'
-                try {
-                    $job = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'apply.json') -Encoding UTF8 -Raw | ConvertFrom-Json
-                    $work = [IO.Path]::GetFullPath($PSScriptRoot)
-                    $prefix = $work.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-                    $source = [IO.Path]::GetFullPath($job.NewExe)
-                    $target = [IO.Path]::GetFullPath($job.CurrentExe)
-                    if (!$source.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
-                        $target.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-                        throw 'Invalid update paths.'
-                    }
-                    $oldProcess = Get-Process -Id $job.ProcessId -ErrorAction SilentlyContinue
-                    if ($null -ne $oldProcess) {
-                        try { $oldProcess.WaitForExit() } finally { $oldProcess.Dispose() }
-                    }
-                    Copy-Item -LiteralPath $source -Destination $target -Force
-                    $start = New-Object System.Diagnostics.ProcessStartInfo
-                    $start.FileName = $target
-                    $start.WorkingDirectory = [IO.Path]::GetDirectoryName($target)
-                    $start.UseShellExecute = $true
-                    $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
-                    $replacement = [Diagnostics.Process]::Start($start)
-                    if ($null -ne $replacement) { $replacement.Dispose() }
-                    Remove-Item -LiteralPath $work -Recurse -Force
-                    exit 0
-                } catch {
-                    $_ | Out-String | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'apply.log') -Encoding UTF8
-                    exit 1
-                }
-                """;
-            File.WriteAllText(scriptPath, script, new System.Text.UTF8Encoding(true));
-            var start = new ProcessStartInfo
-            {
-                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-                    @"WindowsPowerShell\v1.0\powershell.exe"),
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-                WorkingDirectory = Path.GetTempPath()
-            };
-            foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
-                start.ArgumentList.Add(argument);
-            return start;
-        }
     }
 }

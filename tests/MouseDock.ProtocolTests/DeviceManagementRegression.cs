@@ -88,6 +88,7 @@ internal static class DeviceManagementRegression
             {
                 SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
                 Directory.CreateDirectory(directory);
+                SettingsStore.TestDirectory=Path.GetFullPath(Path.Combine(directory,"isolated-settings"));
                 void Check(bool condition,string message) { checks++; if(!condition) throw new Exception(message); }
                 var settings=new AppSettings { SelectedDeviceIds=new() { "mouse","keyboard" }, AutoUpdate=false, HasShownAbout=true };
                 var source=new Source();
@@ -239,12 +240,46 @@ internal static class DeviceManagementRegression
                 {
                     Await(fresh.PollAsync()); Check(fresh.VisibleDevices.Count==3,"A new installation keeps automatic display until the first user choice");
                 }
+                typeof(App).GetProperty(nameof(App.Dock))!.SetValue(null,dock);
+                typeof(App).GetProperty(nameof(App.SettingsView))!.SetValue(null,manager);
+                foreach(string mode in new[]{"taskbar","edge"})
+                {
+                    manager.Hide(); settings.SurfaceMode=mode; App.ShowLaunchSurface(); Pump(30);
+                    Check(manager.IsVisible,"Explicit launch exposes settings for "+mode+" even without a visible shell badge");
+                }
+                foreach(var device in battery.Devices) device.Selected=false;
+                settings.SurfaceMode="dock"; manager.Hide(); App.ShowLaunchSurface(); Pump(30);
+                Check(manager.IsVisible,"Empty/stale selection exposes device management rather than an invisible launch");
+                var choices=(System.Windows.Controls.Primitives.UniformGrid)manager.FindName("IconStyleChoices");
+                Check(choices.Children.Count==6,"All six replica styles are discoverable in settings");
+                typeof(App).GetProperty(nameof(App.Icon))!.SetValue(null,icon);
+                foreach(string style in new[]{"ring","tile","pill","battery","plain","multi"})
+                {
+                    choices.Children.OfType<Button>().Single(b=>Equals(b.Tag,style)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump(20);
+                    Check(settings.IconStyle==style&&settings.SurfaceMode=="icon"&&icon.IsVisible,"Style selection activates the actual floating icon: "+style);
+                    Check(SettingsStore.Load().IconStyle==style,"Style persists in isolated test settings: "+style);
+                }
+                var badge=new DeviceBatteryBadge(new DeviceInfo{Level=76},Brushes.White,true,true,20,compact:true);
+                badge.Measure(new Size(40,40));badge.Arrange(new Rect(0,0,40,40));
+                var number=badge.Children.OfType<TextBlock>().Single();
+                Check(Grid.GetRow(number)==1&&Grid.GetColumn(number)==0&&badge.Width==40&&badge.Height==40,"Compact taskbar number is below ring inside taskbar bounds");
+                Check(number.TransformToAncestor(badge).Transform(new Point()).Y>=badge.Ring.ActualHeight,"Rendered number is geometrically below ring");
+                Capture(badge,Path.Combine(directory,"任务栏电量-下方数字.png"));
+                choices.BringIntoView();Pump(80);
+                Capture(manager,Path.Combine(directory,"悬浮样式-设置入口.png"));
+                foreach(bool download in new[]{false,true})
+                {
+                    var prompt=new UpdateAvailableWindow(new UpdateService.UpdateInfo{Version="9.9.9"});windows.Add(prompt);prompt.Left=-16000;prompt.Show();Pump(20);
+                    Check(Equals(prompt.DownloadNow.Content,"立即下载")&&Equals(prompt.Later.Content,"稍后"),"Update prompt exposes requested choices");
+                    (download?prompt.DownloadNow:prompt.Later).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Check(prompt.DownloadRequested==download&&!prompt.IsVisible,"Update dialog returns explicit choice without starting a download");
+                }
                 var clone=settings.Clone();
                 clone.HiddenDeviceIds.Add("clone-only"); clone.DisabledRecognitionDeviceIds.Add("clone-only");
                 Check(!settings.HiddenDeviceIds.Contains("clone-only") && !settings.DisabledRecognitionDeviceIds.Contains("clone-only"),"Cloned preference lists are independent");
             }
             catch(Exception ex) { failure=ex; }
-            finally { foreach(var window in windows) window.Close(); }
+            finally { foreach(var window in windows) window.Close(); SettingsStore.TestDirectory=null; }
         });
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
         if(failure!=null) throw new Exception("Device management regression",failure);

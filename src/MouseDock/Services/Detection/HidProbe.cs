@@ -144,7 +144,7 @@ namespace MouseDock.Services.Detection
                             HidD_FreePreparsedData(pre);
                         }
 
-                        result.Add(node);
+                        if (InstanceScope.Allows(path)) result.Add(node);
                     }
                     finally { Marshal.FreeHGlobal(detail); }
                 }

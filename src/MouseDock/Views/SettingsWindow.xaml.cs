@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using MouseDock.Models;
+using MouseDock.Controls;
 using MouseDock.Services;
 
 namespace MouseDock.Views
@@ -62,6 +63,8 @@ namespace MouseDock.Views
             base.OnClosing(e);
         }
 
+        private void OnHeadsetAudioClick(object sender, RoutedEventArgs e) => App.ShowHeadsets();
+
         public void Reload()
         {
             VersionText.Text = "  v" + typeof(App).Assembly.GetName().Version?.ToString(3);
@@ -101,6 +104,9 @@ namespace MouseDock.Views
                 ApplyWarnButtons(s.LowBatteryWarn);
             AutoUpdateBox.IsChecked = s.AutoUpdate;
                 ApplySurfaceButtons(s.SurfaceMode);
+                IconFollowThemeBox.IsChecked=s.IconFollowTheme;
+                IconHideBackgroundBox.IsChecked=s.IconHideBackground;
+                RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
@@ -469,6 +475,47 @@ namespace MouseDock.Views
                     on ? (byte)0x46 : (byte)0x16, 0xFF, 0xFF, 0xFF));
                 btn.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
             }
+        }
+
+        private void RebuildIconStyles()
+        {
+            IconStyleChoices.Children.Clear();
+            foreach(var entry in new[]{("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你")})
+            {
+                var preview=new ReferenceBatteryIcon { StyleName=entry.Item1, Width=140, Height=96,
+                    Devices=new(){(DeviceKind.Mouse,76,false,false),(DeviceKind.Keyboard,48,false,false),(DeviceKind.Headset,-1,false,false)},
+                    HideBackground=App.Settings.IconHideBackground,
+                    Ink=new SolidColorBrush(entry.Item1=="plain"||App.Settings.IconHideBackground?App.Theme.Text:Color.FromRgb(30,43,42)),
+                    Accent=new SolidColorBrush(App.Settings.IconFollowTheme?App.Theme.Accent:Color.FromRgb(82,125,108)) };
+                var content=new StackPanel();
+                content.Children.Add(new Viewbox{Width=82,Height=55,Child=preview});
+                content.Children.Add(new TextBlock{Text=entry.Item2,FontSize=10,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
+                bool selected=App.Settings.IconStyle==entry.Item1;
+                var button=new Button { Tag=entry.Item1,Content=content,Margin=new Thickness(3),Padding=new Thickness(3,6,3,6),
+                    Style=(Style)FindResource("GhostButton"),ToolTip="切换到"+entry.Item2,
+                    BorderBrush=new SolidColorBrush(App.Theme.Accent),BorderThickness=new Thickness(selected?2:0),
+                    FontWeight=selected?FontWeights.Bold:FontWeights.Normal };
+                button.Click+=OnIconStyleClick;IconStyleChoices.Children.Add(button);
+            }
+        }
+
+        private void OnIconStyleClick(object sender,RoutedEventArgs e)
+        {
+            if (_loading || sender is not Button {Tag:string style}) return;
+            App.Settings.IconStyle=style;
+            App.Icon?.ApplyStyle(style,false);
+            App.SetSurface("icon");
+            ApplySurfaceButtons("icon");
+            RebuildIconStyles();
+        }
+
+        private void OnIconOptionsChanged(object sender,RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.IconFollowTheme=IconFollowThemeBox.IsChecked==true;
+            App.Settings.IconHideBackground=IconHideBackgroundBox.IsChecked==true;
+            App.Icon?.ApplyStyle(App.Settings.IconStyle,false);
+            App.SaveSettings();RebuildIconStyles();
         }
 
         private void OnSurfaceClick(object sender, RoutedEventArgs e)

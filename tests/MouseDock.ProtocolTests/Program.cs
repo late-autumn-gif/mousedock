@@ -5,6 +5,46 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+Console.WriteLine($"PASS {LegacySelectionRegression.Run()} legacy device preference checks.");
+if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.Export(args[1],args[2]);return;}
+if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
+if(args.Length>1&&args[0]=="--verify-published-update")
+{
+    UpdateService.UpdateInfo? update;
+    if(args[1].StartsWith("https://",StringComparison.Ordinal))
+    {
+        using var client=new System.Net.Http.HttpClient{Timeout=TimeSpan.FromSeconds(20)};
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("MouseDock-Release-Verification/1.1.1");
+        update=await UpdateService.CheckLatestAsync(client,"1.1.0");
+    }
+    else update=UpdateService.ParseRelease(System.IO.File.ReadAllText(args[1]),"1.1.0");
+    if(update?.Version!="1.1.1" || update.AssetName!="MouseDock-v1.1.1-win-x64.zip")throw new Exception("Published update metadata mismatch");
+    Console.WriteLine("PASS published stable v1.1.1 update and exact Windows x64 program asset selected.");return;
+}
+// Explicit inspection modes below are opt-in and report their hardware I/O.
+if (args.Length > 0 && args[0] == "--inspect-aula-battery")
+{
+    var devices = HidDiscovery.Enumerate();
+    foreach (var d in devices.Where(d => d.Detail == "089D:062F" || VendorProtocol.IsAulaSc630(d.RawName)))
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { d.Name,d.RawName,d.ConfirmedModel,d.Level,d.Charging,d.PeripheralConfirmed,d.IsStale,d.Note }));
+    foreach (var line in HidDiscovery.LastDiagnostics.Where(s => s.Contains("狼蛛路线=") || s.Contains("狼蛛边界：")))
+        Console.WriteLine(line);
+    return;
+}
+if (args.Length > 1 && args[0] == "--verify-headset-audio")
+{
+    Console.WriteLine($"PASS {HeadsetAudioRegression.RunUi(args[1])} headset UI/control checks; simulated backend, no system audio writes.");
+    return;
+}
+if (args.Length > 0 && args[0] == "--inspect-audio-endpoints")
+{
+    var endpoints = new WindowsHeadsetAudioBackend().Enumerate();
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(endpoints.Select(e => new {
+        e.Name, e.Capture, e.FormFactor, e.IsHeadset, HasContainer=e.Container != Guid.Empty,
+        HasVolume=e.Volume.HasValue, HasMute=e.Muted.HasValue, e.Error
+    })));
+    return;
+}
 if (args.Length > 0 && args[0] == "--verify-neon75")
 {
     Console.WriteLine($"PASS {Neon75Regression.Run()} Neon75 protocol checks; no hardware I/O.");
@@ -81,7 +121,7 @@ if (args.Length > 0 && args[0] == "--inspect-device-filter")
         Console.WriteLine(instanceId + " => " + (HidDiscovery.InspectExclusion(instanceId) ?? "保留"));
     return;
 }
-int assertions = MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
+int assertions = ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;
@@ -216,10 +256,20 @@ assertions += BluetoothRegression.Run();
 assertions += HfpRegression.Run();
 assertions += InphicRegression.Run();
 assertions += OfficialInphicAulaRegression.Run();
+assertions += AulaScopedRegression.Run();
 assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
 assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
+assertions += OriginalGpwScopedRegression.Run();
+assertions += InphicStylesRegression.Run();
+assertions += G7V9Regression.Run();
+assertions += ZeroRainyRegression.Run();
+assertions += SupportAuditRegression.Run();
+assertions += UpdateReleaseRegression.Run();
+assertions += UpdateInstallRegression.Run();
+assertions += LogitechReceiverRegression.Run();
+assertions += FreqRegression.Run();
 
 // ── HyperX（飓风 3）：03F0:06BE 的六个集合原来全被判成 usage 跳过 ──
 Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, 0xFF13, 0x0001, out var hxKind1) && hxKind1 == DeviceKind.Headset,
@@ -256,8 +306,8 @@ Check(cloudRequest.Length == 62 &&
 var cloudReply = new byte[62];
 cloudReply[0] = 0x0C; cloudReply[1] = 0x02; cloudReply[2] = 0x03; cloudReply[3] = 1; cloudReply[5] = 0x1D;
 cloudReply[6] = 64; cloudReply[7] = 1;
-Check(VendorProtocol.TryParseCloud3SBattery(cloudReply, cloudRequest, out int cloudLevel, out bool cloudCharging) &&
-    cloudLevel == 64 && !cloudCharging, "Cloud III S battery does not invent adjacent charge flag");
+Check(!VendorProtocol.TryParseCloud3SBattery(cloudReply, cloudRequest, out int cloudLevel, out bool cloudCharging) &&
+    cloudLevel == -1 && !cloudCharging, "Synthetic Cloud III S offsets are not proven battery data");
 Check(!VendorProtocol.TryParseCloud3SBattery(cloudRequest, cloudRequest, out _, out _),
     "Cloud III S rejects the request echo");
 cloudReply[6] = 101;
@@ -416,8 +466,8 @@ Check(!HidDiscovery.TryDeviceKind(0x4C4A, 0x4155, 0xFF00, 1, out _), "Do not cla
 var usbHeadset = new HidDiscovery.Bucket { Vid = 0x4C4A, Pid = 0x4155, Product = "ZhuAudio ZG2", Kind = DeviceKind.Headset };
 usbHeadset.BatteryFailures.Add("电量协议尚未适配");
 var headsetDevice = usbHeadset.ToDevice();
-Check(headsetDevice.Kind == DeviceKind.Headset && headsetDevice.Name.Contains("竹林鸟玄武") && headsetDevice.Transport == "USB", "Display USB headset by confirmed identity");
-Check(headsetDevice.Level == -1 && headsetDevice.Note.Contains("尚未适配"), "Device discovery must not fabricate headset battery");
+Check(headsetDevice.Kind == DeviceKind.Headset && headsetDevice.RawName == "ZhuAudio ZG2" && !headsetDevice.Name.Contains("竹林鸟") && headsetDevice.Transport == "USB", "Display USB headset by confirmed identity");
+Check(headsetDevice.Level == -1 && headsetDevice.Note.Contains("候选设备"), "Device discovery must not fabricate headset battery");
 var chargeDevice = new DeviceInfo { Connected = true, Level = 42 };
 var changedProperties = new List<string>();
 chargeDevice.PropertyChanged += (_, e) => changedProperties.Add(e.PropertyName!);

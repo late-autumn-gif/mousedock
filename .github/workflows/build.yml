@@ -26,6 +26,16 @@ jobs:
       - name: Offline protocol regression
         run: dotnet run --project tests/MouseDock.ProtocolTests/MouseDock.ProtocolTests.csproj -c Release
 
+      - name: Startup surface regression
+        shell: pwsh
+        run: |
+          dotnet build tests/MouseDock.Checks -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($mode in @('dock', 'mini', 'icon', 'taskbar', 'edge')) {
+            dotnet run --no-build --project tests/MouseDock.Checks -c Release -- --startup-surface $mode
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
       - name: Offline discovery and feedback report regression
         run: pwsh -NoProfile -File tests/feedback-report-regression.ps1
 
@@ -47,3 +57,4 @@ jobs:
           path: |
             app/MouseDock.exe
             app/SHA256.txt
+            app/THIRD-PARTY-NOTICES.md
