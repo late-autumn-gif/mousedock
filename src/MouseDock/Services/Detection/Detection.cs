@@ -173,7 +173,7 @@ namespace MouseDock.Services.Detection
             string n = name.ToUpperInvariant();
             if (n.Contains("SC580") || n.Contains("MOUSE") || n.Contains("鼠标")) return DeviceKind.Mouse;
             if (n.Contains("NEON") || n.Contains("KEYBOARD") || n.Contains("键盘")) return DeviceKind.Keyboard;
-            if (n.Contains("AIR") || n.Contains("HEADSET") || n.Contains("耳机") || n.Contains("BUDS")) return DeviceKind.Headset;
+            if (n.Contains("AIRPODS") || n.Contains("HEADSET") || n.Contains("HEADPHONE") || n.Contains("耳机") || n.Contains("BUDS")) return DeviceKind.Headset;
             return null;
         }
 

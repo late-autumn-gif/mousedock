@@ -20,6 +20,8 @@ namespace MouseDock.Models
         public bool HasDeviceSelection { get; set; }
         public List<string> HiddenDeviceIds { get; set; } = new List<string>();
         public List<string> DisabledRecognitionDeviceIds { get; set; } = new List<string>();
+        public string HeadsetOutputId { get; set; } = "";
+        public Dictionary<string, string> HeadsetMicrophoneBindings { get; set; } = new();
 
         // 悬浮图标形态：mini | character | photo
         public string IconMode { get; set; } = "photo";

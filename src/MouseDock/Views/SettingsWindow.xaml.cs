@@ -62,6 +62,8 @@ namespace MouseDock.Views
             base.OnClosing(e);
         }
 
+        private void OnHeadsetAudioClick(object sender, RoutedEventArgs e) => App.ShowHeadsets();
+
         public void Reload()
         {
             VersionText.Text = "  v" + typeof(App).Assembly.GetName().Version?.ToString(3);

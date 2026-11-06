@@ -5,6 +5,20 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Length > 1 && args[0] == "--verify-headset-audio")
+{
+    Console.WriteLine($"PASS {HeadsetAudioRegression.RunUi(args[1])} headset UI/control checks; simulated backend, no system audio writes.");
+    return;
+}
+if (args.Length > 0 && args[0] == "--inspect-audio-endpoints")
+{
+    var endpoints = new WindowsHeadsetAudioBackend().Enumerate();
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(endpoints.Select(e => new {
+        e.Name, e.Capture, e.FormFactor, e.IsHeadset, HasContainer=e.Container != Guid.Empty,
+        HasVolume=e.Volume.HasValue, HasMute=e.Muted.HasValue, e.Error
+    })));
+    return;
+}
 if (args.Length > 0 && args[0] == "--verify-neon75")
 {
     Console.WriteLine($"PASS {Neon75Regression.Run()} Neon75 protocol checks; no hardware I/O.");
@@ -81,7 +95,7 @@ if (args.Length > 0 && args[0] == "--inspect-device-filter")
         Console.WriteLine(instanceId + " => " + (HidDiscovery.InspectExclusion(instanceId) ?? "保留"));
     return;
 }
-int assertions = ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
+int assertions = HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;

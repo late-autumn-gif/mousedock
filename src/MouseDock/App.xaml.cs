@@ -34,6 +34,7 @@ namespace MouseDock
         public static TaskbarWindow Taskbar { get; private set; }
         public static ScreenEdgeWindow Edge { get; private set; }
         public static SettingsWindow SettingsView { get; private set; }
+        public static HeadsetAudioWindow HeadsetView { get; private set; }
 
         public static List<string> CharacterAssets { get; } = new List<string>();
         public static string DefaultPhotoAsset { get; private set; }
@@ -359,6 +360,7 @@ namespace MouseDock
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
             menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("退出 MouseDock", null, (_, __) => ExitApp());
@@ -640,6 +642,14 @@ namespace MouseDock
             SetSurface("icon");
         }
 
+        public static void ShowHeadsets()
+        {
+            HeadsetView ??= new HeadsetAudioWindow();
+            HeadsetView.ApplyTheme(Theme);
+            HeadsetView.Show();
+            HeadsetView.Activate();
+        }
+
         public static void ShowSettings(Window owner)
         {
             if (SettingsView == null) SettingsView = new SettingsWindow();
@@ -706,6 +716,7 @@ namespace MouseDock
                 }));
             }
             menu.Items.Add(new Separator());
+            menu.Items.Add(Item("耳机控制…", ShowHeadsets));
             menu.Items.Add(Item("设置…", () => ShowSettings(owner)));
             menu.Items.Add(Item("退出", ExitApp));
 
@@ -733,6 +744,7 @@ namespace MouseDock
 
         public static void ApplyTheme(bool animate)
         {
+            HeadsetView?.ApplyTheme(Theme);
             Dock?.ApplyTheme(Theme, animate);
             Mini?.ApplyTheme(Theme, animate);
             Icon?.ApplyTheme(Theme, animate);

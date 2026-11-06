@@ -36,7 +36,7 @@ namespace MouseDock.Services.Detection
         /// 在同步等待（GetAwaiter().GetResult()）时会被卡住，所以这里必须 ConfigureAwait(false)。
         /// </summary>
         public static Task<List<DetectedDevice>> EnumerateAsync(int perDeviceTimeoutMs = 1500, Func<string, Models.DeviceKind?> hint = null,
-            DevicePreferences preferences = null)
+            DevicePreferences preferences = null, bool includeHeadsets = false)
         {
             return Task.Run(async () =>
             {
@@ -51,8 +51,8 @@ namespace MouseDock.Services.Detection
                     foreach (string detail in entry.Extra) Trace("  " + detail);
                 }
 
-                await SafeAsync(() => CollectBle(result, perDeviceTimeoutMs, hint, systemBattery, preferences), "BLE").ConfigureAwait(false);
-                await SafeAsync(() => CollectClassic(result, systemBattery, preferences), "经典蓝牙").ConfigureAwait(false);
+                await SafeAsync(() => CollectBle(result, perDeviceTimeoutMs, hint, systemBattery, preferences, includeHeadsets), "BLE").ConfigureAwait(false);
+                await SafeAsync(() => CollectClassic(result, systemBattery, preferences, includeHeadsets), "经典蓝牙").ConfigureAwait(false);
 
                 Trace($"EnumerateAsync 结束，命中 {result.Count}");
                 return result;
@@ -66,7 +66,7 @@ namespace MouseDock.Services.Detection
         }
 
         private static async Task CollectBle(List<DetectedDevice> sink, int timeoutMs, Func<string, Models.DeviceKind?> hint,
-            List<BtSystemBattery.Entry> systemBattery, DevicePreferences preferences)
+            List<BtSystemBattery.Entry> systemBattery, DevicePreferences preferences, bool includeHeadsets)
         {
             Trace("BLE 开始枚举");
             string selector = BluetoothLEDevice.GetDeviceSelector();
@@ -93,9 +93,11 @@ namespace MouseDock.Services.Detection
                         info.Name.IndexOf("IN9", StringComparison.OrdinalIgnoreCase) >= 0 &&
                         info.Name.IndexOf("PRO", StringComparison.OrdinalIgnoreCase) >= 0;
                     var kind = isIn9Pro ? DeviceKind.Mouse : KindFromAppearance(device, info.Name);
+                    if (!includeHeadsets && kind == DeviceKind.Headset) continue;
                     if (kind == null && hint != null) kind = hint(info.Name);
                     if (kind == null && recognitionEnabled) kind = await KindFromGattAsync(device, timeoutMs).ConfigureAwait(false);
                     if (kind == null && !recognitionEnabled) kind = VendorMap.KindFromName(info.Name) ?? DeviceKind.Other;
+                    if (!includeHeadsets && kind == DeviceKind.Headset) continue;
 
                     // Appearance 常常是 0x0000（国产外设基本不填），不能因此直接丢掉：
                     // 先试读一次 GATT 电量，能读到就按名字推类型照样显示
@@ -165,7 +167,7 @@ namespace MouseDock.Services.Detection
             }
         }
 
-        private static async Task CollectClassic(List<DetectedDevice> sink, List<BtSystemBattery.Entry> systemBattery, DevicePreferences preferences)
+        private static async Task CollectClassic(List<DetectedDevice> sink, List<BtSystemBattery.Entry> systemBattery, DevicePreferences preferences, bool includeHeadsets)
         {
             Trace("经典蓝牙开始枚举");
             var infos = await DeviceInformation.FindAllAsync(BluetoothDevice.GetDeviceSelector()).AsTask().ConfigureAwait(false);
@@ -182,6 +184,7 @@ namespace MouseDock.Services.Detection
                 try
                 {
                     var kind = UsageMap.FromClassOfDevice(device.ClassOfDevice.RawValue);
+                    if (!includeHeadsets && kind == DeviceKind.Headset) continue;
                     if (device.ConnectionStatus != BluetoothConnectionStatus.Connected)
                     {
                         if (kind == DeviceKind.Headset || kind == DeviceKind.Mouse || kind == DeviceKind.Keyboard)

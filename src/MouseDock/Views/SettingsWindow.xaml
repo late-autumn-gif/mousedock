@@ -264,6 +264,13 @@
                     </Border>
                     <TextBlock x:Name="DeviceHint" Text="勾选同步到所有视图；右键可隐藏或重新识别" FontSize="10" Opacity="0.42" Margin="3,0,0,2" TextWrapping="Wrap" />
 
+                    <TextBlock Text="耳机" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="设备名称 · 音量 · 麦克风静音" Foreground="{DynamicResource TextBrush}" FontSize="12" Margin="0,0,0,8" />
+                            <Button Content="打开耳机控制" Style="{StaticResource GhostButton}" Click="OnHeadsetAudioClick" />
+                        </StackPanel>
+                    </Border>
                     <TextBlock Text="显示方式" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>

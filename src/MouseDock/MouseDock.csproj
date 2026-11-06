@@ -29,6 +29,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <EmbeddedResource Include="../../THIRD-PARTY-NOTICES.md" LogicalName="MouseDock.ThirdPartyNotices.md" />
     <Content Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md"
       CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />

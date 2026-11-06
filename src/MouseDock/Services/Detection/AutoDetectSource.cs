@@ -92,7 +92,7 @@ namespace MouseDock.Services.Detection
         {
             var list = new List<DetectedDevice>();
 
-            try { list.AddRange(HidDiscovery.Enumerate(preferences)); } catch { }
+            try { list.AddRange(HidDiscovery.Enumerate(preferences).Where(d => d.Kind != DeviceKind.Headset)); } catch { }
 
             // 蓝牙设备常常不给 Appearance，用 HID 里已经识别出的同名设备当提示
             var hints = new Dictionary<string, DeviceKind>(StringComparer.OrdinalIgnoreCase);
@@ -102,7 +102,7 @@ namespace MouseDock.Services.Detection
             try
             {
                 var bt = BluetoothDiscovery.EnumerateAsync(1500, name =>
-                    name != null && hints.TryGetValue(name, out var k) ? k : (DeviceKind?)null, preferences)
+                    name != null && hints.TryGetValue(name, out var k) ? k : (DeviceKind?)null, preferences, includeHeadsets: false)
                     .GetAwaiter().GetResult();
                 if (bt != null) list.AddRange(bt);
             }
