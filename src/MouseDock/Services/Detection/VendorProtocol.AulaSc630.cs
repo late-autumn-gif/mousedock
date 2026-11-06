@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 
 namespace MouseDock.Services.Detection
 {
@@ -43,31 +42,13 @@ namespace MouseDock.Services.Detection
         internal static int TryReadAulaSc630(ushort vid, ushort pid, string product, out bool charging)
         {
             charging = false;
-            if (!IsAulaSc630(product)) return -1;
+            if (!IsAulaSc630(product) || InstanceScope.Current == null) return -1;
             foreach (string path in Paths(vid, pid))
             {
-                IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-                if (handle == IntPtr.Zero || handle == new IntPtr(-1)) continue;
-                try
-                {
-                    var caps = Caps(handle);
-                    if (caps.UsagePage != 0xFF01 || caps.Usage != 1 || caps.FeatureReportByteLength != 41 ||
-                        !IsAulaSc630(HidDiscovery.ReadHidProduct(handle, path))) continue;
-                    // Official timing is 50 ms after SetFeature plus 80 ms before GetFeature; retry a few times.
-                    for (int attempt = 0; attempt < 3; attempt++)
-                    {
-                        byte sequence = unchecked((byte)Interlocked.Increment(ref _sc630Sequence));
-                        var request = BuildAulaSc630BatteryRequest(sequence);
-                        if (!HidD_SetFeature(handle, request, request.Length)) continue;
-                        System.Threading.Thread.Sleep(130);
-                        var reply = new byte[41];
-                        reply[0] = 6;
-                        if (HidD_GetFeature(handle, reply, reply.Length) &&
-                            TryParseAulaSc630Battery(reply, sequence, out int level, out charging)) return level;
-                    }
-                }
-                finally { CloseHandle(handle); }
+                var result = ReadAulaBattery(AulaBatteryProtocol.Route.Sc630Pro, path, vid, pid);
+                if (result.Level < 0) continue;
+                charging = result.ChargingKnown && result.Charging;
+                return result.Level;
             }
             return -1;
         }

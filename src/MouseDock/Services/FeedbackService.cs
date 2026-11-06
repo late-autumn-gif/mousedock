@@ -233,7 +233,7 @@ namespace MouseDock.Services
                     {
                         deviceReport = BuildDeviceSnapshot(settings, target, vid, pid);
                         probe = Detection.VendorProtocol.ProbeDevice(vid, pid, target.Name,
-                            settings?.SafeMode == true);
+                            settings?.SafeMode == true, scanOnly: Detection.AulaBatteryProtocol.IsCandidate(vid, pid, target.RawName));
                     }
                     else
                     {

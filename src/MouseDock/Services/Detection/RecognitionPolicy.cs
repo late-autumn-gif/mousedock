@@ -9,6 +9,9 @@ internal static class RecognitionPolicy
         // Explicitly requested adaptation, bounded by this report's exact product/interface.
         // Protocol-supported; real battery responses are still pending hardware confirmation.
         VendorProtocol.IsReportedX23Se(vid, pid, product) ||
+        // Requested SC630 adaptation: exact official product plus the dedicated
+        // Feature6/41 channel is required by the reader; physical validation pending.
+        (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product)) ||
         // Repository documents local hardware verification for these receivers.
         (vid == 0x089D && pid == 0x062F) ||
         (vid == 0x391D && pid == 0x2A05) ||

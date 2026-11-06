@@ -58,5 +58,7 @@ idx:  4    5  6  7  8   9   10  11  12  13  14  15
 
 ## 新增设备
 
-在 `VendorMap.KnownReceivers` 加 `"VID:PID" => (名称, 类型, 物理键)` 即可复用该读取器。
+当前 v1.1.1 的 SC580 已改走 `AulaBatteryProtocol` / `VendorProtocol.AulaScoped`：先匹配本实例 FF02/0000、33/33，只发 Identify，取得两次同型号在线应答后才命名和读电量；不执行本页历史的握手/DPI/推送兜底。常量报告没有值/按钮能力项，report0 依据历史实测协议；有能力表时仍检查编号一致性。详见 [狼蛛适配说明](AULA-SC580-SC630PRO.md)。
+
+新增设备不能只在 `VendorMap.KnownReceivers` 添加 VID/PID 和型号：公共接收器必须先确认身份，协议必须有精确集合与实测/官方字段证据，并在运行时策略中显式启用。
 若对方的命令号不同，需要重新抓包：见 `tools/` 下的 pcap 解析脚本。

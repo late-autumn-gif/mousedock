@@ -10,14 +10,9 @@
 
 ## 新增一款设备的电量支持
 
-多数情况只需要一行：
+不能只把 VID/PID 写成型号名称。089D:062F 是公共接收器，必须从实时 Identify 的 M137 确认 SC580；M230 对应另一个型号。新增适配应提交精确产品/集合规则、协议证据、实例隔离与报文回归，并显式接入 RecognitionPolicy 和专用扫描路径。参考 [狼蛛适配说明](docs/AULA-SC580-SC630PRO.md)。
 
-```csharp
-// Services/Detection/Detection.cs → VendorMap.KnownReceivers
-["089D:062F"] = ("狼蛛 SC580", DeviceKind.Mouse, "aula-sc580"),
-```
-
-若对方命令号不同，需要抓包还原，流程见 [PROTOCOL.md](PROTOCOL.md)：
+若对方命令号不同，需要抓包还原，流程见 [PROTOCOL.md](docs/PROTOCOL.md)：
 
 ```powershell
 # 1. 装 USBPcap（需要管理员，且重启一次让过滤驱动挂到根集线器）

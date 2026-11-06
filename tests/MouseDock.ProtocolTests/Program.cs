@@ -5,6 +5,16 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+// Explicit inspection modes below are opt-in and report their hardware I/O.
+if (args.Length > 0 && args[0] == "--inspect-aula-battery")
+{
+    var devices = HidDiscovery.Enumerate();
+    foreach (var d in devices.Where(d => d.Detail == "089D:062F" || VendorProtocol.IsAulaSc630(d.RawName)))
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { d.Name,d.RawName,d.ConfirmedModel,d.Level,d.Charging,d.PeripheralConfirmed,d.IsStale,d.Note }));
+    foreach (var line in HidDiscovery.LastDiagnostics.Where(s => s.Contains("狼蛛路线=") || s.Contains("狼蛛边界：")))
+        Console.WriteLine(line);
+    return;
+}
 if (args.Length > 1 && args[0] == "--verify-headset-audio")
 {
     Console.WriteLine($"PASS {HeadsetAudioRegression.RunUi(args[1])} headset UI/control checks; simulated backend, no system audio writes.");
@@ -230,6 +240,7 @@ assertions += BluetoothRegression.Run();
 assertions += HfpRegression.Run();
 assertions += InphicRegression.Run();
 assertions += OfficialInphicAulaRegression.Run();
+assertions += AulaScopedRegression.Run();
 assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
 assertions += OfficialIntegrationRegression.Run();

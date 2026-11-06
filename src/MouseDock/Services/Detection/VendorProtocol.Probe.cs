@@ -55,7 +55,7 @@ namespace MouseDock.Services.Detection
         /// 不写配置、不改设备状态；安全模式下只枚举和被动听，不发任何帧。
         /// </summary>
         internal static DeviceProbeResult ProbeDevice(ushort vid, ushort pid, string requestedName,
-                                                      bool safeMode, int listenMs = 400)
+                                                      bool safeMode, int listenMs = 400, bool scanOnly = false)
         {
             var sw = Stopwatch.StartNew();
             var text = new StringBuilder();
@@ -71,11 +71,11 @@ namespace MouseDock.Services.Detection
             text.AppendLine();
 
             // This diagnostic API has no physical-instance key. Do not reopen every
-            // receiver sharing this public ID; the scanner already logs the exact
-            // X23SE channel, report IDs and validated transaction result.
-            if (vid == 0xA8A5 && pid == 0x2255)
+            // receiver sharing this public ID; dedicated scan routes already log
+            // their exact channel, report metadata and transaction result.
+            if (scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName))
             {
-                text.AppendLine("此共享 VID/PID 不运行跨实例通用探针。X23SE 仅由自动扫描的精确实例/集合读取；请查看 hid-devices.txt 的 X23SE 诊断。");
+                text.AppendLine("此设备不运行跨实例通用探针。专用协议仅由自动扫描的精确实例/集合读取；请查看 hid-devices.txt 的诊断。");
                 return new DeviceProbeResult { Text = text.ToString() };
             }
 
@@ -320,6 +320,7 @@ namespace MouseDock.Services.Detection
         private static List<ProbeSpec> BuildProbes(ushort vid, ushort pid, HIDP_CAPS caps, string product)
         {
             var list = new List<ProbeSpec>();
+            if (AulaBatteryProtocol.IsCandidate(vid, pid, product)) return list;
             string p = product ?? "";
 
             // Feature 通道：SC630 / F99 / 英菲克 / 标准电池
