@@ -73,21 +73,27 @@ namespace MouseDock.Services
         /// <summary>
         /// 检查更新。无网 / 超时 / 解析失败全返回 null，绝不抛异常。
         /// </summary>
-        public static async Task<UpdateInfo> CheckAsync(CancellationToken ct = default)
-        {
-            try
-            {
-                using var resp = await _http.GetAsync(ApiLatest, ct).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) return null;
+        public static Task<UpdateInfo> CheckAsync(CancellationToken ct = default) =>
+            CheckLatestAsync(_http,CurrentVersionText,ct);
 
-                var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                return ParseRelease(json, CurrentVersionText);
-            }
-            catch
+        internal static async Task<UpdateInfo> CheckLatestAsync(HttpClient client,string currentVersion,CancellationToken ct=default)
+        {
+            // Public GitHub API can return403 to anonymous desktop clients.
+            // The fallback manifest is another asset owned by this same repository,
+            // fetched directly from GitHub rather than trusting a mirror's metadata.
+            foreach(var url in new[]{ApiLatest,new Uri($"https://github.com/{Owner}/{Repo}/releases/latest/download/update.json")})
             {
-                // Offline, timeout, malformed response: never block startup.
-                return null;
+                if(ct.IsCancellationRequested)return null;
+                try
+                {
+                    using var response=await client.GetAsync(url,ct).ConfigureAwait(false);
+                    if(!response.IsSuccessStatusCode)continue;
+                    string json=await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    return ParseRelease(json,currentVersion);
+                }
+                catch { }
             }
+            return null;
         }
 
         internal static UpdateInfo ParseRelease(string json, string currentVersion)

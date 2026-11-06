@@ -9,15 +9,14 @@ if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.E
 if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
 if(args.Length>1&&args[0]=="--verify-published-update")
 {
-    string json;
+    UpdateService.UpdateInfo? update;
     if(args[1].StartsWith("https://",StringComparison.Ordinal))
     {
         using var client=new System.Net.Http.HttpClient{Timeout=TimeSpan.FromSeconds(20)};
         client.DefaultRequestHeaders.UserAgent.ParseAdd("MouseDock-Release-Verification/1.1.1");
-        json=await client.GetStringAsync(args[1]);
+        update=await UpdateService.CheckLatestAsync(client,"1.1.0");
     }
-    else json=System.IO.File.ReadAllText(args[1]);
-    var update=UpdateService.ParseRelease(json,"1.1.0");
+    else update=UpdateService.ParseRelease(System.IO.File.ReadAllText(args[1]),"1.1.0");
     if(update?.Version!="1.1.1" || update.AssetName!="MouseDock-v1.1.1-win-x64.zip")throw new Exception("Published update metadata mismatch");
     Console.WriteLine("PASS published stable v1.1.1 update and exact Windows x64 program asset selected.");return;
 }

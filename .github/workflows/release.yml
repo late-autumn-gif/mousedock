@@ -53,7 +53,11 @@ jobs:
           Copy-Item docs/DEVICE-SUPPORT-1.1.1.md,docs/DEVICE-CATALOGUE-1.1.1.csv,docs/SUPPORT-AUDIT-20261106.md dist/
           $package = "MouseDock-${{ github.ref_name }}-win-x64.zip"
           Compress-Archive -Path dist/* -DestinationPath $package
-          Get-FileHash $package -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $package" } | Out-File -Encoding utf8 SHA256.txt
+          $digest = (Get-FileHash $package -Algorithm SHA256).Hash.ToLower()
+          "$digest  $package" | Out-File -Encoding utf8 SHA256.txt
+          $manifest = @{ tag_name="${{ github.ref_name }}"; draft=$false; prerelease=$false; assets=@(@{name=$package; browser_download_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$package";size=(Get-Item $package).Length;digest="sha256:$digest"}) }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath update.json -Encoding utf8
+
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -61,6 +65,7 @@ jobs:
           files: |
             MouseDock-${{ github.ref_name }}-win-x64.zip
             SHA256.txt
+            update.json
           generate_release_notes: true
           body: |
             > 未签名的构建会让 SmartScreen 显示「未知发布者」。校验方法见 SHA256.txt。

@@ -58,6 +58,17 @@ internal static class UpdateInstallRegression
         rejected=false;try{UpdateService.PreparePackage(traversal,Path.Combine(work,"safe"));}catch(IOException){rejected=true;}
         Check(rejected&&!File.Exists(Path.Combine(work,"escape.txt")),"ZIP traversal cannot escape extraction root");
 
+        string manifest=System.Text.Json.JsonSerializer.Serialize(new{tag_name="v1.1.1",draft=false,prerelease=false,assets=new[]{new{name="MouseDock-v1.1.1-win-x64.zip",browser_download_url="https://github.com/late-autumn-gif/mousedock/releases/download/v1.1.1/MouseDock-v1.1.1-win-x64.zip",size=123,digest="sha256:"+new string('a',64)}}});
+        var limited=new Handler{Reply=n=>n==1?new(HttpStatusCode.Forbidden):new(HttpStatusCode.OK){Content=new StringContent(manifest)}};
+        using(var client=new HttpClient(limited))
+        {
+            var update=UpdateService.CheckLatestAsync(client,"1.1.0").GetAwaiter().GetResult();
+            Check(update?.Version=="1.1.1"&&update.Sha256==new string('a',64)&&limited.Requests.Count==2,"API403 falls back to this repository's direct GitHub manifest");
+            Check(limited.Requests[1]=="https://github.com/late-autumn-gif/mousedock/releases/latest/download/update.json","Metadata fallback never trusts a third-party mirror");
+        }
+        var offline=new Handler{Reply=_=>new(HttpStatusCode.ServiceUnavailable)};
+        using(var client=new HttpClient(offline))Check(UpdateService.CheckLatestAsync(client,"1.1.0").GetAwaiter().GetResult()==null&&offline.Requests.Count==2,"Both metadata failures return without crashing startup");
+
         // Real Windows PowerShell helper, dummy files and restart=false only.
         // All test staging is intentionally retained per the user's instruction.
         foreach(bool fail in new[]{false,true})
