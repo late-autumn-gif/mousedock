@@ -73,7 +73,7 @@ namespace MouseDock.Services.Detection
             // This diagnostic API has no physical-instance key. Do not reopen every
             // receiver sharing this public ID; dedicated scan routes already log
             // their exact channel, report metadata and transaction result.
-            if (scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
+            if (IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
             {
                 text.AppendLine("此设备不运行跨实例通用探针。专用协议仅由自动扫描的精确实例/集合读取；请查看 hid-devices.txt 的诊断。");
                 return new DeviceProbeResult { Text = text.ToString() };
@@ -320,7 +320,7 @@ namespace MouseDock.Services.Detection
         private static List<ProbeSpec> BuildProbes(ushort vid, ushort pid, HIDP_CAPS caps, string product)
         {
             var list = new List<ProbeSpec>();
-            if (AulaBatteryProtocol.IsCandidate(vid, pid, product) || OriginalGpwProtocol.IsCandidate(vid,pid)) return list;
+            if (IsScopedInphic(vid,pid,product) || AulaBatteryProtocol.IsCandidate(vid, pid, product) || OriginalGpwProtocol.IsCandidate(vid,pid)) return list;
             string p = product ?? "";
 
             // Feature 通道：SC630 / F99 / 英菲克 / 标准电池

@@ -5,6 +5,7 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
 // Explicit inspection modes below are opt-in and report their hardware I/O.
 if (args.Length > 0 && args[0] == "--inspect-aula-battery")
 {
@@ -246,6 +247,7 @@ assertions += MchoseRapooRegression.Run();
 assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
 assertions += OriginalGpwScopedRegression.Run();
+assertions += InphicStylesRegression.Run();
 assertions += LogitechReceiverRegression.Run();
 assertions += FreqRegression.Run();
 

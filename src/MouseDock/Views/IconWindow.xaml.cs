@@ -19,6 +19,7 @@ namespace MouseDock.Views
         private readonly TransformGroup _photoTransform = new TransformGroup();
         private ThemePreset _theme = App.Theme;
 
+        private MouseDock.Controls.ReferenceBatteryIcon _referenceIcon;
         private bool _dragging;
         private Point _dragStart;
         private double _dragOriginX, _dragOriginY;
@@ -294,6 +295,25 @@ namespace MouseDock.Views
                 .FirstOrDefault() ?? "";
 
             FitSize(longest, devices.Count);
+            bool reference = new[] {"ring","tile","pill","battery","plain","multi"}.Contains(App.Settings.IconStyle);
+            if (_referenceIcon==null) {
+                _referenceIcon=new MouseDock.Controls.ReferenceBatteryIcon();
+                _referenceIcon.MouseLeftButtonDown+=OnDragWindow; _referenceIcon.MouseMove+=OnDragMove; _referenceIcon.MouseLeftButtonUp+=OnDragEnd;
+                _referenceIcon.MouseRightButtonUp+=OnContextMenu; _referenceIcon.MouseWheel+=OnWheel;
+                RootGrid.Children.Add(_referenceIcon);
+            }
+            _referenceIcon.Visibility=reference?Visibility.Visible:Visibility.Collapsed;
+            if(reference) {
+                foreach(var layer in new[] {RingLayer,MiniLayer,PillLayer,BatteryLayer,PlainLayer,MultiLayer})layer.Visibility=Visibility.Collapsed;
+                _referenceIcon.StyleName=App.Settings.IconStyle;
+                _referenceIcon.Devices=devices.Take(6).Select(d=>(d.Kind,d.HasLevel?d.Level:-1,d.IsStale,d.Charging)).ToList();
+                if(App.Settings.IconStyle!="multi" && dev!=null)_referenceIcon.Devices=new(){(dev.Kind,dev.HasLevel?dev.Level:-1,dev.IsStale,dev.Charging)};
+                _referenceIcon.HideBackground=App.Settings.IconHideBackground;
+                _referenceIcon.Accent=App.Settings.IconFollowTheme?new SolidColorBrush(_theme.Accent):new SolidColorBrush(Color.FromRgb(82,125,108));
+                RootGrid.Width=_referenceIcon.Width=App.Settings.IconStyle=="multi"?Math.Max(56,Math.Min(6,devices.Count)*42+12):App.Settings.IconStyle is "pill" or "battery" or "plain"?112:96;
+                RootGrid.Height=_referenceIcon.Height=App.Settings.IconStyle is "ring" or "tile"?96:64;
+                _referenceIcon.InvalidateVisual();
+            }
         }
 
         /// <summary>宽度跟最长设备名走，高度跟台数走；外壳形状决定基准尺寸。</summary>
@@ -479,7 +499,17 @@ namespace MouseDock.Views
         private void OnContextMenu(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
-            App.ShowQuickMenu(this);
+            var menu=new ContextMenu();
+            foreach(var entry in new[] {("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你")}) {
+                var item=new MenuItem {Header=entry.Item2,IsCheckable=true,IsChecked=App.Settings.IconStyle==entry.Item1};
+                item.Click+=(_,__)=>{ApplyStyle(entry.Item1,true);App.SaveSettings();};menu.Items.Add(item);
+            }
+            var follow=new MenuItem {Header="跟随界面主题色",IsCheckable=true,IsChecked=App.Settings.IconFollowTheme};
+            follow.Click+=(_,__)=>{App.Settings.IconFollowTheme=follow.IsChecked;App.SaveSettings();UpdateValue();};menu.Items.Add(follow);
+            var hide=new MenuItem {Header="隐藏图标底色",IsCheckable=true,IsChecked=App.Settings.IconHideBackground};
+            hide.Click+=(_,__)=>{App.Settings.IconHideBackground=hide.IsChecked;App.SaveSettings();UpdateValue();};menu.Items.Add(hide);
+            var settings=new MenuItem {Header="更多设置"};settings.Click+=(_,__)=>App.ShowQuickMenu(this);menu.Items.Add(settings);
+            menu.PlacementTarget=this;menu.IsOpen=true;
         }
     }
 }
