@@ -27,6 +27,10 @@ namespace MouseDock.Views
         public IconWindow()
         {
             InitializeComponent();
+            PreviewMouseWheel+=(_,e)=>{
+                if((Keyboard.Modifiers&ModifierKeys.Control)!=0 && _activeStyle=="photo")return;
+                SetSize(App.Settings.IconScale*(e.Delta>0?1.08:1/1.08),true);e.Handled=true;
+            };
             _photoTransform.Children.Add(_photoScale);
             _photoTransform.Children.Add(_photoOffset);
             PhotoBrush.RelativeTransform = _photoTransform;
@@ -37,6 +41,7 @@ namespace MouseDock.Views
             {
                 ApplyStyle(App.Settings.IconStyle, false);
                 UpdateValue();
+                SetSize(App.Settings.IconScale,false);
                 RootGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
             };
         }
@@ -52,6 +57,13 @@ namespace MouseDock.Views
                 "mini" => "tile",
                 _ => mode
             }, persist);
+        }
+
+        public void SetSize(double scale,bool persist)
+        {
+            scale=double.IsFinite(scale)?Math.Clamp(scale,.5,3):1;
+            RootGrid.LayoutTransform=new ScaleTransform(scale,scale);
+            if(persist){App.Settings.IconScale=scale;App.SaveSettings();App.SettingsView?.SyncIconScale();}
         }
 
         private string _shape = "soft";

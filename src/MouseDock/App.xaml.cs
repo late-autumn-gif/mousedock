@@ -39,7 +39,7 @@ namespace MouseDock
         public static List<string> CharacterAssets { get; } = new List<string>();
         public static string DefaultPhotoAsset { get; private set; }
         public static string DefaultBackgroundAsset { get; private set; }
-        public static bool StartHidden { get; private set; }
+        public static bool QuietStartup { get; private set; }
 
         public static DeviceInfo PrimaryDevice =>
             Battery?.VisibleDevices.FirstOrDefault();
@@ -93,7 +93,8 @@ namespace MouseDock
             })
             { IsBackground = true, Name = "MouseDock.Wake" };
             wakeThread.Start();
-            StartHidden = e.Args.Contains("--tray");
+            // Keep existing startup entries: --tray skips launch settings, not battery surfaces.
+            QuietStartup = e.Args.Contains("--tray");
             if (Settings.Version < 4)
             {
                 // 老配置默认是演示数据；升级到自动检测真实设备
@@ -228,7 +229,7 @@ namespace MouseDock
 
             if (e.Args.Contains("--settings"))
                 ShowSettings(Dock);
-            else if (!StartHidden)
+            else if (!QuietStartup)
                 ShowLaunchSurface();
         }
 
@@ -265,12 +266,10 @@ namespace MouseDock
             ApplyAllStyles();
             ApplyWindowBehavior();
 
-            SyncSurfaceFlags();
-            if (Settings.ShowDock && !StartHidden) Dock.Show();
-            if (Settings.ShowMini && !StartHidden) Mini.Show();
-            if (Settings.ShowIcon && !StartHidden) { Icon.Show(); Icon.ApplyStyle(Settings.IconStyle, false); }
-            if (Settings.SurfaceMode == "taskbar" && !StartHidden) Taskbar.Show();
-            if (Settings.SurfaceMode == "edge" && !StartHidden) Edge.Show();
+            if (QuietStartup)
+                foreach (var window in new Window[] { Dock, Mini, Icon, Taskbar, Edge })
+                    window.ShowActivated = false;
+            ApplySurface();
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -778,7 +777,7 @@ namespace MouseDock
             double s = Math.Clamp(Settings.Scale, 0.7, 1.6);
             if (Dock?.Content is FrameworkElement dockRoot) dockRoot.LayoutTransform = new ScaleTransform(s, s);
             if (Mini?.Content is FrameworkElement miniRoot) miniRoot.LayoutTransform = new ScaleTransform(s, s);
-            if (Icon?.Content is FrameworkElement iconRoot) iconRoot.LayoutTransform = new ScaleTransform(s, s);
+            Icon?.SetSize(Settings.IconScale,false);
             Edge?.UpdateAnchor();
             // 设置窗口不跟面板缩放：它是固定尺寸的配置面板，放大缩小只会让控件挤成一团。
         }

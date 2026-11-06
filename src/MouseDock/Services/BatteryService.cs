@@ -418,6 +418,7 @@ namespace MouseDock.Services
             if (generation != _preferences.Generation) { _refreshRequested = true; return; }
             if (snapshot == null) return;
 
+            bool migratedPreferences = _preferences.MigrateLegacyIds(snapshot);
             foreach (var incoming in snapshot)
             {
                 _preferences.Apply(incoming);
@@ -513,6 +514,7 @@ namespace MouseDock.Services
             if (_timer.Interval != target) _timer.Interval = target;
 
             RefreshVisible();
+            if (migratedPreferences) PreferencesChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void ApplyPreferences(DeviceInfo device)

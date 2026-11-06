@@ -106,6 +106,7 @@ namespace MouseDock.Views
                 ApplySurfaceButtons(s.SurfaceMode);
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
+                SyncIconScale();
                 RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
@@ -476,6 +477,21 @@ namespace MouseDock.Views
                 btn.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
             }
         }
+
+        public void SyncIconScale()
+        {
+            bool prior=_loading;_loading=true;
+            try{double value=double.IsFinite(App.Settings.IconScale)?Math.Clamp(App.Settings.IconScale,.5,3):1;
+                IconScaleSlider.Value=value;IconScaleValue.Text=$"{value*100:0}%";}
+            finally{_loading=prior;}
+        }
+        private void OnIconScaleChanged(object sender,RoutedPropertyChangedEventArgs<double> e)
+        {
+            if(_loading||IconScaleValue==null)return;
+            App.Settings.IconScale=e.NewValue;IconScaleValue.Text=$"{e.NewValue*100:0}%";
+            App.Icon?.SetSize(e.NewValue,false);App.SaveSettings();
+        }
+        private void OnResetIconScale(object sender,RoutedEventArgs e)=>IconScaleSlider.Value=1;
 
         private void RebuildIconStyles()
         {

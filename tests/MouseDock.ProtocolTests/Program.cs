@@ -5,6 +5,25 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+Console.WriteLine($"PASS {LegacySelectionRegression.Run()} legacy device preference checks.");
+if (args.Length > 0 && args[0] == "--inspect-k87-battery")
+{
+    // Explicitly requested hardware check through the production discovery path.
+    for (int scan = 0; scan < 2; scan++)
+    {
+        var keyboards = HidDiscovery.Enumerate().Where(d => d.Detail == "3837:1015").ToArray();
+        foreach (var d in keyboards)
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+            { scan, d.Name, Kind = d.Kind.ToString(), d.Level, d.Charging, d.IsStale, d.Note }));
+        foreach (var line in HidDiscovery.LastDiagnostics.Where(s => s.StartsWith("MCHOSE K87 V3 QHW:")))
+            Console.WriteLine(line);
+        if (keyboards.Length != 1 || keyboards[0].Kind != DeviceKind.Keyboard ||
+            keyboards[0].Level < 0 || keyboards[0].IsStale)
+            Environment.ExitCode = 1;
+    }
+    return;
+}
+Console.WriteLine($"PASS {K87DiscoveryRegression.Run()} K87 discovery regression checks.");
 if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.Export(args[1],args[2]);return;}
 if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
 if(args.Length>1&&args[0]=="--verify-published-update")

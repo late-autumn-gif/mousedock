@@ -252,7 +252,9 @@ namespace MouseDock.Services.Detection
             foreach (var bucket in buckets.Values)
             {
                 using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
-                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
+                    VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
                 if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                 if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
@@ -1451,6 +1453,8 @@ namespace MouseDock.Services.Detection
             /// </summary>
             private DeviceKind RefineKind(string name)
             {
+                if (MchoseKeyboardProtocol.IsSupportedDevice(Vid, Pid, Product))
+                    return DeviceKind.Keyboard;
                 if (VendorProtocol.IsInphicSplitReceiver(Vid, Pid) && Counts.ContainsKey(DeviceKind.Mouse))
                     return DeviceKind.Mouse;
 

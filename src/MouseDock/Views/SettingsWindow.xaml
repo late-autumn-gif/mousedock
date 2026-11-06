@@ -293,6 +293,14 @@
                                       Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged" />
                             <CheckBox x:Name="IconHideBackgroundBox" Content="隐藏图标底色" Margin="0,7,0,0"
                                       Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged" />
+                            <TextBlock Text="悬浮图标大小（滚轮也可调节）" Margin="0,12,0,5" />
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/><ColumnDefinition Width="54"/></Grid.ColumnDefinitions>
+                                <Slider x:Name="IconScaleSlider" Minimum="0.5" Maximum="3" ValueChanged="OnIconScaleChanged" />
+                                <TextBlock x:Name="IconScaleValue" Grid.Column="1" TextAlignment="Right" VerticalAlignment="Center"/>
+                                <Button Content="重置" Grid.Column="2" Margin="6,0,0,0" Style="{StaticResource GhostButton}" Padding="4,3" Click="OnResetIconScale"/>
+                            </Grid>
+                            <TextBlock Text="50%–300%，仅影响悬浮图标。照片内部缩放使用 Ctrl+滚轮。" FontSize="10" TextWrapping="Wrap" Opacity="0.65" Margin="0,5,0,0"/>
                             <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
                                       Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
                             <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">

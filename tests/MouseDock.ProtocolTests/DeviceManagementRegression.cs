@@ -266,6 +266,12 @@ internal static class DeviceManagementRegression
                     var cells=host.Children.OfType<ReferenceBatteryIcon>().ToArray();
                     Check(cells.Length==(style=="multi"?1:2),"Each selected device rendered in "+style);
                     Check(cells[0].Devices[0].Item2==76&&(style=="multi"?cells[0].Devices[1].Item2:cells[1].Devices[0].Item2)==-1,"Known and unknown readings stay with their own device");
+                    var iconSize=(Slider)manager.FindName("IconScaleSlider");
+                    foreach(double size in new[]{.5,2,1}){
+                        iconSize.Value=size;Pump(20);
+                        Check(icon.Content is FrameworkElement root&&root.LayoutTransform is ScaleTransform st&&Math.Abs(st.ScaleX-size)<.001,"Actual floating style scales: "+style);
+                        Check(SettingsStore.Load().IconScale==size&&settings.Scale==1,"Icon size persists independently from panel scale");
+                    }
                     Capture(icon,Path.Combine(directory,"实际悬浮窗-"+style+".png"));
                 }
                 var badge=new DeviceBatteryBadge(new DeviceInfo{Level=76},Brushes.White,true,true,20);
