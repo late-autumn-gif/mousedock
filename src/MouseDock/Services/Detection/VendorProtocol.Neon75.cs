@@ -37,7 +37,7 @@ namespace MouseDock.Services.Detection
             charging = false; stale = false;
             if (!IsNeon75Air(vid, pid)) return -1;
             LoadBatteryCache();
-            string key = $"{vid:X4}:{pid:X4}";
+            string key = InstanceScope.Current ?? $"{vid:X4}:{pid:X4}";
             foreach (string path in Paths(vid, pid))
             {
                 IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,

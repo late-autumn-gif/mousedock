@@ -85,7 +85,7 @@ namespace MouseDock.Services.Detection
                     {
                         var caps = Caps(h);
                         if (caps.OutputReportByteLength != 33) continue;   // 只处理 32 字节厂商集合
-                        int level = Session(h, $"{vid:X4}:{pid:X4}", out charging);
+                        int level = Session(h, InstanceScope.Current ?? $"{vid:X4}:{pid:X4}", out charging);
                         if (level >= 0) return level;
                     }
                     catch { }
@@ -110,7 +110,7 @@ namespace MouseDock.Services.Detection
         {
             charging = false;
             LoadBatteryCache();
-            string key = $"{vid:X4}:{pid:X4}";
+            string key = InstanceScope.Current ?? $"{vid:X4}:{pid:X4}";
 
             // 设备从低功耗爬起来需要一点时间，单次读空不代表没有；连敲三次再认输。
             for (int attempt = 0; attempt < 3; attempt++)
@@ -177,7 +177,7 @@ namespace MouseDock.Services.Detection
         private static bool _cacheLoaded;
 
         private static string BatteryCacheFile => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "battery-cache.json");
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "battery-instances-v2.json");
 
         private static void LoadBatteryCache()
         {
@@ -267,15 +267,22 @@ namespace MouseDock.Services.Detection
         private static readonly Dictionary<string, string> _identity = new Dictionary<string, string>();
 
         /// <summary>读到的型号串；没读过返回 null。VID:PID 是接收器的号，型号只能看这 4 个字符。</summary>
+        internal static void ForgetInstance(string id)
+        {
+            LoadIdentities(); LoadBatteryCache();
+            _identity.Remove(id); _lastGood.Remove(id);
+            SaveIdentities(); SaveBatteryCache();
+        }
+
         public static string IdentityFor(ushort vid, ushort pid)
         {
             LoadIdentities();
-            return _identity.TryGetValue($"{vid:X4}:{pid:X4}", out var s) ? s : null;
+            return _identity.TryGetValue(InstanceScope.Current ?? $"{vid:X4}:{pid:X4}", out var s) ? s : null;
         }
 
         private static bool _identLoaded;
         private static string IdentityFile => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "vendor-identity.json");
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "vendor-identity-instances-v2.json");
 
         /// <summary>型号串学到一次就写盘，下次开机鼠标睡着也认得它。</summary>
         private static void LoadIdentities()
@@ -341,12 +348,13 @@ namespace MouseDock.Services.Detection
                     if (r30.Length >= at + 15 && r30[at] == 0x30 && r30[at + 1] == 0x00)
                     {
                         string model = Encoding.ASCII.GetString(r30, at + 4, 4).Trim('\0', ' ');
-                        if (model.Length == 4) { _identity[key] = model; SaveIdentities(); }
+
 
                         // online 位在鼠标静默几秒后会变 0，但电量字节仍是鼠标最后上报的值，
                         // 这里照样采用，避免「每隔几秒掉一次电量」
                         if (TryParseIdentifyBattery(r30, out int v, out charging))
                         {
+                            if (model.Length == 4 && r30[at + 14] != 0) { _identity[key] = model; SaveIdentities(); }
                             IdentifyStale = r30[at + 14] == 0;
                             if (IdentifyStale) charging = false;
                             _lastGood[key] = v;
@@ -704,7 +712,7 @@ namespace MouseDock.Services.Detection
                             if (hh != IntPtr.Zero && hh != new IntPtr(-1))
                             {
                                 var a = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf(typeof(HIDD_ATTRIBUTES)) };
-                                if (HidD_GetAttributes(hh, ref a) && a.VendorID == vid && a.ProductID == pid) list.Add(path);
+                                if (HidD_GetAttributes(hh, ref a) && a.VendorID == vid && a.ProductID == pid && InstanceScope.Allows(path)) list.Add(path);
                                 CloseHandle(hh);
                             }
                         }

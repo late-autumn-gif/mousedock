@@ -348,6 +348,7 @@ namespace MouseDock.Services
                 foreach (var d in selected)
                 {
                     sb.AppendLine($"  [{d.Kind}] {d.Name}");
+                sb.AppendLine($"      原始名称={d.RawName}；确认型号={d.ConfirmedModel}；接口={d.InterfaceDiscovered}；接收器={d.ReceiverDiscovered}；外设确认={d.PeripheralConfirmed}；电量有效={d.Level >= 0 && !d.IsStale}");
                     sb.AppendLine($"      设备 ID  = {d.Id}");
                     if (!string.IsNullOrWhiteSpace(d.Detail)) sb.AppendLine($"      标识     = {d.Detail}");
                     sb.AppendLine($"      通道     = {d.Transport}");

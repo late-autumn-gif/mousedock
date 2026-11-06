@@ -23,6 +23,11 @@ namespace MouseDock.Models
         private bool _stale;
         private bool _hidden;
         private bool _recognitionEnabled = true;
+        public string RawName { get; set; } = "";
+        public string ConfirmedModel { get; set; } = "";
+        public bool InterfaceDiscovered { get; set; }
+        public bool ReceiverDiscovered { get; set; }
+        public bool PeripheralConfirmed { get; set; }
         public string[] DetectionIds { get; set; } = Array.Empty<string>();
 
         public string Id { get; set; } = Guid.NewGuid().ToString("N");

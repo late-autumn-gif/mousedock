@@ -81,7 +81,7 @@ if (args.Length > 0 && args[0] == "--inspect-device-filter")
         Console.WriteLine(instanceId + " => " + (HidDiscovery.InspectExclusion(instanceId) ?? "保留"));
     return;
 }
-int assertions = MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
+int assertions = IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;
@@ -418,8 +418,8 @@ Check(!HidDiscovery.TryDeviceKind(0x4C4A, 0x4155, 0xFF00, 1, out _), "Do not cla
 var usbHeadset = new HidDiscovery.Bucket { Vid = 0x4C4A, Pid = 0x4155, Product = "ZhuAudio ZG2", Kind = DeviceKind.Headset };
 usbHeadset.BatteryFailures.Add("电量协议尚未适配");
 var headsetDevice = usbHeadset.ToDevice();
-Check(headsetDevice.Kind == DeviceKind.Headset && headsetDevice.Name.Contains("竹林鸟玄武") && headsetDevice.Transport == "USB", "Display USB headset by confirmed identity");
-Check(headsetDevice.Level == -1 && headsetDevice.Note.Contains("尚未适配"), "Device discovery must not fabricate headset battery");
+Check(headsetDevice.Kind == DeviceKind.Headset && headsetDevice.RawName == "ZhuAudio ZG2" && !headsetDevice.Name.Contains("竹林鸟") && headsetDevice.Transport == "USB", "Display USB headset by confirmed identity");
+Check(headsetDevice.Level == -1 && headsetDevice.Note.Contains("候选设备"), "Device discovery must not fabricate headset battery");
 var chargeDevice = new DeviceInfo { Connected = true, Level = 42 };
 var changedProperties = new List<string>();
 chargeDevice.PropertyChanged += (_, e) => changedProperties.Add(e.PropertyName!);

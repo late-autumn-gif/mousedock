@@ -9,6 +9,12 @@ namespace MouseDock.Services.Detection
     {
         public string Id { get; set; }
         public string Name { get; set; }
+        public string RawName { get; set; } = "";
+        public string ConfirmedModel { get; set; } = "";
+        public bool InterfaceDiscovered { get; set; }
+        public bool ReceiverDiscovered { get; set; }
+        public bool PeripheralConfirmed { get; set; }
+        public bool BatteryRead => Level >= 0 && !IsStale;
         public DeviceKind Kind { get; set; }
         public string Transport { get; set; } = "";   // 蓝牙 / 蓝牙 LE / 2.4G / USB / 内置
         public int Level { get; set; } = -1;
@@ -55,7 +61,7 @@ namespace MouseDock.Services.Detection
             name = null;
 
             // Confirmed locally: USB audio endpoints and Consumer Control HID share this composite device.
-            if (vid == 0x4C4A && pid == 0x4155) { name = "竹林鸟玄武（ZhuAudio ZG2）"; return true; }
+            if (vid == 0x4C4A && pid == 0x4155) { name = "USB 音频设备（型号未确认）"; return true; }
 
             // HyperX（惠普 03F0）。03F0:06BE 的反馈包里六个集合全部被判成「usage 跳过」，
             // 设备连面板都上不去——耳机在 USB 上根本没有 0x01 取值的集合，只有

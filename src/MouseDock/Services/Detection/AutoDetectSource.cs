@@ -34,7 +34,7 @@ namespace MouseDock.Services.Detection
                 var aliveIds = new HashSet<string>();
 
                 // 同一只物理设备（例如狼蛛 SC580 的 2.4G 接收器与它的蓝牙身份）按 PhysicalKey 合并成一条
-                foreach (var group in detected.GroupBy(d => Normalize(d.PhysicalKey ?? d.Id)))
+                foreach (var group in detected.GroupBy(d => Normalize(d.Id)))
                 {
                     var merged = MergeGroup(group.ToList());
                     aliveIds.Add(group.Key);
@@ -45,6 +45,11 @@ namespace MouseDock.Services.Detection
                         _known[group.Key] = device;
                     }
 
+                    device.RawName = merged.RawName;
+                    device.ConfirmedModel = merged.ConfirmedModel;
+                    device.InterfaceDiscovered = merged.InterfaceDiscovered;
+                    device.ReceiverDiscovered = merged.ReceiverDiscovered;
+                    device.PeripheralConfirmed = merged.PeripheralConfirmed;
                     device.Name = merged.Name;
                     device.Kind = merged.Kind;
                     device.Transport = merged.Transport;
@@ -73,6 +78,7 @@ namespace MouseDock.Services.Detection
                     // BatteryService needs the previous snapshot intact when a later query times out.
                     .Select(d => new DeviceInfo
                     {
+                        RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note,
                         Connected = d.Connected, Level = d.Level, Charging = d.Charging, IsStale = d.IsStale,
@@ -127,6 +133,7 @@ namespace MouseDock.Services.Detection
 
             var merged = new DetectedDevice
             {
+                RawName = best.RawName, ConfirmedModel = best.ConfirmedModel, InterfaceDiscovered = best.InterfaceDiscovered, ReceiverDiscovered = best.ReceiverDiscovered, PeripheralConfirmed = best.PeripheralConfirmed,
                 Id = best.Id,
                 Name = best.Name,
                 Kind = best.Kind,

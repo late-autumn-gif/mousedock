@@ -87,7 +87,7 @@ namespace MouseDock.Services
                 string tag = tagEl.GetString() ?? "";
                 string ver = tag.TrimStart('v', 'V');
 
-                if (!IsNewer(ver, CurrentVersionText)) return null;
+                if (new Version(Normalize(ver)) >= new Version(1, 2, 0) || !IsNewer(ver, CurrentVersionText)) return null;
 
                 // 优先 zip，其次裸 exe
                 string assetName = null, assetUrl = null;

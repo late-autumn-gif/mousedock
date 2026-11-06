@@ -95,9 +95,12 @@ namespace MouseDock.Services.Detection
         public static List<DetectedDevice> Enumerate(DevicePreferences preferences = null)
         {
             LastDiagnostics.Clear();
+            InstanceScope.BeginScan();
+            lock (_logiHints) _logiHints.Clear();
             int scanStarted = Environment.TickCount;
             var buckets = new Dictionary<string, Bucket>();
             var vendorCollections = new List<VendorCollectionInfo>();
+            var pending = new List<(string Path, List<(string InstanceId, string Service)> Ancestors, bool Integrated)>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
             IntPtr set = IntPtr.Zero;
@@ -126,11 +129,8 @@ namespace MouseDock.Services.Detection
                         if (!IsRunning(set, ref devInfo)) { notRunning++; continue; }
 
                         var ancestors = ReadAncestors(devInfo.DevInst, out bool integratedUsb);
-                        var verdict = TryCollect(path, ancestors, integratedUsb, buckets, preferences,
-                            vendorCollections, out bool wasNoise);
-                        if (verdict) collected++;
-                        else if (wasNoise) noise++;
-                        else kindRejected++;
+                        InstanceScope.Register(path, ancestors);
+                        pending.Add((path, ancestors, integratedUsb));
                     }
                     finally { Marshal.FreeHGlobal(detail); }
                 }
@@ -141,11 +141,20 @@ namespace MouseDock.Services.Detection
                 if (set != IntPtr.Zero && set != new IntPtr(-1)) SetupDiDestroyDeviceInfoList(set);
             }
 
+            foreach (var item in pending)
+            {
+                var verdict = TryCollect(item.Path, item.Ancestors, item.Integrated, buckets, preferences,
+                    vendorCollections, out bool wasNoise);
+                if (verdict) collected++; else if (wasNoise) noise++; else kindRejected++;
+            }
+
             // 专用电量接口不会参与输入类型归并。按归并后的设备读取一次。
             if (!(App.Settings?.SafeMode ?? false))
             {
                 foreach (var bucket in buckets.Values)
                 {
+                    using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
                     bool atkV75 = VendorProtocol.IsAtkV75X(bucket.Vid, bucket.Pid, bucket.Product);
@@ -159,7 +168,7 @@ namespace MouseDock.Services.Detection
                     bool weikav = VendorProtocol.IdentifyWeikav(bucket.Vid, bucket.Pid, bucket.Product) != null;
                     bool freq = VendorProtocol.IsFreqMouse(bucket.Vid, bucket.Pid, bucket.Product);
                     if (bucket.Battery >= 0 || !(inphic || atk || atkV75 || mchoseV9 || mchoseG7 || rapooVt7 || rainy || sc630 || f99 || weikav || freq)) continue;
-                    string id = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                    string id = bucket.InstanceId ?? $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
                     if (!(preferences?.CanRead(id, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
 
                     var trace = new List<string>();
@@ -220,7 +229,7 @@ namespace MouseDock.Services.Detection
                 var result = LogitechHidpp.Probe(path);
                 if (result.Battery >= 0 && !string.IsNullOrEmpty(result.BatteryNote))
                     foreach (var bucket in buckets.Values)
-                        if (path.IndexOf($"vid_{bucket.Vid:x4}&pid_{bucket.Pid:x4}", StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (bucket.InstanceId == InstanceScope.ForPath(path, ""))
                             bucket.BatterySource = result.BatteryNote;
                 return (result.Battery, result.Name, result.Charging, result.Diagnostic);
             }, ReadVendorCollection);
@@ -228,6 +237,9 @@ namespace MouseDock.Services.Detection
             // MCHOSE K87 V3：2.4G 键盘的 QHW 电量在独立厂商集合上，按整机身份读一次。
             foreach (var bucket in buckets.Values)
             {
+                using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
                 if (result.Level >= 0)
@@ -244,7 +256,10 @@ namespace MouseDock.Services.Detection
             return buckets.Values.Select(b =>
             {
                 // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
-                var rk = RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
+                using var instanceScope = InstanceScope.Enter(b.InstanceId);
+                var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
+                    ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
+                if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
                 if (rk != null) LastDiagnostics.Add($"RK R98Pro V2: connected={rk.Connected}, battery={rk.Level}");
                 return rk ?? b.ToDevice();
             }).Where(d => d != null).ToList();
@@ -343,6 +358,7 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if (ReferenceProfiles.Match(vid, pid, usagePage, usage) != null) { kind = DeviceKind.Mouse; return true; }
             if (VendorProtocol.IsMchoseV9Pro(vid, pid, product) &&
                 ((usagePage == 0xFF90 && usage == 1) || (usagePage == 0x0C && usage == 1)))
             { kind = DeviceKind.Headset; return true; }
@@ -442,7 +458,9 @@ namespace MouseDock.Services.Detection
             }
             finally { CloseHandle(probe); }
 
-            string key = $"{vid:X4}:{pid:X4}";
+            string legacyKey = $"{vid:X4}:{pid:X4}";
+            string key = InstanceScope.Register(path, ancestors);
+            using var instanceScope = InstanceScope.Enter(key);
             string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
             string exclusion = ExclusionReason(ancestors, integratedUsb);
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
@@ -456,7 +474,7 @@ namespace MouseDock.Services.Detection
 
             bool safeMode = false;
             try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
-            bool recognitionEnabled = preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true;
+            bool recognitionEnabled = RecognitionPolicy.CanQuery(vid, pid, product) && (preferences?.CanRead(key, null) ?? true) && (preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true);
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
@@ -482,7 +500,7 @@ namespace MouseDock.Services.Detection
             if (kind == DeviceKind.Headset && VendorMap.TryUsbHeadset(vid, pid, out string headsetName))
             {
                 if (!buckets.TryGetValue(key, out var headset))
-                    buckets[key] = headset = new Bucket { Vid = vid, Pid = pid, Product = headsetName, Vendor = vendor, Path = path, Kind = kind };
+                    buckets[key] = headset = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path, Kind = kind };
                 headset.Counts[kind] = headset.Counts.TryGetValue(kind, out int count) ? count + 1 : 1;
 
                 // HyperX Cloud III 走 0xFF13 私有通道，一次读完整机就行，别的集合不再重复。
@@ -574,7 +592,7 @@ namespace MouseDock.Services.Detection
             if (safeMode) batteryTrace.Add("安全模式已跳过需要发送命令的厂商读取器");
 
             // 国产 2.4G 接收器（AULA/VXE 系）：走厂商 32 字节协议读电量
-            if (battery < 0 && !safeMode && VendorMap.KnownReceivers.ContainsKey(key))
+            if (battery < 0 && !safeMode && VendorMap.KnownReceivers.ContainsKey(legacyKey))
             {
                 battery = ReadBattery("通用 32 字节协议", () => VendorProtocol.TryReadBattery(vid, pid, out batteryCharging), batteryTrace);
                 batteryStale = battery >= 0 && VendorProtocol.IdentifyStale;
@@ -583,7 +601,7 @@ namespace MouseDock.Services.Detection
             // 0xFFFF 厂商集合的只读状态（VGN Neon75 Air 这类键盘接收器只在这里报电量）
             if (battery < 0 && !VendorProtocol.IsNeon75Air(vid, pid))
             {
-                battery = ReadBattery("只读状态 Feature", () => VendorProtocol.TryReadStatus(vid, pid, out batteryCharging), batteryTrace);
+                batteryTrace.Add("未确认协议：通用形状 Feature 读取已禁用");
                 batteryStale = battery >= 0 && VendorProtocol.StatusStale;
             }
 
@@ -643,7 +661,7 @@ namespace MouseDock.Services.Detection
             // 按接口形状认的两家（WEBBRANDS F83 / 达尔优 A980），VID 不固定，回包头必须完全对上
             if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
             {
-                battery = ReadBattery("接口形状协议", () => VendorProtocol.TryReadByShape(vid, pid), batteryTrace);
+                batteryTrace.Add("未确认协议：形状读取已禁用");
             }
 
             // 第四批：G-Wolves / ipi / RAWM / passive 型（AULA SC900、雷柏 VT2 MAX）
@@ -655,7 +673,7 @@ namespace MouseDock.Services.Detection
             // 形状型老协议：WLMouse Beast X（report4 + CRC16）、Angry Miao（report F7）
             if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
             {
-                battery = ReadBattery("Legacy 接口形状协议", () => VendorProtocol.TryReadLegacyShape(vid, pid), batteryTrace);
+                batteryTrace.Add("未确认协议：Legacy 形状读取已禁用");
             }
 
             // 前行者（X87 三模及全系）。两套协议：
@@ -695,7 +713,7 @@ namespace MouseDock.Services.Detection
 
             if (!buckets.TryGetValue(key, out Bucket bucket))
             {
-                bucket = new Bucket { Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };
+                bucket = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };
                 buckets[key] = bucket;
             }
 
@@ -708,6 +726,7 @@ namespace MouseDock.Services.Detection
             string miTag = InterfaceTag(path);
             if (miTag != null) bucket.Interfaces.Add(miTag);
 
+            bucket.ReferenceModel ??= ReferenceProfiles.Match(vid, pid, caps.UsagePage, caps.Usage);
             bucket.Counts[kind] = bucket.Counts.TryGetValue(kind, out int c) ? c + 1 : 1;
 
             if (UsageMap.Priority(kind) > UsageMap.Priority(bucket.Kind))
@@ -753,7 +772,7 @@ namespace MouseDock.Services.Detection
             var logiPaths = collections
                 .Where(c => c.Vid == 0x046D && c.UsagePage == 0xFF00 &&
                             !IsExcludedInterface(c.Vid, c.Pid, c.Product, c.Path))
-                .GroupBy(c => $"{c.Vid:X4}:{c.Pid:X4}", StringComparer.OrdinalIgnoreCase)
+                .GroupBy(c => InstanceScope.ForPath(c.Path, $"{c.Vid:X4}:{c.Pid:X4}"), StringComparer.OrdinalIgnoreCase)
                 .SelectMany(g => g.GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase)
                                   .Select(x => x.First())
                                   .OrderByDescending(LogiInterfaceRank)
@@ -768,7 +787,9 @@ namespace MouseDock.Services.Detection
             foreach (var collection in logiPaths)
             {
                 if (safeMode) break;
-                string key = $"{collection.Vid:X4}:{collection.Pid:X4}";
+                if (!RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product)) continue;
+                string key = InstanceScope.ForPath(collection.Path, $"{collection.Vid:X4}:{collection.Pid:X4}");
+                using var instanceScope = InstanceScope.Enter(key);
                 if (!buckets.TryGetValue(key, out var bucket) ||
                     IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path)) continue;
 
@@ -808,11 +829,12 @@ namespace MouseDock.Services.Detection
 
             foreach (var collection in collections)
             {
-                if (collection.UsagePage < 0xFF00 ||
+                if (!RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
                     IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
                     continue;
 
-                string key = $"{collection.Vid:X4}:{collection.Pid:X4}";
+                string key = InstanceScope.ForPath(collection.Path, $"{collection.Vid:X4}:{collection.Pid:X4}");
+                using var instanceScope = InstanceScope.Enter(key);
                 if (!buckets.TryGetValue(key, out var bucket) ||
                     IsExcludedInterface(bucket.Vid, bucket.Pid, bucket.Product, bucket.Path))
                     continue;
@@ -883,6 +905,8 @@ namespace MouseDock.Services.Detection
 
         internal static void InvalidateDeviceHints(string id)
         {
+            if (id.StartsWith("instance-", StringComparison.OrdinalIgnoreCase))
+            { lock (_logiHints) _logiHints.Remove(id); VendorProtocol.ForgetInstance(id); return; }
             string[] parts = id.Split('-');
             if (parts.Length != 3 || !parts[0].Equals("hid", StringComparison.OrdinalIgnoreCase) ||
                 !ushort.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out ushort vid) ||
@@ -968,6 +992,8 @@ namespace MouseDock.Services.Detection
                        product.IndexOf("多彩", StringComparison.Ordinal) >= 0;
             }
             public string Path = "";
+            public string ReferenceModel;
+            public string InstanceId;
             public string Identity = "";
             public bool HasVendor;
             public readonly HashSet<string> Interfaces = new HashSet<string>();
@@ -992,6 +1018,7 @@ namespace MouseDock.Services.Detection
                 if (string.IsNullOrWhiteSpace(name)) name = "未知设备";
 
                 var kind = RefineKind(name);
+                if (ReferenceModel != null) { name = ReferenceModel; kind = DeviceKind.Mouse; }
                 string physicalKey = null;
 
                 string weikav = VendorProtocol.IdentifyWeikav(Vid, Pid, Product)
@@ -1053,7 +1080,7 @@ namespace MouseDock.Services.Detection
                 {
                     (int Battery, string Name, bool Charging) hint;
                     bool hasHint;
-                    lock (_logiHints) hasHint = _logiHints.TryGetValue($"{Vid:X4}:{Pid:X4}", out hint);
+                    lock (_logiHints) hasHint = _logiHints.TryGetValue(InstanceId ?? $"{Vid:X4}:{Pid:X4}", out hint);
                     if (hasHint)
                     {
                         if (!string.IsNullOrWhiteSpace(hint.Name))
@@ -1093,7 +1120,7 @@ namespace MouseDock.Services.Detection
                 bool peerKeyboard = Kind == DeviceKind.Mouse && Counts.ContainsKey(DeviceKind.Keyboard);
 
                 bool usbHeadset = VendorMap.TryUsbHeadset(Vid, Pid, out string headsetName);
-                if (usbHeadset) { name = headsetName; kind = DeviceKind.Headset; }
+                if (usbHeadset) { name = (Vid == 0x4C4A ? Product : headsetName) ?? "USB 音频设备（型号未确认）"; kind = DeviceKind.Headset; }
                 bool f99Wired = VendorProtocol.IsAulaF99Wired(Vid, Pid, Product);
                 string transport = bt ? "蓝牙" : usbHeadset ? "USB"
                     : (dongle || receiverProduct || LooksWireless(Product) || peerKeyboard ||
@@ -1111,7 +1138,12 @@ namespace MouseDock.Services.Detection
 
                 return new DetectedDevice
                 {
-                    Id = $"hid-{Vid:X4}-{Pid:X4}",
+                    Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
+                    RawName = Product ?? "",
+                    ConfirmedModel = ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
+                    InterfaceDiscovered = true,
+                    ReceiverDiscovered = LooksWireless(Product),
+                    PeripheralConfirmed = Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,
@@ -1120,8 +1152,8 @@ namespace MouseDock.Services.Detection
                     IsStale = ReadStale,
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
-                    PhysicalKey = physicalKey,
-                    Note = Battery >= 0
+                    PhysicalKey = InstanceId,
+                    Note = Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
                             : "尚未取得有效电量，请查看设备报告中的读取诊断")
@@ -1152,7 +1184,7 @@ namespace MouseDock.Services.Detection
                     return DeviceKind.Mouse;
 
                 // 键盘型号常见写法：Neon75 / F87 / K8 / MK870 之类
-                if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(f|k|mk|neon|kzz|akko)[\s-]?\d{2,4}\b"))
+                if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(f|mk|neon|kzz|akko)[\s-]?\d{2,4}\b") || (!Counts.ContainsKey(DeviceKind.Mouse) && System.Text.RegularExpressions.Regex.IsMatch(n, @"\bk[\s-]?\d{2,4}\b")))
                     return DeviceKind.Keyboard;
                 if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b\d{2,3}\s*(air|pro)?\b") &&
                     Counts.TryGetValue(DeviceKind.Keyboard, out int kc) &&
