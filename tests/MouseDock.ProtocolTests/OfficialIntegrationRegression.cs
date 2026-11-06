@@ -1,4 +1,4 @@
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services.Detection;
 
 internal static class OfficialIntegrationRegression
@@ -40,12 +40,12 @@ internal static class OfficialIntegrationRegression
         Check(v9.ToDevice().Kind == DeviceKind.Headset && v9.ToDevice().Name.Contains("V9 Pro"), "V9 keeps its headset identity");
         var request=VendorProtocol.BuildCloud3SRequest(62,VendorProtocol.Cloud3SBatteryCommand);
         var response=(byte[])request.Clone(); response[6]=50;
-        Check(VendorProtocol.TryParseCloud3SBattery(response,request,out int pct,out bool charge) && pct==50 && !charge,
-            "HyperX battery response cannot invent charging from adjacent data");
+        Check(!VendorProtocol.TryParseCloud3SBattery(response,request,out int pct,out bool charge) && pct==-1 && !charge,
+            "Unverified HyperX wire layout cannot produce battery");
         response[5]=0x48;
         Check(!VendorProtocol.TryParseCloud3SBattery(response,request,out _,out _), "HyperX 0x48 game-chat setting is not a battery reply");
         var cloud3=new byte[62];cloud3[0]=0x66;cloud3[1]=0x89;cloud3[2]=1;cloud3[4]=80;
-        Check(VendorProtocol.TryParseCloud3Battery(cloud3,out pct) && pct==80, "Cloud III has a separate wire protocol");
+        Check(!VendorProtocol.TryParseCloud3Battery(cloud3,out pct) && pct==-1, "Cloud III legacy wire offset is not validated by III S evidence");
         Check(!VendorProtocol.TryParseCloud3SBattery(cloud3,request,out _,out _), "Cloud III cannot be decoded as III S");
         var battery=new byte[20];battery[0]=0x11;battery[4]=77;
         Check(LogitechHidpp.TryParseBattery(0x1000,battery,out pct,out _) && pct==77, "HID++1000 is battery percentage");

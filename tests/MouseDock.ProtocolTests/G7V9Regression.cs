@@ -11,6 +11,7 @@ internal static class G7V9Regression
         Check(!VendorProtocol.IsScopedG7(0x3837,0x1018,"MCHOSE G7 MAX"),"Other G7 model gated");
         Check(!VendorProtocol.IsScopedG7(0x3837,0x1018,"MCHOSE K5 Ultra"),"Shared ID not a model");
         Check(!VendorProtocol.IsScopedG7Channel(0x3837,0x1018,"MCHOSE G7",0xFF01,0x10,64,65,0),"Mixed layout not guessed");
+        Check(!VendorProtocol.IsScopedG7Channel(0x3837,0x1018,"MCHOSE G7",0xFF01,0x10,64,64,0),"Only official native65 layout is enabled");
         foreach(int size in new[]{64,65})for(int pct=0;pct<=100;pct++)for(int chg=0;chg<=1;chg++)
         {
             var raw=Reply(size,(byte)pct,(byte)chg);

@@ -7,7 +7,7 @@ internal static partial class VendorProtocol
     internal static bool IsScopedG7(ushort vid,ushort pid,string product) => IsMchoseG7(vid,pid,product) &&
         ((vid==0x3837 && pid is 0x1014 or 0x1018) || (vid==0xA8A4 && pid==0x2255));
     internal static bool IsScopedG7Channel(ushort vid,ushort pid,string name,ushort page,ushort usage,int input,int output,int feature) =>
-        IsScopedG7(vid,pid,name) && page==0xFF01 && usage==0x10 && input==output && input is 64 or 65 && feature==0;
+        IsScopedG7(vid,pid,name) && page==0xFF01 && usage==0x10 && input==65 && output==65 && feature==0;
     internal static bool TryScopedG7Reply(byte[] raw,int size,out int level,out bool charging)
     {
         level=-1;charging=false;
@@ -16,7 +16,7 @@ internal static partial class VendorProtocol
     }
     internal static ReferenceBatteryProtocol.Reading ReadG7Exchange(ReferenceBatteryProtocol.ILink link,int size,string product)
     {
-        if(size is not (64 or 65))return ReferenceBatteryProtocol.Reading.Failed("不支持的G7报告布局");
+        if(size!=65)return ReferenceBatteryProtocol.Reading.Failed("G7官方证据为report0/65字节，其他布局未启用");
         var packet=BuildMchoseG7BatteryRequest(size);int level=-1;bool charging=false;string trace="";
         for(int attempt=0;attempt<2;attempt++)
         {

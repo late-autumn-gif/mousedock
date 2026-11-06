@@ -1,10 +1,11 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
 using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.Export(args[1],args[2]);return;}
 if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
 // Explicit inspection modes below are opt-in and report their hardware I/O.
 if (args.Length > 0 && args[0] == "--inspect-aula-battery")
@@ -250,6 +251,7 @@ assertions += OriginalGpwScopedRegression.Run();
 assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += ZeroRainyRegression.Run();
+assertions += SupportAuditRegression.Run();
 assertions += LogitechReceiverRegression.Run();
 assertions += FreqRegression.Run();
 
@@ -288,8 +290,8 @@ Check(cloudRequest.Length == 62 &&
 var cloudReply = new byte[62];
 cloudReply[0] = 0x0C; cloudReply[1] = 0x02; cloudReply[2] = 0x03; cloudReply[3] = 1; cloudReply[5] = 0x1D;
 cloudReply[6] = 64; cloudReply[7] = 1;
-Check(VendorProtocol.TryParseCloud3SBattery(cloudReply, cloudRequest, out int cloudLevel, out bool cloudCharging) &&
-    cloudLevel == 64 && !cloudCharging, "Cloud III S battery does not invent adjacent charge flag");
+Check(!VendorProtocol.TryParseCloud3SBattery(cloudReply, cloudRequest, out int cloudLevel, out bool cloudCharging) &&
+    cloudLevel == -1 && !cloudCharging, "Synthetic Cloud III S offsets are not proven battery data");
 Check(!VendorProtocol.TryParseCloud3SBattery(cloudRequest, cloudRequest, out _, out _),
     "Cloud III S rejects the request echo");
 cloudReply[6] = 101;

@@ -1,4 +1,4 @@
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services.Detection;
 
 internal static class ReceiverClassificationRegression
@@ -32,13 +32,13 @@ internal static class ReceiverClassificationRegression
         foreach (string product in new[] { "8K Receiver", "Wireless Receiver", "Gaming Mouse 8K Receiver" })
         {
             var receiver = Classify(product, 1, 3);
-            Check(receiver.Kind == DeviceKind.Mouse,
+            Check(receiver.Kind == (product=="8K Receiver"?DeviceKind.Other:DeviceKind.Mouse),
                 $"{product}: auxiliary keyboard collections must not outvote the mouse collection");
             Check(receiver.Transport == "2.4G" && receiver.Level == -1 && !receiver.Charging,
                 $"{product}: classification must preserve receiver transport and unknown battery");
         }
-        Check(Classify("8K Receiver", 1, 1).Kind == DeviceKind.Mouse,
-            "A tied composite receiver retains mouse priority");
+        Check(Classify("8K Receiver", 1, 1).Kind == DeviceKind.Other,
+            "A generic mixed 8K receiver keeps unresolved peripheral type");
         Check(Classify("8K Receiver", 1, 0).Kind == DeviceKind.Mouse,
             "Mouse-only receivers remain mice");
         Check(Classify("8K Receiver", 0, 2).Kind == DeviceKind.Keyboard,

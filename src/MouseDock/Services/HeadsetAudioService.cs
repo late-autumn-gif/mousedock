@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using NAudio.CoreAudioApi;
@@ -10,6 +10,7 @@ internal sealed record AudioEndpointInfo(string Id, string Name, bool Capture, G
 {
     // Windows ENDPOINT_FORM_FACTOR: Headphones=3, Headset=5.
     internal bool IsHeadset => !Capture && (FormFactor is 3 or 5 ||
+        System.Text.RegularExpressions.Regex.IsMatch(Name ?? "", @"(?:^|\()(?:\d+-\s*)?HyperX\s+Cloud\s+III(?:\s+S)?(?:\s+Wireless)?(?:\)|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
         System.Text.RegularExpressions.Regex.IsMatch(Name ?? "", @"(?:^|\()MCHOSE\s+V9\s*PRO(?:\)|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
         new[] { "耳机", "headphone", "headset", "earphone", "earbud" }
             .Any(word => Name.Contains(word, StringComparison.OrdinalIgnoreCase)));

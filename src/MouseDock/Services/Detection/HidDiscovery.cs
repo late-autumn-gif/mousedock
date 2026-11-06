@@ -495,6 +495,7 @@ namespace MouseDock.Services.Detection
             using var instanceScope = InstanceScope.Enter(key);
             string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
             string exclusion = ExclusionReason(ancestors, integratedUsb);
+            if(IsKnownHubSwitch(vid,pid))exclusion="HM Lab扩展坞切换键HID，不是独立外设";
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
                 $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
             if (exclusion != null)
@@ -1119,6 +1120,7 @@ namespace MouseDock.Services.Detection
 
         private static bool IsExcludedInterface(ushort vid, ushort pid, string product, string path)
         {
+            if(IsKnownHubSwitch(vid,pid))return true; // User-reported HM Lab USB hub switch HID.
             if (IsNoise(vid, product) || (vid == 0 && pid == 0)) return true;
             string lowerPath = (path ?? "").ToLowerInvariant();
             return lowerPath.Contains("acpi\\") || lowerPath.Contains("hidi2c") ||
@@ -1126,6 +1128,7 @@ namespace MouseDock.Services.Detection
                 lowerPath.Contains("camera") || lowerPath.Contains("vid_04f2");
         }
 
+        internal static bool IsKnownHubSwitch(ushort vid,ushort pid)=>vid==0xC019&&pid==0x0401;
         private static bool IsNoise(ushort vid, string product)
         {
             if (vid == 0x06CB || vid == 0xFFAA) return true;   // 触摸板 / 腾讯虚拟 HID
@@ -1415,15 +1418,17 @@ namespace MouseDock.Services.Detection
                     charging=Battery>=0 && GpwLive && Charging;
                 }
 
+                bool unresolved=kind==DeviceKind.Other && IsUnresolved8KReceiver();
+                if(unresolved)name=Product.Trim();
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
-                    PeripheralConfirmed = ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
+                    ReceiverDiscovered = unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    PeripheralConfirmed = unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,
@@ -1433,7 +1438,7 @@ namespace MouseDock.Services.Detection
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = InstanceId,
-                    Note = Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
+                    Note = unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
                             : "尚未取得有效电量，请查看设备报告中的读取诊断")
@@ -1463,6 +1468,10 @@ namespace MouseDock.Services.Detection
                     System.Text.RegularExpressions.Regex.IsMatch(n, @"\bmouse\b|鼠标"))
                     return DeviceKind.Mouse;
 
+                // Polling rate is marketing metadata, not a peripheral identity.
+                // Mixed generic receivers may expose many auxiliary collections.
+                if(IsUnresolved8KReceiver())return DeviceKind.Other;
+
                 // 键盘型号常见写法：Neon75 / F87 / K8 / MK870 之类
                 if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(f|mk|neon|kzz|akko)[\s-]?\d{2,4}\b") || (!Counts.ContainsKey(DeviceKind.Mouse) && System.Text.RegularExpressions.Regex.IsMatch(n, @"\bk[\s-]?\d{2,4}\b")))
                     return DeviceKind.Keyboard;
@@ -1486,6 +1495,9 @@ namespace MouseDock.Services.Detection
                 string n = name.ToLowerInvariant();
                 return n.Contains("2.4g") || n.Contains("dongle") || n.Contains("receiver") || n.Contains("wireless");
             }
+            private bool IsUnresolved8KReceiver() => Counts.ContainsKey(DeviceKind.Mouse) && Counts.ContainsKey(DeviceKind.Keyboard) &&
+                System.Text.RegularExpressions.Regex.IsMatch(Product??"", @"(?i)\b8[\s-]*k\b.*(receiver|dongle|接收器)") &&
+                !System.Text.RegularExpressions.Regex.IsMatch(Product??"", @"(?i)keyboard|键盘|\bmouse\b|鼠标");
         }
     }
 }
