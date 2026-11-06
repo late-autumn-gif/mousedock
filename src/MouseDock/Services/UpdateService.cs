@@ -51,7 +51,7 @@ namespace MouseDock.Services
         {
             get
             {
-                var v = Assembly.GetEntryAssembly()?.GetName().Version;
+                var v = typeof(UpdateService).Assembly.GetName().Version;
                 if (v == null) return "0.0.0";
                 return $"{v.Major}.{v.Minor}.{v.Build}";
             }
@@ -80,63 +80,47 @@ namespace MouseDock.Services
                 if (!resp.IsSuccessStatusCode) return null;
 
                 var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                if (!root.TryGetProperty("tag_name", out var tagEl)) return null;
-                string tag = tagEl.GetString() ?? "";
-                string ver = tag.TrimStart('v', 'V');
-
-                if (new Version(Normalize(ver)) >= new Version(1, 2, 0) || !IsNewer(ver, CurrentVersionText)) return null;
-
-                // 优先 zip，其次裸 exe
-                string assetName = null, assetUrl = null;
-                long assetSize = 0;
-
-                if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
-                {
-                    string fallbackName = null, fallbackUrl = null;
-                    long fallbackSize = 0;
-
-                    foreach (var a in assets.EnumerateArray())
-                    {
-                        string name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                        string url  = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
-                        long size   = a.TryGetProperty("size", out var s) ? s.GetInt64() : 0;
-
-                        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                        {
-                            assetName = name; assetUrl = url; assetSize = size;
-                            break;
-                        }
-                        if (fallbackName == null && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                        {
-                            fallbackName = name; fallbackUrl = url; fallbackSize = size;
-                        }
-                    }
-
-                    if (assetName == null && fallbackName != null)
-                    {
-                        assetName = fallbackName; assetUrl = fallbackUrl; assetSize = fallbackSize;
-                    }
-                }
-
-                if (string.IsNullOrEmpty(assetUrl)) return null;
-
-                string notes = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
-
-                return new UpdateInfo
-                {
-                    Tag = tag, Version = ver,
-                    AssetName = assetName, AssetUrl = assetUrl, AssetSize = assetSize,
-                    Notes = notes
-                };
+                return ParseRelease(json, CurrentVersionText);
             }
             catch
             {
-                // 无网、DNS 失败、超时、JSON 变形——一律当没有更新
+                // Offline, timeout, malformed response: never block startup.
                 return null;
             }
+        }
+
+        internal static UpdateInfo ParseRelease(string json, string currentVersion)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if ((root.TryGetProperty("draft", out var draft) && draft.GetBoolean()) ||
+                    (root.TryGetProperty("prerelease", out var pre) && pre.GetBoolean())) return null;
+                string tag = root.GetProperty("tag_name").GetString() ?? "";
+                string ver = tag.TrimStart('v', 'V');
+                if (!IsNewer(ver, currentVersion)) return null;
+                UpdateInfo best = null;
+                int bestRank = 0;
+                foreach (var asset in root.GetProperty("assets").EnumerateArray())
+                {
+                    string name = asset.GetProperty("name").GetString() ?? "";
+                    string url = asset.GetProperty("browser_download_url").GetString() ?? "";
+                    long size = asset.GetProperty("size").GetInt64();
+                    // Exact package names exclude source/audit ZIPs, ARM and x86 builds.
+                    int rank = name.Equals($"MouseDock-v{ver}-win-x64.zip", StringComparison.OrdinalIgnoreCase) ? 3 :
+                        name.Equals($"MouseDock-v{ver}.zip", StringComparison.OrdinalIgnoreCase) ? 2 :
+                        name.Equals("MouseDock.exe", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                    if (rank <= bestRank || size <= 0 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                        uri.Scheme != "https" || !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                        !uri.AbsolutePath.StartsWith($"/{Owner}/{Repo}/releases/download/", StringComparison.OrdinalIgnoreCase)) continue;
+                    bestRank = rank;
+                    best = new UpdateInfo { Tag=tag, Version=ver, AssetName=name, AssetUrl=url, AssetSize=size,
+                        Notes=root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "" };
+                }
+                return best;
+            }
+            catch { return null; }
         }
 
         /// <summary>比较版本，remote 比 current 大返回 true。</summary>

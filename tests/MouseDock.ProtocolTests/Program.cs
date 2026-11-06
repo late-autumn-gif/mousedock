@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using MouseDock.Models;
 using MouseDock.Services;
@@ -7,6 +7,12 @@ using MouseDock.Services.Detection;
 // Offline protocol regression: these tests never enumerate or communicate with a device.
 if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.Export(args[1],args[2]);return;}
 if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
+if(args.Length>1&&args[0]=="--verify-published-update")
+{
+    var update=UpdateService.ParseRelease(System.IO.File.ReadAllText(args[1]),"1.1.0");
+    if(update?.Version!="1.1.1" || update.AssetName!="MouseDock-v1.1.1-win-x64.zip")throw new Exception("Published update metadata mismatch");
+    Console.WriteLine("PASS published stable v1.1.1 update and exact Windows x64 program asset selected.");return;
+}
 // Explicit inspection modes below are opt-in and report their hardware I/O.
 if (args.Length > 0 && args[0] == "--inspect-aula-battery")
 {
@@ -252,6 +258,7 @@ assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += ZeroRainyRegression.Run();
 assertions += SupportAuditRegression.Run();
+assertions += UpdateReleaseRegression.Run();
 assertions += LogitechReceiverRegression.Run();
 assertions += FreqRegression.Run();
 

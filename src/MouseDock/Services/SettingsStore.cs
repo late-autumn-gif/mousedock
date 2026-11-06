@@ -41,6 +41,14 @@ namespace MouseDock.Services
             return new AppSettings();
         }
 
+        internal static bool RestoreStartupUpdates(AppSettings settings)
+        {
+            if (settings.Version >= 7) return false;
+            settings.AutoUpdate = true;
+            settings.Version = 7;
+            return true;
+        }
+
         public static void Save(AppSettings settings)
         {
             try

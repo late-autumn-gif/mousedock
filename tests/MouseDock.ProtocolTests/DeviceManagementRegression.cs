@@ -239,6 +239,16 @@ internal static class DeviceManagementRegression
                 {
                     Await(fresh.PollAsync()); Check(fresh.VisibleDevices.Count==3,"A new installation keeps automatic display until the first user choice");
                 }
+                typeof(App).GetProperty(nameof(App.Dock))!.SetValue(null,dock);
+                typeof(App).GetProperty(nameof(App.SettingsView))!.SetValue(null,manager);
+                foreach(string mode in new[]{"taskbar","edge"})
+                {
+                    manager.Hide(); settings.SurfaceMode=mode; App.ShowLaunchSurface(); Pump(30);
+                    Check(manager.IsVisible,"Explicit launch exposes settings for "+mode+" even without a visible shell badge");
+                }
+                foreach(var device in battery.Devices) device.Selected=false;
+                settings.SurfaceMode="dock"; manager.Hide(); App.ShowLaunchSurface(); Pump(30);
+                Check(manager.IsVisible,"Empty/stale selection exposes device management rather than an invisible launch");
                 var clone=settings.Clone();
                 clone.HiddenDeviceIds.Add("clone-only"); clone.DisabledRecognitionDeviceIds.Add("clone-only");
                 Check(!settings.HiddenDeviceIds.Contains("clone-only") && !settings.DisabledRecognitionDeviceIds.Contains("clone-only"),"Cloned preference lists are independent");

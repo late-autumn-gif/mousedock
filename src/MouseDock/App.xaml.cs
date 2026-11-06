@@ -85,7 +85,7 @@ namespace MouseDock
                         if (!_showSignal.WaitOne(TimeSpan.FromSeconds(5))) continue;
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            ShowCurrentSurface();
+                            ShowLaunchSurface();
                         }));
                     }
                     catch { }
@@ -120,6 +120,8 @@ namespace MouseDock
                 Settings.Version = 6;
                 SettingsStore.Save(Settings);
             }
+            // Renumbered builds had previously disabled update checks.
+            if (SettingsStore.RestoreStartupUpdates(Settings)) SettingsStore.Save(Settings);
             ResolveAssets();
 
             Theme = Palette.ResolveTheme(Settings, out var extracted);
@@ -226,6 +228,8 @@ namespace MouseDock
 
             if (e.Args.Contains("--settings"))
                 ShowSettings(Dock);
+            else if (!StartHidden)
+                ShowLaunchSurface();
         }
 
         private static void ResolveAssets()
@@ -592,6 +596,15 @@ namespace MouseDock
             SaveWindowPositions();
             if (visible) Surfaces.Apply(Settings.SurfaceMode, false);
             else ShowCurrentSurface();
+        }
+
+        // An explicit launch must expose a usable window even with an empty,
+        // transparent taskbar/edge surface or stale device selection.
+        public static void ShowLaunchSurface()
+        {
+            ShowCurrentSurface();
+            if (Settings.SurfaceMode is "taskbar" or "edge" || Battery?.VisibleDevices.Count == 0)
+                ShowSettings(Dock);
         }
 
         public static void ShowCurrentSurface()
