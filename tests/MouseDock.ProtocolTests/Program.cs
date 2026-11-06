@@ -245,6 +245,7 @@ assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
 assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
+assertions += OriginalGpwScopedRegression.Run();
 assertions += LogitechReceiverRegression.Run();
 assertions += FreqRegression.Run();
 
