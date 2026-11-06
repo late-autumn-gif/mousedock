@@ -29,8 +29,7 @@ namespace MouseDock.Services.Detection
             // Different MHUB generations use different commands. Never probe arbitrary vendor collections.
             if (IsMchoseA7V2(vid, pid))
                 return ReadMchoseA7V2().CopyTo(out charging, out diagnostic);
-            if (IsMchoseModern(vid, pid))
-                return ReadMchoseModernAsync(vid, pid).GetAwaiter().GetResult().CopyTo(out charging, out diagnostic);
+            if (IsMchoseModern(vid, pid)) { diagnostic="MHUB需本实例专用读取，不走旧编号全局枚举"; return -1; }
             if (vid == 0x5253 && pid == 0x1021)
             {
                 int level = TryReadMchoseLegacy(vid, pid, out charging);

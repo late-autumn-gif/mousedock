@@ -35,7 +35,7 @@ internal static class IdentityBoundaryRegression
             new() { Id=second, PhysicalKey="aula-sc580", Name="SC580" } });
         Check(devices.Count == 2, "Model aliases must not merge two physical devices");
         Check(!RecognitionPolicy.CanQuery(0x4C4A,0x4155,"USB Composite Device"), "Unknown headset has no active protocol route");
-        Check(!RecognitionPolicy.CanQuery(0x3837,0x1018,"MCHOSE K5 Ultra"), "Unverified reported K5 does not receive guessed queries");
+        Check(!RecognitionPolicy.CanQuery(0x3837,0x1018,"MCHOSE K5 Ultra MAX"), "Unlisted K5 variants do not receive guessed queries");
         Check(RecognitionPolicy.CanQuery(0x089D,0x062F,"Wireless-Receiver"), "Hardware verified SC580 receiver route retained");
         foreach (var profile in new (ushort Vid, ushort Pid, ushort Page, ushort Usage)[] {
             (0x3554,0xF517,0xFF02,2), (0x395A,6,0xFF00,2), (0x373B,0x11D8,0xFF02,2),

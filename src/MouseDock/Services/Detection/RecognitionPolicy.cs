@@ -5,6 +5,7 @@ internal static class RecognitionPolicy
     internal static bool CanQuery(ushort vid, ushort pid, string product) =>
         // Only IDs enter the candidate set here. Exact collection/capability validation
         // and the dedicated protocol route are mandatory before any reference I/O.
+        VendorProtocol.IsScopedModernMouse(vid,pid,product) ||
         ReferenceProfiles.Find(vid, pid) != null ||
         ZeroRainyProtocol.Candidate(vid,pid,product) ||
         VendorProtocol.IsScopedG7(vid,pid,product) ||

@@ -18,8 +18,8 @@ internal static class K87DiscoveryRegression
             "K87 legacy reader remains closed until its native path enforces per-instance identity.");
         Check(!RecognitionPolicy.CanQuery(0x3837, 0x1015, "MCHOSE G98 V3 2.4G"),
             "A shared PID must not admit a different keyboard.");
-        Check(!RecognitionPolicy.CanQuery(0x3837, 0x1018, "MCHOSE K5 Ultra"),
-            "Restoring K87 must not enable K5 queries.");
+        Check(RecognitionPolicy.CanQuery(0x3837, 0x1018, "MCHOSE K5 Ultra"),
+            "K5 Ultra now has its separate exact MHUB profile; K87 does not grant it.");
 
         foreach (int level in new[] { -1, 0, 85 })
         {
