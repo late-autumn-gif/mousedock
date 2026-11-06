@@ -8,7 +8,7 @@ using MouseDock.Models;
 namespace MouseDock.Services.Detection
 {
     /// <summary>
-    /// SetupAPI + hid.dll 枚举「正在运行」的 HID 顶层集合，按 VID/PID 归并成一台设备，
+    /// SetupAPI + hid.dll 枚举「正在运行」的 HID 顶层集合，按物理实例归并成一台设备，
     /// 尝试标准电池用法（UsagePage 0x06 / Usage 0x20）与罗技 HID++，读不到就留 -1。
     /// </summary>
     public static class HidDiscovery
@@ -155,6 +155,7 @@ namespace MouseDock.Services.Detection
                 {
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
                     bool atkV75 = VendorProtocol.IsAtkV75X(bucket.Vid, bucket.Pid, bucket.Product);
@@ -223,6 +224,9 @@ namespace MouseDock.Services.Detection
             bool safeMode = false;
             try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
 
+            QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
+                VendorProtocol.ReadReferenceBattery);
+
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
             {
@@ -239,6 +243,7 @@ namespace MouseDock.Services.Detection
             {
                 using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                 if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
@@ -257,6 +262,7 @@ namespace MouseDock.Services.Detection
             {
                 // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
                 using var instanceScope = InstanceScope.Enter(b.InstanceId);
+                if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
                     ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
                 if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
@@ -485,6 +491,7 @@ namespace MouseDock.Services.Detection
                     Vid = vid,
                     Pid = pid,
                     UsagePage = caps.UsagePage,
+                    Usage = caps.Usage,
                     Input = caps.InputReportByteLength,
                     Output = caps.OutputReportByteLength,
                     Feature = caps.FeatureReportByteLength,
@@ -549,7 +556,11 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Candidate(vid, pid) ||
+            if (ReferenceProfiles.Find(vid, pid) != null)
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过参考协议查询" : "参考协议由归并后的实例按精确集合读取一次");
+            }
+            else if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) || VendorProtocol.IsRainy75Candidate(vid, pid) ||
                 VendorProtocol.IsAulaF99(vid, pid, product) || VendorProtocol.IdentifyWeikav(vid, pid, product) != null ||
                 VendorProtocol.IsMchoseG7(vid, pid, product) || VendorProtocol.IsMchoseV9Pro(vid, pid, product) ||
                 VendorProtocol.IsRapooVt7(vid, pid) || VendorProtocol.IsAulaSc630(product) ||
@@ -751,6 +762,52 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>厂商集合上的电量读取：设备本体归并完之后，每台最多读一次。</summary>
+        internal static void QueryReferenceCollections(Dictionary<string, Bucket> buckets,
+            List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
+            Func<ReferenceProfiles.Profile, string, ReferenceBatteryProtocol.Reading> query)
+        {
+            foreach (var bucket in buckets.Values)
+            {
+                var profile = ReferenceProfiles.Find(bucket.Vid, bucket.Pid);
+                if (profile == null) continue;
+                string legacyId = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                string instance = bucket.InstanceId ?? legacyId;
+                if (safeMode || !(preferences?.CanRead(instance, null) ?? true) ||
+                    !(preferences?.CanRead(legacyId, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true))
+                {
+                    bucket.BatteryFailures.Add(safeMode ? "安全模式已跳过参考协议查询" : "此实例的识别已停用");
+                    continue;
+                }
+                var channel = collections.Where(c => c.Vid == bucket.Vid && c.Pid == bucket.Pid &&
+                    InstanceScope.ForPath(c.Path, legacyId) == instance &&
+                    ReferenceProfiles.AcceptsChannel(profile, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature))
+                    .OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if (channel == null)
+                {
+                    bucket.BatteryFailures.Add($"{profile.Model}：没有满足精确用法与报告长度的电量集合，未发送命令");
+                    continue;
+                }
+                using var scope = InstanceScope.Enter(bucket.InstanceId);
+                ReferenceBatteryProtocol.Reading result;
+                try { result = query(profile, channel.Path); }
+                catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name); }
+                if (result == null) result = ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
+                if (result.Level is >= 0 and <= 100 &&
+                    result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                {
+                    bucket.Battery = result.Level;
+                    bucket.Charging = result.ChargingKnown && result.Charging;
+                    bucket.ReadStale = false;
+                    bucket.BatterySource = $"{profile.Model} 电量：{result.Diagnostic}";
+                    bucket.ReferenceIdentity = result.Identity;
+                    bucket.ReferenceIdentityModel = result.Model;
+                }
+                else bucket.BatteryFailures.Add($"{profile.Model}：{result.Diagnostic}");
+                LastDiagnostics.Add($"{instance} 参考配置={profile.Model} 协议={profile.Battery} " +
+                    $"状态={result.Status} 电量={result.Level} 充电已知={result.ChargingKnown} {result.Diagnostic}");
+            }
+        }
+
         private static void QueryVendorCollections(Dictionary<string, Bucket> buckets,
             List<VendorCollectionInfo> collections, bool safeMode,
             Func<string, (int Battery, string Name, bool Charging, string Diagnostic)> probeLogitech,
@@ -829,7 +886,8 @@ namespace MouseDock.Services.Detection
 
             foreach (var collection in collections)
             {
-                if (!RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
+                if (ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
+                    !RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
                     IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
                     continue;
 
@@ -963,6 +1021,7 @@ namespace MouseDock.Services.Detection
             public ushort Vid;
             public ushort Pid;
             public ushort UsagePage;
+            public ushort Usage;
             public ushort Input;
             public ushort Output;
             public ushort Feature;
@@ -993,6 +1052,8 @@ namespace MouseDock.Services.Detection
             }
             public string Path = "";
             public string ReferenceModel;
+            public string ReferenceIdentity;
+            public string ReferenceIdentityModel;
             public string InstanceId;
             public string Identity = "";
             public bool HasVendor;
@@ -1136,13 +1197,23 @@ namespace MouseDock.Services.Detection
                 else if (f99Wired) transport = "有线";
                 else if (weikav != null) transport = Pid is 0xFEF9 or 0xFEFA ? "2.4G" : "有线";
 
+                if (ReferenceModel != null)
+                {
+                    name = ReferenceIdentity != null
+                        ? ReferenceIdentityModel ?? $"ATK 鼠标（CID/MID={ReferenceIdentity}，型号未收录）"
+                        : ReferenceModel;
+                    kind = DeviceKind.Mouse;
+                    transport = "2.4G";
+                }
+
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
+                    ConfirmedModel = ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                        : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = LooksWireless(Product),
+                    ReceiverDiscovered = ReferenceModel != null || LooksWireless(Product),
                     PeripheralConfirmed = Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,

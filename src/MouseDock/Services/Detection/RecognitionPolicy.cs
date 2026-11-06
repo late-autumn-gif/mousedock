@@ -3,6 +3,9 @@ namespace MouseDock.Services.Detection;
 internal static class RecognitionPolicy
 {
     internal static bool CanQuery(ushort vid, ushort pid, string product) =>
+        // Only IDs enter the candidate set here. Exact collection/capability validation
+        // and the dedicated protocol route are mandatory before any reference I/O.
+        ReferenceProfiles.Find(vid, pid) != null ||
         // Repository documents local hardware verification for these receivers.
         (vid == 0x089D && pid == 0x062F) ||
         (vid == 0x391D && pid == 0x2A05) ||

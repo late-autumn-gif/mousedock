@@ -81,7 +81,7 @@ if (args.Length > 0 && args[0] == "--inspect-device-filter")
         Console.WriteLine(instanceId + " => " + (HidDiscovery.InspectExclusion(instanceId) ?? "保留"));
     return;
 }
-int assertions = IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
+int assertions = ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;
