@@ -309,6 +309,7 @@ namespace MouseDock.Views
                 _referenceIcon.Devices=devices.Take(6).Select(d=>(d.Kind,d.HasLevel?d.Level:-1,d.IsStale,d.Charging)).ToList();
                 if(App.Settings.IconStyle!="multi" && dev!=null)_referenceIcon.Devices=new(){(dev.Kind,dev.HasLevel?dev.Level:-1,dev.IsStale,dev.Charging)};
                 _referenceIcon.HideBackground=App.Settings.IconHideBackground;
+                _referenceIcon.Ink=new SolidColorBrush(App.Settings.IconStyle=="plain"||App.Settings.IconHideBackground?_theme.Text:Color.FromRgb(30,43,42));
                 _referenceIcon.Accent=App.Settings.IconFollowTheme?new SolidColorBrush(_theme.Accent):new SolidColorBrush(Color.FromRgb(82,125,108));
                 RootGrid.Width=_referenceIcon.Width=App.Settings.IconStyle=="multi"?Math.Max(56,Math.Min(6,devices.Count)*42+12):App.Settings.IconStyle is "pill" or "battery" or "plain"?112:96;
                 RootGrid.Height=_referenceIcon.Height=App.Settings.IconStyle is "ring" or "tile"?96:64;

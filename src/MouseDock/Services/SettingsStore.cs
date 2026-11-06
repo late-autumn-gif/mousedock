@@ -8,7 +8,8 @@ namespace MouseDock.Services
 {
     public static class SettingsStore
     {
-        public static string Dir => Path.Combine(
+        internal static string TestDirectory { get; set; }
+        public static string Dir => TestDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock");
 
         public static string FilePath => Path.Combine(Dir, "settings.json");

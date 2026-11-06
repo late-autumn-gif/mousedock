@@ -11,11 +11,12 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     public List<(DeviceKind Kind,int Level,bool Stale,bool Charging)> Devices=new();
     public Brush Accent=new SolidColorBrush(Color.FromRgb(82,125,108));
     public bool HideBackground;
+    public Brush Ink = new SolidColorBrush(Color.FromRgb(30,43,42));
     protected override void OnRender(DrawingContext d)
     {
         base.OnRender(d);
         var bg=HideBackground?Brushes.Transparent:Brushes.White;
-        var ink=new SolidColorBrush(Color.FromRgb(30,43,42));
+        var ink=Ink;
         var item=Devices.Count>0?Devices[0]:(DeviceKind.Mouse,-1,false,false);
         string value=item.Item2>=0?item.Item2.ToString():"—";
         double x=ActualWidth/2,y=ActualHeight/2;

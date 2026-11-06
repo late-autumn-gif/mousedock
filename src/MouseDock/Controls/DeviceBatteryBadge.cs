@@ -13,18 +13,21 @@ namespace MouseDock.Controls
     {
         public DeviceBatteryRing Ring { get; }
 
-        public DeviceBatteryBadge(DeviceInfo device, Brush foreground, bool showNumber, bool vertical, int lowThreshold)
+        public DeviceBatteryBadge(DeviceInfo device, Brush foreground, bool showNumber, bool vertical, int lowThreshold, bool compact = false)
         {
             DataContext = device;
             Background = Brushes.Transparent;
-            Width = showNumber && !vertical ? 72 : 40;
-            Height = showNumber && vertical ? 56 : 40;
-            RowDefinitions.Add(new RowDefinition { Height = new GridLength(40) });
-            RowDefinitions.Add(new RowDefinition { Height = new GridLength(showNumber && vertical ? 16 : 0) });
+            bool below = vertical || compact;
+            double ringSize = compact && showNumber ? 26 : 40;
+            Width = showNumber && !below ? 72 : 40;
+            Height = showNumber && below ? (compact ? 40 : 56) : 40;
+            RowDefinitions.Add(new RowDefinition { Height = new GridLength(ringSize) });
+            RowDefinitions.Add(new RowDefinition { Height = new GridLength(showNumber && below ? (compact ? 14 : 16) : 0) });
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
-            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(showNumber && !vertical ? 32 : 0) });
+            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(showNumber && !below ? 32 : 0) });
 
-            Ring = new DeviceBatteryRing { GlyphBrush = foreground, LowBatteryThreshold = lowThreshold };
+            Ring = new DeviceBatteryRing { GlyphBrush = foreground, LowBatteryThreshold = lowThreshold,
+                Width=ringSize, Height=ringSize, HorizontalAlignment=HorizontalAlignment.Center };
             Ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)) { Source = device });
             Ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)) { Source = device });
             // 只认「已连接且不是缓存值」的充电状态，断线时别让动画一直转。
@@ -32,15 +35,15 @@ namespace MouseDock.Controls
             Children.Add(Ring);
             var number = new TextBlock
             {
-                Name = "BatteryNumber", Foreground = foreground, FontSize = 11,
+                Name = "BatteryNumber", Foreground = foreground, FontSize = compact ? 10 : 11,
                 FontFamily = new FontFamily("Segoe UI"), FontWeight = FontWeights.SemiBold,
                 TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
             };
             number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
-            SetRow(number, vertical ? 1 : 0);
-            SetColumn(number, vertical ? 0 : 1);
+            SetRow(number, below ? 1 : 0);
+            SetColumn(number, below ? 0 : 1);
             Children.Add(number);
             SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
             var description = new MultiBinding { Converter = new DescriptionConverter(), ConverterParameter = "\n" };

@@ -110,7 +110,7 @@ namespace MouseDock.Views
             foreach (var device in App.Battery.VisibleDevices)
             {
                 _devices.Children.Add(new DeviceBatteryBadge(device, light ? Brushes.Black : Brushes.WhiteSmoke,
-                    App.Settings.ShowBatteryNumber, _vertical, App.Settings.LowBatteryWarn));
+                    App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn, compact: true));
             }
             UpdateAnchor();
         }
@@ -130,7 +130,7 @@ namespace MouseDock.Views
             Opacity = _devices.Children.Count == 0 ? 0 : 1;
             IsHitTestVisible = Opacity > 0;
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
-            double length = !App.Settings.ShowBatteryNumber ? 40 : _vertical ? 56 : 72;
+            double length = 40; // Each compact taskbar badge stacks its number below the ring.
             var size = new Size(Math.Max(1, _devices.Children.Count) * length, 40);
             var placement = TaskbarPlacement.Calculate(bounds, edge, size, App.Settings.TaskbarOffset, dpi);
             TaskbarAnchor.Move(this, placement);
