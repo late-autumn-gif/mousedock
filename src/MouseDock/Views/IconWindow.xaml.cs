@@ -19,7 +19,7 @@ namespace MouseDock.Views
         private readonly TransformGroup _photoTransform = new TransformGroup();
         private ThemePreset _theme = App.Theme;
 
-        private MouseDock.Controls.ReferenceBatteryIcon _referenceIcon;
+        private string _activeStyle = "photo";
         private bool _dragging;
         private Point _dragStart;
         private double _dragOriginX, _dragOriginY;
@@ -35,7 +35,7 @@ namespace MouseDock.Views
             App.Battery.Refreshed += (_, __) => UpdateValue();
             Loaded += (_, __) =>
             {
-                ApplyMode(App.Settings.IconMode, false);
+                ApplyStyle(App.Settings.IconStyle, false);
                 UpdateValue();
                 RootGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
             };
@@ -87,6 +87,7 @@ namespace MouseDock.Views
         public void ApplyStyle(string style, bool persist)
         {
             style = (style ?? "photo").ToLowerInvariant();
+            _activeStyle = style;
             if (persist) App.Settings.IconStyle = style;
 
             CharLayer.Visibility = Visibility.Collapsed;
@@ -205,6 +206,12 @@ namespace MouseDock.Views
             var dev = App.PrimaryDevice;
 
             if (DeviceList != null) DeviceList.ItemsSource = devices;
+            bool reference = new[] {"ring","tile","pill","battery","plain","multi"}.Contains(_activeStyle);
+            LegacyLayers.Visibility=reference?Visibility.Collapsed:Visibility.Visible;
+            DeviceList.Visibility=reference?Visibility.Collapsed:Visibility.Visible;
+            ReferenceIcons.Visibility=reference?Visibility.Visible:Visibility.Collapsed;
+            if(reference){UpdateReferenceIcons(devices);return;}
+
 
             string text = dev == null ? "--" : dev.LevelText;
             CharPlateText.Text = text;
@@ -295,29 +302,39 @@ namespace MouseDock.Views
                 .FirstOrDefault() ?? "";
 
             FitSize(longest, devices.Count);
-            bool reference = new[] {"ring","tile","pill","battery","plain","multi"}.Contains(App.Settings.IconStyle);
-            if (_referenceIcon==null) {
-                _referenceIcon=new MouseDock.Controls.ReferenceBatteryIcon();
-                _referenceIcon.MouseLeftButtonDown+=OnDragWindow; _referenceIcon.MouseMove+=OnDragMove; _referenceIcon.MouseLeftButtonUp+=OnDragEnd;
-                _referenceIcon.MouseRightButtonUp+=OnContextMenu; _referenceIcon.MouseWheel+=OnWheel;
-                RootGrid.Children.Add(_referenceIcon);
-            }
-            _referenceIcon.Visibility=reference?Visibility.Visible:Visibility.Collapsed;
-            if(reference) {
-                foreach(var layer in new[] {RingLayer,MiniLayer,PillLayer,BatteryLayer,PlainLayer,MultiLayer})layer.Visibility=Visibility.Collapsed;
-                _referenceIcon.StyleName=App.Settings.IconStyle;
-                _referenceIcon.Devices=devices.Take(6).Select(d=>(d.Kind,d.HasLevel?d.Level:-1,d.IsStale,d.Charging)).ToList();
-                if(App.Settings.IconStyle!="multi" && dev!=null)_referenceIcon.Devices=new(){(dev.Kind,dev.HasLevel?dev.Level:-1,dev.IsStale,dev.Charging)};
-                _referenceIcon.HideBackground=App.Settings.IconHideBackground;
-                _referenceIcon.Ink=new SolidColorBrush(App.Settings.IconStyle=="plain"||App.Settings.IconHideBackground?_theme.Text:Color.FromRgb(30,43,42));
-                _referenceIcon.Accent=App.Settings.IconFollowTheme?new SolidColorBrush(_theme.Accent):new SolidColorBrush(Color.FromRgb(82,125,108));
-                RootGrid.Width=_referenceIcon.Width=App.Settings.IconStyle=="multi"?Math.Max(56,Math.Min(6,devices.Count)*42+12):App.Settings.IconStyle is "pill" or "battery" or "plain"?112:96;
-                RootGrid.Height=_referenceIcon.Height=App.Settings.IconStyle is "ring" or "tile"?96:64;
-                _referenceIcon.InvalidateVisual();
-            }
         }
 
-        /// <summary>宽度跟最长设备名走，高度跟台数走；外壳形状决定基准尺寸。</summary>
+        private void UpdateReferenceIcons(System.Collections.Generic.List<DeviceInfo> devices)
+        {
+            ReferenceIcons.Children.Clear();
+            bool multi=_activeStyle=="multi";
+            double cellWidth=_activeStyle is "pill" or "battery" or "plain"?112:96;
+            double cellHeight=_activeStyle is "ring" or "tile"?96:64;
+            var shown=devices.Take(6).ToList();
+            int count=multi?1:Math.Max(1,shown.Count);
+            int columns=multi?1:Math.Min(2,count);
+            ReferenceIcons.Columns=columns;
+            for(int i=0;i<count;i++)
+            {
+                DeviceInfo item=i<shown.Count?shown[i]:null;
+                var icon=new MouseDock.Controls.ReferenceBatteryIcon {
+                    StyleName=_activeStyle,Width=multi?Math.Max(56,shown.Count*42+12):cellWidth,Height=cellHeight,
+                    HideBackground=App.Settings.IconHideBackground,
+                    Ink=new SolidColorBrush(_activeStyle=="plain"||App.Settings.IconHideBackground?_theme.Text:Color.FromRgb(30,43,42)),
+                    Accent=new SolidColorBrush(App.Settings.IconFollowTheme?_theme.Accent:Color.FromRgb(82,125,108)),DataContext=item
+                };
+                if(multi)icon.Devices=shown.Select(d=>(d.Kind,d.HasLevel?d.Level:-1,d.IsStale,d.IsChargingActive)).ToList();
+                else if(item!=null)icon.Devices=new(){(item.Kind,item.HasLevel?item.Level:-1,item.IsStale,item.IsChargingActive)};
+                icon.ToolTip=multi?string.Join("\n",shown.Select(d=>d.Name+" · "+d.LevelText)):item==null?"尚未选择设备":item.Name+" · "+item.LevelText;
+                System.Windows.Automation.AutomationProperties.SetName(icon,icon.ToolTip.ToString());
+                icon.MouseLeftButtonDown+=OnDragWindow;icon.MouseMove+=OnDragMove;icon.MouseLeftButtonUp+=OnDragEnd;
+                icon.MouseRightButtonUp+=OnContextMenu;icon.MouseWheel+=OnWheel;
+                ReferenceIcons.Children.Add(icon);
+            }
+            RootGrid.Width=multi?Math.Max(56,shown.Count*42+12):columns*cellWidth;
+            RootGrid.Height=((count+columns-1)/columns)*cellHeight;
+        }
+
         private void FitSize(string longestName, int count)
         {
             if (RootGrid == null) return;

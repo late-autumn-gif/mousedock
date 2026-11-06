@@ -45,6 +45,19 @@ namespace MouseDock.Services
             SetWindowLong(handle, -20, GetWindowLong(handle, -20) | 0x08000000 | 0x00000080);
         }
 
+        public static bool Detach(Window window)
+        {
+            var handle=new WindowInteropHelper(window).Handle;
+            if(handle==IntPtr.Zero)return false;
+            if(GetParent(handle)==IntPtr.Zero)return true;
+            Marshal.SetLastPInvokeError(0);SetParent(handle,IntPtr.Zero);
+            if(Marshal.GetLastPInvokeError()!=0)return false;
+            int style=GetWindowLong(handle,-16);
+            SetWindowLong(handle,-16,(style & ~0x40000000) | unchecked((int)0x80000000));
+            SetWindowPos(handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010|0x0020);
+            return GetParent(handle)==IntPtr.Zero;
+        }
+
         public static bool AttachToTaskbar(Window window) => Attach(window, FindWindow("Shell_TrayWnd", null));
 
         public static bool Attach(Window window, IntPtr parent)

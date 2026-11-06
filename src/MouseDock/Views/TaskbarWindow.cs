@@ -110,7 +110,7 @@ namespace MouseDock.Views
             foreach (var device in App.Battery.VisibleDevices)
             {
                 _devices.Children.Add(new DeviceBatteryBadge(device, light ? Brushes.Black : Brushes.WhiteSmoke,
-                    App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn, compact: true));
+                    App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn));
             }
             UpdateAnchor();
         }
@@ -118,7 +118,7 @@ namespace MouseDock.Views
         public void UpdateAnchor()
         {
             if (!IsVisible) return;
-            bool attached = TaskbarAnchor.AttachToTaskbar(this);
+            TaskbarAnchor.Detach(this); // Full-size badges cannot be clipped to a thin taskbar parent.
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
                 Opacity = 0;
@@ -126,13 +126,12 @@ namespace MouseDock.Views
                 return;
             }
             // DPI 上下文对不上时 SetParent 会失败：退回原来的浮窗行为，总要看得见电量。
-            Topmost = !attached;
+            Topmost = true;
             Opacity = _devices.Children.Count == 0 ? 0 : 1;
             IsHitTestVisible = Opacity > 0;
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
-            double length = 40; // Each compact taskbar badge stacks its number below the ring.
-            var size = new Size(Math.Max(1, _devices.Children.Count) * length, 40);
-            var placement = TaskbarPlacement.Calculate(bounds, edge, size, App.Settings.TaskbarOffset, dpi);
+            var placement = TaskbarPlacement.CalculateBadges(bounds, edge, Math.Max(1,_devices.Children.Count),
+                App.Settings.ShowBatteryNumber,App.Settings.TaskbarOffset,dpi);
             TaskbarAnchor.Move(this, placement);
         }
     }

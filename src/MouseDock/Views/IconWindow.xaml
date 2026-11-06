@@ -10,6 +10,7 @@
 
     <Grid x:Name="RootGrid" Width="96" Height="96" MouseRightButtonUp="OnContextMenu">
 
+        <Grid x:Name="LegacyLayers">
         <!-- 角色款 -->
         <Border x:Name="CharLayer" CornerRadius="20" Width="96" Height="96"
                 MouseLeftButtonDown="OnDragWindow" MouseMove="OnDragMove" MouseLeftButtonUp="OnDragEnd"
@@ -271,5 +272,7 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
+        </Grid>
+        <UniformGrid x:Name="ReferenceIcons" Columns="2" Visibility="Collapsed" />
     </Grid>
 </Window>
