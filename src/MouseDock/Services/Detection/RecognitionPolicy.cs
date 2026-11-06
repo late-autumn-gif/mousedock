@@ -6,6 +6,9 @@ internal static class RecognitionPolicy
         // Only IDs enter the candidate set here. Exact collection/capability validation
         // and the dedicated protocol route are mandatory before any reference I/O.
         ReferenceProfiles.Find(vid, pid) != null ||
+        // Explicitly requested adaptation, bounded by this report's exact product/interface.
+        // Protocol-supported; real battery responses are still pending hardware confirmation.
+        VendorProtocol.IsReportedX23Se(vid, pid, product) ||
         // Repository documents local hardware verification for these receivers.
         (vid == 0x089D && pid == 0x062F) ||
         (vid == 0x391D && pid == 0x2A05) ||

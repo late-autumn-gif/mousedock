@@ -21,3 +21,14 @@ in a generic upstream decoder does not authorize a different HID collection.
 See `docs/REFERENCE-1.0.2-PORT.md` for scope and `THIRD-PARTY-NOTICES.md` for
 attribution. The C# tests also replay complete transactions and instance routing,
 which are independent of the pure decoder oracle.
+
+For the separately requested, not hardware-verified X23SE route:
+
+```text
+python3.12 tools/ReferencePortOracle/generate_x23se_vectors.py path/to/MouseDock-1.0.2.exe tests/MouseDock.ProtocolTests/Fixtures/x23se-freq-oracle.json
+```
+
+This loads only `freq_decode` and `_freq_read` code objects. A fake I/O object
+confirms the reference selects scheme a for the dual 65/65 layout and sends
+two battery requests. All 1260 reports and report IDs 7/42 are synthetic;
+they do not establish the actual X23SE report IDs or battery response.

@@ -9,7 +9,7 @@ namespace MouseDock.Services.Detection
     /// 前行者（EWEADN）/ FREQ 方案鼠标的 2.4G 电量查询。
     ///
     /// 证据链（都不需要真机就能核对）：
-    /// - 参考实现 `wireless_x23_family.py`（官方 MouseDock 的 FREQ 传输）：
+    /// - 参考实现 `wireless_x23_family.py`（另一作者 MouseDock 1.0.2 的 FREQ 传输）：
     ///   `_freq_read` 发 0x30 电量命令，`freq_decode` 校验方案 a/c 的应答；
     /// - 官方 E HUB 目录 + FREQ SDK 把 A8A4/A8A5:2255 的 X23 系列标成 `x23_freq`，
     ///   页面 FF01/0010、接口 2，产品串必须精确匹配；
@@ -28,6 +28,7 @@ namespace MouseDock.Services.Detection
         private const byte FreqBatteryCommand = 0x30;
 
         [DllImport("hid.dll")] private static extern int HidP_GetValueCaps(int reportType, byte[] caps, ref ushort length, IntPtr prep);
+        [DllImport("hid.dll")] private static extern int HidP_GetButtonCaps(int reportType, byte[] caps, ref ushort length, IntPtr prep);
 
         /// <summary>参考设备表里的 freq_scheme，键是 USB 产品串（大小写不敏感）。</summary>
         private static readonly Dictionary<string, string> FreqSchemes =
@@ -73,7 +74,7 @@ namespace MouseDock.Services.Detection
         /// <summary>参考实现的方案 a 请求头（连同报告编号一起写入）。</summary>
         internal static byte[] BuildFreqSchemeAPacket(byte outputReportId, int outputSize)
         {
-            if (outputReportId == 0 || outputSize < 10 || outputSize > 65) return null;
+            if (outputReportId == 0 || outputSize < 11 || outputSize > 65) return null;
             var packet = new byte[outputSize];
             packet[0] = outputReportId;
             new byte[] { 0x55, 0x30, 0x01, 0x0B, 0x2E, 0x01, 0x01, 0x01, 0x00, 0x00 }
@@ -102,7 +103,7 @@ namespace MouseDock.Services.Detection
         internal static bool IsFreqBatteryFrame(ReadOnlySpan<byte> raw, string scheme, byte inputReportId)
         {
             int at = inputReportId != 0 ? 1 : 0;
-            if (raw.Length <= at) return false;
+            if (scheme is not ("a" or "c") || raw.Length <= at || (inputReportId != 0 && raw[0] != inputReportId)) return false;
             var body = raw.Slice(at);
             if (scheme == "c") return body[0] == FreqBatteryCommand;
             for (int i = 0; i <= 1 && i + 1 < body.Length; i++)
@@ -118,7 +119,7 @@ namespace MouseDock.Services.Detection
         {
             level = -1;
             charging = false;
-            if (raw.Length != inputSize) return false;
+            if (scheme is not ("a" or "c") || inputSize <= 0 || raw.IsEmpty || raw.Length != inputSize) return false;
             if (inputReportId != 0 && raw[0] != inputReportId) return false;
             var body = inputReportId != 0 ? raw.Slice(1) : raw;
 
@@ -153,28 +154,40 @@ namespace MouseDock.Services.Detection
             return true;
         }
 
-        /// <summary>从 HID 值能力表读报告编号；每个方向必须只有一个，否则不猜。</summary>
-        private static bool TryGetReportId(IntPtr prep, int reportType, ushort declared, out byte reportId)
+        /// <summary>合并 HID 值/按钮能力表的报告编号；每个方向必须只有一个，否则不猜。</summary>
+        internal static bool TrySingleFreqReportId(byte[] values, int valueCount, byte[] buttons, int buttonCount, out byte reportId)
         {
             reportId = 0;
-            if (prep == IntPtr.Zero || declared == 0) return false;
-            ushort length = declared;
-            var buffer = new byte[declared * HidpValueCapsStride];
-            int status = HidP_GetValueCaps(reportType, buffer, ref length, prep);
-            if (status != 0x110000 || length == 0 || length > declared) return false;
-            byte found = 0;
-            for (int i = 0; i < length; i++)
-            {
-                byte id = buffer[i * HidpValueCapsStride + HidpValueCapsReportIdOffset];
-                if (i == 0)
-                {
-                    found = id;
-                    continue;
-                }
-                if (id != found) return false; // 多个报告编号：不是单一 I/O，拒绝
-            }
-            reportId = found;
+            if (valueCount < 0 || buttonCount < 0 || valueCount + buttonCount == 0 ||
+                valueCount > (values?.Length ?? 0) / HidpValueCapsStride ||
+                buttonCount > (buttons?.Length ?? 0) / HidpValueCapsStride) return false;
+            var ids = new HashSet<byte>();
+            for (int i = 0; i < valueCount; i++) ids.Add(values[i * HidpValueCapsStride + HidpValueCapsReportIdOffset]);
+            for (int i = 0; i < buttonCount; i++) ids.Add(buttons[i * HidpValueCapsStride + HidpValueCapsReportIdOffset]);
+            if (ids.Count != 1) return false;
+            foreach (byte id in ids) reportId = id;
             return true;
+        }
+
+        private static bool TryGetReportId(IntPtr prep, int reportType, ushort valueDeclared, ushort buttonDeclared, out byte reportId)
+        {
+            reportId = 0;
+            if (prep == IntPtr.Zero || valueDeclared + buttonDeclared == 0) return false;
+            byte[] ReadCaps(bool buttons, ushort declared, out int count)
+            {
+                count = 0;
+                if (declared == 0) return Array.Empty<byte>();
+                ushort length = declared;
+                var buffer = new byte[declared * HidpValueCapsStride];
+                int status = buttons ? HidP_GetButtonCaps(reportType, buffer, ref length, prep)
+                    : HidP_GetValueCaps(reportType, buffer, ref length, prep);
+                if (status != 0x110000 || length == 0 || length > declared) return null;
+                count = length;
+                return buffer;
+            }
+            var values = ReadCaps(false, valueDeclared, out int valueCount);
+            var buttons = ReadCaps(true, buttonDeclared, out int buttonCount);
+            return values != null && buttons != null && TrySingleFreqReportId(values, valueCount, buttons, buttonCount, out reportId);
         }
 
         /// <summary>
@@ -207,8 +220,8 @@ namespace MouseDock.Services.Detection
                     byte inputId, outputId;
                     try
                     {
-                        bool okInput = TryGetReportId(prep, 0, caps.NumberInputValueCaps, out inputId);
-                        bool okOutput = TryGetReportId(prep, 1, caps.NumberOutputValueCaps, out outputId);
+                        bool okInput = TryGetReportId(prep, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps, out inputId);
+                        bool okOutput = TryGetReportId(prep, 1, caps.NumberOutputValueCaps, caps.NumberOutputButtonCaps, out outputId);
                         if (!okInput || !okOutput)
                         {
                             last = $"报告编号不唯一（in={caps.NumberInputValueCaps} out={caps.NumberOutputValueCaps}）";

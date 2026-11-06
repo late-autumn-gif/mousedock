@@ -5,6 +5,10 @@
 The six verified battery profiles, request/response rules, and ATK CID/MID names
 were adapted into new battery-only C# code in ReferenceProfiles,
 ReferenceBatteryProtocol, VendorProtocol.Reference and ReferenceIdentityNames.
+The explicitly requested X23SE adaptation also uses the reference's FREQ
+scheme-a request/decoder rules, reimplemented in VendorProtocol.Freq and
+VendorProtocol.ReportedX23Se. It is protocol-supported, not an upstream
+verified=true profile or a locally verified physical-device result.
 The supplied reference binary identifies its license as follows. The original
 application and its binary/runtime are not included in this distribution.
 
@@ -65,6 +69,11 @@ synthetic report bytes and expected facts obtained from the reference's pure
 packet functions. It contains no application bytecode, user settings, device
 paths, firmware, or hardware captures. The regeneration script requires the
 user's own exact reference binary and disables hardware entrypoints.
+
+`tests/MouseDock.ProtocolTests/Fixtures/x23se-freq-oracle.json` similarly holds
+1260 synthetic FREQ reports and a fake-I/O transaction oracle, obtained only
+from the reference's pure decoder and battery transaction function. It contains
+no physical device captures or original application bytecode.
 
 ## NAudio.Wasapi / NAudio.Core 2.2.1
 

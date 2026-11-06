@@ -156,6 +156,7 @@ namespace MouseDock.Services.Detection
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
+                    if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
                     bool atkV75 = VendorProtocol.IsAtkV75X(bucket.Vid, bucket.Pid, bucket.Product);
@@ -226,6 +227,8 @@ namespace MouseDock.Services.Detection
 
             QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReferenceBattery);
+            QueryReportedX23SeCollections(buckets, vendorCollections, safeMode, preferences,
+                VendorProtocol.ReadReportedX23Se);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
@@ -244,6 +247,7 @@ namespace MouseDock.Services.Detection
                 using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
+                if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
@@ -263,6 +267,7 @@ namespace MouseDock.Services.Detection
                 // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
                 using var instanceScope = InstanceScope.Enter(b.InstanceId);
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
+                if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
                     ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
                 if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
@@ -364,6 +369,8 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if (VendorProtocol.IsReportedX23Se(vid, pid, product) && usagePage == 0xFF01 && usage == 0x10)
+            { kind = DeviceKind.Mouse; return true; }
             if (ReferenceProfiles.Match(vid, pid, usagePage, usage) != null) { kind = DeviceKind.Mouse; return true; }
             if (VendorProtocol.IsMchoseV9Pro(vid, pid, product) &&
                 ((usagePage == 0xFF90 && usage == 1) || (usagePage == 0x0C && usage == 1)))
@@ -556,7 +563,11 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (ReferenceProfiles.Find(vid, pid) != null)
+            if (VendorProtocol.IsReportedX23Se(vid, pid, product))
+            {
+                batteryTrace.Add(safeMode ? "安全模式已跳过 X23SE 电量查询" : "X23SE 电量由本实例 MI_02 精确集合读取，不尝试通用协议");
+            }
+            else if (ReferenceProfiles.Find(vid, pid) != null)
             {
                 batteryTrace.Add(safeMode ? "安全模式已跳过参考协议查询" : "参考协议由归并后的实例按精确集合读取一次");
             }
@@ -738,6 +749,8 @@ namespace MouseDock.Services.Detection
             if (miTag != null) bucket.Interfaces.Add(miTag);
 
             bucket.ReferenceModel ??= ReferenceProfiles.Match(vid, pid, caps.UsagePage, caps.Usage);
+            bucket.ReportedX23SeIdentified |= VendorProtocol.IsReportedX23SeCollection(vid, pid, product, path,
+                caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength);
             bucket.Counts[kind] = bucket.Counts.TryGetValue(kind, out int c) ? c + 1 : 1;
 
             if (UsageMap.Priority(kind) > UsageMap.Priority(bucket.Kind))
@@ -759,6 +772,46 @@ namespace MouseDock.Services.Detection
             LastDiagnostics.Add($"{key} 电量={(battery >= 0 ? battery + "%" : "未读到")} 读取过程={string.Join("；", batteryTrace)} 路径={path}");
 
             return true;
+        }
+
+        internal static void QueryReportedX23SeCollections(Dictionary<string, Bucket> buckets,
+            List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
+            Func<string, ReferenceBatteryProtocol.Reading> query)
+        {
+            foreach (var bucket in buckets.Values)
+            {
+                if (!VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                string legacy = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+                string instance = bucket.InstanceId ?? legacy;
+                bucket.Battery = -1; bucket.Charging = false; bucket.ReadStale = false; bucket.BatterySource = "";
+                var channel = collections.Where(c => InstanceScope.ForPath(c.Path, legacy) == instance &&
+                    VendorProtocol.IsReportedX23SeCollection(c.Vid, c.Pid, c.Product, c.Path, c.UsagePage,
+                        c.Usage, c.Input, c.Output, c.Feature)).OrderBy(c => c.Path, StringComparer.Ordinal).FirstOrDefault();
+                bucket.ReportedX23SeIdentified = channel != null;
+                string reason = safeMode ? "安全模式已跳过 X23SE 电量查询" :
+                    !(preferences?.CanRead(instance, legacy) ?? true) ? "用户已停用此实例的识别" :
+                    channel == null ? "缺少本实例的 EWEADN X23SE MI_02 FF01/0010 65/65/0 集合，未发送查询" : null;
+                if (reason != null)
+                {
+                    bucket.BatteryFailures.Add(reason);
+                    LastDiagnostics.Add($"{instance} X23SE 边界：{reason}");
+                    continue;
+                }
+                using var scope = InstanceScope.Enter(bucket.InstanceId);
+                ReferenceBatteryProtocol.Reading result;
+                try { result = query(channel.Path); }
+                catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name); }
+                result ??= ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
+                if (result.Level is >= 0 and <= 100 &&
+                    result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                {
+                    bucket.Battery = result.Level;
+                    bucket.Charging = result.ChargingKnown && result.Charging;
+                    bucket.BatterySource = "X23SE：" + result.Diagnostic;
+                }
+                else bucket.BatteryFailures.Add("X23SE：" + result.Diagnostic);
+                LastDiagnostics.Add($"{instance} X23SE 状态={result.Status} 电量={result.Level} {result.Diagnostic}");
+            }
         }
 
         /// <summary>厂商集合上的电量读取：设备本体归并完之后，每台最多读一次。</summary>
@@ -887,6 +940,7 @@ namespace MouseDock.Services.Detection
             foreach (var collection in collections)
             {
                 if (ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
+                    VendorProtocol.IsReportedX23Se(collection.Vid, collection.Pid, collection.Product) ||
                     !RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
                     IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
                     continue;
@@ -1054,6 +1108,7 @@ namespace MouseDock.Services.Detection
             public string ReferenceModel;
             public string ReferenceIdentity;
             public string ReferenceIdentityModel;
+            public bool ReportedX23SeIdentified;
             public string InstanceId;
             public string Identity = "";
             public bool HasVendor;
@@ -1205,16 +1260,17 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Mouse;
                     transport = "2.4G";
                 }
+                if (ReportedX23SeIdentified) { name = Product.Trim(); kind = DeviceKind.Mouse; transport = "2.4G"; }
 
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = ReferenceModel != null || LooksWireless(Product),
-                    PeripheralConfirmed = Battery >= 0 && !ReadStale,
+                    ReceiverDiscovered = ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    PeripheralConfirmed = !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,

@@ -70,6 +70,15 @@ namespace MouseDock.Services.Detection
             text.AppendLine($"安全模式: {(safeMode ? "开（只枚举，不发查询帧）" : "关")}");
             text.AppendLine();
 
+            // This diagnostic API has no physical-instance key. Do not reopen every
+            // receiver sharing this public ID; the scanner already logs the exact
+            // X23SE channel, report IDs and validated transaction result.
+            if (vid == 0xA8A5 && pid == 0x2255)
+            {
+                text.AppendLine("此共享 VID/PID 不运行跨实例通用探针。X23SE 仅由自动扫描的精确实例/集合读取；请查看 hid-devices.txt 的 X23SE 诊断。");
+                return new DeviceProbeResult { Text = text.ToString() };
+            }
+
             text.AppendLine("==== 名称线索 ====");
             text.AppendLine("选中名称: " + (requestedName ?? ""));
             try
