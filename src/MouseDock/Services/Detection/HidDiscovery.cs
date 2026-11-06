@@ -158,7 +158,7 @@ namespace MouseDock.Services.Detection
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                    if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product)) continue;
+                    if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product)) continue;
                     bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
                     bool atkV75 = VendorProtocol.IsAtkV75X(bucket.Vid, bucket.Pid, bucket.Product);
@@ -233,6 +233,7 @@ namespace MouseDock.Services.Detection
                 VendorProtocol.ReadReportedX23Se);
             QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
+            QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
             QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadOriginalGpw);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
@@ -254,7 +255,7 @@ namespace MouseDock.Services.Detection
                 if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                 if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product)) continue;
+                if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product)) continue;
                 if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
@@ -276,7 +277,7 @@ namespace MouseDock.Services.Detection
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
-                if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product)) return b.ToDevice();
+                if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product) || VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product)) return b.ToDevice();
                 var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
                     ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
                 if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
@@ -579,7 +580,8 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
+            if(VendorProtocol.IsScopedG7(vid,pid,product)){batteryTrace.Add("G7由本实例精确集合读取");}
+            else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
             else if (OriginalGpwProtocol.IsCandidate(vid, pid))
             {
                 batteryTrace.Add(safeMode ? "安全模式已跳过 GPW 查询" : "一代 GPW 由本实例20字节长报文集合确认身份后查询，不走通用罗技探针");
@@ -1064,7 +1066,7 @@ namespace MouseDock.Services.Detection
                 if (ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
                     VendorProtocol.IsReportedX23Se(collection.Vid, collection.Pid, collection.Product) ||
                     AulaBatteryProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
-                    OriginalGpwProtocol.IsCandidate(collection.Vid,collection.Pid) || VendorProtocol.IsScopedInphic(collection.Vid,collection.Pid,collection.Product) ||
+                    OriginalGpwProtocol.IsCandidate(collection.Vid,collection.Pid) || VendorProtocol.IsScopedInphic(collection.Vid,collection.Pid,collection.Product) || VendorProtocol.IsScopedG7(collection.Vid,collection.Pid,collection.Product) ||
                     !RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
                     IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
                     continue;
@@ -1236,6 +1238,8 @@ namespace MouseDock.Services.Detection
             public bool AulaHandled, AulaOnline, InphicHandled;
             public AulaBatteryProtocol.Route? AulaDescriptorRoute;
             public string AulaModel;
+            public bool G7Handled;
+            public string G7Model;
             public bool GpwHandled, GpwLive;
             public string GpwModel;
             public string InstanceId;
@@ -1397,6 +1401,7 @@ namespace MouseDock.Services.Detection
                     transport = AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
                     charging = Battery >= 0 && AulaOnline && Charging;
                 }
+                if(G7Handled){name=G7Model ?? Product ?? "未确认型号的接收器";kind=DeviceKind.Mouse;transport=Vid==0xA8A4?"有线":"2.4G";charging=Battery>=0 && Charging;}
                 if (GpwHandled)
                 {
                     name=GpwModel ?? "罗技 Lightspeed 接收器（型号未确认）"; kind=DeviceKind.Mouse;
@@ -1408,11 +1413,11 @@ namespace MouseDock.Services.Detection
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
-                    PeripheralConfirmed = GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
+                    ReceiverDiscovered = G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    PeripheralConfirmed = G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,

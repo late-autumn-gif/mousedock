@@ -248,6 +248,7 @@ assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
 assertions += OriginalGpwScopedRegression.Run();
 assertions += InphicStylesRegression.Run();
+assertions += G7V9Regression.Run();
 assertions += LogitechReceiverRegression.Run();
 assertions += FreqRegression.Run();
 
