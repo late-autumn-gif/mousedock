@@ -835,10 +835,10 @@ namespace MouseDock.Services.Detection
                     catch(Exception ex) { result=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name+": "+ex.Message); }
                 }
                 result ??= ReferenceBatteryProtocol.Reading.Failed("GPW读取器没有返回结果");
-                if (result.Model == OriginalGpwProtocol.Model)
+                if (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model)
                 {
                     b.GpwModel = result.Model;
-                    b.GpwLive = OriginalGpwProtocol.IsIdentityEvidence(result.Identity);
+                    b.GpwLive = b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity);
                     if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
                     {
                         b.Battery=result.Level; b.Charging=result.ChargingKnown && result.Charging; b.GpwLive=true;
@@ -1457,6 +1457,8 @@ namespace MouseDock.Services.Detection
                 if (VendorProtocol.IsAtkZeroBitMouse(Vid, Pid) &&
                     (string.Equals(Product, "ATK ZERO", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(Product, "ATK ZERO 2.4G Receiver", StringComparison.OrdinalIgnoreCase))) return DeviceKind.Mouse;
+                if (Vid==0x3837 && Pid is 0x3033 or 0x2015 or 0x201A or 0x201B &&
+                    System.Text.RegularExpressions.Regex.IsMatch(Product??"",@"(?i)^MCHOSE G87 V2(?: 2\.4G| \(1K\))?$")) return DeviceKind.Keyboard;
                 if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) return DeviceKind.Mouse;
                 if (VendorProtocol.IsAtkV75X(Vid, Pid, Product)) return DeviceKind.Keyboard;
                 if (VendorProtocol.IsRainy75Candidate(Vid, Pid) &&

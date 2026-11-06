@@ -265,6 +265,7 @@ assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += ZeroRainyRegression.Run();
 assertions += SupportAuditRegression.Run();
+assertions += SuperlightRegression.Run();
 assertions += UpdateReleaseRegression.Run();
 assertions += UpdateInstallRegression.Run();
 assertions += LogitechReceiverRegression.Run();

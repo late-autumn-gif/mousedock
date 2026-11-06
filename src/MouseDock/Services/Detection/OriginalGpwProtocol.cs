@@ -9,7 +9,7 @@ namespace MouseDock.Services.Detection;
 internal static class OriginalGpwProtocol
 {
     internal const string Model = "Logitech G Pro Wireless";
-    internal static bool IsCandidate(ushort vid, ushort pid) => vid == 0x046D && pid is 0xC539 or 0xC088;
+    internal static bool IsCandidate(ushort vid, ushort pid) => vid == 0x046D && pid is 0xC539 or 0xC088 or 0xC547;
     internal static bool IsChannel(ushort vid, ushort pid, ushort page, ushort usage, int input, int output, int feature) =>
         IsCandidate(vid,pid) && page == 0xFF00 && input == 20 && output == 20 && feature == 0 &&
         (pid == 0xC539 ? usage == 2 : usage is 1 or 2);
@@ -48,6 +48,15 @@ internal static class OriginalGpwProtocol
     internal static bool IsIdentityEvidence(string identity) => LogitechHidpp.IsOriginalGpwName(identity) ||
         identity is "HID++:WPID=4079" or "HID++:USB=C088" or "HID++:WPID=4079,USB=C088";
 
+    internal static bool IsSuperlightName(string name)=>(name??"").Trim().ToUpperInvariant() is
+        "PRO X SUPERLIGHT" or "PRO X WIRELESS" or "LOGITECH G PRO X SUPERLIGHT";
+    internal static bool TrySuperlightPercentage(byte[] frame,out int level,out bool charging)
+    {
+        level=-1;charging=false;
+        if(frame==null||frame.Length!=20||frame[0]!=0x11||frame[4]>100||frame[6]>3)return false;
+        level=frame[4];charging=frame[6] is 1 or 2;return true;
+    }
+
     private static int softwareId;
     internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link, ushort pid) => new Reader(link).Read(pid);
 
@@ -62,6 +71,7 @@ internal static class OriginalGpwProtocol
 
         internal ReferenceBatteryProtocol.Reading Read(ushort pid)
         {
+            if(pid==0xC547)return ReadSuperlight();
             if (pid is not (0xC539 or 0xC088)) return Fail("PID 不属于本适配");
             // C539 is a receiver, not a model. Only read the paired device slot1.
             // A direct C088 device may expose the HID++ endpoint as slot1 or FF.
@@ -91,6 +101,23 @@ internal static class OriginalGpwProtocol
                     Model, name);
             }
             return Fail("没有取得一代 GPW 的实时名称/设备型号身份，接收器不等于外设型号：" + issue);
+        }
+
+        private ReferenceBatteryProtocol.Reading ReadSuperlight()
+        {
+            const string model="Logitech G PRO X SUPERLIGHT";
+            ReferenceBatteryProtocol.Reading Stop(string reason,string name=null)=>ReferenceBatteryProtocol.Reading.Failed(reason+trace) with{Model=name==null?null:model,Identity=name};
+            string name=ReadName(1);
+            if(!IsSuperlightName(name))return Stop("C547尚未取得GPW2精确实时名称，不套用初代GPW模型");
+            if(ReadName(1)!=name)return Stop("GPW2两次实时身份不一致");
+            byte feature=Feature(1,0x1004);
+            if(feature==0)return Stop("GPW2已确认，未提供可读取的1004百分比特征；不做电压猜测",name);
+            var capabilities=Call(1,feature,0);
+            if(capabilities==null||(capabilities[5]&2)==0)return Stop("1004未确认支持真实百分比",name);
+            var first=Call(1,feature,1);var second=Call(1,feature,1);
+            if(!TrySuperlightPercentage(first,out _,out _)||!TrySuperlightPercentage(second,out int level,out bool charging))return Stop("1004未取得两次有效百分比/状态",name);
+            return new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
+                "GPW2实时身份确认；1004设备直接百分比，两次有效响应"+trace,model,name);
         }
 
         private ReferenceBatteryProtocol.Reading Fail(string reason, string name = null, bool confirmed = false) =>
