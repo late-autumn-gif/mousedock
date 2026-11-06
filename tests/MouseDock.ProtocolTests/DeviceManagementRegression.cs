@@ -267,6 +267,13 @@ internal static class DeviceManagementRegression
                 Capture(badge,Path.Combine(directory,"任务栏电量-下方数字.png"));
                 choices.BringIntoView();Pump(80);
                 Capture(manager,Path.Combine(directory,"悬浮样式-设置入口.png"));
+                foreach(bool download in new[]{false,true})
+                {
+                    var prompt=new UpdateAvailableWindow(new UpdateService.UpdateInfo{Version="9.9.9"});windows.Add(prompt);prompt.Left=-16000;prompt.Show();Pump(20);
+                    Check(Equals(prompt.DownloadNow.Content,"立即下载")&&Equals(prompt.Later.Content,"稍后"),"Update prompt exposes requested choices");
+                    (download?prompt.DownloadNow:prompt.Later).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Check(prompt.DownloadRequested==download&&!prompt.IsVisible,"Update dialog returns explicit choice without starting a download");
+                }
                 var clone=settings.Clone();
                 clone.HiddenDeviceIds.Add("clone-only"); clone.DisabledRecognitionDeviceIds.Add("clone-only");
                 Check(!settings.HiddenDeviceIds.Contains("clone-only") && !settings.DisabledRecognitionDeviceIds.Contains("clone-only"),"Cloned preference lists are independent");

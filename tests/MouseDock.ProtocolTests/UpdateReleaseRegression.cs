@@ -6,10 +6,11 @@ internal static class UpdateReleaseRegression
     internal static int Run()
     {
         int count=0;void Check(bool value,string why){count++;if(!value)throw new Exception(why);}
-        object Asset(string name,string url="",int size=123)=>new {name,browser_download_url=url==""?"https://github.com/late-autumn-gif/mousedock/releases/download/v1.1.1/"+name:url,size};
+        object Asset(string name,string url="",int size=123)=>new {name,browser_download_url=url==""?"https://github.com/late-autumn-gif/mousedock/releases/download/v1.1.1/"+name:url,size,digest="sha256:"+new string('a',64)};
         string Release(string tag,object[] assets,bool draft=false,bool prerelease=false)=>JsonSerializer.Serialize(new {tag_name=tag,assets,draft,prerelease,body="notes"});
         string json=Release("v1.1.1",new[]{Asset("MouseDock-v1.1.1-source.zip"),Asset("MouseDock.exe"),Asset("MouseDock-v1.1.1-win-x64.zip"),Asset("MouseDock-audit.zip")});
         Check(UpdateService.ParseRelease(json,"1.1.0")?.AssetName=="MouseDock-v1.1.1-win-x64.zip","Prefer exact x64 program package, never first source ZIP");
+        Check(UpdateService.ParseRelease(json,"1.1.0")?.Sha256==new string('a',64),"Trusted GitHub digest propagated to downloader");
         Check(UpdateService.ParseRelease(json,"1.1.1")==null,"Do not update same version");
         Check(UpdateService.ParseRelease(json,"1.4.4")==null,"Do not silently downgrade old users");
         Check(UpdateService.ParseRelease(Release("v1.2.0",new[]{Asset("MouseDock.exe")}),"1.1.1")!=null,"Future stable versions are no longer blocked at1.2");
