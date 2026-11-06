@@ -16,7 +16,7 @@ internal static class OfficialIntegrationRegression
         var generic = new HidDiscovery.Bucket { Vid=0x320F, Pid=0x5088, Product="Wireless Gaming Keyboard", Kind=DeviceKind.Keyboard };
         Check(!generic.ToDevice().Name.Contains("Rainy"), "A shared PID cannot establish Rainy identity without a compatible reply");
         var rainy = new HidDiscovery.Bucket { Vid=0x320F, Pid=0x5088, Product="Wireless Gaming Keyboard", Kind=DeviceKind.Keyboard, RainyIdentified=true };
-        Check(rainy.ToDevice().Name.Contains("Rainy") && rainy.ToDevice().Transport=="2.4G", "A compatible Rainy reply names the shared 2.4G keyboard");
+        Check(!rainy.ToDevice().Name.Contains("Rainy") && rainy.ToDevice().ConfirmedModel=="", "Shared battery replies alone cannot name Rainy75");
         foreach (var (vid,pid,product,transport) in new[]{
             ((ushort)0x320F,(ushort)0x5055,"ATK V75X","有线"),
             ((ushort)0x320F,(ushort)0x5088,"ATK V75X 2.4G Dongle","2.4G")})

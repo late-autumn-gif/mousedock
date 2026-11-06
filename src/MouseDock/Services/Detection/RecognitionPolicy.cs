@@ -6,6 +6,7 @@ internal static class RecognitionPolicy
         // Only IDs enter the candidate set here. Exact collection/capability validation
         // and the dedicated protocol route are mandatory before any reference I/O.
         ReferenceProfiles.Find(vid, pid) != null ||
+        ZeroRainyProtocol.Candidate(vid,pid,product) ||
         VendorProtocol.IsScopedG7(vid,pid,product) ||
         VendorProtocol.IsScopedInphic(vid,pid,product) ||
         // Explicitly requested adaptation, bounded by this report's exact product/interface.
