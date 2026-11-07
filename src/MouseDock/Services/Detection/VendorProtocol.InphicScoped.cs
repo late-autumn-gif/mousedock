@@ -48,8 +48,11 @@ internal static partial class VendorProtocol
             int level=raw[3]==2?100:raw[4];bool charging=raw[3]==3;
             reading=new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 Pro 精确5字节状态","英菲克 IN9 Pro","I149");return true;
         }
-        if(raw is not {Length:32 or 33} || (raw.Length==33 && raw[0]!=0) || raw[raw.Length==33?3:2]!=1 || !TryParseInphicLegacy(raw,out int pct,out bool chg,out string model) || model=="M900")return false;
-        reading=new(pct,chg,true,chg?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 有效实时身份","英菲克 IN9",model);return true;
+        if(raw is not {Length:32 or 33} || (raw.Length==33 && raw[0]!=0) || raw[raw.Length==33?3:2]!=1 ||
+            !TryParseInphicLegacy(raw,out int pct,out bool chg,out string model) || model=="M900")return false;
+        // M900 是 A9 的代号，结构合法也不归 IN9；收录过的型号沿用原 IN9 抬头，新串按「英菲克 + 型号」上屏。
+        string display=VendorMap.TryIdentityModel(model,out _,out _)?"英菲克 IN9":"英菲克 "+model;
+        reading=new(pct,chg,true,chg?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 有效实时身份",display,model);return true;
     }
     internal static ReferenceBatteryProtocol.Reading ReadScopedInphic(string path,ushort vid,ushort pid, string wakePath = null, BatteryReplay.Trace trace = null)
     {

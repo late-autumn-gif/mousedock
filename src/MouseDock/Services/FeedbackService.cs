@@ -378,39 +378,47 @@ namespace MouseDock.Services
 
             try
             {
-                var nodes = single && targetVid != 0
-                    ? Detection.HidProbe.Enumerate(targetVid, targetPid)
-                    : single ? new List<Detection.HidProbe.Node>() : Detection.HidProbe.Enumerate(null, null);
-                var seen = new HashSet<string>();
-                int idx = 0;
-
-                foreach (var n in nodes)
+                if (single && targetVid != 0)
                 {
-                    string key = n.Path;
-                    if (!seen.Add(key)) continue;
-
-                    idx++;
-                    string up = $"0x{n.Caps.UsagePage:X4}";
-                    string us = $"0x{n.Caps.Usage:X4}";
-                    string caps = $"in={n.Caps.InputReportByteLength} out={n.Caps.OutputReportByteLength} feat={n.Caps.FeatureReportByteLength}";
-
-                    // 标出标准电量用法页
-                    string tag = "";
-                    if (n.Caps.UsagePage == 0x06 && n.Caps.Usage == 0x20) tag = "  ← 标准电量";
-                    else if (n.Caps.UsagePage >= 0xFF00) tag = "  ← 厂商私有接口";
-                    else if (n.Caps.UsagePage == 0x0C) tag = "  （消费类，通常无电量）";
-                    else if (n.Caps.UsagePage == 0x01) tag = "  （通用桌面）";
-
-                    sb.AppendLine($"  {idx:D2}. {n.Vid:X4}:{n.Pid:X4}  {n.Product}");
-                    sb.AppendLine($"      用法页 {up}/{us}  {caps}{tag}");
-                    sb.AppendLine($"      路径: {n.Path}");
-                    sb.AppendLine();
+                    var inventory = Detection.HidInventory.Enumerate(targetVid, targetPid);
+                    sb.Append(Detection.HidInventory.Describe(inventory, true));
                 }
+                else
+                {
+                    var nodes = single
+                        ? new List<Detection.HidProbe.Node>()
+                        : Detection.HidProbe.Enumerate(null, null);
+                    var seen = new HashSet<string>();
+                    int idx = 0;
 
-                if (single && targetVid == 0)
-                    sb.AppendLine("  （蓝牙设备：没有 HID 路径，身份与电量看 device.txt）");
-                else if (idx == 0)
-                    sb.AppendLine(single ? "  （这台设备没有枚举到 HID 接口）" : "  （枚举不到任何 HID 设备）");
+                    foreach (var n in nodes)
+                    {
+                        string key = n.Path;
+                        if (!seen.Add(key)) continue;
+
+                        idx++;
+                        string up = $"0x{n.Caps.UsagePage:X4}";
+                        string us = $"0x{n.Caps.Usage:X4}";
+                        string caps = $"in={n.Caps.InputReportByteLength} out={n.Caps.OutputReportByteLength} feat={n.Caps.FeatureReportByteLength}";
+
+                        // 标出标准电量用法页
+                        string tag = "";
+                        if (n.Caps.UsagePage == 0x06 && n.Caps.Usage == 0x20) tag = "  ← 标准电量";
+                        else if (n.Caps.UsagePage >= 0xFF00) tag = "  ← 厂商私有接口";
+                        else if (n.Caps.UsagePage == 0x0C) tag = "  （消费类，通常无电量）";
+                        else if (n.Caps.UsagePage == 0x01) tag = "  （通用桌面）";
+
+                        sb.AppendLine($"  {idx:D2}. {n.Vid:X4}:{n.Pid:X4}  {n.Product}");
+                        sb.AppendLine($"      用法页 {up}/{us}  {caps}{tag}");
+                        sb.AppendLine($"      路径: {n.Path}");
+                        sb.AppendLine();
+                    }
+
+                    if (single && targetVid == 0)
+                        sb.AppendLine("  （蓝牙设备：没有 HID 路径，身份与电量看 device.txt）");
+                    else if (idx == 0)
+                        sb.AppendLine(single ? "  （这台设备没有枚举到 HID 接口）" : "  （枚举不到任何 HID 设备）");
+                }
             }
             catch (Exception ex)
             {
@@ -493,6 +501,10 @@ namespace MouseDock.Services
             try
             {
                 sb.AppendLine("英菲克判定: " + Detection.VendorProtocol.IsInphicDevice(vid, pid, product));
+                sb.AppendLine("ROG Omni 判定: " + Detection.VendorProtocol.IsRogOmni(vid, pid));
+                sb.AppendLine("迈从 A7 V2 判定: " + Detection.VendorProtocol.IsMchoseA7V2(vid, pid));
+                sb.AppendLine("迈从 MHUB 型号收录: " +
+                    (Detection.VendorProtocol.ModernMouseProfiles.ContainsKey((product ?? "").Trim()) ? "是" : "否"));
                 sb.AppendLine("ATK V75X 判定: " + Detection.VendorProtocol.IsAtkV75X(vid, pid, product));
                 sb.AppendLine("Rainy 候选: " + Detection.VendorProtocol.IsRainy75Candidate(vid, pid) +
                               " / 名字含 Rainy/WOB: " + Detection.VendorProtocol.IsRainy75Name(product));
@@ -507,17 +519,15 @@ namespace MouseDock.Services
             catch { }
             sb.AppendLine();
 
-            sb.AppendLine("==== 该设备的全部 HID 接口 ====");
-            if (nodes.Count == 0)
+            sb.AppendLine("==== 该设备的全部 HID 接口（含打不开的） ====");
+            if (vid != 0)
             {
-                sb.AppendLine("（没有匹配 VID:PID 的 HID 接口；蓝牙设备走 BLE/GATT）");
+                var inventory = Detection.HidInventory.Enumerate(vid, pid);
+                sb.Append(Detection.HidInventory.Describe(inventory, true));
             }
-            foreach (var n in nodes)
+            else
             {
-                sb.AppendLine($"--- {n.Vid:X4}:{n.Pid:X4}  {n.Product}  版本 {n.Version:X4}");
-                sb.AppendLine($"    Usage = 0x{n.Caps.UsagePage:X4}/0x{n.Caps.Usage:X4}");
-                sb.AppendLine($"    In/Out/Feature = {n.Caps.InputReportByteLength}/{n.Caps.OutputReportByteLength}/{n.Caps.FeatureReportByteLength}");
-                sb.AppendLine("    路径: " + n.Path);
+                sb.AppendLine("（蓝牙设备没有 HID 路径，身份与电量看 device.txt）");
             }
             sb.AppendLine();
 

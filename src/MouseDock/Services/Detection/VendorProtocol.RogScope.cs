@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -8,6 +9,7 @@ internal static partial class VendorProtocol
 {
     internal const string RogScopeRxWired = "ROG 游侠2 RX";
     internal const string RogScopeRxWireless = "ROG 游侠2 RX 98 无线版";
+    internal const string RogScopeRxWirelessUnknown = "ROG 游侠2 RX 无线版";
 
     internal static string RogScopeName(string product)
     {
@@ -20,6 +22,18 @@ internal static partial class VendorProtocol
             _ => null
         };
     }
+
+    /// <summary>
+    /// Omni 接收器配对表里出现过、且已确认是 ROG 键盘 2.4G 型号的编号。
+    /// 1B7A 是游侠2 RX 98 的既有型号；1C25 来自本机 0B05:1ACE + 游侠 RX2 实测
+    /// （配对表唯一型号 = 0x1C25，电量应答 02/12/01 → [6] 百分比）。
+    /// 新机型只增加映射，不改判断逻辑；不认识的型号不猜名称、也不读电量。
+    /// </summary>
+    private static readonly Dictionary<ushort, string> RogPairedKeyboards = new()
+    {
+        [0x1B7A] = RogScopeRxWireless,
+        [0x1C25] = RogScopeRxWirelessUnknown
+    };
 
     internal static bool IsRogOmni(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1ACE;
 
@@ -38,27 +52,64 @@ internal static partial class VendorProtocol
             StringComparison.OrdinalIgnoreCase);
     }
 
-    internal static bool RogOmniHasScopeRx(ReadOnlySpan<byte> reply)
+    /// <summary>
+    /// 解析 01 A0 00 的配对表应答：reply[3] 起是 4 字节一项（型号 PID 小端 + 2 字节附加），
+    /// 遇到 0x0000 结束。返回每一项的 PID，保留原始顺序。
+    /// </summary>
+    internal static bool TryReadRogOmniPairing(ReadOnlySpan<byte> reply, out List<ushort> pids)
     {
-        if (reply.Length != 64 || !reply[..3].SequenceEqual(new byte[] { 1, 0xA0, 0 })) return false;
-        int matches = 0;
+        pids = new List<ushort>();
+        if (reply.Length != 64 || reply[0] != 1 || reply[1] != 0xA0 || reply[2] != 0) return false;
         for (int i = 5; i + 3 < reply.Length; i += 4)
         {
-            int pid = reply[i] | (reply[i + 1] << 8);
+            int pid = reply[i] | reply[i + 1] << 8;
             if (pid == 0) break;
-            if (pid == 0x1B7A) matches++;
+            pids.Add((ushort)pid);
         }
-        return matches == 1;
+        return pids.Count > 0;
+    }
+
+    /// <summary>配对表里是否恰好有一台已确认的 ROG 键盘型号（重复或两台都拒绝）。</summary>
+    internal static bool RogOmniHasScopeRx(ReadOnlySpan<byte> reply) => RogPairedModel(reply, out _) != null;
+
+    /// <summary>
+    /// 取配对表里唯一那台已知键盘型号的名字；未知型号、或已知型号出现多次时返回 null。
+    /// Omni 可以同时配鼠标和键盘，未知型号不参与判定。
+    /// </summary>
+    internal static string RogPairedModel(ReadOnlySpan<byte> reply, out IReadOnlyList<ushort> pids)
+    {
+        pids = null;
+        if (!TryReadRogOmniPairing(reply, out var all)) return null;
+        pids = all;
+        string found = null;
+        int known = 0;
+        for (int i = 0; i < all.Count; i++)
+        {
+            if (!RogPairedKeyboards.TryGetValue(all[i], out string model)) continue;
+            known++;
+            found ??= model;
+        }
+        return known == 1 ? found : null;
+    }
+
+    internal static string RogPairedModelText(IReadOnlyList<ushort> pids)
+    {
+        var parts = new List<string>();
+        for (int i = 0; i < pids.Count; i++)
+        {
+            string model = RogPairedKeyboards.TryGetValue(pids[i], out var known)
+                ? known
+                : "未知型号 0x" + pids[i].ToString("X4");
+            if (!parts.Contains(model)) parts.Add(model);
+        }
+        return string.Join("、", parts);
     }
 
     internal static bool RogOmniPairingUnchanged(ReadOnlySpan<byte> before, ReadOnlySpan<byte> after)
     {
-        if (!RogOmniHasScopeRx(before) || !RogOmniHasScopeRx(after)) return false;
-        for (int i = 5; i + 3 < before.Length; i += 4)
-        {
-            if (!before.Slice(i, 2).SequenceEqual(after.Slice(i, 2))) return false;
-            if (before[i] == 0 && before[i + 1] == 0) break;
-        }
+        if (!TryReadRogOmniPairing(before, out var a) || !TryReadRogOmniPairing(after, out var b)) return false;
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++) if (a[i] != b[i]) return false;
         return true;
     }
 
@@ -81,27 +132,33 @@ internal static partial class VendorProtocol
         return ReferenceQueryGate.Run(pairingPath, () =>
         {
             var paired = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
-            bool identified = RogOmniHasScopeRx(paired);
-            trace?.Add("omni-paired", identified, raw: paired, keep: paired != null);
-            if (!identified)
-                return ReferenceBatteryProtocol.Reading.Failed(paired == null ? "Omni 配对列表无应答" : "Omni 配对列表未报告 1B7A");
+            trace?.Add("omni-paired", paired != null, raw: paired, keep: paired != null);
+            if (paired == null)
+                return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表无应答");
+            if (!TryReadRogOmniPairing(paired, out var pids))
+                return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表格式不符（期望 01 A0 00 帧）");
+            string model = RogPairedModel(paired, out _);
+            if (model == null)
+                return ReferenceBatteryProtocol.Reading.Failed(
+                    "Omni 已配对，但没有唯一的已确认 ROG 键盘型号：" + RogPairedModelText(pids));
             byte[] battery;
             try { battery = ReadRogOmniReply(batteryPath, 2, 0x12, 1); }
             catch (IOException ex)
             {
-                return new(-1, false, false, ReferenceBatteryProtocol.State.Failed, ex.Message, RogScopeRxWireless);
+                return new(-1, false, false, ReferenceBatteryProtocol.State.Failed, ex.Message, model);
             }
             bool decoded = TryParseRogScopeBattery(battery, out int percent, out bool charging);
             trace?.Add("omni-battery", decoded, raw: battery, keep: battery != null);
             if (!decoded)
-                return new(-1, false, false, ReferenceBatteryProtocol.State.Sleep, "Omni 已配对 1B7A，未取得有效在线电量", RogScopeRxWireless);
+                return new(-1, false, false, ReferenceBatteryProtocol.State.Sleep,
+                    "Omni 已配对 " + RogPairedModelText(pids) + "，未取得有效在线电量", model);
             var confirmed = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
             bool unchanged = RogOmniPairingUnchanged(paired, confirmed);
             trace?.Add("omni-paired-after", unchanged, raw: confirmed, keep: confirmed != null);
             if (!unchanged)
                 return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表变化或复核失败，未采用本次电量");
             return new(percent, charging, true, charging ? ReferenceBatteryProtocol.State.Charging :
-                ReferenceBatteryProtocol.State.Online, "Omni 键盘电量 02/12/01", RogScopeRxWireless);
+                ReferenceBatteryProtocol.State.Online, "Omni 键盘电量 02/12/01", model);
         }, 3500);
     }
 

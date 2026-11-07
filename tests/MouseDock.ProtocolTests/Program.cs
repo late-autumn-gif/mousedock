@@ -139,6 +139,18 @@ if (args.Length > 0 && args[0] == "--inspect-device-filter")
         Console.WriteLine(instanceId + " => " + (HidDiscovery.InspectExclusion(instanceId) ?? "保留"));
     return;
 }
+if (args.Length > 1 && args[0] == "--probe-device")
+{
+    ushort probeVid = 0, probePid = 0;
+    var parts = args[1].Split(':', '-');
+    if (parts.Length >= 2)
+    {
+        ushort.TryParse(parts[0], System.Globalization.NumberStyles.HexNumber, null, out probeVid);
+        ushort.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out probePid);
+    }
+    Console.WriteLine(VendorProtocol.ProbeDevice(probeVid, probePid, args.Length > 2 ? args[2] : "", false).Text);
+    return;
+}
 if (args.Length > 0 && args[0] == "--inspect-rog-omni")
 {
     foreach (var node in HidProbe.Enumerate(0x0B05, 0x1ACE))
@@ -285,6 +297,7 @@ Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_045E&PID_0000", ""), (@"BT
 assertions += BluetoothRegression.Run();
 assertions += HfpRegression.Run();
 assertions += InphicRegression.Run();
+assertions += Receiver33Regression.Run();
 assertions += OfficialInphicAulaRegression.Run();
 assertions += AulaScopedRegression.Run();
 assertions += AtkOfficialRegression.Run();

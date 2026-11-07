@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,11 +11,17 @@ namespace MouseDock.Services.Detection
         internal static bool IsMchoseModern(ushort vid, ushort pid) =>
             vid == 0x3837 && (pid == 0x1014 || pid == 0x1018);
 
-        internal static bool IsMchoseA7V2(ushort vid, ushort pid) => vid == 0x3837 && pid == 0x100B;
+        // 100B = A7 V2 Ultra+（官方型号 4021）；100A = A7 V2 Pro（实测型号 4018）。
+        // 两者共用 11/F9 Legacy Feature 查询，只有接收器 PID 和型号码不同。
+        internal static bool IsMchoseA7V2(ushort vid, ushort pid) =>
+            vid == 0x3837 && (pid == 0x100A || pid == 0x100B);
+
+        internal static string MchoseA7V2ModelName(ushort pid) =>
+            pid == 0x100A ? "MCHOSE A7 V2 Pro" : "MCHOSE A7 V2 Ultra+";
 
         internal static bool IsMchoseA7V2Interface(HidProbe.Node node) =>
             IsMchoseA7V2(node.Vid, node.Pid) &&
-            string.Equals(node.Product, "MCHOSE A7 V2 Ultra+", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(node.Product, MchoseA7V2ModelName(node.Pid), StringComparison.OrdinalIgnoreCase) &&
             node.Caps.UsagePage == 0xFF01 && node.Caps.Usage == 1 &&
             node.Caps.FeatureReportByteLength == 65 &&
             node.Caps.InputReportByteLength == 65 && node.Caps.OutputReportByteLength == 65;
@@ -101,9 +107,12 @@ namespace MouseDock.Services.Detection
             Span<byte> body = stackalloc byte[19];
             for (int i = 0; i < body.Length; i++) body[i] = (byte)(report[i + 2] ^ 0xFF);
             int bodyVid = body[0] | body[1] << 8;
-            // 100B is the receiver; the official A7 V2 Ultra+ model identity is 4021.
+            // 100B 是 A7 V2 Ultra+，官方型号 4021；100A 是 A7 V2 Pro，本机实测型号 4018。
+            // 型号与接收器 PID 绑定，避免同系列其它型号借用这条通道。
+            int modelId = body[2] | body[3] << 8;
+            int expectedModel = pid == 0x100A ? 0x4018 : 0x4021;
             if (a7V2 && (report.Length != 21 || bodyVid != 0x3837 ||
-                (body[2] | body[3] << 8) != 0x4021 || (body[8] & 0x0F) != 9 || body[10] > 1)) return false;
+                modelId != expectedModel || (body[8] & 0x0F) != 9 || body[10] > 1)) return false;
             if ((bodyVid != 0x5253 && bodyVid != 0x3837) ||
                 ((body[8] & 7) == 1 && (body[8] & 8) == 0) || body[9] > 100) return false;
             level = body[9];
@@ -123,36 +132,43 @@ namespace MouseDock.Services.Detection
 
         private static MchoseResult ReadMchoseA7V2()
         {
-            string reason = "未找到 A7 V2 Ultra+ 的 FF01/0001 接口";
-            foreach (var node in HidProbe.Enumerate(0x3837, 0x100B))
+            string reason = "未找到 A7 V2 系列的 FF01/0001 接口";
+            foreach (ushort receiver in new ushort[] { 0x100B, 0x100A })
             {
-                if (!IsMchoseA7V2Interface(node)) continue;
-                IntPtr raw = CreateFile(node.Path, GENERIC_READ | GENERIC_WRITE,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-                if (raw == IntPtr.Zero || raw == new IntPtr(-1))
+                string model = MchoseA7V2ModelName(receiver);
+                foreach (var node in HidProbe.Enumerate(0x3837, receiver))
                 {
-                    reason = "无法打开电量接口";
-                    continue;
-                }
-                using var handle = new SafeFileHandle(raw, ownsHandle: true);
-                var request = BuildMchoseA7V2Request();
-                if (!HidD_SetFeature(raw, request, request.Length))
-                {
-                    reason = "11/F9 电量查询发送失败";
-                    continue;
-                }
-                reason = "未取得有效状态应答（设备可能休眠或接口被占用）";
-                for (int attempt = 0; attempt < 6; attempt++)
-                {
-                    Thread.Sleep(100);
-                    var response = new byte[21];
-                    response[0] = 0x11;
-                    if (HidD_GetFeature(raw, response, response.Length) &&
-                        TryParseMchoseLegacy(response, node.Vid, node.Pid, out int level, out bool charging))
-                        return new MchoseResult(level, charging, "MCHOSE A7 V2 Ultra+ Feature 11/F9");
+                    if (!IsMchoseA7V2Interface(node)) continue;
+                    IntPtr raw = CreateFile(node.Path, GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                    if (raw == IntPtr.Zero || raw == new IntPtr(-1))
+                    {
+                        reason = model + "：无法打开电量接口";
+                        continue;
+                    }
+                    using var handle = new SafeFileHandle(raw, ownsHandle: true);
+                    var request = BuildMchoseA7V2Request();
+                    if (!HidD_SetFeature(raw, request, request.Length))
+                    {
+                        reason = model + "：11/F9 电量查询发送失败";
+                        continue;
+                    }
+                    reason = model + "：未取得有效状态应答（设备可能休眠或接口被占用）";
+                    for (int attempt = 0; attempt < 6; attempt++)
+                    {
+                        Thread.Sleep(100);
+                        // 集合的 Feature 报告是 65 字节；HidD_GetFeature 的缓冲区必须与
+                        // FeatureReportByteLength 一致，否则直接返回 Win32=87。
+                        var response = new byte[Math.Max(21, (int)node.Caps.FeatureReportByteLength)];
+                        response[0] = 0x11;
+                        if (HidD_GetFeature(raw, response, response.Length) &&
+                            TryParseMchoseLegacy(response.AsSpan(0, Math.Min(21, response.Length)),
+                                node.Vid, node.Pid, out int level, out bool charging))
+                            return new MchoseResult(level, charging, model + " Feature 11/F9");
+                    }
                 }
             }
-            return new MchoseResult(-1, false, "MCHOSE A7 V2 Ultra+：" + reason);
+            return new MchoseResult(-1, false, "MCHOSE " + reason);
         }
 
         private static async Task<MchoseResult> ReadMchoseModernAsync(ushort vid, ushort pid)
@@ -193,3 +209,4 @@ namespace MouseDock.Services.Detection
         }
     }
 }
+

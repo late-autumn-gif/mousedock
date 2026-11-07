@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using MouseDock.Services;
 using MouseDock.Models;
 internal static class UpdateReleaseRegression
@@ -23,7 +23,7 @@ internal static class UpdateReleaseRegression
         Check(UpdateService.ParseRelease(Release("v1.1.1",new[]{Asset("MouseDock.exe")},draft:true),"1.1.0")==null,"Draft ignored");
         Check(UpdateService.ParseRelease(Release("v1.1.1",new[]{Asset("MouseDock.exe")},prerelease:true),"1.1.0")==null,"Prerelease ignored");
         foreach(var bad in new[]{"{}","garbage",Release("vunknown",new[]{Asset("MouseDock.exe")})})Check(UpdateService.ParseRelease(bad,"1.1.0")==null,"Malformed data never crashes startup");
-        Check(UpdateService.CurrentVersionText=="1.1.1","Use application assembly version, not test/host process");
+        Check(UpdateService.CurrentVersionText=="1.1.2","Use application assembly version, not test/host process");
         var settings=new AppSettings{Version=6,AutoUpdate=false};
         Check(SettingsStore.RestoreStartupUpdates(settings)&&settings.AutoUpdate&&settings.Version==7,"Renumbered old settings re-enable startup checks");
         settings.AutoUpdate=false;

@@ -47,6 +47,16 @@ namespace MouseDock
         private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar, Edge);
         private static DispatcherTimer _trayClickTimer;
 
+        /// <summary>
+        /// 诊断/取证命令必须能在常驻实例跑着的时候单独执行。
+        /// 以前只有 --shot 例外，--detect / --probe 会被单实例互斥当成第二次启动，
+        /// 发个唤醒信号就退出，detect.txt 永远停在旧文件上。
+        /// </summary>
+        private static bool IsDiagnosticCommand(string[] args) =>
+            args.Contains("--detect") || args.Contains("--probe") || args.Contains("--battery") ||
+            args.Contains("--capture24g") || args.Contains("--vendorbt") || args.Contains("--hfpbat") ||
+            args.Contains("--replay-report") || args.Contains("--shot");
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -73,7 +83,7 @@ namespace MouseDock
             }
 
             _mutex = new Mutex(true, "MouseDock.SingleInstance", out bool isNew);
-            if (!isNew && !e.Args.Contains("--shot"))
+            if (!isNew && !IsDiagnosticCommand(e.Args))
             {
                 // 已有实例常驻后台：发唤醒信号让它显示面板，本实例随即退出。
                 try

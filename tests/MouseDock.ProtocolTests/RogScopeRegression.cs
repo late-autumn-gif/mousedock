@@ -65,6 +65,26 @@ internal static class RogScopeRegression
         Check(!VendorProtocol.TryParseRogScopeBattery(reply, out _, out _), "Reject zero-padded query echo");
         reply[2] = 7;
         Check(!VendorProtocol.TryParseRogScopeBattery(reply, out _, out _), "Reject the mouse battery command");
+
+        // 本机 0B05:1ACE + 游侠 RX2 实测：配对表唯一型号 0x1C25，电量应答 02 12 01 → [6]=53%。
+        var rx2 = new byte[64];
+        rx2[0] = 1; rx2[1] = 0xA0;
+        rx2[5] = 0x25; rx2[6] = 0x1C;
+        rx2[9] = 0x02; rx2[10] = 0x04;
+        Check(VendorProtocol.RogOmniHasScopeRx(rx2), "Omni receiver with paired 1C25 is a Scope RX keyboard");
+        Check(VendorProtocol.RogPairedModel(rx2, out var rx2Pids) == VendorProtocol.RogScopeRxWirelessUnknown &&
+            rx2Pids.Count == 2 && rx2Pids[0] == 0x1C25, "1C25 maps to the RX wireless name without guessing a SKU");
+        var unknownPairing = (byte[])rx2.Clone();
+        unknownPairing[5] = 0x5F; unknownPairing[6] = 0x1B;
+        Check(!VendorProtocol.RogOmniHasScopeRx(unknownPairing), "Unknown paired model must not be read");
+        var duplicateRx2 = (byte[])rx2.Clone();
+        duplicateRx2[9] = 0x25; duplicateRx2[10] = 0x1C;
+        Check(!VendorProtocol.RogOmniHasScopeRx(duplicateRx2), "Duplicate RX2 slots must not be accepted");
+        Check(VendorProtocol.RogOmniPairingUnchanged(rx2, (byte[])rx2.Clone()), "1C25 pairing list compares by content");
+        var measuredBattery = new byte[64];
+        new byte[] { 2, 0x12, 1, 0, 0, 0, 0x35, 0x02, 0x02, 0, 0x14, 0x35, 0xDC, 0x0E }.CopyTo(measuredBattery, 0);
+        Check(VendorProtocol.TryParseRogScopeBattery(measuredBattery, out percent, out charging) &&
+            percent == 53 && !charging, "Measured 1C25 battery reply decodes to 53%");
         return count;
     }
 }

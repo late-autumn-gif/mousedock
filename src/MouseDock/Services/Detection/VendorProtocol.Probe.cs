@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -73,9 +73,15 @@ namespace MouseDock.Services.Detection
             // This diagnostic API has no physical-instance key. Do not reopen every
             // receiver sharing this public ID; dedicated scan routes already log
             // their exact channel, report metadata and transaction result.
-            if (IsRogOmni(vid, pid) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
+            if (IsRogOmni(vid, pid) || IsMchoseA7V2(vid, pid) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
             {
-                text.AppendLine("此设备不运行跨实例通用探针。专用协议仅由自动扫描的精确实例/集合读取；请查看 hid-devices.txt 的诊断。");
+                text.AppendLine("此设备命中专用读取器，不运行跨实例通用探针。");
+                text.AppendLine("下面先给接口全景（打不开的也保留），再给这条专用通道的只读查询结果。");
+                text.AppendLine();
+                try { text.Append(HidInventory.Describe(HidInventory.Enumerate(vid, pid), true)); }
+                catch (Exception ex) { text.AppendLine("接口枚举异常: " + ex.Message); }
+                AppendDedicatedProtocolConclusion(text, vid, pid, requestedName, safeMode);
+                text.AppendLine("该设备的查询帧与原始应答记录在 battery-replay.json 的 Queries 里；Queries 为空说明本轮没有发出查询（安全模式、识别已停用或集合不唯一）。");
                 return new DeviceProbeResult { Text = text.ToString() };
             }
 
@@ -196,6 +202,21 @@ namespace MouseDock.Services.Detection
                                 ? " 已满足" : " 缺少"));
             text.AppendLine("迈从 V9 Pro: 291D:385D + 产品串 MCHOSE V9 PRO + FF90/0001" +
                             (hasFf90 ? " 已满足" : " 缺少"));
+            text.AppendLine("ROG Omni 接收器: 0B05:1ACE + MI_02 col01/col02 64/64" +
+                            (IsRogOmni(vid, pid) ? " 已满足" : " 缺少"));
+            text.AppendLine("迈从 A7 V2 系列: 3837:100A/100B + 产品串 + FF01/0001 65/65/65（Feature 11/F9）" +
+                            (IsMchoseA7V2(vid, pid) ? " 已满足" : " 缺少"));
+            text.AppendLine("迈从 MHUB 型号收录: " +
+                            (ModernMouseProfiles.ContainsKey((requestedName ?? "").Trim())
+                                ? "是（产品串精确匹配）" : "否（产品串不在型号表）"));
+            text.AppendLine("狼蛛 SC580 公版接收器: 248A/249A:5B2F/5C2F + 33 字节集合" +
+                            (IsGenericReceiver33(vid, pid, requestedName) ? " 已满足" : " 缺少"));
+            text.AppendLine("前行者 X23 SE: Freq 型号串 + MI_02 精确集合" +
+                            (IsReportedX23Se(vid, pid, requestedName) ? " 已满足" : " 缺少"));
+            text.AppendLine("维咖 DriveAll: 产品串识别" +
+                            (IdentifyWeikav(vid, pid, requestedName) != null ? " 已满足" : " 缺少"));
+            text.AppendLine("MCHOSE K87 V3: 3837:1015 + 产品串 MCHOSE K87 V3 2.4G" +
+                            (MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, requestedName) ? " 已满足" : " 缺少"));
             text.AppendLine();
 
             text.AppendLine("==== 解析判定 ====");
@@ -283,6 +304,10 @@ namespace MouseDock.Services.Detection
             if (matched == 0) text.AppendLine("（没有已知解析器匹配到应答；看上面的原始字节）");
             text.AppendLine();
 
+            // 已知协议一条都没命中时，不能只留一句「未确认」。
+            // 补一段与协议无关的取证：被动收帧、只读 Feature，公版接收器再补一次身份写入。
+            if (matched == 0) AppendReceiverIdentityCapture(text, events, vid, pid, !safeMode);
+
             if (!safeMode)
             {
                 text.AppendLine("==== 现有读取器实时采样 ====");
@@ -320,7 +345,7 @@ namespace MouseDock.Services.Detection
         private static List<ProbeSpec> BuildProbes(ushort vid, ushort pid, HIDP_CAPS caps, string product)
         {
             var list = new List<ProbeSpec>();
-            if (IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,product)||IsScopedG7(vid,pid,product)) || IsMchoseV9Pro(vid,pid,product) || IsScopedInphic(vid,pid,product) || AulaBatteryProtocol.IsCandidate(vid, pid, product) || OriginalGpwProtocol.IsCandidate(vid,pid)) return list;
+            if (IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || IsMchoseA7V2(vid,pid) || (IsScopedModernMouse(vid,pid,product)||IsScopedG7(vid,pid,product)) || IsMchoseV9Pro(vid,pid,product) || IsScopedInphic(vid,pid,product) || AulaBatteryProtocol.IsCandidate(vid, pid, product) || OriginalGpwProtocol.IsCandidate(vid,pid)) return list;
             string p = product ?? "";
 
             // Feature 通道：SC630 / F99 / 英菲克 / 标准电池

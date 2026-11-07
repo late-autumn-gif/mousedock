@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -263,6 +263,7 @@ namespace MouseDock.Services.Detection
                 VendorProtocol.ReadReportedX23Se);
             QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
+            QueryGenericReceiver33(buckets, safeMode, preferences);
             QueryRogScope(buckets, vendorCollections, safeMode, preferences);
             QueryScopedModernMouse(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedModernMouse);
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
@@ -1367,6 +1368,15 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Keyboard;
                     physicalKey = "weikav-" + weikav.Replace(" ", "").ToLowerInvariant();
                 }
+                else if (VendorProtocol.IsMchoseA7V2(Vid, Pid))
+                {
+                    string model = VendorProtocol.MchoseA7V2ModelName(Pid);
+                    name = model.StartsWith("MCHOSE", StringComparison.OrdinalIgnoreCase)
+                        ? "迈从" + model.Substring("MCHOSE".Length)
+                        : model;
+                    kind = DeviceKind.Mouse;
+                    physicalKey = Pid == 0x100A ? "mchose-a7v2pro" : "mchose-a7v2ultra";
+                }
                 else if (VendorProtocol.IsMchoseG7(Vid, Pid, Product))
                 {
                     name = Product.Trim();
@@ -1465,6 +1475,7 @@ namespace MouseDock.Services.Detection
                        (HasVendor && Interfaces.Count >= 2) ? "2.4G" : "有线");
 
                 if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product)) transport = "2.4G";
+                if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) transport = "2.4G";
                 if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) transport = Vid == 0xA8A4 ? "有线" : "2.4G";
                 if (VendorProtocol.IsRapooVt7(Vid, Pid)) transport = Pid == 0x1413 ? "2.4G" : "有线";
                 if (VendorProtocol.IsAtkV75X(Vid, Pid, Product)) transport = Pid == 0x5055 ? "有线" : "2.4G";
@@ -1503,7 +1514,7 @@ namespace MouseDock.Services.Detection
                 if(unresolved)name=Product.Trim();
                 if (RogScopePaired || RogScopeModel != null)
                 {
-                    name = RogScopePaired ? VendorProtocol.RogScopeRxWireless : RogScopeModel;
+                    name = RogScopeModel ?? (RogScopePaired ? VendorProtocol.RogScopeRxWireless : null) ?? name;
                     kind = DeviceKind.Keyboard;
                     transport = RogScopePaired ? "2.4G" : "有线";
                 }
@@ -1511,7 +1522,7 @@ namespace MouseDock.Services.Detection
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = RogScopePaired ? VendorProtocol.RogScopeRxWireless : RogScopeModel ?? (ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = RogScopeModel ?? (RogScopePaired ? VendorProtocol.RogScopeRxWireless : null) ?? (ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
                     ReceiverDiscovered = RogScopePaired || (ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
@@ -1541,6 +1552,9 @@ namespace MouseDock.Services.Detection
             {
                 if (MchoseKeyboardProtocol.IsSupportedDevice(Vid, Pid, Product))
                     return DeviceKind.Keyboard;
+                // A7 V2 接收器的鼠标集合由厂商驱动独占，HID 侧只剩键盘/消费类集合。
+                // 型号已经由 PID + 产品串确认时，不能按集合计数判成键盘。
+                if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) return DeviceKind.Mouse;
                 if (VendorProtocol.IsInphicSplitReceiver(Vid, Pid) && Counts.ContainsKey(DeviceKind.Mouse))
                     return DeviceKind.Mouse;
 

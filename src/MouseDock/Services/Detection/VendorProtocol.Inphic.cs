@@ -137,17 +137,27 @@ namespace MouseDock.Services.Detection
 
         // Official Inphic Mouse 1.0.2.5: FUN_0044a5c0 sends report0/command10,
         // FUN_0044c700 strips report0; FUN_00432b80 passes payload[13]/[12]
-        // to BatteryCtrl and reads model[4..7]. config.xml maps these four IDs.
+        // to BatteryCtrl and reads model[4..7]. Those four bytes are the receiver's
+        // own model code (real capture: J315), not a fixed list from config.xml.
         internal static bool TryParseInphicLegacy(ReadOnlySpan<byte> report,
             out int level, out bool charging, out string model)
         {
             level = -1; charging = false; model = null;
             int at = report.Length > 1 && report[0] == 0 && report[1] == 0x10 ? 1 : 0;
-            if (report.Length < at + 15 || report[at] != 0x10 || report[at + 1] != 0 ||
+            if (report.Length < at + 15 || report[at] != 0x10 || report[at + 1] != 0 || report[at + 2] != 1 ||
                 report[at + 12] > 1 || report[at + 13] > 100 || report[at + 14] != 1) return false;
             string id = System.Text.Encoding.ASCII.GetString(report.Slice(at + 4, 4));
-            if (id is not ("M909" or "M910" or "IN90" or "M900")) return false;
+            if (!LooksLikeInphicModel(id)) return false;
             model = id; level = report[at + 13]; charging = report[at + 12] == 1;
+            return true;
+        }
+
+        /// <summary>型号字段的结构判定：4 字节可打印大写字母/数字，首字符是字母。</summary>
+        private static bool LooksLikeInphicModel(string id)
+        {
+            if (id.Length != 4 || id[0] is < 'A' or > 'Z') return false;
+            for (int i = 1; i < 4; i++)
+                if (id[i] is not ((>= 'A' and <= 'Z') or (>= '0' and <= '9'))) return false;
             return true;
         }
 

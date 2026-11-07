@@ -40,6 +40,7 @@ public static partial class HidDiscovery
             LastDiagnostics.Add($"{b.InstanceId} ROG Omni：{result.Diagnostic} 电量={result.Level}");
             if (result.Model == null) continue;
             b.RogScopePaired = true;
+            b.RogScopeModel = result.Model;
             b.Battery = result.Level;
             b.Charging = result.Charging;
             b.ReadStale = false;

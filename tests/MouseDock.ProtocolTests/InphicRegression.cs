@@ -21,6 +21,39 @@ internal static class InphicRegression
         Check(!VendorProtocol.IsInphicDevice(0x1D57,0xFA65,"DELUX M900 Pro"),"FA65 shared with DELUX is not Inphic");
         Check(VendorProtocol.IsInphicDevice(0x1D57,0xFA65,"Wireless Receiver"),"Unnamed FA65 stays with Inphic");
 
+        // 身份命令 10 的 33 字节应答：型号字段按结构收，不再走白名单。
+        byte[] LegacyFrame(string code,byte level=86,byte charging=0,byte online=1)
+        {
+            var frame=new byte[33];frame[1]=0x10;frame[3]=1;frame[5]=0x0B;
+            System.Text.Encoding.ASCII.GetBytes(code).CopyTo(frame,5);
+            frame[13]=charging;frame[14]=level;frame[15]=online;return frame;
+        }
+        // 真机捕获：249A:5C2F 接收器回 00100001 0B J315 85011501 00 56 01 …D6。
+        var captured=Convert.FromHexString("001000010B4A3331358501150100560100000000000000000000000000000000D6");
+        Check(captured.Length==33 &&
+            VendorProtocol.TryParseInphicLegacy(captured,out int jLevel,out bool jCharging,out string jModel) &&
+            jLevel==86 && !jCharging && jModel=="J315","Captured J315 frame gives 86 percent and stays not charging");
+        Check(VendorProtocol.TryScopedInphicFrame(captured,false,out var jReading) &&
+            jReading.Level==86 && !jReading.Charging && jReading.Status==ReferenceBatteryProtocol.State.Online &&
+            jReading.Identity=="J315" && jReading.Model=="英菲克 J315",
+            "Unknown but structurally valid model shows as Inphic + code, not IN9");
+        // 原有已收录型号的解析和显示都不能变。
+        foreach(string known in new[]{"M909","M910","IN90"})
+        {
+            Check(VendorProtocol.TryParseInphicLegacy(LegacyFrame(known),out int knownLevel,out _,out string knownModel) &&
+                knownLevel==86 && knownModel==known,"Known model still parses: "+known);
+            Check(VendorProtocol.TryScopedInphicFrame(LegacyFrame(known),false,out var knownReading) &&
+                knownReading.Model=="英菲克 IN9" && knownReading.Identity==known,"Known model keeps the IN9 label: "+known);
+        }
+        // M900 是 A9 的代号：结构合法也不归 IN9 身份路径（原始读取路径仍保留它）。
+        Check(!VendorProtocol.TryScopedInphicFrame(LegacyFrame("M900"),false,out _),"M900 is not accepted as IN9");
+        // 型号字段必须可打印、大写字母开头，后面只能是字母或数字。
+        var controlModel=LegacyFrame("J315");controlModel[5]=0x1F;
+        Check(!VendorProtocol.TryParseInphicLegacy(controlModel,out _,out _,out _),"Non-printable model head is rejected");
+        var controlTail=LegacyFrame("J315");controlTail[8]=0x7F;
+        Check(!VendorProtocol.TryParseInphicLegacy(controlTail,out _,out _,out _),"Non-printable model tail is rejected");
+        Check(!VendorProtocol.TryParseInphicLegacy(LegacyFrame("j315"),out _,out _,out _),"Lowercase model code is rejected");
+
         // 原始报告：有编号报告多一个 report id 位；无编号报告直接从机型号开始。
         var numbered = new byte[] { 0x08, VendorProtocol.InphicModelIn9Pro, 0x40, 0x01, 0x50 };
         Check(VendorProtocol.TryParseInphicStatus(numbered,out int level,out bool charging) && level==80 && !charging,"Numbered report gives 80 percent");

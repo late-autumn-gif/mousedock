@@ -76,6 +76,34 @@ internal static class MchoseA7V2Regression
         Check(!VendorProtocol.IsMchoseA7V2Interface(node), "Shared receiver PID must not authorize another model");
         node.Product = "MCHOSE A7 V2 Ultra+"; node.Pid = 0x1015;
         Check(!VendorProtocol.IsMchoseA7V2Interface(node), "A7 V2 reader rejects the K87 receiver");
+
+        // 本机 3837:100A + "MCHOSE A7 V2 Pro" 实测：型号 4018，电量 83%，FF01/0001 65/65/65。
+        byte[] ProResponse(int level = 83)
+        {
+            var body = new byte[19];
+            body[0] = 0x37; body[1] = 0x38; body[2] = 0x18; body[3] = 0x40;
+            body[8] = 9; body[9] = (byte)level; body[10] = 0;
+            return new byte[] { 0x11, 0xF9 }.Concat(body.Select(b => (byte)(b ^ 0xFF))).ToArray();
+        }
+        Check(VendorProtocol.TryParseMchoseLegacy(ProResponse(), 0x3837, 0x100A, out int proLevel, out bool proCharging) &&
+            proLevel == 83 && !proCharging,
+            "A7 V2 Pro receiver accepts its measured 4018 model response");
+        Check(!VendorProtocol.TryParseMchoseLegacy(ProResponse(), 0x3837, 0x100B, out _, out _),
+            "A7 V2 Ultra+ must not accept the Pro model identity");
+        Check(!VendorProtocol.TryParseMchoseLegacy(Response(), 0x3837, 0x100A, out _, out _),
+            "A7 V2 Pro must not accept the Ultra+ model identity");
+        Check(VendorProtocol.MchoseA7V2ModelName(0x100A) == "MCHOSE A7 V2 Pro" &&
+            VendorProtocol.MchoseA7V2ModelName(0x100B) == "MCHOSE A7 V2 Ultra+",
+            "A7 V2 model names follow the receiver PID");
+        var proNode = new HidProbe.Node
+        {
+            Vid = 0x3837, Pid = 0x100A, Product = "MCHOSE A7 V2 Pro",
+            Caps = new HidProbe.HIDP_CAPS { UsagePage = 0xFF01, Usage = 1,
+                InputReportByteLength = 65, OutputReportByteLength = 65, FeatureReportByteLength = 65 }
+        };
+        Check(VendorProtocol.IsMchoseA7V2Interface(proNode), "A7 V2 Pro accepts its FF01 query collection");
+        proNode.Product = "MCHOSE A7 V2 Ultra+";
+        Check(!VendorProtocol.IsMchoseA7V2Interface(proNode), "A7 V2 Pro must not accept the Ultra+ name on its PID");
         return count;
     }
 }
