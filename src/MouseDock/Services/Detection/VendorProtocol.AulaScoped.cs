@@ -12,12 +12,14 @@ internal static partial class VendorProtocol
     {
         if (InstanceScope.Current == null || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的设备实例，未发送查询");
+        var trace = BatteryReplay.Current?.Active;
         return ReferenceQueryGate.Run(path, () =>
         {
             using var link = new AulaLink(route, path, vid, pid, instanceProduct);
+            trace?.Add("open-and-validate", true);
             var reading = route == AulaBatteryProtocol.Route.Sc580Receiver
-                ? AulaBatteryProtocol.ReadIdentify(link)
-                : AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence);
+                ? AulaBatteryProtocol.ReadIdentify(link, trace)
+                : AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence, trace);
             return reading with { Diagnostic = link.ReportMetadata + "；" + reading.Diagnostic };
         }, route == AulaBatteryProtocol.Route.Sc580Receiver ? 6000 : 4000);
     }

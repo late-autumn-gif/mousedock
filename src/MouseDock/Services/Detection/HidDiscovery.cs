@@ -92,7 +92,35 @@ namespace MouseDock.Services.Detection
         private static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sec, uint creation, uint flags, IntPtr templ);
         [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
 
+        private static readonly object ScanGate = new();
+
         public static List<DetectedDevice> Enumerate(DevicePreferences preferences = null)
+        {
+            lock (ScanGate) return ScanDevices(preferences);
+        }
+
+        internal static List<DetectedDevice> Enumerate(DevicePreferences preferences, IEnumerable<string> selectedIds,
+            out BatteryReplay.Capture capture)
+        {
+            lock (ScanGate)
+            {
+                var scan = new BatteryReplay.Scan();
+                BatteryReplay.Current = scan;
+                try { return scan.Detected = ScanDevices(preferences); }
+                catch (Exception ex)
+                {
+                    scan.ScanError = ex.GetType().Name;
+                    return scan.Detected;
+                }
+                finally
+                {
+                    BatteryReplay.Current = null;
+                    capture = scan.Finish(selectedIds);
+                }
+            }
+        }
+
+        private static List<DetectedDevice> ScanDevices(DevicePreferences preferences)
         {
             LastDiagnostics.Clear();
             InstanceScope.BeginScan();
@@ -110,6 +138,7 @@ namespace MouseDock.Services.Detection
                 set = SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
                 if (set == IntPtr.Zero || set == new IntPtr(-1))
                 {
+                    if (BatteryReplay.Current != null) BatteryReplay.Current.ScanError = "SetupDiGetClassDevs";
                     LastDiagnostics.Add("SetupDiGetClassDevs 失败");
                     return new List<DetectedDevice>();
                 }
@@ -499,6 +528,8 @@ namespace MouseDock.Services.Detection
             string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
             string exclusion = ExclusionReason(ancestors, integratedUsb);
             if(IsKnownHubSwitch(vid,pid))exclusion="HM Lab扩展坞切换键HID，不是独立外设";
+            BatteryReplay.Current?.AddCollection(key, path, vid, pid, product, caps.UsagePage, caps.Usage,
+                caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength, exclusion != null);
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
                 $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
             if (exclusion != null)
@@ -892,8 +923,19 @@ namespace MouseDock.Services.Detection
                     string.IsNullOrWhiteSpace(b.InstanceId) ? "缺少物理实例，未发送查询" :
                     channels.Count != 1 ? $"本实例精确电量集合数量={channels.Count}，必须唯一，未发送查询" : null;
                 if (reason != null)
-                { b.BatteryFailures.Add(reason); LastDiagnostics.Add($"{b.InstanceId} 狼蛛边界：{reason}"); continue; }
+                {
+                    BatteryReplay.Current?.AddQuery(b.InstanceId, null,
+                        VendorProtocol.IsAulaSc630(product) ? "Sc630Pro" : "Sc580Receiver",
+                        safeMode ? "safe-mode" : channels.Count != 1 ? "collection-missing-or-ambiguous" : "recognition-disabled",
+                        b.AulaModel);
+                    b.BatteryFailures.Add(reason);
+                    LastDiagnostics.Add($"{b.InstanceId} 狼蛛边界：{reason}");
+                    continue;
+                }
                 var channel = channels[0];
+                var scan = BatteryReplay.Current;
+                var trace = scan == null ? null : new BatteryReplay.Trace();
+                if (scan != null) scan.Active = trace;
                 ReferenceBatteryProtocol.Reading result;
                 using (InstanceScope.Enter(b.InstanceId))
                 {
@@ -915,6 +957,8 @@ namespace MouseDock.Services.Detection
                     b.BatterySource = "狼蛛专用：" + result.Diagnostic;
                 }
                 else b.BatteryFailures.Add("狼蛛专用：" + result.Diagnostic);
+                scan?.AddQuery(b.InstanceId, channel.Path, b.AulaDescriptorRoute.ToString(),
+                    result.Status.ToString(), b.AulaModel, b.Battery, trace);
                 LastDiagnostics.Add($"{b.InstanceId} 狼蛛路线={b.AulaDescriptorRoute} 状态={result.Status} 电量={result.Level} 型号={result.Model} {result.Diagnostic}");
             }
         }

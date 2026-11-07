@@ -59,7 +59,7 @@ internal static class AulaBatteryProtocol
         return true;
     }
 
-    internal static ReferenceBatteryProtocol.Reading ReadIdentify(ReferenceBatteryProtocol.ILink link)
+    internal static ReferenceBatteryProtocol.Reading ReadIdentify(ReferenceBatteryProtocol.ILink link, BatteryReplay.Trace trace = null)
     {
         var request = IdentifyRequest();
         ReferenceBatteryProtocol.Reading first = null;
@@ -70,7 +70,9 @@ internal static class AulaBatteryProtocol
             bool drained = false;
             for (int i = 0; i < 32; i++) if (link.Read(1) is not { Length: > 0 }) { drained = true; break; }
             if (!drained) return ReferenceBatteryProtocol.Reading.Failed("Identify 旧队列未清空");
-            if (!link.Write(request, 400))
+            bool written = link.Write(request, 400);
+            trace?.Add("write-identify", written, raw: request, keep: true);
+            if (!written)
             { writeFailures++; continue; }
             long deadline = link.Now + 900;
             while (link.Now < deadline)
@@ -80,7 +82,15 @@ internal static class AulaBatteryProtocol
                 last = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, 65)));
                 if (raw.AsSpan().SequenceEqual(request) || (raw.Length == 32 && raw.AsSpan().SequenceEqual(request.AsSpan(1))))
                 { echoes++; continue; }
-                if (!TryDecodeIdentify(raw, out var reading)) { rejected++; continue; }
+                bool decoded = TryDecodeIdentify(raw, out var reading);
+                if (trace != null)
+                {
+                    int offset = raw.Length == 33 && raw[0] == 0 ? 1 : 0;
+                    bool identifyHeader = raw.Length - offset == 32 && raw[offset] == 0x30 &&
+                        raw[offset + 1] is 0 or 2 && raw[offset + 2] == 1;
+                    trace.Add("input", decoded, raw: raw, keep: identifyHeader);
+                }
+                if (!decoded) { rejected++; continue; }
                 if (reading.Status == ReferenceBatteryProtocol.State.Sleep)
                 { notReady++; first = null; accepted = ""; continue; }
                 if (first != null && first.Identity != reading.Identity)
@@ -99,7 +109,7 @@ internal static class AulaBatteryProtocol
             $"Identify 未取得两次同型号在线应答；回显={echoes} 无效={rejected} 未就绪={notReady} 写入失败={writeFailures} 最后RX={last}" + accepted);
     }
 
-    internal static ReferenceBatteryProtocol.Reading ReadSc630(ReferenceBatteryProtocol.ILink link, Func<byte> sequence)
+    internal static ReferenceBatteryProtocol.Reading ReadSc630(ReferenceBatteryProtocol.ILink link, Func<byte> sequence, BatteryReplay.Trace trace = null)
     {
         ReferenceBatteryProtocol.Reading first = null;
         string diagnostic = "", last = "无";
@@ -109,11 +119,16 @@ internal static class AulaBatteryProtocol
             byte seq = sequence();
             if (seq == 0) return ReferenceBatteryProtocol.Reading.Failed("SC630 查询序号为零，未发送");
             var request = VendorProtocol.BuildAulaSc630BatteryRequest(seq);
-            if (!link.SetFeature(request)) { last = "SetFeature 失败"; continue; }
+            bool written = link.SetFeature(request);
+            trace?.Add("set-feature", written, seq, request, keep: true);
+            if (!written) { last = "SetFeature 失败"; continue; }
             link.Delay(130);
             var reply = link.GetFeature(6, 41);
             last = reply == null ? "GetFeature 失败" : Convert.ToHexString(reply.AsSpan(0, Math.Min(41, reply.Length)));
-            if (reply == null || !VendorProtocol.TryParseAulaSc630Battery(reply, seq, out int level, out bool charging)) continue;
+            bool decoded = VendorProtocol.TryParseAulaSc630Battery(reply, seq, out int level, out bool charging);
+            trace?.Add("get-feature", decoded, seq, reply,
+                keep: reply is { Length: 41 } && reply[0] == 6 && reply[3] == 0x81 && reply[8] == 3);
+            if (!decoded) continue;
             if (reply[4] == 0) notEchoed++;
             diagnostic += " RX=" + last;
             var result = new ReferenceBatteryProtocol.Reading(level, charging, true,

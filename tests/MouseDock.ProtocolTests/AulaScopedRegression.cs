@@ -48,8 +48,23 @@ internal static class AulaScopedRegression
         Check(AulaBatteryProtocol.TryDecodeIdentify(Identify(65,1,0),out var sleep) && sleep.Level==-1 && !sleep.Charging,"Offline embedded battery is not fresh");
         Check(AulaBatteryProtocol.TryDecodeIdentify(NotReady(),out sleep) && sleep.Status==ReferenceBatteryProtocol.State.Sleep,"Receiver not-ready recognized");
         var link=new Link(); link.Input.Enqueue(Identify(99,0));
-        link.WriteResponse=packet=>new[] { packet, Identify(11,0,1,"M999"),Identify((byte)(link.Writes.Count==1?17:42),1) };
-        var read=AulaBatteryProtocol.ReadIdentify(link);
+        link.WriteResponse=packet=>new[] { packet, new byte[32], Identify(11,0,1,"M999"),Identify((byte)(link.Writes.Count==1?17:42),1) };
+        var trace = new BatteryReplay.Trace();
+        var read=AulaBatteryProtocol.ReadIdentify(link, trace);
+        var replayCollection = new BatteryReplay.Collection("receiver-1", 1, 0x089D, 0x062F,
+            "Wireless Receiver", 0xFF02, 0, 33, 33, 0, false, true);
+        var replayQuery = new BatteryReplay.Query("receiver-1", 1, "Sc580Receiver", read.Status.ToString(),
+            read.Model, 99, trace.Snapshot());
+        var replay = BatteryReplay.Replay(replayQuery, new[] { replayCollection });
+        Check(replay is { Model: "狼蛛 SC580", Percent: 42, Charging: true, ValueKind: "captured" },
+            "Replay uses raw replies rather than recorded display percent");
+        Check(trace.Snapshot().Any(s => s.Stage == "input" && !s.Ok && s.Length == 32 && s.Hex == null) &&
+            trace.Snapshot().Any(s => s.Stage == "input" && !s.Ok && s.Hex?.Contains("4D393939") == true),
+            "Unrelated input keeps only length while an unknown Identify model keeps its protocol frame");
+        Check(BatteryReplay.Replay(replayQuery, new[] { replayCollection with { Receiver = "receiver-2" } }).Percent == null,
+            "Replay never uses another receiver's interface");
+        Check(BatteryReplay.Replay(replayQuery with { Samples = Array.Empty<BatteryReplay.Sample>() },
+            new[] { replayCollection }).Percent == null, "No reply cannot become an estimate");
         Check(read.Level==42 && read.Charging && read.Identity=="M137" && link.Writes.Count==2,"Drain/echo/unknown rejected before two fresh same-model replies");
         Check(link.Writes.All(p=>p.AsSpan().SequenceEqual(AulaBatteryProtocol.IdentifyRequest())),"No subscription, DPI or wake configuration commands");
         var retry=new Link(); retry.WriteResponse=_=>new[] { retry.Writes.Count==1?NotReady():Identify(0,0) };
@@ -82,7 +97,16 @@ internal static class AulaScopedRegression
         }
         var sc=new Link(); sc.FeatureResponse=packet=>Feature(packet[4],(byte)(sc.Features.Count==1?17:42),true);
         byte seq=0;
-        read=AulaBatteryProtocol.ReadSc630(sc,()=>++seq);
+        var featureTrace = new BatteryReplay.Trace();
+        read=AulaBatteryProtocol.ReadSc630(sc,()=>++seq, featureTrace);
+        var scCollection = replayCollection with { Vid = 1, Pid = 2, Page = 0xFF01, Usage = 1,
+            Product = "AULA-SC630Pro Gaming Mouse", Feature = 41 };
+        var featureQuery = replayQuery with { Protocol = "Sc630Pro", Samples = featureTrace.Snapshot() };
+        Check(BatteryReplay.Replay(featureQuery, new[] { scCollection }) is { Model: "AULA SC630 Pro", Percent: 42 },
+            "SC630 replay validates each feature reply against its sequence");
+        Check(BatteryReplay.Replay(featureQuery with { Samples = featureTrace.Snapshot()
+            .Select(sample => sample with { Sequence = 99 }).ToArray() }, new[] { scCollection }).Percent == null,
+            "Replay rejects wrong feature sequence");
         Check(read.Level==42 && read.Charging && sc.Features.Count==2 && sc.Writes.Count==0 && sc.Delays.SequenceEqual(new[] {130,130}),"SC630 only two Set/GetFeature6/41 battery requests, official delay");
         Check(sc.Features[0][4]!=sc.Features[1][4] && sc.Features.All(p=>p.AsSpan().SequenceEqual(VendorProtocol.BuildAulaSc630BatteryRequest(p[4]))),"Per-query nonzero sequence and exact battery header");
         var noEcho=new Link(); noEcho.FeatureResponse=_=>Feature(0,0,false);

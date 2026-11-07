@@ -51,6 +51,27 @@ namespace MouseDock
         {
             base.OnStartup(e);
 
+            int replay = Array.IndexOf(e.Args, "--replay-report");
+            if (replay >= 0)
+            {
+                AttachConsole(-1);
+                try
+                {
+                    if (e.Args.Length <= replay + 1)
+                        throw new ArgumentException("用法: MouseDock.exe --replay-report <报告.zip 或 battery-replay.json> [结果.json]");
+                    string result = Services.Detection.BatteryReplay.ReplayFile(e.Args[replay + 1]);
+                    if (e.Args.Length > replay + 2) File.WriteAllText(e.Args[replay + 2], result);
+                    else Console.WriteLine(result);
+                    Shutdown(0);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    Shutdown(1);
+                }
+                return;
+            }
+
             _mutex = new Mutex(true, "MouseDock.SingleInstance", out bool isNew);
             if (!isNew && !e.Args.Contains("--shot"))
             {

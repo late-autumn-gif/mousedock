@@ -174,7 +174,12 @@ namespace MouseDock.Services
             string target = AskSavePath(owner, selected);
             if (string.IsNullOrEmpty(target)) return ReportExportResult.CanceledByUser;
 
-            return await Task.Run(() => TryExportReport(settings, detectedList, target, selected))
+            return await Task.Run(() =>
+            {
+                Detection.HidDiscovery.Enumerate(App.Battery?.Preferences ?? new DevicePreferences(settings ?? new AppSettings()),
+                    selected == null ? null : DevicePreferences.Keys(selected), out var capture);
+                return TryExportReport(settings, detectedList, target, selected, capture);
+            })
                              .ConfigureAwait(true);
         }
 
@@ -196,7 +201,8 @@ namespace MouseDock.Services
         /// 会被界面报成「没能写入所选位置」，用户和作者都被带偏。
         /// </summary>
         public static ReportExportResult TryExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected,
-                                                         string zipPath = null, DeviceInfo target = null)
+                                                         string zipPath = null, DeviceInfo target = null,
+                                                         Detection.BatteryReplay.Capture capture = null)
         {
             string resolvedTarget = null;
             string temporaryPath = null;
@@ -259,6 +265,8 @@ namespace MouseDock.Services
                 {
                     AddText(zip, "hid-devices.txt", hidReport);
                     AddText(zip, "summary.txt", summary);
+                    if (capture != null)
+                        AddText(zip, Detection.BatteryReplay.EntryName, Detection.BatteryReplay.Serialize(capture));
                     if (!string.IsNullOrEmpty(deviceReport)) AddText(zip, "device.txt", deviceReport);
                     if (probe != null)
                     {

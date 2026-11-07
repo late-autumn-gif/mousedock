@@ -51,7 +51,7 @@ internal static partial class VendorProtocol
         if(raw is not {Length:32 or 33} || (raw.Length==33 && raw[0]!=0) || raw[raw.Length==33?3:2]!=1 || !TryParseInphicLegacy(raw,out int pct,out bool chg,out string model) || model=="M900")return false;
         reading=new(pct,chg,true,chg?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 有效实时身份","英菲克 IN9",model);return true;
     }
-    internal static ReferenceBatteryProtocol.Reading ReadScopedInphic(string path,ushort vid,ushort pid, string wakePath = null)
+    internal static ReferenceBatteryProtocol.Reading ReadScopedInphic(string path,ushort vid,ushort pid, string wakePath = null, BatteryReplay.Trace trace = null)
     {
         if(InstanceScope.Current==null || !InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("实例不匹配");
         bool initialize = wakePath != null && InstanceScope.Allows(wakePath) && IsInphicWakeSibling(path, wakePath);
@@ -66,6 +66,7 @@ internal static partial class VendorProtocol
                 var a=new HIDD_ATTRIBUTES {Size=Marshal.SizeOf<HIDD_ATTRIBUTES>()};var c=Caps(h);
                 if(!HidD_GetAttributes(h,ref a) || a.VendorID!=vid || a.ProductID!=pid ||
                     !IsScopedInphicChannel(vid,pid,HidDiscovery.ReadHidProduct(h,path),path,c.UsagePage,c.Usage,c.InputReportByteLength,c.OutputReportByteLength))throw new IOException("实际属性/集合不符");
+                trace?.Add("open-and-validate", true);
                 ev=CreateEvent(IntPtr.Zero,true,false,IntPtr.Zero);if(ev==IntPtr.Zero)throw new IOException("无法创建异步事件");
                 ReferenceBatteryProtocol.Reading first=null;
                 string last="无";
@@ -77,6 +78,7 @@ internal static partial class VendorProtocol
                 }
                 string wakeStatus = !initialize ? "无匹配初始化集合" :
                     TryInitializeInphic(wakePath, vid, pid) ? "初始化成功" : "初始化失败";
+                if (initialize) trace?.Add("initialize", wakeStatus == "初始化成功");
                 for(int attempt=0;attempt<2;attempt++)
                 {
                     if(!pro)
@@ -85,7 +87,9 @@ internal static partial class VendorProtocol
                         for(int i=0;i<32;i++){var old=new byte[33];if(!Transfer(h,ev,old,false,1,out int got) || got==0){drained=true;break;}}
                         if(!drained)return ReferenceBatteryProtocol.Reading.Failed("旧队列未清空");
                         var tx=new byte[33];tx[1]=0x10;
-                        if(!Transfer(h,ev,tx,true,300,out int written) || written!=33)return ReferenceBatteryProtocol.Reading.Failed("身份请求未完整发送");
+                        bool sent = Transfer(h, ev, tx, true, 300, out int written) && written == 33;
+                        trace?.Add("write-identity", sent, raw: tx, keep: true);
+                        if (!sent) return ReferenceBatteryProtocol.Reading.Failed("身份请求未完整发送");
                     }
                     long until=Environment.TickCount64+1500;ReferenceBatteryProtocol.Reading current=null;
                     while(Environment.TickCount64<until)
@@ -93,7 +97,16 @@ internal static partial class VendorProtocol
                         var b=new byte[pro?5:33];
                         if(!Transfer(h,ev,b,false,(int)Math.Max(1,Math.Min(150,until-Environment.TickCount64)),out int n) || n<=0)continue;
                         var raw=b.AsSpan(0,n).ToArray();last=Convert.ToHexString(raw);
-                        if(TryScopedInphicFrame(raw,pro,out current))break;
+                        bool decoded = TryScopedInphicFrame(raw, pro, out current);
+                        if (trace != null)
+                        {
+                            int offset = raw.Length == 33 && raw[0] == 0 ? 1 : 0;
+                            bool batteryHeader = pro ? raw.Length == 5 && raw[2] is 0x40 or 0x41 :
+                                raw.Length - offset == 32 && raw[offset] == 0x10 &&
+                                raw[offset + 1] == 0 && raw[offset + 2] == 1;
+                            trace.Add("input", decoded, raw: raw, keep: batteryHeader);
+                        }
+                        if (decoded) break;
                         current=null;
                     }
                     if(current==null)return ReferenceBatteryProtocol.Reading.Failed("未取得两次有效响应；"+wakeStatus+"；最近RX="+last);
