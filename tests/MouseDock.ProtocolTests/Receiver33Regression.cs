@@ -55,6 +55,15 @@ internal static class Receiver33Regression
         Check(!VendorProtocol.IsGenericReceiver33(0x046D, 0xC539, "USB Receiver"), "Logitech receiver not claimed");
         Check(!VendorProtocol.IsGenericReceiver33(0x248A, 0x5C2E, "Wireless-Receiver"), "Wired IN9 PID not claimed");
 
+        // 策略白名单必须和旁路一致：2026-11-08 之前 CanQuery 只放行 089D:062F，
+        // 248A/249A 的 5B2F/5C2F 在 QueryGenericReceiver33 第一步就被 continue 掉，
+        // 33 字节旁路从未执行过。
+        Check(RecognitionPolicy.CanQuery(0x248A, 0x5B2F, "Wireless-Receiver"), "Policy admits 248A:5B2F generic receiver");
+        Check(RecognitionPolicy.CanQuery(0x248A, 0x5C2F, "Wireless-Receiver"), "Policy admits 248A:5C2F generic receiver");
+        Check(RecognitionPolicy.CanQuery(0x249A, 0x5C2F, ""), "Policy admits 249A:5C2F without a product string");
+        Check(!RecognitionPolicy.CanQuery(0x248A, 0x5C2F, "AJ159 Receiver"), "Policy keeps the AJAZZ exclusion");
+        Check(!RecognitionPolicy.CanQuery(0x248A, 0x5B2F, "DELUX Receiver"), "Policy keeps the DELUX exclusion");
+
         return assertions;
     }
 }

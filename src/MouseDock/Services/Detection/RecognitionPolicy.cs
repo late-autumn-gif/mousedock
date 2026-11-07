@@ -20,6 +20,9 @@ internal static class RecognitionPolicy
         (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product)) ||
         // Repository documents local hardware verification for these receivers.
         (vid == 0x089D && pid == 0x062F) ||
+        // 公版 33 字节接收器只能读、不能写：248A/249A 的 5B2F/5C2F 与 089D:062F 走同一条
+        // 被动监听 + GetFeature 旁路。产品串是 AJ159/DELUX 时 IsGenericReceiver33 会拒绝。
+        VendorProtocol.IsGenericReceiver33(vid, pid, product) ||
         (vid == 0x391D && pid == 0x2A05) ||
         (vid == 0x3837 && VendorProtocol.IsMchoseA7V2(vid, pid)) ||
         (vid == 0x5253 && pid == 0x1021);

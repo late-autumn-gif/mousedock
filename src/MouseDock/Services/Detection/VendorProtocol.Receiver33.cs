@@ -151,13 +151,22 @@ internal static partial class VendorProtocol
         if (h == IntPtr.Zero || h == new IntPtr(-1)) return null;
         try
         {
+            var caps = Caps(h);
+            // 报告编号不能默认 0：248A:5B2F 的报告里 GET_FEATURE(0) 直接失败。
+            // 先按 HID 能力表取真实编号，取不到再试 0..5，每次结果都记进诊断。
+            var ids = FeatureReportIds(h, caps);
             string pendingModel = null, pendingName = null;
             int pendingLevel = -1;
             bool pendingCharging = false;
-            for (int i = 0; i < 2; i++)
+            foreach (byte id in ids)
             {
                 var buf = new byte[Receiver33Frame];
-                if (!HidD_GetFeature(h, buf, buf.Length)) return null;
+                buf[0] = id;
+                if (!HidD_GetFeature(h, buf, buf.Length))
+                {
+                    last = $"GET_FEATURE({id:X2}) Win32={Marshal.GetLastWin32Error()}";
+                    continue;
+                }
                 last = Convert.ToHexString(buf);
                 if (!TryParseReceiver33Frame(buf, out int level, out bool charging, out string model, out bool aula)) continue;
                 string name = Receiver33Name(model, aula);
