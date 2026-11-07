@@ -70,6 +70,18 @@ internal static partial class VendorProtocol
         isAula ? (model == "M137" ? "狼蛛 SC580" : "狼蛛 " + model)
                : "英菲克 " + model;
 
+    /// <summary>
+    /// 读不到身份帧时的兜底名字。这些 VID:PID 本身就是鼠标接收器号段，
+    /// 不能因为鼠标集合被厂商驱动独占、只剩键盘集合，就把设备显示成
+    /// "Wireless-Receiver / 键盘"。品牌按 VID 定，型号不猜。
+    /// </summary>
+    internal static string Receiver33FallbackName(ushort vid, string model)
+    {
+        bool aula = vid == 0x089D;
+        if (!string.IsNullOrWhiteSpace(model)) return Receiver33Name(model.Trim(), aula);
+        return aula ? "狼蛛 2.4G 接收器（型号未确认）" : "英菲克 2.4G 接收器（型号未确认）";
+    }
+
     internal static ReferenceBatteryProtocol.Reading TryReadReceiver33(ushort vid, ushort pid)
     {
         if (InstanceScope.Current == null) return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的设备实例，未发送查询");

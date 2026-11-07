@@ -64,6 +64,19 @@ internal static class Receiver33Regression
         Check(!RecognitionPolicy.CanQuery(0x248A, 0x5C2F, "AJ159 Receiver"), "Policy keeps the AJAZZ exclusion");
         Check(!RecognitionPolicy.CanQuery(0x248A, 0x5B2F, "DELUX Receiver"), "Policy keeps the DELUX exclusion");
 
+        // 读不到身份帧时的名字：不能回退成产品串 "Wireless-Receiver"，
+        // 也不能把鼠标接收器标成键盘。品牌按 VID 定，型号不猜。
+        Check(VendorProtocol.Receiver33FallbackName(0x089D, null) == "狼蛛 2.4G 接收器（型号未确认）",
+            "AULA receiver without a model keeps its brand");
+        Check(VendorProtocol.Receiver33FallbackName(0x248A, null) == "英菲克 2.4G 接收器（型号未确认）",
+            "Inphic receiver without a model keeps its brand");
+        Check(VendorProtocol.Receiver33FallbackName(0x249A, "") == "英菲克 2.4G 接收器（型号未确认）",
+            "Empty model string takes the same fallback");
+        Check(VendorProtocol.Receiver33FallbackName(0x089D, "M137") == "狼蛛 SC580",
+            "Verified AULA model still resolves to the retail name");
+        Check(VendorProtocol.Receiver33FallbackName(0x248A, "J315") == "英菲克 J315",
+            "Inphic model renders as brand plus code");
+
         return assertions;
     }
 }

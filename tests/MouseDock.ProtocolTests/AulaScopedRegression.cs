@@ -159,7 +159,12 @@ internal static class AulaScopedRegression
         Check(ba.ToDevice().PhysicalKey!=bb.ToDevice().PhysicalKey && ba.ToDevice().Level==42 && bb.ToDevice().Level==0,"Never merge by model/VID");
         queries=0;
         HidDiscovery.QueryAulaCollections(buckets,channels,true,null,Query);
-        Check(queries==0 && ba.ToDevice().Level==-1 && !ba.ToDevice().Charging && ba.ToDevice().ConfirmedModel=="" && ba.ToDevice().Name=="Wireless-Receiver","Safe scan cannot promote previous identity/battery");
+        // 产品行为变更（2026-11-08）：未确认型号的公版接收器不再回退到 USB 产品串
+        // "Wireless-Receiver"，改为「品牌 + 2.4G 接收器（型号未确认）」，类型按鼠标。
+        // 安全模式仍然不提升任何旧身份或旧电量。
+        Check(queries==0 && ba.ToDevice().Level==-1 && !ba.ToDevice().Charging && ba.ToDevice().ConfirmedModel=="" &&
+              ba.ToDevice().Name=="狼蛛 2.4G 接收器（型号未确认）" && ba.ToDevice().Kind==DeviceKind.Mouse,
+              "Safe scan cannot promote previous identity/battery");
         var prefs=new DevicePreferences(new AppSettings { DisabledRecognitionDeviceIds=new() { a,b } });
         HidDiscovery.QueryAulaCollections(buckets,channels,false,prefs,Query);
         Check(queries==0,"Disabled instances have no battery I/O");

@@ -1377,6 +1377,17 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Mouse;
                     physicalKey = Pid == 0x100A ? "mchose-a7v2pro" : "mchose-a7v2ultra";
                 }
+                else if (VendorProtocol.IsGenericReceiver33(Vid, Pid, Product))
+                {
+                    // 公版 33 字节接收器（狼蛛/英菲克鼠标接收器）的鼠标集合常被厂商驱动
+                    // 独占（CreateFile Win32=5），HID 侧只剩键盘/消费集合。类型不能按
+                    // 剩余集合计数判，否则一只鼠标会被显示成键盘。
+                    name = !string.IsNullOrWhiteSpace(AulaModel)
+                        ? AulaModel
+                        : VendorProtocol.Receiver33FallbackName(Vid, null);
+                    kind = DeviceKind.Mouse;
+                    physicalKey = Vid == 0x089D ? "aula-receiver33" : "inphic-receiver33";
+                }
                 else if (VendorProtocol.IsMchoseG7(Vid, Pid, Product))
                 {
                     name = Product.Trim();
@@ -1495,9 +1506,16 @@ namespace MouseDock.Services.Detection
                 if (ReportedX23SeIdentified) { name = Product.Trim(); kind = DeviceKind.Mouse; transport = "2.4G"; }
                 if (AulaHandled)
                 {
-                    name = AulaModel ?? (string.IsNullOrWhiteSpace(Product) ? "未确认型号的接收器" : Product.Trim());
+                    // AulaModel 已经是显示名（"狼蛛 SC580" / "英菲克 J315"）；
+                    // 只有没读到身份帧时才用号段兜底，不能把 "Wireless-Receiver" 当名字。
+                    name = !string.IsNullOrWhiteSpace(AulaModel)
+                        ? AulaModel
+                        : VendorProtocol.IsGenericReceiver33(Vid, Pid, Product)
+                            ? VendorProtocol.Receiver33FallbackName(Vid, null)
+                            : (string.IsNullOrWhiteSpace(Product) ? "未确认型号的接收器" : Product.Trim());
                     kind = DeviceKind.Mouse;
-                    transport = (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
+                    transport = VendorProtocol.IsGenericReceiver33(Vid, Pid, Product) ||
+                                (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
                     charging = Battery >= 0 && AulaOnline && Charging;
                 }
                 if(ZeroRainyHandled){name=ZeroRainyModel ?? Product ?? "未确认型号的设备";kind=VendorProtocol.IsAtkZeroBitMouse(Vid,Pid)?DeviceKind.Mouse:DeviceKind.Keyboard;transport=Pid is 0x1154 or 0x5055?"有线":"2.4G";charging=Battery>=0&&Charging;}
@@ -1555,6 +1573,9 @@ namespace MouseDock.Services.Detection
                 // A7 V2 接收器的鼠标集合由厂商驱动独占，HID 侧只剩键盘/消费类集合。
                 // 型号已经由 PID + 产品串确认时，不能按集合计数判成键盘。
                 if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) return DeviceKind.Mouse;
+                // 公版 33 字节接收器（狼蛛/英菲克鼠标接收器）本身就是鼠标通道。
+                // 鼠标集合被驱动独占时 HID 侧只剩键盘集合，不能按计数判成键盘。
+                if (VendorProtocol.IsGenericReceiver33(Vid, Pid, Product)) return DeviceKind.Mouse;
                 if (VendorProtocol.IsInphicSplitReceiver(Vid, Pid) && Counts.ContainsKey(DeviceKind.Mouse))
                     return DeviceKind.Mouse;
 
