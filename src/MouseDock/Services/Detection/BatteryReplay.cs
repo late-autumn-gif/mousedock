@@ -67,8 +67,8 @@ internal static class BatteryReplay
             interfaces[path] = number;
             collections.Add(new(Receiver(instance), number, vid, pid, product, page, usage, input, output, feature, excluded, path.Contains("&mi_02", StringComparison.OrdinalIgnoreCase),
                 VendorProtocol.IsRogOmni(vid, pid)
-                    ? VendorProtocol.IsRogOmniChannel(path, page, usage, input, output, 1) ? 1 :
-                        VendorProtocol.IsRogOmniChannel(path, page, usage, input, output, 2) ? 2 : 0
+                    ? VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 1) ? 1 :
+                        VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 2) ? 2 : 0
                     : 0));
         }
 
@@ -149,21 +149,35 @@ internal static class BatteryReplay
 
     private static Result ReplayRogScope(Query query)
     {
-        bool paired = false;
+        byte[] paired = null;
+        int? percent = null;
+        bool? charging = null;
+        bool afterSeen = false;
+        bool unchanged = false;
         foreach (var sample in query.Samples ?? Array.Empty<Sample>())
         {
+            if (sample.Stage == "omni-paired-after") afterSeen = true;
             if (!sample.Ok || sample.Hex?.Length != 128 || sample.Length != 64) continue;
             byte[] raw;
             try { raw = Convert.FromHexString(sample.Hex); }
             catch (FormatException) { continue; }
-            if (sample.Stage == "omni-paired") paired = VendorProtocol.RogOmniHasScopeRx(raw);
-            if (paired && sample.Stage == "omni-battery" && query.Status is "Online" or "Charging" &&
-                VendorProtocol.TryParseRogScopeBattery(raw, out int percent, out bool charging))
-                return new(query.Receiver, query.Interface, query.Protocol, query.Status,
-                    VendorProtocol.RogScopeRxWireless, percent, charging, "captured");
+            if (sample.Stage == "omni-paired" && VendorProtocol.RogOmniHasScopeRx(raw)) paired = raw;
+            if (paired != null && sample.Stage == "omni-battery" &&
+                VendorProtocol.TryParseRogScopeBattery(raw, out int level, out bool charge))
+            {
+                percent = level;
+                charging = charge;
+            }
+            if (percent != null && sample.Stage == "omni-paired-after")
+                unchanged = VendorProtocol.RogOmniPairingUnchanged(paired, raw);
         }
+
+        // Reports from older builds lacked the second pairing response.
+        bool verified = percent != null && (query.Status is "Online" or "Charging") && (!afterSeen || unchanged);
         return new(query.Receiver, query.Interface, query.Protocol, query.Status,
-            paired ? VendorProtocol.RogScopeRxWireless : null, null, null, "unavailable");
+            paired != null && (!afterSeen || unchanged) ? VendorProtocol.RogScopeRxWireless : null,
+            verified ? percent : null, verified ? charging : null,
+            verified ? (unchanged ? "captured" : "captured-without-pairing-recheck") : "unavailable");
     }
 
     internal static Result Replay(Query query, Collection[] collections)

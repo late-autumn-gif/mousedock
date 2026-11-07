@@ -26,6 +26,7 @@ internal static class RogScopeRegression
         Check(!VendorProtocol.RogOmniHasScopeRx(paired), "Do not search past the pairing terminator");
         paired[5] = 0x7A;
         paired[6] = 0x1B;
+        paired[9] = paired[10] = 0;
         var reply = new byte[64];
         reply[0] = 2;
         reply[1] = 0x12;
@@ -37,6 +38,7 @@ internal static class RogScopeRegression
         var trace = new BatteryReplay.Trace();
         trace.Add("omni-paired", true, raw: paired, keep: true);
         trace.Add("omni-battery", true, raw: reply, keep: true);
+        trace.Add("omni-paired-after", true, raw: paired, keep: true);
         var query = new BatteryReplay.Query("receiver-1", 2, "RogScopeRxOmni", "Charging", null, null, trace.Snapshot());
         var battery = new BatteryReplay.Collection("receiver-1", 2, 0x0B05, 0x1ACE, "ROG OMNI RECEIVER", 0xFF00, 1, 64, 64, 0, false, true, 2);
         var pairing = battery with { Interface = 1, OmniReport = 1, Page = 0xFF02 };
@@ -44,6 +46,17 @@ internal static class RogScopeRegression
             "Replay requires the paired keyboard and both collections");
         Check(BatteryReplay.Replay(query, new[] { pairing with { Receiver = "receiver-2" }, battery }).Percent == null,
             "Never borrow pairing data from another receiver");
+        var changed = paired.ToArray();
+        changed[9] = 0x63;
+        changed[10] = 0x1B;
+        Check(!VendorProtocol.RogOmniPairingUnchanged(paired, changed), "Reject changes in paired models");
+        var changedSamples = trace.Snapshot();
+        changedSamples[^1] = changedSamples[^1] with { Hex = Convert.ToHexString(changed) };
+        Check(BatteryReplay.Replay(query with { Samples = changedSamples }, new[] { pairing, battery }).Percent == null,
+            "A changed pairing list invalidates the readout");
+        paired[9] = 0x7A;
+        paired[10] = 0x1B;
+        Check(!VendorProtocol.RogOmniHasScopeRx(paired), "Do not accept duplicate target slots");
         reply[6] = 101;
         Check(!VendorProtocol.TryParseRogScopeBattery(reply, out _, out _), "Reject out-of-range percent");
         reply[6] = 0;

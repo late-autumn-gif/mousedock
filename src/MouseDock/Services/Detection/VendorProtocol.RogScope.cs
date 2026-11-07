@@ -27,24 +27,39 @@ internal static partial class VendorProtocol
         (reportId == 1 && page == 0xFF02 || reportId == 2 && page == 0xFF00) &&
         usage == 1 && input == 64 && output == 64;
 
-    internal static bool IsRogOmniChannel(string path, ushort page, ushort usage, int input, int output, int reportId)
+    internal static bool IsRogOmniChannel(string path, string product, ushort page, ushort usage, int input, int output, int feature, int reportId)
     {
-        if (!IsRogOmniReport(page, usage, input, output, reportId)) return false;
-        int end = path.IndexOf('#', path.IndexOf('#') + 1);
-        return end > 0 && path[..end].EndsWith(reportId == 1 ? "&mi_02&col01" : "&mi_02&col02",
+        if (feature != 0 || !string.Equals(product?.Trim(), "ROG OMNI RECEIVER", StringComparison.OrdinalIgnoreCase) ||
+            !IsRogOmniReport(page, usage, input, output, reportId)) return false;
+        int start = path.IndexOf('#') + 1;
+        int end = path.IndexOf('#', start);
+        return start > 0 && end > start && path.AsSpan(start, end - start).Equals(
+            reportId == 1 ? "vid_0b05&pid_1ace&mi_02&col01" : "vid_0b05&pid_1ace&mi_02&col02",
             StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool RogOmniHasScopeRx(ReadOnlySpan<byte> reply)
     {
         if (reply.Length != 64 || !reply[..3].SequenceEqual(new byte[] { 1, 0xA0, 0 })) return false;
+        int matches = 0;
         for (int i = 5; i + 3 < reply.Length; i += 4)
         {
             int pid = reply[i] | (reply[i + 1] << 8);
             if (pid == 0) break;
-            if (pid == 0x1B7A) return true;
+            if (pid == 0x1B7A) matches++;
         }
-        return false;
+        return matches == 1;
+    }
+
+    internal static bool RogOmniPairingUnchanged(ReadOnlySpan<byte> before, ReadOnlySpan<byte> after)
+    {
+        if (!RogOmniHasScopeRx(before) || !RogOmniHasScopeRx(after)) return false;
+        for (int i = 5; i + 3 < before.Length; i += 4)
+        {
+            if (!before.Slice(i, 2).SequenceEqual(after.Slice(i, 2))) return false;
+            if (before[i] == 0 && before[i + 1] == 0) break;
+        }
+        return true;
     }
 
     internal static bool TryParseRogScopeBattery(ReadOnlySpan<byte> reply, out int percent, out bool charging)
@@ -80,9 +95,14 @@ internal static partial class VendorProtocol
             trace?.Add("omni-battery", decoded, raw: battery, keep: battery != null);
             if (!decoded)
                 return new(-1, false, false, ReferenceBatteryProtocol.State.Sleep, "Omni 已配对 1B7A，未取得有效在线电量", RogScopeRxWireless);
+            var confirmed = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
+            bool unchanged = RogOmniPairingUnchanged(paired, confirmed);
+            trace?.Add("omni-paired-after", unchanged, raw: confirmed, keep: confirmed != null);
+            if (!unchanged)
+                return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表变化或复核失败，未采用本次电量");
             return new(percent, charging, true, charging ? ReferenceBatteryProtocol.State.Charging :
                 ReferenceBatteryProtocol.State.Online, "Omni 键盘电量 02/12/01", RogScopeRxWireless);
-        }, 2000);
+        }, 3500);
     }
 
     private static byte[] ReadRogOmniReply(string path, byte reportId, byte command, byte subcommand)
@@ -97,7 +117,7 @@ internal static partial class VendorProtocol
             var attrs = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf<HIDD_ATTRIBUTES>() };
             var caps = Caps(handle);
             if (!HidD_GetAttributes(handle, ref attrs) || !IsRogOmni(attrs.VendorID, attrs.ProductID) ||
-                !IsRogOmniChannel(path, caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength, reportId))
+                !IsRogOmniChannel(path, HidDiscovery.ReadHidProduct(handle, path), caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength, reportId))
                 throw new IOException("Omni 集合与已知查询通道不符");
             signal = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
             if (signal == IntPtr.Zero) throw new IOException("Omni 查询事件创建失败");
@@ -112,14 +132,15 @@ internal static partial class VendorProtocol
             request[2] = subcommand;
             if (!Transfer(handle, signal, request, true, 300, out int written) || written != request.Length)
                 throw new IOException("Omni 查询写入失败");
-            long deadline = Environment.TickCount64 + 500;
+            long deadline = Environment.TickCount64 + 700;
             while (Environment.TickCount64 < deadline)
             {
                 int timeout = (int)Math.Max(1, deadline - Environment.TickCount64);
                 if (!Transfer(handle, signal, response, false, timeout, out int received)) return null;
                 if (received != 64 || response[0] != reportId) continue;
                 if (response[1] == 0xFF && response[2] == 0xAA) return null;
-                if (response[1] == command && response[2] == subcommand && !response.AsSpan().SequenceEqual(request))
+                if (response[1] == command && response[2] == subcommand && !response.AsSpan().SequenceEqual(request) &&
+                    (reportId == 1 || TryParseRogScopeBattery(response, out _, out _)))
                     return response;
             }
             return null;

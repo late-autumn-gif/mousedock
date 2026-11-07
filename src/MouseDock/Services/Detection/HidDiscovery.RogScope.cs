@@ -16,7 +16,7 @@ public static partial class HidDiscovery
             var scoped = collections.Where(c => VendorProtocol.IsRogOmni(c.Vid, c.Pid) &&
                 InstanceScope.ForPath(c.Path, "") == b.InstanceId).ToArray();
             string[] Paths(int reportId) => scoped.Where(c =>
-                    VendorProtocol.IsRogOmniChannel(c.Path, c.UsagePage, c.Usage, c.Input, c.Output, reportId))
+                    VendorProtocol.IsRogOmniChannel(c.Path, c.Product, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature, reportId))
                 .Select(c => c.Path).Distinct(StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
 
             var pairing = Paths(1);
