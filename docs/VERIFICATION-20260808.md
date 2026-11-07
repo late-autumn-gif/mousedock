@@ -22,7 +22,7 @@
 | WOB Rainy 75 320F:5055/5088 | 本机无 WOB 官方驱动 | 需要官方安装包 |
 | 迈从 A7 V2 Pro / A7 V3 / G7 | 官网网页驱动 `main-DCRwBIvm.js` 只有 OTA 与键位表，不含 11/F9 与 4D 现代帧；MHub 桌面端 asar 未解 | 分析 `D:\迈从\MHub-installed\resources\app.asar`，按 `0x11`/`249`/`0x4D`/`4018`/`4021` 扫 |
 | 雷柏 VT7 24AE:4613/1413 | AHUB 2.0 是 Electron（210MB exe），`batStatus`/`batPercent` 未出现在外壳，协议在 asar 内 | 分析 `D:\雷柏\RAPOO AHUB 2.0\resources\app.asar` |
-| 前行者 X23 SE A8A4/A8A5:2255 | `D:\EWEADN\web-driver` 的 4 个 main.js 是 qiankun 壳，未见 `AA/F0 30` 帧；其余 chunk 未下 | 从 new-hub 页面补齐 chunk 列表后再扫 |
+| 前行者 X23 SE A8A4/A8A5:2255 | 已拿到官方桌面安装包 `eweadn-hub-setup.exe`（143,898,947 字节，NSIS），解出 Electron 应用；协议不在 JS 里——网页驱动用 protobuf，HID 帧在 `common_hid_rs.exe` / `EWEADN-CY5-HUB.exe` 等本地模块，两处都无明文 `A8A4`/`2255`/`X23`/`battery` | 用 REA 打开 `common_hid_rs.exe`（3,073,600 字节）确认 native 还是 .NET single-file，再定位帧构造 |
 | VGN Neon75 Air 391D:2A05 | 本机 VHUB asar 未解 | 分析 `D:\VGN VHUB\resources\app.asar`，搜 `2A05`/`F7` |
 | 前行者 X23 SE、维咖 WEIKAV、RK R98Pro、MCHOSE K87 V3 | 本机无对应官方资料 | 需要官方安装包 |
 
