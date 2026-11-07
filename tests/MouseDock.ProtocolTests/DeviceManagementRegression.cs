@@ -277,8 +277,8 @@ internal static class DeviceManagementRegression
                 var badge=new DeviceBatteryBadge(new DeviceInfo{Level=76},Brushes.White,true,true,20,compact:true);
                 badge.Measure(new Size(40,40));badge.Arrange(new Rect(0,0,40,40));
                 var number=badge.Children.OfType<TextBlock>().Single();
-                Check(Grid.GetRow(number)==1&&Grid.GetColumn(number)==0&&badge.Width==40&&badge.Height==40&&badge.Ring.Width==26,"Taskbar fits the ring and number into one square");
-                Check(number.TransformToAncestor(badge).Transform(new Point()).Y>=badge.Ring.ActualHeight,"Rendered number is geometrically below ring");
+                Check(Grid.GetRow(number)==1&&Grid.GetColumn(number)==0&&badge.Width==40&&badge.Height==40&&badge.Ring.Width==40&&badge.Children.OfType<Viewbox>().Single().Width==26,"Taskbar fits the ring and number into one square");
+                Check(number.TransformToAncestor(badge).Transform(new Point()).Y>=badge.Ring.TransformToAncestor(badge).Transform(new Point(0,badge.Ring.ActualHeight)).Y,"Rendered number is geometrically below ring");
                 Capture(badge,Path.Combine(directory,"任务栏电量-下方数字.png"));
                 foreach(double dpi in new[]{1d,1.25,1.5,2})
                 foreach (uint edge in new uint[] { 0, 1, 2, 3 })

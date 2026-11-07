@@ -66,7 +66,7 @@ internal static class AulaScopedRegression
         var changed=new Link(); changed.WriteResponse=_=>new[] { Identify(50,0,1,changed.Writes.Count==1?"M137":"M230") };
         Check(AulaBatteryProtocol.ReadIdentify(changed).Level==-1,"Identity changing between replies rejects model and battery");
         var missing=new Link(); missing.WriteResponse=_=>missing.Writes.Count==1?new[] { Identify(44,0) }:Array.Empty<byte[]>();
-        Check(AulaBatteryProtocol.ReadIdentify(missing).Level==-1,"One reply does not satisfy transaction");
+        Check(AulaBatteryProtocol.ReadIdentify(missing) is { Level: -1, Identity: "M137" },"One valid online reply identifies the model with unknown battery");
         var sleeping=new Link(); sleeping.WriteResponse=_=>new[] { Identify(65,0,0) };
         Check(AulaBatteryProtocol.ReadIdentify(sleeping).Level==-1,"Sleeping mouse never supplies fresh cached percentage");
         var flood=new Link(); for(int i=0;i<32;i++)flood.Input.Enqueue(Identify(90,0));
@@ -121,7 +121,7 @@ internal static class AulaScopedRegression
         HidDiscovery.VendorCollectionInfo Channel(string p)=>new() { Path=p,Vid=0x089D,Pid=0x062F,Product="Wireless-Receiver",UsagePage=0xFF02,Usage=0,Input=33,Output=33 };
         var channels=new List<HidDiscovery.VendorCollectionInfo> { Channel(path),Channel(path),Channel(second) };
         int queries=0;
-        ReferenceBatteryProtocol.Reading Query(AulaBatteryProtocol.Route route,string selected,ushort vid,ushort pid)
+        ReferenceBatteryProtocol.Reading Query(AulaBatteryProtocol.Route route,string selected,ushort vid,ushort pid,string product)
         {
             queries++;
             Check(route==AulaBatteryProtocol.Route.Sc580Receiver && InstanceScope.Allows(selected) &&
@@ -150,16 +150,16 @@ internal static class AulaScopedRegression
 
         string scpath="test#sc630#C";
         string scid=InstanceScope.Register(scpath,new[] { (@"USB\VID_0001&PID_0002\SYNTHETIC_C","usbccgp") });
-        var bc=new HidDiscovery.Bucket { Vid=1,Pid=2,Product="AULA-SC630Pro Gaming Mouse",InstanceId=scid,Kind=DeviceKind.Mouse };
+        var bc=new HidDiscovery.Bucket { Vid=1,Pid=2,Product="USB Receiver",Sc630Product="AULA-SC630Pro Gaming Mouse",InstanceId=scid,Kind=DeviceKind.Mouse };
         var scbuckets=new Dictionary<string,HidDiscovery.Bucket> { [scid]=bc };
-        var sccollections=new List<HidDiscovery.VendorCollectionInfo> { new() { Vid=1,Pid=2,Product=bc.Product,Path=scpath,UsagePage=0xFF01,Usage=1,Feature=41 } };
-        HidDiscovery.QueryAulaCollections(scbuckets,sccollections,false,null,(_,selected,_,_)=>
+        var sccollections=new List<HidDiscovery.VendorCollectionInfo> { new() { Vid=1,Pid=2,Product=null,Path=scpath,UsagePage=0xFF01,Usage=1,Feature=41 } };
+        HidDiscovery.QueryAulaCollections(scbuckets,sccollections,false,null,(_,selected,_,_,product)=>
         {
-            Check(selected==scpath && InstanceScope.Current==scid,"SC630 precise instance");
+            Check(selected==scpath && InstanceScope.Current==scid && VendorProtocol.IsAulaSc630(product),"Unnamed SC630 feature collection uses exact product evidence from the same instance");
             return ReferenceBatteryProtocol.Reading.Failed("no physical response");
         });
         Check(bc.ToDevice().ConfirmedModel=="AULA SC630 Pro" && bc.ToDevice().Level==-1 && !bc.ToDevice().PeripheralConfirmed && !bc.ToDevice().ReceiverDiscovered,"Descriptor model does not prove battery, radio receiver or live peripheral");
-        var collision=new HidDiscovery.Bucket { Vid=0x3554,Pid=0xF517,Product=bc.Product,InstanceId=scid,Kind=DeviceKind.Mouse };
+        var collision=new HidDiscovery.Bucket { Vid=0x3554,Pid=0xF517,Product=bc.Sc630Product,InstanceId=scid,Kind=DeviceKind.Mouse };
         HidDiscovery.QueryReferenceCollections(new() { [scid]=collision },new(),false,null,(_,_)=>throw new Exception("SC630 must not enter a different VID/PID profile"));
         Check(collision.Battery==-1 && collision.BatteryFailures.Count==0,"Exact SC630 name excludes reference-profile collision");
         Check(!VendorProtocol.ProbeDevice(0x089D,0x062F,"Alias",false).Text.Contains("接口路径数"),"SC580 export avoids cross-instance probes");

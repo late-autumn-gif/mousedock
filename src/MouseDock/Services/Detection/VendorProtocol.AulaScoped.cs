@@ -8,13 +8,13 @@ namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
     internal static ReferenceBatteryProtocol.Reading ReadAulaBattery(AulaBatteryProtocol.Route route, string path,
-        ushort vid, ushort pid)
+        ushort vid, ushort pid, string instanceProduct = null)
     {
         if (InstanceScope.Current == null || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的设备实例，未发送查询");
         return ReferenceQueryGate.Run(path, () =>
         {
-            using var link = new AulaLink(route, path, vid, pid);
+            using var link = new AulaLink(route, path, vid, pid, instanceProduct);
             var reading = route == AulaBatteryProtocol.Route.Sc580Receiver
                 ? AulaBatteryProtocol.ReadIdentify(link)
                 : AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence);
@@ -34,7 +34,7 @@ internal static partial class VendorProtocol
         private IntPtr handle, signal;
         private readonly AulaBatteryProtocol.Route route;
         internal string ReportMetadata { get; private set; }
-        internal AulaLink(AulaBatteryProtocol.Route route, string path, ushort vid, ushort pid)
+        internal AulaLink(AulaBatteryProtocol.Route route, string path, ushort vid, ushort pid, string instanceProduct)
         {
             this.route = route;
             handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -47,7 +47,7 @@ internal static partial class VendorProtocol
                 if (!HidD_GetAttributes(handle, ref attr) || attr.VendorID != vid || attr.ProductID != pid)
                     throw new IOException("打开后 VID/PID 不符，未发送查询");
                 var caps = Caps(handle);
-                string product = HidDiscovery.ReadHidProduct(handle, path);
+                string product = AulaBatteryProtocol.CollectionProduct(HidDiscovery.ReadHidProduct(handle, path), instanceProduct);
                 if (AulaBatteryProtocol.Match(vid, pid, product, caps.UsagePage, caps.Usage,
                     caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength) != route)
                     throw new IOException("打开后产品名/集合不符，未发送查询");

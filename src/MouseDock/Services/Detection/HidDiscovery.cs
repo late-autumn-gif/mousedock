@@ -157,7 +157,7 @@ namespace MouseDock.Services.Detection
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                    if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Sc630Product ?? bucket.Product)) continue;
                     if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || (VendorProtocol.IsScopedModernMouse(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product)) || ZeroRainyProtocol.Candidate(bucket.Vid,bucket.Pid,bucket.Product)) continue;
                     bool inphic = VendorProtocol.IsInphicDevice(bucket.Vid, bucket.Pid, bucket.Product);
                     bool atk = VendorProtocol.IsAtkZeroBitMouse(bucket.Vid, bucket.Pid);
@@ -258,7 +258,7 @@ namespace MouseDock.Services.Detection
                     VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
                 if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                 if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Sc630Product ?? bucket.Product)) continue;
                 if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || (VendorProtocol.IsScopedModernMouse(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product)) || ZeroRainyProtocol.Candidate(bucket.Vid,bucket.Pid,bucket.Product)) continue;
                 if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
@@ -280,7 +280,7 @@ namespace MouseDock.Services.Detection
                 using var instanceScope = InstanceScope.Enter(b.InstanceId);
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
-                if (AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
+                if (b.AulaHandled) return b.ToDevice();
                 if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product) || (VendorProtocol.IsScopedModernMouse(b.Vid,b.Pid,b.Product) || VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product)) || ZeroRainyProtocol.Candidate(b.Vid,b.Pid,b.Product)) return b.ToDevice();
                 var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
                     ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
@@ -514,7 +514,10 @@ namespace MouseDock.Services.Detection
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
-            if (recognitionEnabled && (caps.UsagePage >= 0xFF00 || VendorProtocol.IsScopedInphicChannel(vid,pid,product,path,caps.UsagePage,caps.Usage,caps.InputReportByteLength,caps.OutputReportByteLength)))
+            if ((recognitionEnabled && (caps.UsagePage >= 0xFF00 ||
+                    VendorProtocol.IsScopedInphicChannel(vid, pid, product, path, caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength))) ||
+                (string.IsNullOrWhiteSpace(product) && AulaBatteryProtocol.IsSc630Collection(caps.UsagePage, caps.Usage, caps.FeatureReportByteLength)) ||
+                VendorProtocol.IsInphicWakeCollection(vid, pid, product, caps.UsagePage, caps.Usage, caps.FeatureReportByteLength))
                 vendorCollections.Add(new VendorCollectionInfo
                 {
                     Path = path,
@@ -783,6 +786,7 @@ namespace MouseDock.Services.Detection
             if (miTag != null) bucket.Interfaces.Add(miTag);
 
             bucket.ReferenceModel ??= ReferenceProfiles.Match(vid, pid, caps.UsagePage, caps.Usage);
+            if (VendorProtocol.IsAulaSc630(product)) bucket.Sc630Product = product;
             bucket.AulaDescriptorRoute ??= AulaBatteryProtocol.Match(vid, pid, product, caps.UsagePage, caps.Usage,
                 caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength);
             bucket.ReportedX23SeIdentified |= VendorProtocol.IsReportedX23SeCollection(vid, pid, product, path,
@@ -855,11 +859,12 @@ namespace MouseDock.Services.Detection
 
         internal static void QueryAulaCollections(Dictionary<string, Bucket> buckets,
             List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
-            Func<AulaBatteryProtocol.Route, string, ushort, ushort, ReferenceBatteryProtocol.Reading> query)
+            Func<AulaBatteryProtocol.Route, string, ushort, ushort, string, ReferenceBatteryProtocol.Reading> query)
         {
             foreach (var b in buckets.Values)
             {
-                if (!AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) continue;
+                string product = b.Sc630Product ?? b.Product;
+                if (!AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, product)) continue;
                 b.AulaHandled = true;
                 b.Battery = -1; b.Charging = false; b.ReadStale = false; b.Identity = ""; b.BatterySource = "";
                 b.AulaModel = null; b.AulaOnline = false;
@@ -867,7 +872,7 @@ namespace MouseDock.Services.Detection
                 var instanceCollections = collections.Where(c => c.Vid == b.Vid && c.Pid == b.Pid &&
                     InstanceScope.ForPath(c.Path, "") == b.InstanceId).ToList();
                 var channels = instanceCollections.Where(c =>
-                    AulaBatteryProtocol.Match(c.Vid, c.Pid, c.Product, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature) != null)
+                    AulaBatteryProtocol.Match(c.Vid, c.Pid, AulaBatteryProtocol.CollectionProduct(c.Product, product), c.UsagePage, c.Usage, c.Input, c.Output, c.Feature) != null)
                     .GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
                 if (b.Vid == 0x089D && b.Pid == 0x062F && channels.Count != 1)
                 {
@@ -878,9 +883,9 @@ namespace MouseDock.Services.Detection
                 if (channels.Count == 1)
                 {
                     var c = channels[0];
-                    b.AulaDescriptorRoute = AulaBatteryProtocol.Match(c.Vid, c.Pid, c.Product, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature);
+                    b.AulaDescriptorRoute = AulaBatteryProtocol.Match(c.Vid, c.Pid, AulaBatteryProtocol.CollectionProduct(c.Product, product), c.UsagePage, c.Usage, c.Input, c.Output, c.Feature);
                 }
-                if (b.AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc630Pro) b.AulaModel = "AULA SC630 Pro";
+                if (VendorProtocol.IsAulaSc630(product)) b.AulaModel = "AULA SC630 Pro";
                 string reason = safeMode ? "安全模式已跳过狼蛛电量查询" :
                     !(preferences?.CanRead(b.InstanceId, null) ?? true) ||
                     !(preferences?.CanRead(legacy, VendorMap.PhysicalKeyFromName(b.Product)) ?? true) ? "此实例识别已停用" :
@@ -892,10 +897,16 @@ namespace MouseDock.Services.Detection
                 ReferenceBatteryProtocol.Reading result;
                 using (InstanceScope.Enter(b.InstanceId))
                 {
-                    try { result = query(b.AulaDescriptorRoute.Value, channel.Path, b.Vid, b.Pid); }
+                    try { result = query(b.AulaDescriptorRoute.Value, channel.Path, b.Vid, b.Pid, product); }
                     catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name + ": " + ex.Message); }
                 }
                 result ??= ReferenceBatteryProtocol.Reading.Failed("专用读取器没有返回结果");
+                if (b.AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver &&
+                    result.Status == ReferenceBatteryProtocol.State.Online && result.Identity is "M137" or "M230")
+                {
+                    b.AulaModel = result.Model;
+                    b.AulaOnline = true;
+                }
                 if (result.Level is >= 0 and <= 100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging &&
                     (b.AulaDescriptorRoute != AulaBatteryProtocol.Route.Sc580Receiver || result.Identity is "M137" or "M230"))
                 {
@@ -956,7 +967,7 @@ namespace MouseDock.Services.Detection
             foreach (var bucket in buckets.Values)
             {
                 var profile = ReferenceProfiles.Find(bucket.Vid, bucket.Pid);
-                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Sc630Product ?? bucket.Product)) continue;
                 if (OriginalGpwProtocol.IsCandidate(bucket.Vid,bucket.Pid)) continue;
                 if (profile == null) continue;
                 string legacyId = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
@@ -1253,7 +1264,7 @@ namespace MouseDock.Services.Detection
             public bool ReportedX23SeIdentified;
             public bool AulaHandled, AulaOnline, InphicHandled;
             public AulaBatteryProtocol.Route? AulaDescriptorRoute;
-            public string AulaModel;
+            public string AulaModel, Sc630Product;
             public bool ZeroRainyHandled;
             public string ZeroRainyModel;
             public bool ModernHandled;

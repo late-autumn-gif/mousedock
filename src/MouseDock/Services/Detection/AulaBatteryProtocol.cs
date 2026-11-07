@@ -10,11 +10,17 @@ internal static class AulaBatteryProtocol
     internal enum Route { Sc580Receiver, Sc630Pro }
     internal static bool IsCandidate(ushort vid, ushort pid, string product) =>
         (vid == 0x089D && pid == 0x062F) || (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product));
+    internal static string CollectionProduct(string reported, string instanceProduct) =>
+        string.IsNullOrWhiteSpace(reported) && VendorProtocol.IsAulaSc630(instanceProduct) ? instanceProduct : reported;
+
+    internal static bool IsSc630Collection(ushort page, ushort usage, int feature) =>
+        page == 0xFF01 && usage == 1 && feature == 41;
+
     internal static Route? Match(ushort vid, ushort pid, string product, ushort page, ushort usage,
         int input, int output, int feature)
     {
         if (VendorProtocol.IsAulaSc630(product))
-            return vid != 0 && pid != 0 && page == 0xFF01 && usage == 1 && feature == 41 ? Route.Sc630Pro : null;
+            return vid != 0 && pid != 0 && IsSc630Collection(page, usage, feature) ? Route.Sc630Pro : null;
         if (vid == 0x089D && pid == 0x062F && page == 0xFF02 && usage == 0 && input == 33 && output == 33)
             return Route.Sc580Receiver;
         return null;
@@ -85,6 +91,10 @@ internal static class AulaBatteryProtocol
                 break;
             }
         }
+        if (first != null)
+            return first with { Level = -1, Charging = false, ChargingKnown = false,
+                Status = ReferenceBatteryProtocol.State.Online,
+                Diagnostic = $"已确认在线型号；第二次有效应答缺失，电量未知；回显={echoes} 无效={rejected} 写入失败={writeFailures}" + accepted };
         return new(-1, false, false, notReady > 0 ? ReferenceBatteryProtocol.State.Sleep : ReferenceBatteryProtocol.State.Failed,
             $"Identify 未取得两次同型号在线应答；回显={echoes} 无效={rejected} 未就绪={notReady} 写入失败={writeFailures} 最后RX={last}" + accepted);
     }

@@ -11,6 +11,34 @@ internal static partial class VendorProtocol
         IsScopedInphic(vid,pid,product) && (IsInphicSplitReceiver(vid,pid)
             ? page==0x000A && usage==0 && input==5 && output==0
             : page>=0xFF00 && input==33 && output==33 && path.Contains("&mi_02",StringComparison.OrdinalIgnoreCase));
+    internal static bool IsInphicWakeCollection(ushort vid, ushort pid, string product, ushort page, ushort usage, int feature) =>
+        vid == 0x1D57 && pid == 0xFA60 && IsInphicDevice(vid, pid, product) &&
+        page == 0x000B && usage == 0 && feature == 262;
+
+    internal static bool IsInphicWakeSibling(string inputPath, string featurePath)
+    {
+        string parent = InphicCollectionParent(inputPath);
+        return parent != null && string.Equals(parent, InphicCollectionParent(featurePath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryInitializeInphic(string path, ushort vid, ushort pid)
+    {
+        IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1)) return false;
+        try
+        {
+            var attributes = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf<HIDD_ATTRIBUTES>() };
+            var caps = Caps(handle);
+            if (!HidD_GetAttributes(handle, ref attributes) || attributes.VendorID != vid || attributes.ProductID != pid ||
+                !IsInphicWakeCollection(vid, pid, HidDiscovery.ReadHidProduct(handle, path), caps.UsagePage, caps.Usage, caps.FeatureReportByteLength))
+                return false;
+            var request = BuildInphicWakeRequest(caps.FeatureReportByteLength);
+            return HidD_SetFeature(handle, request, request.Length);
+        }
+        finally { CloseHandle(handle); }
+    }
+
     internal static bool TryScopedInphicFrame(byte[] raw,bool pro,out ReferenceBatteryProtocol.Reading reading)
     {
         reading=ReferenceBatteryProtocol.Reading.Failed("非目标型号/无效电量响应");
@@ -23,9 +51,10 @@ internal static partial class VendorProtocol
         if(raw is not {Length:32 or 33} || (raw.Length==33 && raw[0]!=0) || raw[raw.Length==33?3:2]!=1 || !TryParseInphicLegacy(raw,out int pct,out bool chg,out string model) || model=="M900")return false;
         reading=new(pct,chg,true,chg?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 有效实时身份","英菲克 IN9",model);return true;
     }
-    internal static ReferenceBatteryProtocol.Reading ReadScopedInphic(string path,ushort vid,ushort pid)
+    internal static ReferenceBatteryProtocol.Reading ReadScopedInphic(string path,ushort vid,ushort pid, string wakePath = null)
     {
         if(InstanceScope.Current==null || !InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("实例不匹配");
+        bool initialize = wakePath != null && InstanceScope.Allows(wakePath) && IsInphicWakeSibling(path, wakePath);
         return ReferenceQueryGate.Run(path,()=>
         {
             bool pro=IsInphicSplitReceiver(vid,pid);
@@ -46,6 +75,8 @@ internal static partial class VendorProtocol
                     for(int i=0;i<32;i++){var old=new byte[5];if(!Transfer(h,ev,old,false,1,out int got)||got==0){drained=true;break;}}
                     if(!drained)return ReferenceBatteryProtocol.Reading.Failed("旧状态队列未清空，未采用历史上报");
                 }
+                string wakeStatus = !initialize ? "无匹配初始化集合" :
+                    TryInitializeInphic(wakePath, vid, pid) ? "初始化成功" : "初始化失败";
                 for(int attempt=0;attempt<2;attempt++)
                 {
                     if(!pro)
@@ -65,11 +96,11 @@ internal static partial class VendorProtocol
                         if(TryScopedInphicFrame(raw,pro,out current))break;
                         current=null;
                     }
-                    if(current==null)return ReferenceBatteryProtocol.Reading.Failed("未取得两次有效响应；最近RX="+last);
+                    if(current==null)return ReferenceBatteryProtocol.Reading.Failed("未取得两次有效响应；"+wakeStatus+"；最近RX="+last);
                     if(first!=null && first.Identity!=current.Identity)return ReferenceBatteryProtocol.Reading.Failed("两次身份不同");
                     first=current;
                 }
-                return first with {Diagnostic=(pro?"IN9 Pro被动状态（未发送初始化/唤醒）":"IN9身份命令10")+"；两次本轮有效响应；最近RX="+last};
+                return first with {Diagnostic=(pro?"IN9 Pro状态（"+wakeStatus+"）":"IN9身份命令10")+"；两次本轮有效响应；最近RX="+last};
             }
             finally{if(ev!=IntPtr.Zero)CloseHandle(ev);CloseHandle(h);}
         },4500);

@@ -27,12 +27,16 @@ namespace MouseDock.Controls
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(showNumber && !below ? 32 : 0) });
 
             Ring = new DeviceBatteryRing { GlyphBrush = foreground, LowBatteryThreshold = lowThreshold,
-                Width=ringSize, Height=ringSize, HorizontalAlignment=HorizontalAlignment.Center };
+                HorizontalAlignment=HorizontalAlignment.Center };
             Ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)) { Source = device });
             Ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)) { Source = device });
             // 只认「已连接且不是缓存值」的充电状态，断线时别让动画一直转。
             Ring.SetBinding(DeviceBatteryRing.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)) { Source = device });
-            Children.Add(Ring);
+            Children.Add(new Viewbox
+            {
+                Width = ringSize, Height = ringSize, Child = Ring,
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
             var number = new TextBlock
             {
                 Name = "BatteryNumber", Foreground = foreground, FontSize = compact ? 10 : 11,

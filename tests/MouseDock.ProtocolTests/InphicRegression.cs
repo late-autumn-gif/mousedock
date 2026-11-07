@@ -74,6 +74,12 @@ internal static class InphicRegression
         Check(VendorProtocol.IsInphicSplitReceiver(0x1D57, 0xFA60), "FA60 uses split HID collections");
         Check(VendorProtocol.IsInphicSplitReceiver(0x1D57, 0xFA65), "FA65 uses split HID collections");
         Check(VendorProtocol.IsInphicSplitFeature(0x0B, 0, 262), "FA60 feature collection");
+        Check(VendorProtocol.IsInphicWakeCollection(0x1D57, 0xFA60, null, 0x0B, 0, 262) &&
+            !VendorProtocol.IsInphicWakeCollection(0x1D57, 0xFA65, null, 0x0B, 0, 262) &&
+            !VendorProtocol.IsInphicWakeCollection(0x1D57, 0xFA60, null, 0x0B, 0, 261), "Wake only the documented FA60 feature collection");
+        const string wakeInputPath = "hid#vid_1d57&pid_fa60&mi_02&col03#7&abc&0&0002";
+        Check(VendorProtocol.IsInphicWakeSibling(wakeInputPath, "hid#vid_1d57&pid_fa60&mi_02&col04#7&abc&0&0003") &&
+            !VendorProtocol.IsInphicWakeSibling(wakeInputPath, "hid#vid_1d57&pid_fa60&mi_02&col04#7&def&0&0003"), "Initialization never crosses USB instances");
         Check(VendorProtocol.IsInphicSplitInput(0x0A, 0, 5), "FA60 input collection");
         Check(!VendorProtocol.IsInphicSplitInput(1, 2, 8), "Mouse movement is not a battery input report");
         Check(VendorProtocol.BuildInphicWakeRequest(262).Skip(10).All(b => b == 0), "Official wake padding for FA60");
