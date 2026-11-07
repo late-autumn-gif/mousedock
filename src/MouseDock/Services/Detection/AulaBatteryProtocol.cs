@@ -57,25 +57,26 @@ internal static class AulaBatteryProtocol
     {
         var request = IdentifyRequest();
         ReferenceBatteryProtocol.Reading first = null;
-        int rejected = 0, echoes = 0, notReady = 0;
+        int rejected = 0, echoes = 0, notReady = 0, writeFailures = 0;
         string last = "无", accepted = "";
-        for (int exchange = 0; exchange < 3; exchange++)
+        for (int exchange = 0; exchange < 4; exchange++)
         {
             bool drained = false;
             for (int i = 0; i < 32; i++) if (link.Read(1) is not { Length: > 0 }) { drained = true; break; }
             if (!drained) return ReferenceBatteryProtocol.Reading.Failed("Identify 旧队列未清空");
-            if (!link.Write(request, 300)) return ReferenceBatteryProtocol.Reading.Failed("Identify 请求未完整发送");
-            long deadline = link.Now + 700;
+            if (!link.Write(request, 400))
+            { writeFailures++; continue; }
+            long deadline = link.Now + 900;
             while (link.Now < deadline)
             {
-                var raw = link.Read((int)Math.Max(1, Math.Min(100, deadline - link.Now)));
+                var raw = link.Read((int)Math.Max(1, deadline - link.Now));
                 if (raw is not { Length: > 0 }) continue;
                 last = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, 65)));
                 if (raw.AsSpan().SequenceEqual(request) || (raw.Length == 32 && raw.AsSpan().SequenceEqual(request.AsSpan(1))))
                 { echoes++; continue; }
                 if (!TryDecodeIdentify(raw, out var reading)) { rejected++; continue; }
                 if (reading.Status == ReferenceBatteryProtocol.State.Sleep)
-                { notReady++; break; }
+                { notReady++; first = null; accepted = ""; continue; }
                 if (first != null && first.Identity != reading.Identity)
                     return ReferenceBatteryProtocol.Reading.Failed("两次 Identify 型号不一致，拒绝电量与命名");
                 accepted += " RX=" + last;
@@ -85,7 +86,7 @@ internal static class AulaBatteryProtocol
             }
         }
         return new(-1, false, false, notReady > 0 ? ReferenceBatteryProtocol.State.Sleep : ReferenceBatteryProtocol.State.Failed,
-            $"Identify 未取得两次同型号在线应答；回显={echoes} 无效={rejected} 未就绪={notReady} 最后RX={last}" + accepted);
+            $"Identify 未取得两次同型号在线应答；回显={echoes} 无效={rejected} 未就绪={notReady} 写入失败={writeFailures} 最后RX={last}" + accepted);
     }
 
     internal static ReferenceBatteryProtocol.Reading ReadSc630(ReferenceBatteryProtocol.ILink link, Func<byte> sequence)

@@ -112,14 +112,15 @@ namespace MouseDock.Services
             var handle = new WindowInteropHelper(window).Handle;
             var parent = GetParent(handle);
             var position = new NativePoint { X = (int)Math.Round(bounds.X), Y = (int)Math.Round(bounds.Y) };
+            int width = Math.Max(1, (int)Math.Round(bounds.Right) - position.X);
+            int height = Math.Max(1, (int)Math.Round(bounds.Bottom) - position.Y);
             if (parent != IntPtr.Zero && !ScreenToClient(parent, ref position)) return;
             bool sameBounds = GetWindowRect(handle, out var current) &&
                 current.Left == (int)Math.Round(bounds.X) && current.Top == (int)Math.Round(bounds.Y) &&
-                current.Right - current.Left == (int)Math.Round(bounds.Width) &&
-                current.Bottom - current.Top == (int)Math.Round(bounds.Height);
+                current.Right - current.Left == width && current.Bottom - current.Top == height;
             if (!sameBounds)
                 SetWindowPos(handle, IntPtr.Zero, position.X, position.Y,
-                    Math.Max(1, (int)Math.Round(bounds.Width)), Math.Max(1, (int)Math.Round(bounds.Height)),
+                    width, height,
                     0x0004 | 0x0010 | 0x0200); // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER
         }
     }

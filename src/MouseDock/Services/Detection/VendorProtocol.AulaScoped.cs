@@ -19,7 +19,7 @@ internal static partial class VendorProtocol
                 ? AulaBatteryProtocol.ReadIdentify(link)
                 : AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence);
             return reading with { Diagnostic = link.ReportMetadata + "；" + reading.Diagnostic };
-        }, 4000);
+        }, route == AulaBatteryProtocol.Route.Sc580Receiver ? 6000 : 4000);
     }
 
     private static byte NextSc630Sequence()

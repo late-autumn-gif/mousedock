@@ -54,6 +54,15 @@ internal static class AulaScopedRegression
         Check(link.Writes.All(p=>p.AsSpan().SequenceEqual(AulaBatteryProtocol.IdentifyRequest())),"No subscription, DPI or wake configuration commands");
         var retry=new Link(); retry.WriteResponse=_=>new[] { retry.Writes.Count==1?NotReady():Identify(0,0) };
         Check(AulaBatteryProtocol.ReadIdentify(retry).Level==0 && retry.Writes.Count==3,"Not-ready response retries within finite budget and accepts real zero");
+        var delayed = new Link();
+        delayed.WriteResponse = _ => new[] { NotReady(), Identify(63, 0) };
+        Check(AulaBatteryProtocol.ReadIdentify(delayed).Level == -1,
+            "A not-ready response invalidates any earlier online reply");
+        var waking = new Link();
+        waking.WriteResponse = _ => waking.Writes.Count == 1
+            ? new[] { NotReady(), Identify(63, 0) } : new[] { Identify(64, 0) };
+        Check(AulaBatteryProtocol.ReadIdentify(waking).Level == 64 && waking.Writes.Count == 2,
+            "An online reply after a transient not-ready frame in the same exchange is retained");
         var changed=new Link(); changed.WriteResponse=_=>new[] { Identify(50,0,1,changed.Writes.Count==1?"M137":"M230") };
         Check(AulaBatteryProtocol.ReadIdentify(changed).Level==-1,"Identity changing between replies rejects model and battery");
         var missing=new Link(); missing.WriteResponse=_=>missing.Writes.Count==1?new[] { Identify(44,0) }:Array.Empty<byte[]>();
@@ -63,7 +72,7 @@ internal static class AulaScopedRegression
         var flood=new Link(); for(int i=0;i<32;i++)flood.Input.Enqueue(Identify(90,0));
         Check(AulaBatteryProtocol.ReadIdentify(flood).Level==-1 && flood.Writes.Count==0,"Input flood aborts before request");
         var shortWrite=new Link { WriteOk=false };
-        Check(AulaBatteryProtocol.ReadIdentify(shortWrite).Level==-1 && shortWrite.Writes.Count==1,"Short write aborts");
+        Check(AulaBatteryProtocol.ReadIdentify(shortWrite).Level==-1 && shortWrite.Writes.Count==4,"Failed writes are retried within a fixed budget");
 
         for(int percent=0;percent<=100;percent++)
         for(int charge=0;charge<=1;charge++)
@@ -176,7 +185,12 @@ internal static class AulaScopedRegression
         public bool WriteOk=true;
         public Func<byte[],byte[][]>? WriteResponse;
         public Func<byte[],byte[]?>? FeatureResponse;
-        public byte[]? Read(int ms) { Now+=Math.Max(1,ms);return Input.Count>0?Input.Dequeue():null; }
+        public byte[]? Read(int ms)
+        {
+            if (Input.Count > 0) { Now++; return Input.Dequeue(); }
+            Now += Math.Max(1, ms);
+            return null;
+        }
         public bool Write(byte[] request,int timeoutMs)
         { Writes.Add(request.ToArray());if(WriteOk)foreach(var b in WriteResponse?.Invoke(request)??Array.Empty<byte[]>())Input.Enqueue(b);return WriteOk; }
         public bool SetFeature(byte[] request) { Features.Add(request.ToArray());return true; }

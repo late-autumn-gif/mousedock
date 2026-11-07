@@ -274,16 +274,21 @@ internal static class DeviceManagementRegression
                     }
                     Capture(icon,Path.Combine(directory,"实际悬浮窗-"+style+".png"));
                 }
-                var badge=new DeviceBatteryBadge(new DeviceInfo{Level=76},Brushes.White,true,true,20);
-                badge.Measure(new Size(40,56));badge.Arrange(new Rect(0,0,40,56));
+                var badge=new DeviceBatteryBadge(new DeviceInfo{Level=76},Brushes.White,true,true,20,compact:true);
+                badge.Measure(new Size(40,40));badge.Arrange(new Rect(0,0,40,40));
                 var number=badge.Children.OfType<TextBlock>().Single();
-                Check(Grid.GetRow(number)==1&&Grid.GetColumn(number)==0&&badge.Width==40&&badge.Height==56&&badge.Ring.Width==40,"Taskbar uses screen-edge sized ring with number below");
+                Check(Grid.GetRow(number)==1&&Grid.GetColumn(number)==0&&badge.Width==40&&badge.Height==40&&badge.Ring.Width==26,"Taskbar fits the ring and number into one square");
                 Check(number.TransformToAncestor(badge).Transform(new Point()).Y>=badge.Ring.ActualHeight,"Rendered number is geometrically below ring");
                 Capture(badge,Path.Combine(directory,"任务栏电量-下方数字.png"));
                 foreach(double dpi in new[]{1d,1.25,1.5,2})
+                foreach (uint edge in new uint[] { 0, 1, 2, 3 })
+                foreach (double offset in new[] { 0d, 8, 100 })
                 {
-                    var rect=TaskbarPlacement.CalculateBadges(new Rect(0,1000,1920,40*dpi),3,2,true,8,dpi);
-                    Check(Math.Abs(rect.Height-56*dpi)<.01&&Math.Abs(rect.Width-80*dpi)<.01,"Thin taskbar does not shrink full-size rings at DPI "+dpi);
+                    bool vertical = edge is 0 or 2;
+                    var bar = new Rect(-800, 100, vertical ? 28 : 100, vertical ? 100 : 28);
+                    var rect = TaskbarPlacement.CalculateBadges(bar, edge, 6, offset, dpi);
+                    Check(bar.Contains(rect) && rect.Width > 0 && rect.Height > 0,
+                        $"Badges stay within taskbar at edge {edge}, offset {offset}, DPI {dpi}");
                 }
                 choices.BringIntoView();Pump(80);
                 Capture(manager,Path.Combine(directory,"悬浮样式-设置入口.png"));

@@ -864,10 +864,17 @@ namespace MouseDock.Services.Detection
                 b.Battery = -1; b.Charging = false; b.ReadStale = false; b.Identity = ""; b.BatterySource = "";
                 b.AulaModel = null; b.AulaOnline = false;
                 string legacy = $"hid-{b.Vid:X4}-{b.Pid:X4}";
-                var channels = collections.Where(c => c.Vid == b.Vid && c.Pid == b.Pid &&
-                    InstanceScope.ForPath(c.Path, legacy) == b.InstanceId &&
+                var instanceCollections = collections.Where(c => c.Vid == b.Vid && c.Pid == b.Pid &&
+                    InstanceScope.ForPath(c.Path, "") == b.InstanceId).ToList();
+                var channels = instanceCollections.Where(c =>
                     AulaBatteryProtocol.Match(c.Vid, c.Pid, c.Product, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature) != null)
                     .GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+                if (b.Vid == 0x089D && b.Pid == 0x062F && channels.Count != 1)
+                {
+                    string shapes = string.Join(", ", instanceCollections.Select(c =>
+                        $"{c.UsagePage:X4}/{c.Usage:X4} I/O/F={c.Input}/{c.Output}/{c.Feature}").Distinct());
+                    LastDiagnostics.Add($"{b.InstanceId} 089D:062F 同实例 HID 集合：{(shapes.Length == 0 ? "无" : shapes)}");
+                }
                 if (channels.Count == 1)
                 {
                     var c = channels[0];
@@ -1411,7 +1418,7 @@ namespace MouseDock.Services.Detection
                 {
                     name = AulaModel ?? (string.IsNullOrWhiteSpace(Product) ? "未确认型号的接收器" : Product.Trim());
                     kind = DeviceKind.Mouse;
-                    transport = AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
+                    transport = (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
                     charging = Battery >= 0 && AulaOnline && Charging;
                 }
                 if(ZeroRainyHandled){name=ZeroRainyModel ?? Product ?? "未确认型号的设备";kind=VendorProtocol.IsAtkZeroBitMouse(Vid,Pid)?DeviceKind.Mouse:DeviceKind.Keyboard;transport=Pid is 0x1154 or 0x5055?"有线":"2.4G";charging=Battery>=0&&Charging;}
@@ -1433,7 +1440,7 @@ namespace MouseDock.Services.Detection
                     ConfirmedModel = ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    ReceiverDiscovered = ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
                     PeripheralConfirmed = ModernHandled ? false : unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
