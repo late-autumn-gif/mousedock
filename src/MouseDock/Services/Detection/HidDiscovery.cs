@@ -312,7 +312,7 @@ namespace MouseDock.Services.Detection
                 using var instanceScope = InstanceScope.Enter(b.InstanceId);
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
-                if (b.AulaHandled) return b.ToDevice();
+                if (b.HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) return b.ToDevice();
                 if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product) || (VendorProtocol.IsScopedModernMouse(b.Vid,b.Pid,b.Product) || VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product)) || ZeroRainyProtocol.Candidate(b.Vid,b.Pid,b.Product)) return b.ToDevice();
                 var rk = !DeviceRoutes.IsKnown(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
                     ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
@@ -816,7 +816,7 @@ namespace MouseDock.Services.Detection
             foreach (var b in buckets.Values)
             {
                 if (!OriginalGpwProtocol.IsCandidate(b.Vid,b.Pid) || AulaBatteryProtocol.IsCandidate(b.Vid,b.Pid,b.Product)) continue;
-                b.GpwHandled = true; b.GpwLive = false;
+                b.HandledBy = HandledBy.OriginalGpw; b.GpwLive = false;
                 b.GpwModel = b.Pid == 0xC088 ? OriginalGpwProtocol.Model : null;
                 b.Battery = -1; b.Charging = false; b.ReadStale = false; b.BatterySource = ""; b.Identity = "";
                 string legacy = $"hid-{b.Vid:X4}-{b.Pid:X4}";
@@ -860,7 +860,7 @@ namespace MouseDock.Services.Detection
             {
                 string product = b.Sc630Product ?? b.Product;
                 if (!AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, product)) continue;
-                b.AulaHandled = true;
+                b.HandledBy = HandledBy.Aula;
                 b.Battery = -1; b.Charging = false; b.ReadStale = false; b.Identity = ""; b.BatterySource = "";
                 b.AulaModel = null; b.AulaOnline = false;
                 string legacy = $"hid-{b.Vid:X4}-{b.Pid:X4}";
@@ -1270,19 +1270,17 @@ namespace MouseDock.Services.Detection
             public string ReferenceIdentity;
             public string ReferenceIdentityModel;
             public bool ReportedX23SeIdentified;
-            public bool AulaHandled, AulaOnline, InphicHandled;
+            public bool AulaOnline;
             public AulaBatteryProtocol.Route? AulaDescriptorRoute;
             public string AulaModel, Sc630Product;
-            public bool RogScopePaired;
             public string RogScopeModel;
-            public bool ZeroRainyHandled;
             public string ZeroRainyModel;
-            public bool ModernHandled;
             public string ModernModel;
-            public bool G7Handled;
             public string G7Model;
-            public bool GpwHandled, GpwLive;
+            public bool GpwLive;
             public string GpwModel;
+            /// <summary>最终接管这台设备的读取器；None 表示没有专用读取器处理。</summary>
+            public HandledBy HandledBy;
             public string InstanceId;
             public string Identity = "";
             public bool HasVendor;
@@ -1386,7 +1384,7 @@ namespace MouseDock.Services.Detection
 
                 // 罗技 HID++ 自报的型号最可信，压过接收器的占位名（「罗技无线接收器」）
                 bool charging = Charging;
-                if (Vid == 0x046D && !GpwHandled)
+                if (Vid == 0x046D && HandledBy != HandledBy.OriginalGpw)
                 {
                     (int Battery, string Name, bool Charging) hint;
                     bool hasHint;
@@ -1460,7 +1458,7 @@ namespace MouseDock.Services.Detection
                     transport = "2.4G";
                 }
                 if (ReportedX23SeIdentified) { name = Product.Trim(); kind = DeviceKind.Mouse; transport = "2.4G"; }
-                if (AulaHandled)
+                if ((HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic))
                 {
                     // AulaModel 已经是显示名（"狼蛛 SC580" / "英菲克 J315"）；
                     // 只有没读到身份帧时才用号段兜底，不能把 "Wireless-Receiver" 当名字。
@@ -1471,36 +1469,36 @@ namespace MouseDock.Services.Detection
                             : (string.IsNullOrWhiteSpace(Product) ? "未确认型号的接收器" : Product.Trim());
                     kind = DeviceKind.Mouse;
                     transport = VendorProtocol.IsGenericReceiver33(Vid, Pid, Product) ||
-                                (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
+                                (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) ? "2.4G" : "USB";
                     charging = Battery >= 0 && AulaOnline && Charging;
                 }
-                if(ZeroRainyHandled){name=ZeroRainyModel ?? Product ?? "未确认型号的设备";kind=VendorProtocol.IsAtkZeroBitMouse(Vid,Pid)?DeviceKind.Mouse:DeviceKind.Keyboard;transport=Pid is 0x1154 or 0x5055?"有线":"2.4G";charging=Battery>=0&&Charging;}
-                if(G7Handled){name=G7Model ?? Product ?? "未确认型号的接收器";kind=DeviceKind.Mouse;transport=Vid==0xA8A4?"有线":"2.4G";charging=Battery>=0 && Charging;}
-                if (GpwHandled)
+                if(HandledBy == HandledBy.ZeroRainy){name=ZeroRainyModel ?? Product ?? "未确认型号的设备";kind=VendorProtocol.IsAtkZeroBitMouse(Vid,Pid)?DeviceKind.Mouse:DeviceKind.Keyboard;transport=Pid is 0x1154 or 0x5055?"有线":"2.4G";charging=Battery>=0&&Charging;}
+                if(HandledBy == HandledBy.MchoseG7){name=G7Model ?? Product ?? "未确认型号的接收器";kind=DeviceKind.Mouse;transport=Vid==0xA8A4?"有线":"2.4G";charging=Battery>=0 && Charging;}
+                if (HandledBy == HandledBy.OriginalGpw)
                 {
                     name=GpwModel ?? "罗技 Lightspeed 接收器（型号未确认）"; kind=DeviceKind.Mouse;
                     transport=Pid==0xC539 ? "2.4G" : "有线";
                     charging=Battery>=0 && GpwLive && Charging;
                 }
 
-                if(ModernHandled){name=ModernModel??Product;kind=DeviceKind.Mouse;transport=VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var profile)&&Pid==profile.Wired?"有线":"2.4G";}
+                if(HandledBy == HandledBy.MchoseModern){name=ModernModel??Product;kind=DeviceKind.Mouse;transport=VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var profile)&&Pid==profile.Wired?"有线":"2.4G";}
                 bool unresolved=kind==DeviceKind.Other && IsUnresolved8KReceiver();
                 if(unresolved)name=Product.Trim();
-                if (RogScopePaired || RogScopeModel != null)
+                if (HandledBy == HandledBy.RogScope || RogScopeModel != null)
                 {
-                    name = RogScopeModel ?? (RogScopePaired ? VendorProtocol.RogScopeRxWireless : null) ?? name;
+                    name = RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? name;
                     kind = DeviceKind.Keyboard;
-                    transport = RogScopePaired ? "2.4G" : "有线";
+                    transport = HandledBy == HandledBy.RogScope ? "2.4G" : "有线";
                 }
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = RogScopeModel ?? (RogScopePaired ? VendorProtocol.RogScopeRxWireless : null) ?? (ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = RogScopePaired || (ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
-                    PeripheralConfirmed = ModernHandled ? false : unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
+                    ReceiverDiscovered = HandledBy == HandledBy.RogScope || (HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
+                    PeripheralConfirmed = HandledBy == HandledBy.MchoseModern ? false : unresolved ? false : HandledBy == HandledBy.ZeroRainy ? false : HandledBy == HandledBy.MchoseG7 ? false : HandledBy == HandledBy.OriginalGpw ? GpwLive : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,
@@ -1510,7 +1508,8 @@ namespace MouseDock.Services.Detection
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = InstanceId,
-                    Note = RogScopePaired ? BatterySource :
+                    HandledBy = HandledBy,
+                    Note = HandledBy == HandledBy.RogScope ? BatterySource :
                         RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !DeviceRoutes.IsKnown(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
@@ -1578,4 +1577,6 @@ namespace MouseDock.Services.Detection
         }
     }
 }
+
+
 

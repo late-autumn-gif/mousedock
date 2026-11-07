@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MouseDock.Services;
@@ -11,7 +11,7 @@ public static partial class HidDiscovery
         foreach(var b in buckets.Values)
         {
             if(!VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product))continue;
-            b.G7Handled=true;b.G7Model=null;b.Battery=-1;b.Charging=false;b.ReadStale=false;b.Identity="";b.BatterySource="";
+            b.HandledBy=HandledBy.MchoseG7;b.G7Model=null;b.Battery=-1;b.Charging=false;b.ReadStale=false;b.Identity="";b.BatterySource="";
             var channels=collections.Where(c=>c.Vid==b.Vid && c.Pid==b.Pid && InstanceScope.ForPath(c.Path,"")==b.InstanceId &&
                 VendorProtocol.IsScopedG7Channel(c.Vid,c.Pid,c.Product,c.UsagePage,c.Usage,c.Input,c.Output,c.Feature)).GroupBy(c=>c.Path,StringComparer.OrdinalIgnoreCase).Select(g=>g.First()).ToList();
             if(channels.Count==1)b.G7Model=channels[0].Product.Trim();
@@ -26,3 +26,4 @@ public static partial class HidDiscovery
         }
     }
 }
+

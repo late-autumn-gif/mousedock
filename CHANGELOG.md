@@ -47,6 +47,14 @@
 - 16073 项离线断言通过；本机真机复验 ROG 53%、迈从 A7 V2 Pro 83%，与改动前一致。
 - 未做：Bucket 的 8 个布尔状态标志收敛为 `HandledBy`、报告全量结构化。两项是重构而非缺陷，改动覆盖 `ToDevice` 主路径，留独立一轮做，不在本轮混入。
 
+### v1.1.2 补充：HandledBy 收敛与迈从重试修复（2026-11-08）
+
+- Bucket 的 `AulaHandled` / `InphicHandled` / `ZeroRainyHandled` / `ModernHandled` / `G7Handled` / `GpwHandled` / `RogScopePaired` 七个布尔收敛为 `HandledBy` 枚举。`ToDevice` 只读一条处理链，英菲克不再借狼蛛的 `AulaHandled`/`AulaModel` 字段。`MchoseQueried`、`HeadsetQueried`、`RainyIdentified`、`AulaOnline`、`GpwLive` 是去重或状态标记，保留。
+- `device.txt` 增加「处理链」行，报告直接写出哪个读取器接管了这台设备。
+- 新增 `HandledByRegression` 12 条断言：接收器品牌兜底、ROG 无线/有线、Modern/G7 模型为空、ZeroRainy、GPW 未确认、AULA 已确认、None 计数兜底。
+- 修复迈从 A7 V2 重试缺陷：以前只在循环外发一次 `SetFeature`，六次重试读到的是同一份缓存帧。本机实测第一次 `GetFeature` 恒为垃圾帧、第二次才回有效状态，所以电量会时有时无。改为每次重试重发查询，本机 83% 稳定。
+- 16085 条离线断言通过；真机 ROG 游侠2 RX 无线版 53%、迈从 A7 V2 Pro 83%。
+
 ## v1.1.1 ROG 游侠2 RX Omni 实测包对齐（2026-11-07）
 
 - 按用户验证可读的附件收紧 Omni 集合签名，要求原始产品名、精确 HID 集合、Feature 长度 0 和唯一的 1B7A 配对项。读电量后再次比较配对表，保留附件的 700 ms 单次应答窗口。

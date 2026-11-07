@@ -19,7 +19,7 @@ internal static class SupportAuditRegression
         var keyboard=new HidDiscovery.Bucket {Vid=0x320F,Pid=0x5088,Product="ATK V75X 8K Wireless Receiver",Kind=DeviceKind.Mouse};
         keyboard.Counts[DeviceKind.Mouse]=1;keyboard.Counts[DeviceKind.Keyboard]=3;keyboard.Counts[DeviceKind.Controller]=1;
         Check(keyboard.ToDevice().Kind==DeviceKind.Keyboard,"Known keyboard evidence beats marketing/collection count");
-        var zero=new HidDiscovery.Bucket {Vid=0x373B,Pid=0x1155,Product="8K Wireless Receiver",Kind=DeviceKind.Mouse,ZeroRainyHandled=true,ZeroRainyModel="ATK ZERO"};
+        var zero=new HidDiscovery.Bucket {Vid=0x373B,Pid=0x1155,Product="8K Wireless Receiver",Kind=DeviceKind.Mouse,HandledBy=HandledBy.ZeroRainy,ZeroRainyModel="ATK ZERO"};
         zero.Counts[DeviceKind.Mouse]=1;zero.Counts[DeviceKind.Keyboard]=3;zero.Counts[DeviceKind.Controller]=1;
         Check(zero.ToDevice().Kind==DeviceKind.Mouse&&zero.ToDevice().ConfirmedModel=="ATK ZERO","Dedicated identity route retains confirmed mouse");
         Check(HidDiscovery.IsKnownHubSwitch(0xC019,0x0401)&&!HidDiscovery.IsKnownHubSwitch(0xC019,0x0402),"Exact reported hub switch excluded; adjacent PID preserved");
@@ -54,4 +54,5 @@ internal static class SupportAuditRegression
         Console.WriteLine($"Audited {doc.RootElement.GetArrayLength()} catalogue source/PID cases; no hardware I/O; not a hardware support certificate.");
     }
 }
+
 

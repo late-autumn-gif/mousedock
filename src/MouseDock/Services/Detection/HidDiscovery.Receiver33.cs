@@ -27,11 +27,12 @@ public static partial class HidDiscovery
             }
             b.Battery = result.Level;
             b.Charging = result.Charging;
-            b.AulaHandled = true;
+            b.HandledBy = HandledBy.Receiver33;
             b.AulaOnline = true;
             b.AulaModel = result.Model;
             b.BatterySource = "公版 2.4G 接收器只读身份帧";
         }
     }
 }
+
 

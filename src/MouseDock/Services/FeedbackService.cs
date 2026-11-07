@@ -485,6 +485,8 @@ namespace MouseDock.Services
                 sb.AppendLine("识别路由: 未命中路由表（类型/通道按 HID 集合计数推断）");
             else
                 sb.AppendLine($"识别路由: {route.Reader} → 类型 {route.Kind}，通道 {route.Transport ?? "按集合推断"}");
+            if (!string.IsNullOrWhiteSpace(device.HandledByLabel) && device.HandledByLabel != "None")
+                sb.AppendLine("处理链: " + device.HandledByLabel);
             sb.AppendLine("允许查询: " + Detection.DeviceRoutes.IsKnown(vid, pid, product));
             try
             {

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
 using MouseDock.Models;
 using MouseDock.Services;
@@ -163,7 +163,7 @@ if (args.Length > 0 && args[0] == "--inspect-rog-omni")
         Console.WriteLine($"{rogDevice.Name} {rogDevice.Transport} battery={rogDevice.Level}");
     return;
 }
-int assertions = RogScopeRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
+int assertions = RogScopeRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;
@@ -595,3 +595,4 @@ try
 finally { try { System.IO.File.Delete(targetZip); } catch { } }
 
 Console.WriteLine($"PASS {assertions} offline protocol/integration assertions; no hardware I/O.");
+

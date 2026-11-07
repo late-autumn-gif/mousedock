@@ -50,6 +50,7 @@ namespace MouseDock.Services.Detection
                     device.InterfaceDiscovered = merged.InterfaceDiscovered;
                     device.ReceiverDiscovered = merged.ReceiverDiscovered;
                     device.PeripheralConfirmed = merged.PeripheralConfirmed;
+                    device.HandledByLabel = merged.HandledBy.ToString();
                     device.Name = merged.Name;
                     device.Kind = merged.Kind;
                     device.Transport = merged.Transport;
@@ -78,7 +79,7 @@ namespace MouseDock.Services.Detection
                     // BatteryService needs the previous snapshot intact when a later query times out.
                     .Select(d => new DeviceInfo
                     {
-                        RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed,
+                        RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note,
                         Connected = d.Connected, Level = d.Level, Charging = d.Charging, IsStale = d.IsStale,
@@ -133,7 +134,7 @@ namespace MouseDock.Services.Detection
 
             var merged = new DetectedDevice
             {
-                RawName = best.RawName, ConfirmedModel = best.ConfirmedModel, InterfaceDiscovered = best.InterfaceDiscovered, ReceiverDiscovered = best.ReceiverDiscovered, PeripheralConfirmed = best.PeripheralConfirmed,
+                RawName = best.RawName, ConfirmedModel = best.ConfirmedModel, InterfaceDiscovered = best.InterfaceDiscovered, ReceiverDiscovered = best.ReceiverDiscovered, PeripheralConfirmed = best.PeripheralConfirmed, HandledBy = best.HandledBy,
                 Id = best.Id,
                 Name = best.Name,
                 Kind = best.Kind,
@@ -168,3 +169,5 @@ namespace MouseDock.Services.Detection
         private static string Normalize(string id) => (id ?? "").Trim().ToLowerInvariant();
     }
 }
+
+

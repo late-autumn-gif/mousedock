@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Windows.Media;
 
@@ -29,6 +29,8 @@ namespace MouseDock.Models
         public bool ReceiverDiscovered { get; set; }
         public bool PeripheralConfirmed { get; set; }
         public string[] DetectionIds { get; set; } = Array.Empty<string>();
+        /// <summary>接管这台设备的读取器名（HandledBy 枚举的字符串形式），报告里用。</summary>
+        public string HandledByLabel { get; set; } = "";
 
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         private string _name = "";
@@ -201,3 +203,4 @@ namespace MouseDock.Models
         public ThemePreset Clone() => (ThemePreset)MemberwiseClone();
     }
 }
+

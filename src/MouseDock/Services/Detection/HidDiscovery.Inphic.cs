@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MouseDock.Services;
@@ -10,7 +10,7 @@ public static partial class HidDiscovery
         foreach(var b in buckets.Values)
         {
             if(!VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product))continue;
-            b.InphicHandled=true;b.AulaHandled=true;b.AulaOnline=false;b.AulaModel=null;b.Identity="";b.Battery=-1;b.Charging=false;b.ReadStale=false;
+            b.HandledBy=HandledBy.Inphic;b.AulaOnline=false;b.AulaModel=null;b.Identity="";b.Battery=-1;b.Charging=false;b.ReadStale=false;
             var channels=collections.Where(c=>c.Vid==b.Vid && c.Pid==b.Pid && InstanceScope.ForPath(c.Path,"")==b.InstanceId &&
                 VendorProtocol.IsScopedInphicChannel(c.Vid,c.Pid,c.Product,c.Path,c.UsagePage,c.Usage,c.Input,c.Output)).GroupBy(c=>c.Path,StringComparer.OrdinalIgnoreCase).Select(g=>g.First()).ToList();
             string why=safe?"安全模式未查询英菲克":!(preferences?.CanRead(b.InstanceId,null)??true)||!(preferences?.CanRead($"hid-{b.Vid:X4}-{b.Pid:X4}",null)??true)?"识别已停用":channels.Count!=1?"本实例英菲克精确集合不唯一/缺失":null;
@@ -38,3 +38,4 @@ public static partial class HidDiscovery
         }
     }
 }
+

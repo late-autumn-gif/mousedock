@@ -22,6 +22,7 @@ namespace MouseDock.Services.Detection
         public bool IsStale { get; set; }
         public bool Connected { get; set; } = true;
         public string Detail { get; set; } = "";      // VID:PID 或地址，供排查
+        internal HandledBy HandledBy { get; set; }   // 实际接管这台设备的读取器
         public string Note { get; set; } = "";        // 电量读不到的原因，直接给用户看
 
         /// <summary>同一只物理设备的合并键：蓝牙模式与 2.4G 模式会共用同一个键。</summary>
@@ -257,3 +258,4 @@ namespace MouseDock.Services.Detection
         }
     }
 }
+

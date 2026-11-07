@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MouseDock.Models;
@@ -12,7 +12,7 @@ public static partial class HidDiscovery
         foreach(var b in buckets.Values)
         {
             if(!ZeroRainyProtocol.Candidate(b.Vid,b.Pid,b.Product))continue;
-            b.ZeroRainyHandled=true;b.ZeroRainyModel=null;b.Battery=-1;b.Charging=false;b.ReadStale=false;b.Identity="";b.BatterySource="";b.RainyIdentified=false;
+            b.HandledBy=HandledBy.ZeroRainy;b.ZeroRainyModel=null;b.Battery=-1;b.Charging=false;b.ReadStale=false;b.Identity="";b.BatterySource="";b.RainyIdentified=false;
             var channels=collections.Where(c=>c.Vid==b.Vid && c.Pid==b.Pid && InstanceScope.ForPath(c.Path,"")==b.InstanceId &&
                 ZeroRainyProtocol.Channel(c.Vid,c.Pid,c.Product,c.UsagePage,c.Usage,c.Input,c.Output,c.Feature)).GroupBy(c=>c.Path,StringComparer.OrdinalIgnoreCase).Select(g=>g.First()).ToList();
             if(channels.Count==1 && ZeroRainyProtocol.RainyName(b.Product))b.ZeroRainyModel="WOBKEY Rainy 75";
@@ -28,3 +28,4 @@ public static partial class HidDiscovery
         }
     }
 }
+

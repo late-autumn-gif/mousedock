@@ -4,6 +4,24 @@ using MouseDock.Models;
 namespace MouseDock.Services.Detection;
 
 /// <summary>
+/// 这台设备最终由哪个读取器接管。替代 Bucket 上散落的布尔标志
+/// （AulaHandled / InphicHandled / ZeroRainyHandled / ModernHandled / G7Handled /
+/// GpwHandled / RogScopePaired）：只有一条处理链，不再出现"英菲克借狼蛛字段"。
+/// </summary>
+internal enum HandledBy
+{
+    None,
+    Receiver33,
+    Aula,
+    Inphic,
+    RogScope,
+    MchoseModern,
+    MchoseG7,
+    ZeroRainy,
+    OriginalGpw
+}
+
+/// <summary>
 /// 设备识别路由的唯一来源。
 ///
 /// 以前有两套并行条件：RecognitionPolicy.CanQuery 决定"要不要查"，

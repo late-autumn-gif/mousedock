@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MouseDock.Models;
@@ -39,7 +39,7 @@ public static partial class HidDiscovery
             scan?.AddQuery(b.InstanceId, battery[0], "RogScopeRxOmni", result.Status.ToString(), result.Model, result.Level, trace);
             LastDiagnostics.Add($"{b.InstanceId} ROG Omni：{result.Diagnostic} 电量={result.Level}");
             if (result.Model == null) continue;
-            b.RogScopePaired = true;
+            b.HandledBy = HandledBy.RogScope;
             b.RogScopeModel = result.Model;
             b.Battery = result.Level;
             b.Charging = result.Charging;
@@ -49,3 +49,4 @@ public static partial class HidDiscovery
         }
     }
 }
+

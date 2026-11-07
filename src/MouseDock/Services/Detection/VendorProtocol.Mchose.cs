@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -148,14 +148,17 @@ namespace MouseDock.Services.Detection
                     }
                     using var handle = new SafeFileHandle(raw, ownsHandle: true);
                     var request = BuildMchoseA7V2Request();
-                    if (!HidD_SetFeature(raw, request, request.Length))
-                    {
-                        reason = model + "：11/F9 电量查询发送失败";
-                        continue;
-                    }
                     reason = model + "：未取得有效状态应答（设备可能休眠或接口被占用）";
                     for (int attempt = 0; attempt < 6; attempt++)
                     {
+                        // 每次重试都重新发查询。本机实测第一次 GetFeature 常拿到缓存/垃圾帧，
+                        // 第二次才回有效状态；只在循环外发一次 SetFeature 会让重试永远读到旧内容。
+                        if (!HidD_SetFeature(raw, request, request.Length))
+                        {
+                            reason = model + "：11/F9 电量查询发送失败";
+                            Thread.Sleep(80);
+                            continue;
+                        }
                         Thread.Sleep(100);
                         // 集合的 Feature 报告是 65 字节；HidD_GetFeature 的缓冲区必须与
                         // FeatureReportByteLength 一致，否则直接返回 Win32=87。
