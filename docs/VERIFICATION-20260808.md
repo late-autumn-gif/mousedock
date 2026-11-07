@@ -11,6 +11,7 @@
 | 狼蛛 AULA SC580（089D:062F） | `D:\狼蛛\狼蛛SC580\SC580X\device\mouse\SC580X\MS.ini` | `Protocol=3`、`devVID_Wireless=0x089D`、`devPID_Wireless=0x062F`、`Identify=4d,31,33,37`（ASCII `M137`）、`Sensor=0x3315`，与代码 VID/PID、M137 身份串、Protocol 3 一致 | 已验证（静态） |
 | 英菲克 IN9 / A9（248A/249A:5C2E/5D2E/5E2E/5C2F） | `D:\英菲克\Inphic Mouse\config.xml` | 四个零售型号共用同一组 VID:PID，要求 `MI_02`，型号由 `dev_id`（M909/M910/IN90/M900）决定；已落成 `InphicDeviceTable` 并进 `device.txt` | 已验证（静态） |
 | 英菲克 248A:5B2F | 同上 + `INPHIC HUB` 两个二进制 | 不在官方表内；二进制里搜到的 `5B2F` 分别落在压缩数据与对话框代码常量，不是设备表 | 不支持（非 IN9 产品线） |
+| VGN Neon75 Air（391D:2A05） | `D:\VGN VHUB\resources\app.asar` → `dist/renderer/assets/home-CMMOiv8p.js` 的 `RyServe.setStatus()` | 官方请求 `Uint8Array.of(247,0,0,0,0,0,0)`，校验 `255 - sum % 256`（0x08）；解析 `result[1]` 电量、`result[9]` 充电、`result[3]==1` 休眠。代码 `BuildNeon75StatusRequest` 的 `frame[1]=0xF7`、`frame[8]=0x08` 与解析偏移 `body[1]/body[9]` 完全一致 | 已验证（静态） |
 
 ## 本轮未复核
 
@@ -21,6 +22,7 @@
 | WOB Rainy 75 320F:5055/5088 | 本机无 WOB 官方驱动 | 需要官方安装包 |
 | 迈从 A7 V2 Pro / A7 V3 / G7 | 官网网页驱动 `main-DCRwBIvm.js` 只有 OTA 与键位表，不含 11/F9 与 4D 现代帧；MHub 桌面端 asar 未解 | 分析 `D:\迈从\MHub-installed\resources\app.asar`，按 `0x11`/`249`/`0x4D`/`4018`/`4021` 扫 |
 | 雷柏 VT7 24AE:4613/1413 | AHUB 2.0 是 Electron（210MB exe），`batStatus`/`batPercent` 未出现在外壳，协议在 asar 内 | 分析 `D:\雷柏\RAPOO AHUB 2.0\resources\app.asar` |
+| 前行者 X23 SE A8A4/A8A5:2255 | `D:\EWEADN\web-driver` 的 4 个 main.js 是 qiankun 壳，未见 `AA/F0 30` 帧；其余 chunk 未下 | 从 new-hub 页面补齐 chunk 列表后再扫 |
 | VGN Neon75 Air 391D:2A05 | 本机 VHUB asar 未解 | 分析 `D:\VGN VHUB\resources\app.asar`，搜 `2A05`/`F7` |
 | 前行者 X23 SE、维咖 WEIKAV、RK R98Pro、MCHOSE K87 V3 | 本机无对应官方资料 | 需要官方安装包 |
 
