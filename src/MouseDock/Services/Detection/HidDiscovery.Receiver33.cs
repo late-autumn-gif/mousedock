@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace MouseDock.Services.Detection;
@@ -14,7 +14,7 @@ public static partial class HidDiscovery
         {
             if (safeMode || b.Battery >= 0) continue;
             if (!VendorProtocol.IsGenericReceiver33(b.Vid, b.Pid, b.Product)) continue;
-            if (!RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product)) continue;
+            if (!DeviceRoutes.IsKnown(b.Vid, b.Pid, b.Product)) continue;
             if (!(preferences?.CanRead(b.InstanceId, $"hid-{b.Vid:X4}-{b.Pid:X4}") ?? true)) continue;
 
             using var scope = InstanceScope.Enter(b.InstanceId);
@@ -34,3 +34,4 @@ public static partial class HidDiscovery
         }
     }
 }
+

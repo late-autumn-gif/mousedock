@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using MouseDock.Models;
 using MouseDock.Services;
@@ -66,7 +66,7 @@ internal static class ReferenceBatteryRegression
         foreach (var profile in ReferenceProfiles.All)
         {
             var (input, output, feature) = Lengths(profile.Battery);
-            Check(RecognitionPolicy.CanQuery(profile.Vid, profile.Pid, "Wireless-Receiver"), "Finite reference candidate admitted");
+            Check(DeviceRoutes.IsKnown(profile.Vid, profile.Pid, "Wireless-Receiver"), "Finite reference candidate admitted");
             Check(ReferenceProfiles.AcceptsChannel(profile, profile.Page, profile.Usage, input, output, feature), "Exact capability route");
             Check(!ReferenceProfiles.AcceptsChannel(profile, 1, 6, input, output, feature), "Keyboard collection cannot receive mouse commands");
             Check(!ReferenceProfiles.AcceptsChannel(profile, profile.Page, (ushort)(profile.Usage + 1), input, output, feature), "Wrong usage rejected");
@@ -303,3 +303,4 @@ internal static class ReferenceBatteryRegression
         public void Delay(int milliseconds) { FeatureCalls.Add("delay:"+milliseconds); Now += milliseconds; }
     }
 }
+

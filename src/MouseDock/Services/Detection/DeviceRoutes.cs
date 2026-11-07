@@ -1,0 +1,92 @@
+using System;
+using MouseDock.Models;
+
+namespace MouseDock.Services.Detection;
+
+/// <summary>
+/// 设备识别路由的唯一来源。
+///
+/// 以前有两套并行条件：RecognitionPolicy.CanQuery 决定"要不要查"，
+/// 各读取器的 IsCandidate 决定"认不认"。248A/249A 的 33 字节旁路就是因为
+/// CanQuery 漏写号段，代码写好了却从没执行。这里把两件事收到一处：
+/// 每个读取器仍然自己回答"认不认"，这里只做聚合，不复制任何条件。
+///
+/// 注意：IsKnown 保持与旧 CanQuery 完全相同的放行集合，只用于"是否允许发查询"；
+/// Find 是更宽的设备路由表，供分类与通道显示使用，两者语义不同，不要合并。
+/// </summary>
+internal static class DeviceRoutes
+{
+    internal sealed class Route
+    {
+        public string Reader;
+        public DeviceKind Kind;
+        public string Transport;   // null = 保持原推断
+    }
+
+    /// <summary>允许对这台设备发厂商查询。等同于旧 RecognitionPolicy.CanQuery。</summary>
+    internal static bool IsKnown(ushort vid, ushort pid, string product) =>
+        VendorProtocol.IsRogOmni(vid, pid) ||
+        VendorProtocol.IsScopedModernMouse(vid, pid, product) ||
+        ReferenceProfiles.Find(vid, pid) != null ||
+        ZeroRainyProtocol.Candidate(vid, pid, product) ||
+        VendorProtocol.IsScopedG7(vid, pid, product) ||
+        VendorProtocol.IsScopedInphic(vid, pid, product) ||
+        VendorProtocol.IsReportedX23Se(vid, pid, product) ||
+        OriginalGpwProtocol.IsCandidate(vid, pid) ||
+        (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product)) ||
+        VendorProtocol.IsGenericReceiver33(vid, pid, product) ||
+        (vid == 0x089D && pid == 0x062F) ||
+        (vid == 0x391D && pid == 0x2A05) ||
+        (vid == 0x3837 && VendorProtocol.IsMchoseA7V2(vid, pid)) ||
+        (vid == 0x5253 && pid == 0x1021);
+
+    /// <summary>
+    /// 设备路由表：VID:PID 命中已知读取器时直接给出类型与通道。
+    /// 分类不再依赖"能看见哪些集合"，厂商驱动独占鼠标集合也不会把鼠标判成键盘。
+    /// 未命中返回 null，由 RefineKind 的集合计数兜底。
+    /// </summary>
+    internal static Route Find(ushort vid, ushort pid, string product)
+    {
+        if (VendorProtocol.IsRogOmni(vid, pid))
+            return new Route { Reader = "RogScope", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
+        if (VendorProtocol.IsMchoseA7V2(vid, pid))
+            return new Route { Reader = "MchoseA7V2", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (VendorProtocol.IsMchoseModern(vid, pid))
+            return new Route { Reader = "MchoseModern", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (VendorProtocol.IsGenericReceiver33(vid, pid, product))
+            return new Route { Reader = "Receiver33", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (VendorProtocol.IsScopedInphic(vid, pid, product))
+            return new Route { Reader = "Inphic", Kind = DeviceKind.Mouse, Transport = null };
+        if (VendorProtocol.IsScopedModernMouse(vid, pid, product))
+            return new Route { Reader = "MchoseModernScoped", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (VendorProtocol.IsScopedG7(vid, pid, product))
+            return new Route { Reader = "MchoseG7", Kind = DeviceKind.Mouse, Transport = null };
+        // 373B:1154/1155/124F 是共享接收器号段：只有产品名明确 ATK ZERO 才归鼠标，
+        // 8K 接收器上的 "Wireless Gaming Keyboard" 不能被这条路由抢走。
+        if (VendorProtocol.IsAtkZeroBitMouse(vid, pid) &&
+            (string.Equals(product, "ATK ZERO", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(product, "ATK ZERO 2.4G Receiver", StringComparison.OrdinalIgnoreCase)))
+            return new Route { Reader = "AtkZero", Kind = DeviceKind.Mouse, Transport = null };
+        if (VendorProtocol.IsRainy75Candidate(vid, pid) && VendorProtocol.IsRainy75Name(product))
+            return new Route { Reader = "Rainy75", Kind = DeviceKind.Keyboard, Transport = null };
+        if (VendorProtocol.IsReportedX23Se(vid, pid, product))
+            return new Route { Reader = "X23Se", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (OriginalGpwProtocol.IsCandidate(vid, pid))
+            return new Route { Reader = "OriginalGpw", Kind = DeviceKind.Mouse, Transport = null };
+        if (ReferenceProfiles.Find(vid, pid) != null)
+            return new Route { Reader = "Reference", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product))
+            return new Route { Reader = "AulaSc630", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (VendorProtocol.IsMchoseV9Pro(vid, pid, product))
+            return new Route { Reader = "MchoseV9Pro", Kind = DeviceKind.Headset, Transport = null };
+        if (VendorProtocol.IsRapooVt7(vid, pid))
+            return new Route { Reader = "RapooVt7", Kind = DeviceKind.Mouse, Transport = null };
+        if (VendorProtocol.IsAtkV75X(vid, pid, product))
+            return new Route { Reader = "AtkV75X", Kind = DeviceKind.Keyboard, Transport = null };
+        if (VendorProtocol.IsAulaF99(vid, pid, product))
+            return new Route { Reader = "AulaF99", Kind = DeviceKind.Keyboard, Transport = null };
+        if (MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product))
+            return new Route { Reader = "MchoseKeyboard", Kind = DeviceKind.Keyboard, Transport = null };
+        return null;
+    }
+}

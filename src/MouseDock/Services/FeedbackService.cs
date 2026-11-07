@@ -480,6 +480,12 @@ namespace MouseDock.Services
 
             sb.AppendLine("==== 名称判定 ====");
             sb.AppendLine("USB 产品串: " + product);
+            var route = Detection.DeviceRoutes.Find(vid, pid, product);
+            if (route == null)
+                sb.AppendLine("识别路由: 未命中路由表（类型/通道按 HID 集合计数推断）");
+            else
+                sb.AppendLine($"识别路由: {route.Reader} → 类型 {route.Kind}，通道 {route.Transport ?? "按集合推断"}");
+            sb.AppendLine("允许查询: " + Detection.DeviceRoutes.IsKnown(vid, pid, product));
             try
             {
                 string brand = Detection.VendorMap.Brand(vid);

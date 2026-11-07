@@ -1,4 +1,4 @@
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
 internal static class ZeroRainyRegression
@@ -6,8 +6,8 @@ internal static class ZeroRainyRegression
     internal static int Run()
     {
         int n=0;void Check(bool ok,string why){n++;if(!ok)throw new Exception(why);}
-        Check(RecognitionPolicy.CanQuery(0x373B,0x1155,"Receiver"),"ZERO candidate enabled");
-        Check(RecognitionPolicy.CanQuery(0x373B,0x11D8,"ATK Zero"),"Existing verified COMPX profile preserved");
+        Check(DeviceRoutes.IsKnown(0x373B,0x1155,"Receiver"),"ZERO candidate enabled");
+        Check(DeviceRoutes.IsKnown(0x373B,0x11D8,"ATK Zero"),"Existing verified COMPX profile preserved");
         Check(ZeroRainyProtocol.Candidate(0x320F,0x5088,"Wireless Gaming Keyboard"),"Generic receiver is candidate, not identity");
         foreach(string other in new[]{"ATK V75X","VGN V98 Pro","Rainy68","WOB Other","VXE V75"})Check(!ZeroRainyProtocol.Candidate(0x320F,0x5088,other),"Other shared-ID products gated");
         Check(!ZeroRainyProtocol.Channel(0x320F,0x5088,"Rainy75",0xFF1C,0x92,64,64,64),"Wrong feature caps rejected");
@@ -62,3 +62,4 @@ internal static class ZeroRainyRegression
         public bool SetFeature(byte[] b)=>throw new Exception();public byte[] GetFeature(byte id,int n)=>throw new Exception();public void Delay(int ms)=>throw new Exception();
     }
 }
+

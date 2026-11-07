@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
@@ -14,8 +14,8 @@ internal static class AulaScopedRegression
             Check(AulaBatteryProtocol.Match(0x089D,0x062F,"SC580",wrong.Page,wrong.Usage,wrong.Input,wrong.Output,0)==null,"Wrong SC580 channel rejected");
         Check(AulaBatteryProtocol.Match(0x089D,0x062E,"SC580",0xFF02,0,33,33,0)==null,"Adjacent PID not authorized");
         Check(AulaBatteryProtocol.Match(1,2,"AULA-SC630Pro Gaming Mouse",0xFF01,1,0,0,41)==AulaBatteryProtocol.Route.Sc630Pro,"SC630 official product and Feature collection");
-        Check(RecognitionPolicy.CanQuery(1,2,"AULA-SC630Pro Gaming Mouse") && !RecognitionPolicy.CanQuery(1,2,"SC630PRO"),"No guessed SC630 alias or ID");
-        Check(!RecognitionPolicy.CanQuery(0,0,"AULA-SC630Pro Gaming Mouse"),"Missing IDs not admitted");
+        Check(DeviceRoutes.IsKnown(1,2,"AULA-SC630Pro Gaming Mouse") && !DeviceRoutes.IsKnown(1,2,"SC630PRO"),"No guessed SC630 alias or ID");
+        Check(!DeviceRoutes.IsKnown(0,0,"AULA-SC630Pro Gaming Mouse"),"Missing IDs not admitted");
         foreach(string wrong in new[] { "SC630", "AULA SC630 Pro", "USB Receiver", "AULA-SC630Pro Gaming Mouse V2" })
             Check(AulaBatteryProtocol.Match(1,2,wrong,0xFF01,1,0,0,41)==null,"Other product not queried");
         Check(AulaBatteryProtocol.Match(1,2,"AULA-SC630Pro Gaming Mouse",0xFF01,2,0,0,41)==null,"SC630 usage must be one");
@@ -228,3 +228,4 @@ internal static class AulaScopedRegression
         public void Delay(int ms) { Now+=ms;Delays.Add(ms); }
     }
 }
+

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
@@ -9,8 +9,8 @@ internal static class OriginalGpwScopedRegression
     {
         int count=0;
         void Check(bool ok,string why) { count++; if(!ok)throw new Exception("GPW: "+why); }
-        Check(RecognitionPolicy.CanQuery(0x046D,0xC539,"USB Receiver") && RecognitionPolicy.CanQuery(0x046D,0xC088,"PRO Wireless Gaming Mouse"),"Finite original GPW routes enabled");
-        Check(!RecognitionPolicy.CanQuery(0x046D,0xC53F,"USB Receiver") && !RecognitionPolicy.CanQuery(0x046D,0xC545,"SUPERLIGHT"),"Other Logitech receivers not admitted");
+        Check(DeviceRoutes.IsKnown(0x046D,0xC539,"USB Receiver") && DeviceRoutes.IsKnown(0x046D,0xC088,"PRO Wireless Gaming Mouse"),"Finite original GPW routes enabled");
+        Check(!DeviceRoutes.IsKnown(0x046D,0xC53F,"USB Receiver") && !DeviceRoutes.IsKnown(0x046D,0xC545,"SUPERLIGHT"),"Other Logitech receivers not admitted");
         Check(OriginalGpwProtocol.IsChannel(0x046D,0xC539,0xFF00,2,20,20,0),"Reported C539 long collection");
         foreach(var wrong in new (ushort Page,ushort Usage,int In,int Out,int Feature)[] { (0xFF00,1,7,7,0),(0xFF00,4,32,32,0),(0xFF00,2,20,20,20),(1,2,20,20,0),(0xFF00,1,20,20,0) })
             Check(!OriginalGpwProtocol.IsChannel(0x046D,0xC539,wrong.Page,wrong.Usage,wrong.In,wrong.Out,wrong.Feature),"Short, DFU, feature or unrelated collection rejected");
@@ -189,3 +189,4 @@ internal static class OriginalGpwScopedRegression
         public void Delay(int ms)=>throw new Exception("No configuration/wake delay");
     }
 }
+

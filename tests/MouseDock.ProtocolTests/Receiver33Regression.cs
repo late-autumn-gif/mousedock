@@ -1,4 +1,4 @@
-using MouseDock.Services.Detection;
+﻿using MouseDock.Services.Detection;
 
 // 公版 2.4G 接收器（248A/249A:5B2F/5C2F）的只读身份帧解析。
 // 正向向量来自 249A:5C2F 用户报告的实机回帧；其余为同结构的构造帧，不是硬件捕获。
@@ -58,11 +58,11 @@ internal static class Receiver33Regression
         // 策略白名单必须和旁路一致：2026-11-08 之前 CanQuery 只放行 089D:062F，
         // 248A/249A 的 5B2F/5C2F 在 QueryGenericReceiver33 第一步就被 continue 掉，
         // 33 字节旁路从未执行过。
-        Check(RecognitionPolicy.CanQuery(0x248A, 0x5B2F, "Wireless-Receiver"), "Policy admits 248A:5B2F generic receiver");
-        Check(RecognitionPolicy.CanQuery(0x248A, 0x5C2F, "Wireless-Receiver"), "Policy admits 248A:5C2F generic receiver");
-        Check(RecognitionPolicy.CanQuery(0x249A, 0x5C2F, ""), "Policy admits 249A:5C2F without a product string");
-        Check(!RecognitionPolicy.CanQuery(0x248A, 0x5C2F, "AJ159 Receiver"), "Policy keeps the AJAZZ exclusion");
-        Check(!RecognitionPolicy.CanQuery(0x248A, 0x5B2F, "DELUX Receiver"), "Policy keeps the DELUX exclusion");
+        Check(DeviceRoutes.IsKnown(0x248A, 0x5B2F, "Wireless-Receiver"), "Policy admits 248A:5B2F generic receiver");
+        Check(DeviceRoutes.IsKnown(0x248A, 0x5C2F, "Wireless-Receiver"), "Policy admits 248A:5C2F generic receiver");
+        Check(DeviceRoutes.IsKnown(0x249A, 0x5C2F, ""), "Policy admits 249A:5C2F without a product string");
+        Check(!DeviceRoutes.IsKnown(0x248A, 0x5C2F, "AJ159 Receiver"), "Policy keeps the AJAZZ exclusion");
+        Check(!DeviceRoutes.IsKnown(0x248A, 0x5B2F, "DELUX Receiver"), "Policy keeps the DELUX exclusion");
 
         // 读不到身份帧时的名字：不能回退成产品串 "Wireless-Receiver"，
         // 也不能把鼠标接收器标成键盘。品牌按 VID 定，型号不猜。
@@ -80,3 +80,4 @@ internal static class Receiver33Regression
         return assertions;
     }
 }
+

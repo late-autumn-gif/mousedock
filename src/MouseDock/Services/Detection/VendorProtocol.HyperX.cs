@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace MouseDock.Services.Detection
 {
@@ -54,7 +54,7 @@ namespace MouseDock.Services.Detection
         internal static int TryReadCloud3S(ushort vid, ushort pid, out bool charging)
         {
             charging = false;
-            if (!RecognitionPolicy.CanQuery(vid,pid,null)) return -1;
+            if (!DeviceRoutes.IsKnown(vid,pid,null)) return -1;
             bool cloudS = IsCloud3S(vid, pid);
             if (!cloudS && !IsCloud3Wireless(vid, pid)) return -1;
             foreach (string path in Paths(vid, pid))
@@ -90,3 +90,4 @@ namespace MouseDock.Services.Detection
         }
     }
 }
+

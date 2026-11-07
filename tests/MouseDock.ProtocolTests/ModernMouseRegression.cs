@@ -1,4 +1,4 @@
-using MouseDock.Services.Detection;
+﻿using MouseDock.Services.Detection;
 using MouseDock.Services;
 using MouseDock.Models;
 internal static class ModernMouseRegression
@@ -20,7 +20,7 @@ internal static class ModernMouseRegression
         int count=0;void Check(bool ok,string why){count++;if(!ok)throw new Exception(why);}
         foreach(var (name,p) in VendorProtocol.ModernMouseProfiles)
         {
-            Check(RecognitionPolicy.CanQuery(0x3837,p.Wired,name),"Wired exact model admitted");
+            Check(DeviceRoutes.IsKnown(0x3837,p.Wired,name),"Wired exact model admitted");
             foreach(var receiver in p.Receivers)Check(VendorProtocol.IsScopedModernMouse(0x3837,receiver,name),"Official receiver admitted");
             Check(!VendorProtocol.IsScopedModernMouse(0x3837,p.Wired,name+" MAX"),"Suffix cannot expand model");
             for(int level=0;level<=100;level++)for(int ch=0;ch<2;ch++)
@@ -39,7 +39,7 @@ internal static class ModernMouseRegression
             link=new Link{Reply=n=>n==1?new[]{Frame(p.Wired,76,0)}:Array.Empty<byte[]>()};
             Check(VendorProtocol.ReadModernMouseExchange(link,name).Level<0,"Missing second reply not promoted");
         }
-        Check(!RecognitionPolicy.CanQuery(0x3837,0x1018,"USB Receiver"),"Generic receiver not sufficient");
+        Check(!DeviceRoutes.IsKnown(0x3837,0x1018,"USB Receiver"),"Generic receiver not sufficient");
         const string nameA="MCHOSE A7 V3";InstanceScope.BeginScan();
         string a=InstanceScope.Register("fake#mhub#a",new[]{(@"USB\VID_3837&PID_1018\A","usbccgp")});
         string b=InstanceScope.Register("fake#mhub#b",new[]{(@"USB\VID_3837&PID_1018\B","usbccgp")});
@@ -58,3 +58,4 @@ internal static class ModernMouseRegression
         return count;
     }
 }
+

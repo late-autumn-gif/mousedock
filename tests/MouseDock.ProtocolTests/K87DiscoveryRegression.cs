@@ -1,4 +1,4 @@
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services.Detection;
 
 internal static class K87DiscoveryRegression
@@ -14,11 +14,11 @@ internal static class K87DiscoveryRegression
         }
 
         const string product = "MCHOSE K87 V3 2.4G";
-        Check(!RecognitionPolicy.CanQuery(0x3837, 0x1015, product),
+        Check(!DeviceRoutes.IsKnown(0x3837, 0x1015, product),
             "K87 legacy reader remains closed until its native path enforces per-instance identity.");
-        Check(!RecognitionPolicy.CanQuery(0x3837, 0x1015, "MCHOSE G98 V3 2.4G"),
+        Check(!DeviceRoutes.IsKnown(0x3837, 0x1015, "MCHOSE G98 V3 2.4G"),
             "A shared PID must not admit a different keyboard.");
-        Check(RecognitionPolicy.CanQuery(0x3837, 0x1018, "MCHOSE K5 Ultra"),
+        Check(DeviceRoutes.IsKnown(0x3837, 0x1018, "MCHOSE K5 Ultra"),
             "K5 Ultra now has its separate exact MHUB profile; K87 does not grant it.");
 
         foreach (int level in new[] { -1, 0, 85 })
@@ -49,3 +49,4 @@ internal static class K87DiscoveryRegression
         return checks;
     }
 }
+

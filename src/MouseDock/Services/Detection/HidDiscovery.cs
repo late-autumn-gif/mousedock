@@ -183,7 +183,7 @@ namespace MouseDock.Services.Detection
                 foreach (var bucket in buckets.Values)
                 {
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
-                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product) ||
+                    if (!DeviceRoutes.IsKnown(bucket.Vid, bucket.Pid, bucket.Product) ||
                         VendorProtocol.IsRogOmni(bucket.Vid, bucket.Pid)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
@@ -285,7 +285,7 @@ namespace MouseDock.Services.Detection
             foreach (var bucket in buckets.Values)
             {
                 using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
-                if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                if (!DeviceRoutes.IsKnown(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
                     VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
                 if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
@@ -314,7 +314,7 @@ namespace MouseDock.Services.Detection
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (b.AulaHandled) return b.ToDevice();
                 if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product) || (VendorProtocol.IsScopedModernMouse(b.Vid,b.Pid,b.Product) || VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product)) || ZeroRainyProtocol.Candidate(b.Vid,b.Pid,b.Product)) return b.ToDevice();
-                var rk = !RecognitionPolicy.CanQuery(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
+                var rk = !DeviceRoutes.IsKnown(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
                     ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
                 if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
                 if (rk != null) LastDiagnostics.Add($"RK R98Pro V2: connected={rk.Connected}, battery={rk.Level}");
@@ -544,7 +544,7 @@ namespace MouseDock.Services.Detection
 
             bool safeMode = false;
             try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
-            bool recognitionEnabled = RecognitionPolicy.CanQuery(vid, pid, product) && (preferences?.CanRead(key, null) ?? true) && (preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true);
+            bool recognitionEnabled = DeviceRoutes.IsKnown(vid, pid, product) && (preferences?.CanRead(key, null) ?? true) && (preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true);
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
@@ -726,80 +726,32 @@ namespace MouseDock.Services.Detection
                 }
             }
 
-            // 第一批厂商读取器：写一帧读一帧，按 VID 分派，互不抢通道
+            // 通用厂商读取器：表驱动，顺序即优先级；命中就停。
+            // 加品牌只改 VendorReaderTable，不动扫描主循环。
             if (battery < 0 && !safeMode)
             {
-                try
+                var readerContext = new VendorReaderTable.Context
                 {
-                    if (vid == 0x1532) battery = ReadBattery("Razer", () => VendorProtocol.TryReadRazer(vid, pid), batteryTrace);
-                    else if (vid == 0x0B05) battery = ReadBattery("ROG", () => VendorProtocol.TryReadRog(vid, pid), batteryTrace);
-                    else if (vid == 0x1038) battery = ReadBattery("SteelSeries", () => VendorProtocol.TryReadSteelSeries(vid, pid), batteryTrace);
-                    else if (vid == 0x361D) battery = ReadBattery("Finalmouse", () => VendorProtocol.TryReadFinalmouse(vid, pid), batteryTrace);
-                    else if (vid == 0x373B || vid == 0x3554 || vid == 0x33E4)
-                        battery = ReadBattery("Compx", () => VendorProtocol.TryReadCompx(vid, pid), batteryTrace);
+                    Vid = vid, Pid = pid, Product = product, UsagePage = caps.UsagePage, Kind = kind
+                };
+                foreach (var reader in VendorReaderTable.Readers)
+                {
+                    if (battery >= 0) break;
+                    try
+                    {
+                        if (!reader.Applies(readerContext)) continue;
+                        var (level, readerCharging) = reader.Read(readerContext);
+                        if (level < 0) continue;
+                        battery = level;
+                        batteryCharging = readerCharging;
+                        batterySource = reader.Label;
+                        batteryTrace.Add(reader.Label);
+                    }
+                    catch (Exception ex)
+                    {
+                        batteryTrace.Add(reader.Label + "：" + ex.GetType().Name + " " + ex.Message);
+                    }
                 }
-                catch { }
-            }
-
-            // 第二批：帧形已确认的厂商读取器（AUSDOM / AM Infinity / ZYNOO / AULA SC525 / RIDLAG·VGN / 雷柏）
-            if (battery < 0 && !safeMode)
-            {
-                battery = ReadBattery("厂商 Family", () => VendorProtocol.TryReadFamily(vid, pid), batteryTrace);
-            }
-
-            // 第三批：报告 ID / 命令字是变量的，靠试探 + 强校验确定
-            if (battery < 0 && !safeMode)
-            {
-                battery = ReadBattery("厂商 Extra", () => VendorProtocol.TryReadExtra(vid, pid), batteryTrace);
-            }
-
-            // 按接口形状认的两家（WEBBRANDS F83 / 达尔优 A980），VID 不固定，回包头必须完全对上
-            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
-            {
-                batteryTrace.Add("未确认协议：形状读取已禁用");
-            }
-
-            // 第四批：G-Wolves / ipi / RAWM / passive 型（AULA SC900、雷柏 VT2 MAX）
-            if (battery < 0 && !safeMode)
-            {
-                battery = ReadBattery("厂商 Third", () => VendorProtocol.TryReadThird(vid, pid), batteryTrace);
-            }
-
-            // 形状型老协议：WLMouse Beast X（report4 + CRC16）、Angry Miao（report F7）
-            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00)
-            {
-                batteryTrace.Add("未确认协议：Legacy 形状读取已禁用");
-            }
-
-            // 前行者（X87 三模及全系）。两套协议：
-            //   CH315  16 字节 report 8，cmd 0x04，校验 0x55 - sum
-            //   北赢   63 字节，cmd 0x87，校验 255 - sum%256
-            // 协议抄自 hub.eweadn.cn 和 new-hub.eweadn.cn 两套网页驱动。
-            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 && VendorProtocol.IsEweadnVid(vid))
-            {
-                battery = ReadBattery("Eweadn", () => VendorProtocol.TryReadEweadn(vid, pid), batteryTrace);
-            }
-
-            // VGN / AJAZZ 改在厂商集合统一读取（QueryVendorCollections），
-            // 因为它们的电量接口是 FF00 厂商页，走不到这条标准用法分支。
-
-            // 瓦尔基里（VK87 / VK99 / Valkyrie 75）。feature report 上的 F7 命令：
-            //   响应 [0]=可读 [1]=键盘电量 [2]=鼠标电量 [3]=键盘在线(0) [4]=鼠标在线(0)
-            // 05AC:024F 是 Apple 公版号，多家共用，只能靠产品名认。
-            if (battery < 0 && !safeMode && VendorProtocol.IsValkyrieDevice(vid, pid, product))
-            {
-                battery = ReadBattery("Valkyrie", () => VendorProtocol.TryReadValkyrie(vid, pid, kind == DeviceKind.Keyboard), batteryTrace);
-            }
-
-            // 英菲克（Inphic）。网页驱动 HUB WEB 的本地桥 Inphic.exe 只做转发：
-            // hid_read 拿到的输入报告前 5 字节拼成 "8x01"+5×%02x 推给页面，
-            // 页面按 [机型][0x40|0x41][状态][电量] 取值。0x40/0x41 是电量类子命令，
-            // 状态 1=百分比 2=满电 3=充电中。桥不发查询帧，电量靠接收器主动上报。
-            // 协议抄自 Inphic_SetUp_V1.01.exe 装出来的本地桥（FUN_0040e3d0 等五套通道）。
-            if (battery < 0 && !safeMode && caps.UsagePage >= 0xFF00 &&
-                VendorProtocol.IsInphicDevice(vid, pid, product))
-            {
-                battery = ReadBattery("Inphic", () => VendorProtocol.TryReadInphic(vid, pid, out batteryCharging), batteryTrace);
             }
 
             }
@@ -1102,7 +1054,7 @@ namespace MouseDock.Services.Detection
             foreach (var collection in logiPaths)
             {
                 if (safeMode) break;
-                if (!RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product)) continue;
+                if (!DeviceRoutes.IsKnown(collection.Vid, collection.Pid, collection.Product)) continue;
                 string key = InstanceScope.ForPath(collection.Path, $"{collection.Vid:X4}:{collection.Pid:X4}");
                 using var instanceScope = InstanceScope.Enter(key);
                 if (!buckets.TryGetValue(key, out var bucket) ||
@@ -1148,7 +1100,7 @@ namespace MouseDock.Services.Detection
                     VendorProtocol.IsReportedX23Se(collection.Vid, collection.Pid, collection.Product) ||
                     AulaBatteryProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
                     OriginalGpwProtocol.IsCandidate(collection.Vid,collection.Pid) || VendorProtocol.IsScopedInphic(collection.Vid,collection.Pid,collection.Product) || (VendorProtocol.IsScopedModernMouse(collection.Vid,collection.Pid,collection.Product) || VendorProtocol.IsScopedG7(collection.Vid,collection.Pid,collection.Product)) || ZeroRainyProtocol.Candidate(collection.Vid,collection.Pid,collection.Product) ||
-                    !RecognitionPolicy.CanQuery(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
+                    !DeviceRoutes.IsKnown(collection.Vid, collection.Pid, collection.Product) || collection.UsagePage < 0xFF00 ||
                     IsExcludedInterface(collection.Vid, collection.Pid, collection.Product, collection.Path))
                     continue;
 
@@ -1485,6 +1437,10 @@ namespace MouseDock.Services.Detection
                        (Vid == 0x3554 && VendorProtocol.IsAulaF99(Vid, Pid, Product) && !f99Wired) ||
                        (HasVendor && Interfaces.Count >= 2) ? "2.4G" : "有线");
 
+                // 路由表给出的通道优先于产品串推断；后面的品牌分支仍可覆盖。
+                var route = DeviceRoutes.Find(Vid, Pid, Product);
+                if (route?.Transport != null) transport = route.Transport;
+
                 if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product)) transport = "2.4G";
                 if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) transport = "2.4G";
                 if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) transport = Vid == 0xA8A4 ? "有线" : "2.4G";
@@ -1555,7 +1511,7 @@ namespace MouseDock.Services.Detection
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = InstanceId,
                     Note = RogScopePaired ? BatterySource :
-                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
+                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !DeviceRoutes.IsKnown(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
                             : "尚未取得有效电量，请查看设备报告中的读取诊断")
@@ -1568,16 +1524,10 @@ namespace MouseDock.Services.Detection
             /// </summary>
             private DeviceKind RefineKind(string name)
             {
-                if (MchoseKeyboardProtocol.IsSupportedDevice(Vid, Pid, Product))
-                    return DeviceKind.Keyboard;
-                // A7 V2 接收器的鼠标集合由厂商驱动独占，HID 侧只剩键盘/消费类集合。
-                // 型号已经由 PID + 产品串确认时，不能按集合计数判成键盘。
-                if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) return DeviceKind.Mouse;
-                // 公版 33 字节接收器（狼蛛/英菲克鼠标接收器）本身就是鼠标通道。
-                // 鼠标集合被驱动独占时 HID 侧只剩键盘集合，不能按计数判成键盘。
-                if (VendorProtocol.IsGenericReceiver33(Vid, Pid, Product)) return DeviceKind.Mouse;
-                if (VendorProtocol.IsInphicSplitReceiver(Vid, Pid) && Counts.ContainsKey(DeviceKind.Mouse))
-                    return DeviceKind.Mouse;
+                // 路由表优先：已知读取器直接给出类型。集合计数只留给表里没有的
+                // 未知设备兜底，厂商驱动独占鼠标集合不会再把鼠标判成键盘。
+                var route = DeviceRoutes.Find(Vid, Pid, Product);
+                if (route != null) return route.Kind;
 
                 if (VendorProtocol.IsAtkZeroBitMouse(Vid, Pid) &&
                     (string.Equals(Product, "ATK ZERO", StringComparison.OrdinalIgnoreCase) ||
@@ -1628,3 +1578,4 @@ namespace MouseDock.Services.Detection
         }
     }
 }
+

@@ -1,4 +1,4 @@
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
 internal static class G7V9Regression
@@ -6,7 +6,7 @@ internal static class G7V9Regression
     internal static int Run()
     {
         int n=0;void Check(bool ok,string message){n++;if(!ok)throw new Exception(message);}
-        Check(RecognitionPolicy.CanQuery(0x3837,0x1018,"MCHOSE G7"),"G7 enabled");
+        Check(DeviceRoutes.IsKnown(0x3837,0x1018,"MCHOSE G7"),"G7 enabled");
         Check(!VendorProtocol.IsScopedG7(0x3837,0x1019,"MCHOSE G7"),"Adjacent PID gated");
         Check(!VendorProtocol.IsScopedG7(0x3837,0x1018,"MCHOSE G7 MAX"),"Other G7 model gated");
         Check(!VendorProtocol.IsScopedG7(0x3837,0x1018,"MCHOSE K5 Ultra"),"Shared ID not a model");
@@ -28,7 +28,7 @@ internal static class G7V9Regression
         Check(VendorProtocol.ReadG7Exchange(one,65,"MCHOSE G7").Level==-1,"One response cannot promote a reading");
         var flood=new Link();for(int i=0;i<32;i++)flood.Input.Enqueue(Reply(65,80,0));
         Check(VendorProtocol.ReadG7Exchange(flood,65,"MCHOSE G7").Level==-1&&flood.Writes==0,"Flood sends nothing");
-        Check(!RecognitionPolicy.CanQuery(0x291D,0x385D,"MCHOSE V9 PRO"),"V9 HID battery remains disabled");
+        Check(!DeviceRoutes.IsKnown(0x291D,0x385D,"MCHOSE V9 PRO"),"V9 HID battery remains disabled");
         var v9=new AudioEndpointInfo("v9","扬声器 (MCHOSE V9 PRO)",false,Guid.Empty,1,70,false);
         Check(v9.IsHeadset && v9.Name=="扬声器 (MCHOSE V9 PRO)","V9 speaker-form audio endpoint keeps original name");
         Check(!(v9 with {Name="扬声器 (MCHOSE S9)"}).IsHeadset,"Shared S9 not renamed as V9");
@@ -64,3 +64,4 @@ internal static class G7V9Regression
         public bool SetFeature(byte[] b)=>throw new Exception();public byte[] GetFeature(byte id,int n)=>throw new Exception();public void Delay(int n)=>throw new Exception();
     }
 }
+
