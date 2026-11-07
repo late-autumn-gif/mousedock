@@ -170,6 +170,7 @@ namespace MouseDock.Services.Detection
         public static DeviceKind? KindFromName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
+            if (VendorProtocol.RogScopeName(name) != null) return DeviceKind.Keyboard;
             string n = name.ToUpperInvariant();
             if (n.Contains("SC580") || n.Contains("MOUSE") || n.Contains("鼠标")) return DeviceKind.Mouse;
             if (n.Contains("NEON") || n.Contains("KEYBOARD") || n.Contains("键盘")) return DeviceKind.Keyboard;

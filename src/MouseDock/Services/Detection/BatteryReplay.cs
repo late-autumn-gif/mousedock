@@ -15,7 +15,7 @@ internal static class BatteryReplay
     [ThreadStatic] internal static Scan Current;
 
     internal sealed record Collection(string Receiver, int Interface, ushort Vid, ushort Pid, string Product,
-        ushort Page, ushort Usage, int Input, int Output, int Feature, bool Excluded, bool Mi02);
+        ushort Page, ushort Usage, int Input, int Output, int Feature, bool Excluded, bool Mi02, int OmniReport = 0);
     internal sealed record Sample(string Stage, bool Ok, byte Sequence = 0, int Length = 0, string Hex = null);
     internal sealed record Query(string Receiver, int? Interface, string Protocol, string Status, string Model,
         int? ObservedPercent, Sample[] Samples);
@@ -65,7 +65,11 @@ internal static class BatteryReplay
         {
             int number = collections.Count + 1;
             interfaces[path] = number;
-            collections.Add(new(Receiver(instance), number, vid, pid, product, page, usage, input, output, feature, excluded, path.Contains("&mi_02", StringComparison.OrdinalIgnoreCase)));
+            collections.Add(new(Receiver(instance), number, vid, pid, product, page, usage, input, output, feature, excluded, path.Contains("&mi_02", StringComparison.OrdinalIgnoreCase),
+                VendorProtocol.IsRogOmni(vid, pid)
+                    ? VendorProtocol.IsRogOmniChannel(path, page, usage, input, output, 1) ? 1 :
+                        VendorProtocol.IsRogOmniChannel(path, page, usage, input, output, 2) ? 2 : 0
+                    : 0));
         }
 
         internal void AddQuery(string instance, string path, string protocol, string status, string model,
@@ -121,6 +125,13 @@ internal static class BatteryReplay
 
     private static bool MatchesChannel(string protocol, Collection channel, Collection[] collections)
     {
+        if (protocol == "RogScopeRxOmni")
+            return VendorProtocol.IsRogOmni(channel.Vid, channel.Pid) && channel.OmniReport == 2 &&
+                VendorProtocol.IsRogOmniReport(channel.Page, channel.Usage, channel.Input, channel.Output, 2) &&
+                collections.Count(c => c.Receiver == channel.Receiver && !c.Excluded && c.OmniReport == 1 &&
+                    VendorProtocol.IsRogOmni(c.Vid, c.Pid) &&
+                    VendorProtocol.IsRogOmniReport(c.Page, c.Usage, c.Input, c.Output, 1)) == 1;
+
         if (protocol is "Sc580Receiver" or "Sc630Pro")
         {
             string instanceProduct = collections.FirstOrDefault(c => c.Receiver == channel.Receiver &&
@@ -136,6 +147,25 @@ internal static class BatteryReplay
                 channel.Mi02 ? "&mi_02" : "", channel.Page, channel.Usage, channel.Input, channel.Output);
     }
 
+    private static Result ReplayRogScope(Query query)
+    {
+        bool paired = false;
+        foreach (var sample in query.Samples ?? Array.Empty<Sample>())
+        {
+            if (!sample.Ok || sample.Hex?.Length != 128 || sample.Length != 64) continue;
+            byte[] raw;
+            try { raw = Convert.FromHexString(sample.Hex); }
+            catch (FormatException) { continue; }
+            if (sample.Stage == "omni-paired") paired = VendorProtocol.RogOmniHasScopeRx(raw);
+            if (paired && sample.Stage == "omni-battery" && query.Status is "Online" or "Charging" &&
+                VendorProtocol.TryParseRogScopeBattery(raw, out int percent, out bool charging))
+                return new(query.Receiver, query.Interface, query.Protocol, query.Status,
+                    VendorProtocol.RogScopeRxWireless, percent, charging, "captured");
+        }
+        return new(query.Receiver, query.Interface, query.Protocol, query.Status,
+            paired ? VendorProtocol.RogScopeRxWireless : null, null, null, "unavailable");
+    }
+
     internal static Result Replay(Query query, Collection[] collections)
     {
         var channel = collections.FirstOrDefault(c => c.Interface == query.Interface &&
@@ -143,6 +173,8 @@ internal static class BatteryReplay
         if (channel == null || !MatchesChannel(query.Protocol, channel, collections))
             return new(query.Receiver, query.Interface, query.Protocol,
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
+        if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
+
         ReferenceBatteryProtocol.Reading last = null;
         int count = 0;
         bool mismatch = false;

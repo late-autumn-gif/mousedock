@@ -18,6 +18,6 @@ Start-Process -FilePath '.\MouseDock.exe' -Wait -ArgumentList '--replay-report "
 
 也可将 ZIP 路径换成单独的 `battery-replay.json`。重放只读文件，不打开 HID 接口，也不会启动常驻窗口。
 
-- `Results` 是重新核对接口并用现有解析器重放的结果。当前覆盖狼蛛 SC580、SC630 Pro 和英菲克 IN9、IN9 Pro。
+- `Results` 是重新核对接口并用现有解析器重放的结果。当前覆盖狼蛛 SC580、SC630 Pro 和英菲克 IN9、IN9 Pro，以及通过 Omni 接收器连接的 ROG 游侠2 RX 98 无线版。
 - `Observations` 是采集时扫描得到的结果，包含其他 HID 路径和缓存标记。这些结果没有经过报文重放。
 - `captured` 表示报文通过校验，百分比对应采集时刻。只有型号证据时，电量为 `null`。超时、未找到集合、缺少响应或无已验证的换算依据时，电量保持未知。

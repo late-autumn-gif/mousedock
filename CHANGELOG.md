@@ -1,5 +1,12 @@
 # 更新日志
 
+## v1.1.1 ROG 游侠2 RX 适配（2026-11-07）
+
+- 有线游侠2 RX 按华硕 USB 型号 0B05:1AB5 或完整 HID 产品名显示为键盘。有线型号不查询电量。
+- 游侠2 RX 98 无线版在 Omni 接收器上先确认本实例的配对型号 1B7A，再在键盘专用集合读取百分比和充电状态。配对已确认但没有有效电量时保留型号。蓝牙继续使用 Windows/GATT 电量读取，并识别完整型号名。
+- 2.4G 查询记录接入错误报告与离线重放。协议字段依据 [G-Helper 型号定义](https://github.com/seerge/g-helper/blob/8dc2b614f9261fbc8806dfa557cbda2ba7d06d99/app/Peripherals/Keyboard/Models/StrixScopeII.cs) 和 [Omni 查询实现](https://github.com/SteveWang92/peripheral-battery-tray/blob/4959f3ea983c4865407f1f1133ece87c98c8efd4/crates/rog-battery/src/lib.rs)。
+- 16019 项离线协议断言和 24 项反馈回归通过。本机 Omni 两个接口匹配、配对列表查询返回，未发现 1B7A。两款目标键盘本体和无线版实际电量仍待验证。
+
 ## v1.1.1 错误报告离线重放（2026-11-07）
 
 - 界面导出错误报告时重新扫描 HID，将同一轮的接口能力、按报告编号关联的接收器、协议查询阶段和电量应答写入 battery-replay.json。

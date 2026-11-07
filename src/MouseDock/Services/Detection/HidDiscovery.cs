@@ -183,7 +183,8 @@ namespace MouseDock.Services.Detection
                 foreach (var bucket in buckets.Values)
                 {
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
-                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product) ||
+                        VendorProtocol.IsRogOmni(bucket.Vid, bucket.Pid)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Sc630Product ?? bucket.Product)) continue;
@@ -262,6 +263,7 @@ namespace MouseDock.Services.Detection
                 VendorProtocol.ReadReportedX23Se);
             QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
+            QueryRogScope(buckets, vendorCollections, safeMode, preferences);
             QueryScopedModernMouse(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedModernMouse);
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
             QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
@@ -620,7 +622,9 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
+            if (VendorProtocol.IsRogOmni(vid, pid))
+                batteryTrace.Add("ROG Omni 由本实例的配对与键盘集合读取");
+            else if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
             else if((VendorProtocol.IsScopedModernMouse(vid,pid,product) || VendorProtocol.IsScopedG7(vid,pid,product))){batteryTrace.Add("迈从鼠标由本实例精确集合读取");}
             else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
             else if (OriginalGpwProtocol.IsCandidate(vid, pid))
@@ -816,6 +820,13 @@ namespace MouseDock.Services.Detection
             string miTag = InterfaceTag(path);
             if (miTag != null) bucket.Interfaces.Add(miTag);
 
+            if (vid == 0x0B05 && kind == DeviceKind.Keyboard)
+                bucket.RogScopeModel ??= pid switch
+                {
+                    0x1AB5 => VendorProtocol.RogScopeRxWired,
+                    0x1B78 => VendorProtocol.RogScopeRxWireless,
+                    _ => VendorProtocol.RogScopeName(product)
+                };
             bucket.ReferenceModel ??= ReferenceProfiles.Match(vid, pid, caps.UsagePage, caps.Usage);
             if (VendorProtocol.IsAulaSc630(product)) bucket.Sc630Product = product;
             bucket.AulaDescriptorRoute ??= AulaBatteryProtocol.Match(vid, pid, product, caps.UsagePage, caps.Usage,
@@ -1309,6 +1320,8 @@ namespace MouseDock.Services.Detection
             public bool AulaHandled, AulaOnline, InphicHandled;
             public AulaBatteryProtocol.Route? AulaDescriptorRoute;
             public string AulaModel, Sc630Product;
+            public bool RogScopePaired;
+            public string RogScopeModel;
             public bool ZeroRainyHandled;
             public string ZeroRainyModel;
             public bool ModernHandled;
@@ -1488,14 +1501,20 @@ namespace MouseDock.Services.Detection
                 if(ModernHandled){name=ModernModel??Product;kind=DeviceKind.Mouse;transport=VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var profile)&&Pid==profile.Wired?"有线":"2.4G";}
                 bool unresolved=kind==DeviceKind.Other && IsUnresolved8KReceiver();
                 if(unresolved)name=Product.Trim();
+                if (RogScopePaired || RogScopeModel != null)
+                {
+                    name = RogScopePaired ? VendorProtocol.RogScopeRxWireless : RogScopeModel;
+                    kind = DeviceKind.Keyboard;
+                    transport = RogScopePaired ? "2.4G" : "有线";
+                }
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
-                        : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
+                    ConfirmedModel = RogScopePaired ? VendorProtocol.RogScopeRxWireless : RogScopeModel ?? (ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                        : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    ReceiverDiscovered = RogScopePaired || (ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? (Vid == 0x089D && Pid == 0x062F) || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
                     PeripheralConfirmed = ModernHandled ? false : unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
@@ -1506,7 +1525,8 @@ namespace MouseDock.Services.Detection
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = InstanceId,
-                    Note = unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
+                    Note = RogScopePaired ? BatterySource :
+                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !RecognitionPolicy.CanQuery(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
                             : "尚未取得有效电量，请查看设备报告中的读取诊断")

@@ -139,7 +139,19 @@ if (args.Length > 0 && args[0] == "--inspect-device-filter")
         Console.WriteLine(instanceId + " => " + (HidDiscovery.InspectExclusion(instanceId) ?? "保留"));
     return;
 }
-int assertions = ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
+if (args.Length > 0 && args[0] == "--inspect-rog-omni")
+{
+    foreach (var node in HidProbe.Enumerate(0x0B05, 0x1ACE))
+        Console.WriteLine($"{node.Caps.UsagePage:X4}/{node.Caps.Usage:X4} I/O={node.Caps.InputReportByteLength}/{node.Caps.OutputReportByteLength} " +
+            $"pair={VendorProtocol.IsRogOmniChannel(node.Path, node.Caps.UsagePage, node.Caps.Usage, node.Caps.InputReportByteLength, node.Caps.OutputReportByteLength, 1)} " +
+            $"battery={VendorProtocol.IsRogOmniChannel(node.Path, node.Caps.UsagePage, node.Caps.Usage, node.Caps.InputReportByteLength, node.Caps.OutputReportByteLength, 2)}");
+    var devices = HidDiscovery.Enumerate();
+    foreach (var line in HidDiscovery.LastDiagnostics.Where(line => line.Contains(" ROG Omni："))) Console.WriteLine(line);
+    foreach (var rogDevice in devices.Where(candidate => candidate.Detail == "0B05:1ACE"))
+        Console.WriteLine($"{rogDevice.Name} {rogDevice.Transport} battery={rogDevice.Level}");
+    return;
+}
+int assertions = RogScopeRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;

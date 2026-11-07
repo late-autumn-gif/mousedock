@@ -92,7 +92,8 @@ namespace MouseDock.Services.Detection
                     bool isIn9Pro = info.Name != null &&
                         info.Name.IndexOf("IN9", StringComparison.OrdinalIgnoreCase) >= 0 &&
                         info.Name.IndexOf("PRO", StringComparison.OrdinalIgnoreCase) >= 0;
-                    var kind = isIn9Pro ? DeviceKind.Mouse : KindFromAppearance(device, info.Name);
+                    var kind = VendorProtocol.RogScopeName(info.Name) == VendorProtocol.RogScopeRxWireless
+                        ? DeviceKind.Keyboard : isIn9Pro ? DeviceKind.Mouse : KindFromAppearance(device, info.Name);
                     if (!includeHeadsets && kind == DeviceKind.Headset) continue;
                     if (kind == null && hint != null) kind = hint(info.Name);
                     if (kind == null && recognitionEnabled) kind = await KindFromGattAsync(device, timeoutMs).ConfigureAwait(false);
@@ -149,7 +150,7 @@ namespace MouseDock.Services.Detection
                     sink.Add(new DetectedDevice
                     {
                         Id = "ble-" + device.BluetoothAddress.ToString("X"),
-                        Name = string.IsNullOrWhiteSpace(info.Name) ? "BLE 设备" : info.Name,
+                        Name = VendorProtocol.RogScopeName(info.Name) ?? (string.IsNullOrWhiteSpace(info.Name) ? "BLE 设备" : info.Name),
                         Kind = kind.Value,
                         Transport = "蓝牙 LE",
                         Level = level,
