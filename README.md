@@ -8,6 +8,16 @@
 
 # MouseDock
 
+## 文档索引
+
+- [当前支持设备与证据等级](docs/SUPPORTED-DEVICES.md)
+- [理论设备复核矩阵（2026-11-08）](docs/VERIFICATION-20260808.md)
+- [测试与基线](TESTING.md)
+- [已知问题](KNOWN_ISSUES.md)
+- [构建与发布](DEVELOPMENT.md)
+- [架构说明](ARCHITECTURE.md)
+- [变更记录](CHANGELOG.md)
+
 > Windows 桌面外设电量面板 —— 2.4G / 蓝牙 / 有线自动识别，电量实时刷新。
 > 仅检查更新时联网，不上传、无遥测；读不到电量就显示 `—`，绝不编数字。
 
