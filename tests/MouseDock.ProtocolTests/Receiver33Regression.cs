@@ -1,4 +1,4 @@
-﻿using MouseDock.Services.Detection;
+using MouseDock.Services.Detection;
 
 // 公版 2.4G 接收器（248A/249A:5B2F/5C2F）的只读身份帧解析。
 // 正向向量来自 249A:5C2F 用户报告的实机回帧；其余为同结构的构造帧，不是硬件捕获。
@@ -76,6 +76,22 @@ internal static class Receiver33Regression
             "Verified AULA model still resolves to the retail name");
         Check(VendorProtocol.Receiver33FallbackName(0x248A, "J315") == "英菲克 J315",
             "Inphic model renders as brand plus code");
+
+        // 官方设备表（Inphic Mouse config.xml）：IN9/A9 只有 5C2E/5D2E/5E2E/5C2F。
+        // 248A:5B2F 不在表内，不能按 IN9 处理，也不能由 VID:PID 推型号。
+        Check(InphicDeviceTable.IsInTable(0x248A, 0x5C2F), "5C2F is in the official IN9 table");
+        Check(InphicDeviceTable.IsInTable(0x249A, 0x5C2F), "249A:5C2F shares the same receiver ID");
+        Check(!InphicDeviceTable.IsInTable(0x248A, 0x5B2F), "5B2F is not in the official IN9 table");
+        Check(InphicDeviceTable.Describe(0x248A, 0x5B2F).Contains("官方表外"),
+            "Report states 5B2F is outside the official table");
+        Check(InphicDeviceTable.Describe(0x248A, 0x5C2F).Contains("MI_02"),
+            "Official entry keeps the MI_02 requirement visible");
+        Check(InphicDeviceTable.ModelFromDevId("M909") == "英菲克 IN9（3311）" &&
+              InphicDeviceTable.ModelFromDevId("M900") == "英菲克 A9" &&
+              InphicDeviceTable.ModelFromDevId("XXXX") == null,
+            "Model comes from dev_id, unknown ids stay unnamed");
+        Check(InphicDeviceTable.Describe(0x1D57, 0xFA65) == "非英菲克号段",
+            "1D57 bridge IDs are not the 248A device table");
 
         return assertions;
     }

@@ -487,6 +487,8 @@ namespace MouseDock.Services
                 sb.AppendLine($"识别路由: {route.Reader} → 类型 {route.Kind}，通道 {route.Transport ?? "按集合推断"}");
             if (!string.IsNullOrWhiteSpace(device.HandledByLabel) && device.HandledByLabel != "None")
                 sb.AppendLine("处理链: " + device.HandledByLabel);
+            if (Detection.InphicDeviceTable.IsInphicVid(vid))
+                sb.AppendLine("英菲克官方表: " + Detection.InphicDeviceTable.Describe(vid, pid));
             sb.AppendLine("允许查询: " + Detection.DeviceRoutes.IsKnown(vid, pid, product));
             try
             {
