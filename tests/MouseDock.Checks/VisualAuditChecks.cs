@@ -14,7 +14,7 @@ internal static class VisualAuditChecks
     internal static void BackgroundRecovery(string surface)
     {
         using var fixture = new Fixture();
-        string valid = Path.GetFullPath("src/MouseDock/Assets/app.png");
+        string valid = FindAsset("src/MouseDock/Assets/app.png");
         string corrupt = Path.GetTempFileName();
         File.WriteAllText(corrupt, "not an image");
         Window? window = null;
@@ -49,7 +49,7 @@ internal static class VisualAuditChecks
     internal static void PhotoRecovery()
     {
         using var fixture = new Fixture();
-        string valid = Path.GetFullPath("src/MouseDock/Assets/app.png");
+        string valid = FindAsset("src/MouseDock/Assets/app.png");
         string corrupt = Path.GetTempFileName();
         File.WriteAllText(corrupt, "not an image");
         SetApp("DefaultPhotoAsset", null);
@@ -230,4 +230,18 @@ internal static class VisualAuditChecks
             foreach (var (property, value) in _original) SetApp(property, value);
         }
     }
+
+    /// <summary>Tests can run from the repo root or from bin; walk up until the asset is found.</summary>
+    private static string FindAsset(string relative)
+    {
+        string direct = Path.GetFullPath(relative);
+        if (File.Exists(direct)) return direct;
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, relative.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(candidate)) return candidate;
+        }
+        return direct;
+    }
 }
+

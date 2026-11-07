@@ -198,7 +198,7 @@ internal static class AuditChecks
         using var battery = EmptyService(out var settings);
         typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, battery);
         typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
-        string image = Path.GetFullPath("src/MouseDock/Assets/app.png");
+        string image = FindRepoAsset("src/MouseDock/Assets/app.png");
         foreach (Window window in new Window[] { new DockWindow(), new MiniWindow() })
         {
             try
@@ -246,5 +246,18 @@ internal static class AuditChecks
             Dispatcher.PushFrame(frame);
         }
         task.GetAwaiter().GetResult();
+    }
+
+    /// <summary>Tests can run from the repo root or from bin; walk up until the asset is found.</summary>
+    private static string FindRepoAsset(string relative)
+    {
+        string direct = Path.GetFullPath(relative);
+        if (File.Exists(direct)) return direct;
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, relative.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(candidate)) return candidate;
+        }
+        return direct;
     }
 }

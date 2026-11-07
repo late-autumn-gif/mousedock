@@ -42,7 +42,7 @@ internal static class EdgeDisplayChecks
     {
         var device = new DeviceInfo { Kind = DeviceKind.Keyboard, Name = "R98Pro V2", Level = 85 };
         var badge = (FrameworkElement)Activator.CreateInstance(TypeOf("Controls.DeviceBatteryBadge"),
-            device, Brushes.White, true, false, 20)!;
+            device, Brushes.White, true, false, 20, false)!;
         badge.Measure(new Size(300, 300));
         badge.Arrange(new Rect(badge.DesiredSize));
         badge.UpdateLayout();
@@ -156,7 +156,7 @@ internal static class EdgeDisplayChecks
                 var device = new DeviceInfo { Kind = level == 100 ? DeviceKind.Keyboard : DeviceKind.Mouse,
                     Level = level, Charging = level == 85 || level == -1 };
                 panel.Children.Add((UIElement)Activator.CreateInstance(badgeType,
-                    device, Brushes.DeepSkyBlue, show, vertical, 20)!);
+                    device, Brushes.DeepSkyBlue, show, vertical, 20, false)!);
             }
             panel.Measure(new Size(1000, 1000));
             panel.Arrange(new Rect(panel.DesiredSize));

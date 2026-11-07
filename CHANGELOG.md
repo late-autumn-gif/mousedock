@@ -486,3 +486,11 @@
 - 安全模式：关闭厂商通道写操作
 - MIT 许可
 
+### v1.1.2 补充：回归门禁转绿与 Logitech 探针修复（2026-11-08）
+
+- 修复 Logitech HID++ 通用探针被 DeviceRoutes.IsKnown 挡死的缺陷： 46D 下非 GPW 接收器（如 C53F）此前永远进不了探针，G304 这类设备读不到电量。现在  46D && !OriginalGpwProtocol.IsCandidate 允许进入探针，GPW 专用路由保持不变。
+- 修复 VGN/AJAZZ 通用 vendor collection 被同一道门挡死的问题：391D 任意 PID 与 1A2C:6281 现在可以进入 QueryVendorCollections，应答仍由 TryReadVgn/TryReadAjazz 严格校验。
+- MouseDock.Checks 从 48/64 提升到 59/64 passed, 5 skipped，退出码 0。修复的夹具问题：DeviceBatteryBadge 构造函数参数从 5 个同步到 6 个；导出失败测试的参数从 3/4 个同步到 5 个；素材路径改为从程序集目录上溯查找；更新启动参数补上 estart。
+- 新增 KNOWN_ISSUES.md 与 TESTING.md：记录 5 项跳过原因（Windows 11 XAML 任务栏 4 项、更新夹具 1 项）与两套测试基线。
+- 离线断言 16093 条通过（+1：Logitech 非 GPW 接收器进入探针、GPW 专用路由仍排除）。
+- 真机复验：ROG 游侠2 RX 无线版 52%、迈从 A7 V2 Pro 83%。

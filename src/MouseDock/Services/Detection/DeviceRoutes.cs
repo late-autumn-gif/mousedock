@@ -51,10 +51,16 @@ internal static class DeviceRoutes
         VendorProtocol.IsScopedInphic(vid, pid, product) ||
         VendorProtocol.IsReportedX23Se(vid, pid, product) ||
         OriginalGpwProtocol.IsCandidate(vid, pid) ||
+        // Logitech HID++ (non-GPW receivers such as 046D:C53F) needs the probe lane too;
+        // the GPW-specific model keeps its own dedicated route above.
+        (vid == 0x046D && !OriginalGpwProtocol.IsCandidate(vid, pid)) ||
         (vid != 0 && pid != 0 && VendorProtocol.IsAulaSc630(product)) ||
         VendorProtocol.IsGenericReceiver33(vid, pid, product) ||
         (vid == 0x089D && pid == 0x062F) ||
         (vid == 0x391D && pid == 0x2A05) ||
+        // Generic vendor-collection routes: the vendor reader still validates the reply frame.
+        (VendorProtocol.IsVgnVid(vid) && pid != 0) ||
+        (VendorProtocol.IsAjazzVid(vid) && VendorProtocol.IsAjazzPid(pid)) ||
         (vid == 0x3837 && VendorProtocol.IsMchoseA7V2(vid, pid)) ||
         (vid == 0x5253 && pid == 0x1021);
 

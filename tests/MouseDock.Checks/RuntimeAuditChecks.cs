@@ -53,7 +53,7 @@ internal static class RuntimeAuditChecks
             parentStart.ArgumentList.Add("-Command");
             parentStart.ArgumentList.Add("Start-Sleep -Seconds 30");
             parent = Process.Start(parentStart)!;
-            var start = (ProcessStartInfo)prepare!.Invoke(null, [work, incoming, current, parent.Id])!;
+            var start = (ProcessStartInfo)prepare!.Invoke(null, [work, incoming, current, parent.Id, true])!;
             installer = Process.Start(start)!;
             // Longer than the previous fixed three-second delay: the old app still owns its file.
             using (var heldExe = File.Open(current, FileMode.Open, FileAccess.Read, FileShare.Read))
