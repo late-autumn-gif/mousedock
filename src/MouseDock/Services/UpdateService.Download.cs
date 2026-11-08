@@ -89,12 +89,21 @@ internal static partial class UpdateService
             if(info==null || string.IsNullOrWhiteSpace(info.AssetName) || Path.GetFileName(info.AssetName)!=info.AssetName)return false;
             work=Path.Combine(Path.GetTempPath(),"MouseDock-update-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(work);
             string downloaded=Path.Combine(work,info.AssetName);
-            if(!await DownloadPackageAsync(info,downloaded,progress,status,ct).ConfigureAwait(false))return false;
+
+            // 下载只占进度条的前 68%，剩下的留给解压、校验和替换。
+            // 下载本来就会报 0-100，这里压到自己的区间里，免得进度条跑到头再跳回来。
+            var downloadProgress = progress == null ? null : new Progress<int>(p =>
+                progress.Report(Math.Clamp(5 + p * 63 / 100, 5, 68)));
+            if(!await DownloadPackageAsync(info,downloaded,downloadProgress,status,ct).ConfigureAwait(false))return false;
 
             // 下载完之后交给同一个独立进程去替换。在线路径和本地包路径必须是同一条路，
             // 否则「删旧文件、重建入口」这两件事只在本地包路径生效，用户走自动更新就享受不到。
-            status?.Report("准备独立更新进程…");
-            string failure=UpdateApplier.Apply(downloaded, m=>status?.Report(m));
+            status?.Report("准备更新进程…");
+            string failure=UpdateApplier.Apply(downloaded, step =>
+            {
+                status?.Report(step.Message);
+                progress?.Report(step.Percent);
+            });
             if(failure!=null){status?.Report(failure);return false;}
             work=null; // The detached updater owns its own staging directory.
             return true;

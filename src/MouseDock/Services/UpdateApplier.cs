@@ -18,7 +18,21 @@ namespace MouseDock.Services;
 /// </summary>
 internal static class UpdateApplier
 {
-    /// <summary>更新启动器看到这个参数就进入更新模式，不启动主界面。</summary>
+    /// <summary>
+    /// 更新流程里可以上报的一个进度点。
+    /// 主进程只能走到「交给独立进程」这一步，再往后进程就退出了，
+    /// 所以 100% 只表示交接完成，真正的收尾由那个线程自己写进 apply.log。
+    /// </summary>
+    internal readonly struct Step
+    {
+        internal Step(string message, int percent) { Message = message; Percent = percent; }
+        internal string Message { get; }
+        internal int Percent { get; }
+    }
+
+    /// <summary>
+    /// 更新启动器看到这个参数就进入更新模式，不启动主界面。
+    /// </summary>
     public const string ApplySwitch = "--apply-update";
 
     /// <summary>主程序重新拉起时带这个参数，用来收掉上次更新留下的暂存目录。</summary>
@@ -39,7 +53,7 @@ internal static class UpdateApplier
     /// <summary>
     /// 启动独立更新进程。返回非空字符串表示启动失败（旧版本此时还没有被碰过）。
     /// </summary>
-    internal static string Apply(string packagePath, Action<string> progress = null)
+    internal static string Apply(string packagePath, Action<Step> progress = null)
     {
         string exePath = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
@@ -53,11 +67,25 @@ internal static class UpdateApplier
         {
             Directory.CreateDirectory(work);
 
-            progress?.Invoke("准备独立更新进程");
+            progress?.Invoke(new Step("准备更新目录…", 72));
             string scriptPath = Path.Combine(work, "apply.ps1");
             string logPath = Path.Combine(work, "apply.log");
             File.WriteAllText(scriptPath, BuildScript(), new UTF8Encoding(true));
 
+            progress?.Invoke(new Step("复制更新包…", 82));
+            string local = Path.Combine(work, Path.GetFileName(packagePath));
+            if (!string.Equals(Path.GetFullPath(local), Path.GetFullPath(packagePath),
+                    StringComparison.OrdinalIgnoreCase))
+                File.Copy(packagePath, local, true);
+
+            progress?.Invoke(new Step("校验更新包…", 92));
+            string stage = Path.Combine(work, "x");
+            Directory.CreateDirectory(stage);
+            string newExe = UpdateService.PreparePackage(local, stage);
+            if (string.IsNullOrEmpty(newExe) || !File.Exists(newExe))
+                return "更新包里没有找到 MouseDock.exe";
+
+            progress?.Invoke(new Step("启动更新进程，程序即将重启…", 100));
             var start = new ProcessStartInfo
             {
                 FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
@@ -72,7 +100,7 @@ internal static class UpdateApplier
                          "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                          "-File", scriptPath,
                          "-ParentPid", Environment.ProcessId.ToString(),
-                         "-Package", packagePath,
+                         "-Package", local,
                          "-TargetExe", exePath,
                          "-InstallDir", installDir,
                          "-LogPath", logPath

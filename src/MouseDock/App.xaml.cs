@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1297,6 +1297,8 @@ namespace MouseDock
         private Window _updateWin;
         private System.Windows.Controls.ProgressBar _updateBar;
         private System.Windows.Controls.TextBlock _updateStatus;
+        private int _updatePercent;
+        private string _updatePhase = "正在连接 GitHub…";
 
         /// <summary>
         /// 启动后延迟检查更新。断网 / 超时 / 用户关掉开关都静默跳过。
@@ -1329,7 +1331,11 @@ namespace MouseDock
 
                 var status=new Progress<string>(text=>
                 {
-                    Dispatcher.BeginInvoke(new Action(()=>{if(_updateStatus!=null)_updateStatus.Text=text;}));
+                    Dispatcher.BeginInvoke(new Action(()=>
+                    {
+                        _updatePhase = text;
+                        RefreshUpdateStatus();
+                    }));
                 });
                 bool ok = await Services.UpdateService.DownloadAndApplyAsync(info, progress, status:status);
 
@@ -1358,6 +1364,8 @@ namespace MouseDock
         {
             try
             {
+                _updatePercent = 0;
+                _updatePhase = "正在连接 GitHub…";
                 _updateBar = new System.Windows.Controls.ProgressBar
                 {
                     Minimum = 0, Maximum = 100, Value = 0,
@@ -1366,7 +1374,7 @@ namespace MouseDock
 
                 var text = _updateStatus = new System.Windows.Controls.TextBlock
                 {
-                    Text = "正在连接GitHub…",
+                    Text = "正在连接 GitHub…  0%",
                     Margin = new Thickness(24, 20, 24, 0),
                     FontSize = 13
                 };
@@ -1394,7 +1402,23 @@ namespace MouseDock
 
         private void UpdateProgressBar(int percent)
         {
-            try { if (_updateBar != null) _updateBar.Value = percent; } catch { }
+            try
+            {
+                _updatePercent = Math.Clamp(percent, 0, 100);
+                if (_updateBar != null) _updateBar.Value = _updatePercent;
+                RefreshUpdateStatus();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 状态行统一显示「阶段  百分比」，两个回调各自更新自己的部分，不互相覆盖。
+        /// </summary>
+        private void RefreshUpdateStatus()
+        {
+            if (_updateStatus == null) return;
+            string phase = string.IsNullOrWhiteSpace(_updatePhase) ? "正在更新…" : _updatePhase;
+            _updateStatus.Text = $"{phase}  {_updatePercent}%";
         }
 
         private void CloseUpdateProgress()
