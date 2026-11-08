@@ -21,7 +21,7 @@ internal static class F75Protocol
     internal const string Identity = "0300000000CD";
 
     /// <summary>一次读数的总等待预算；身份 + 电量都在这 5 秒里。</summary>
-    internal const int QueryTimeoutMs = 5000;
+    public const int QueryTimeoutMs = 2500;
 
     internal static bool IsCandidate(ushort vid, ushort pid, string product) =>
         vid == 0x3554 && pid == 0xFA09 &&

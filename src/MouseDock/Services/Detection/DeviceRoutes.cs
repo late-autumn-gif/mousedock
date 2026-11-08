@@ -138,7 +138,6 @@ internal static class DeviceRoutes
         if (VendorProtocol.IsAulaF99(vid, pid, product))
             return new Route { Reader = "AulaF99", Kind = DeviceKind.Keyboard, Transport = null };
         if (MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product))
-            return new Route { Reader = "MchoseKeyboard", Kind = DeviceKind.Keyboard, Transport = null };
-        return null;
+            return new Route { Reader = "MchoseKeyboard", Kind = DeviceKind.Keyboard, Transport = null };        return null;
     }
 }

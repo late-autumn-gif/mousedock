@@ -594,3 +594,12 @@
 - 腾出的空间给图标：DeviceGlyph 从 10px 提到 22px（竖排 24px），描边 1.6 → 2.1，形状细节清楚了。
 - 卡片改成两段布局：横排是「图标｜数字」，竖排是「图标／数字」，百分比 15px → 16px。
 - 型号名没有丢，仍挂在 ToolTip 与 AutomationProperties.Name 上，悬停和读屏都能拿到。
+
+### v1.1.2 修正：K87 V3 电量读取恢复（2026-11-08）
+
+- 用户反馈 1.1.2 更新后 K87 V3 读不到电量，报告里的读取说明是「候选设备：型号与电量协议尚未确认，未发送厂商命令」。
+- 根因：DeviceRoutes.Find 认 K87，DeviceRoutes.IsKnown 不认；K87 的调用点前面有一道 IsKnown 门槛，于是一路被 continue 掉，读取器根本没执行。
+- 不能简单把 K87 加进 IsKnown——那样会放开不区分物理实例的 legacy MchoseKeyboardProtocol.TryRead，checks/MouseDock.ProtocolTests/K87DiscoveryRegression 里有一条断言专门锁着这个行为。
+- 改为移植 PR #9 的专用读取器：新增 VendorProtocol.K87、HidDiscovery.K87、MchoseKeyboardProtocol.Read(ILink)，走 ReferenceQueryGate + InstanceScope 按物理实例打开句柄，只放行唯一 Report4D 的 FF80/0001 64/64 集合。
+- 旧的 legacy 调用从扫描链里移除，IsKnown 保持不放行 K87。
+- 16219 条断言（含 13 条 K87 回归）通过。

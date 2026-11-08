@@ -267,6 +267,7 @@ namespace MouseDock.Services.Detection
             QueryVgnF1(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadVgnF1);
             QueryF75(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
             QueryM9Pro(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
+            QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
             QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
             QueryGenericReceiver33(buckets, safeMode, preferences);
@@ -301,14 +302,8 @@ namespace MouseDock.Services.Detection
                 if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || (VendorProtocol.IsScopedModernMouse(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product)) || ZeroRainyProtocol.Candidate(bucket.Vid,bucket.Pid,bucket.Product)) continue;
                 if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
                 if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
-                if (result.Level >= 0)
-                {
-                    bucket.Battery = result.Level;
-                    bucket.Charging = result.Charging;
-                    bucket.BatterySource = "MCHOSE K87 V3 QHW 电量查询";
-                }
-                LastDiagnostics.Add($"MCHOSE K87 V3 QHW: battery={result.Level}, charging={result.Charging}");
+                // K87 的电量由 QueryK87Collections 走专用读取器（带物理实例限定）完成了，
+                // 这里不再调用不区分实例的 legacy TryRead。
             }
 
             LastDiagnostics.Add($"扫描完成 用时={Environment.TickCount - scanStarted}ms 设备={buckets.Count}");

@@ -69,6 +69,33 @@ namespace MouseDock.Services.Detection
             return Unknown;
         }
 
+        /// <summary>
+        /// 带实例限定的读取器：句柄由调用方按物理实例打开，这里只负责清队列、发 QHW 0x0904、等回包。
+        /// legacy 的 <see cref="TryRead"/> 枚举全部同 VID:PID 实例，不区分物理设备，所以保持关闭。
+        /// </summary>
+        internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link)
+        {
+            bool drained = false;
+            for (int i = 0; i < 32; i++)
+                if (link.Read(1) is not { Length: > 0 }) { drained = true; break; }
+            if (!drained) return ReferenceBatteryProtocol.Reading.Failed("K87 旧输入队列未清空");
+            byte sequence = unchecked((byte)Interlocked.Increment(ref _sequence));
+            if (!link.Write(CreateBatteryQuery(sequence), 250))
+                return ReferenceBatteryProtocol.Reading.Failed("K87 电量查询未完整发送");
+            long until = link.Now + 700;
+            for (int i = 0; i < 64 && link.Now < until; i++)
+            {
+                var report = link.Read((int)Math.Max(1, Math.Min(100, until - link.Now)));
+                if (report?.Length != 64) continue;
+                var result = ParseBatteryResponse(report, sequence);
+                if (result.Level >= 0)
+                    return new(result.Level, result.Charging, true,
+                        result.Charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
+                        "MCHOSE K87 V3 QHW 电量查询；RX=" + Convert.ToHexString(report));
+            }
+            return ReferenceBatteryProtocol.Reading.Failed("K87 未取得本轮有效电量响应");
+        }
+
         private static async Task<(int Level, bool Charging)> ReadAsync(string path)
         {
             using var handle = OpenDevice(path, 0xC0000000, 3, IntPtr.Zero, 3, 0x40000000, IntPtr.Zero);
