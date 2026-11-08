@@ -62,6 +62,28 @@ namespace MouseDock
         {
             base.OnStartup(e);
 
+            // 更新模式排在单实例锁之前：这一步要替换正在运行的 exe，
+            // 和主实例抢 mutex 只会让流程卡住。
+            if (Services.UpdateApplier.TryGetApplyTarget(e.Args, out string packagePath))
+            {
+                AttachConsole(-1);
+                try
+                {
+                    string failure = Services.UpdateApplier.Apply(packagePath,
+                        m => Console.WriteLine(m));
+                    if (failure != null) Console.Error.WriteLine(failure);
+                    Shutdown(failure == null ? 0 : 1);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    Shutdown(1);
+                }
+                return;
+            }
+
+            Services.UpdateApplier.CleanupPrevious(e.Args);
+
             int replay = Array.IndexOf(e.Args, "--replay-report");
             if (replay >= 0)
             {

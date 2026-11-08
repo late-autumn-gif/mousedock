@@ -160,6 +160,40 @@ internal static partial class UpdateService
                     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dest)) | Out-Null
                     Copy-Item -LiteralPath $file.FullName -Destination $dest -Force
                 }
+                # 清理旧版本遗留：更新包里没有的程序文件从安装目录删掉。
+                $keep = @{}
+                foreach ($file in $files) { $keep[$file.FullName.Substring($sourcePrefix.Length)] = $true }
+                $stale = @(Get-ChildItem -LiteralPath $install -File -Recurse -ErrorAction SilentlyContinue)
+                foreach ($old in $stale) {
+                    $relative = $old.FullName.Substring($installPrefix.Length)
+                    if ($keep.ContainsKey($relative)) { continue }
+                    # 只删主程序同族的文件，用户自己放的东西一律不碰。
+                    if ($old.Extension -notin @('.exe','.dll','.json','.pdb','.deps','.runtimeconfig')) { continue }
+                    try { [IO.File]::Delete($old.FullName) } catch { }
+                }
+                # 重建自启动项：先删后写。路径变了就不会留下指向旧 exe 的入口。
+                try {
+                    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+                    Remove-ItemProperty -Path $runKey -Name 'MouseDock' -ErrorAction SilentlyContinue
+                    New-ItemProperty -Path $runKey -Name 'MouseDock' -Value ('"' + $target + '" --tray') `
+                        -PropertyType String -Force | Out-Null
+                } catch { }
+                # 重建桌面快捷方式：先清掉所有旧的和重复的，再建一个指向当前 exe。
+                try {
+                    $desktop = [Environment]::GetFolderPath('Desktop')
+                    if ($desktop) {
+                        Get-ChildItem -LiteralPath $desktop -Filter 'MouseDock*.lnk' -ErrorAction SilentlyContinue |
+                            ForEach-Object { try { [IO.File]::Delete($_.FullName) } catch { } }
+                        $lnk = Join-Path $desktop 'MouseDock.lnk'
+                        $wsh = New-Object -ComObject WScript.Shell
+                        $sc = $wsh.CreateShortcut($lnk)
+                        $sc.TargetPath = $target
+                        $sc.WorkingDirectory = $install
+                        $sc.Description = '外设电量，一起看见'
+                        $sc.IconLocation = $target + ',0'
+                        $sc.Save()
+                    }
+                } catch { }
                 if ($job.Restart) {
                     $start = New-Object Diagnostics.ProcessStartInfo
                     $start.FileName = $target; $start.WorkingDirectory = $install

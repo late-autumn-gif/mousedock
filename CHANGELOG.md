@@ -618,3 +618,12 @@
 - 逐文件核对后确认各 PR 的功能内容都已在 main：PR #3/#4 的 MchoseKeyboardProtocol、PR #5 的 A7 V2 Ultra+、PR #8 的 M137、PR #9 的 M9Pro 与 K87 读取器。
 - 缺失的只有几个测试文件和被等价实现取代的旧文件。本次把 PR #9 的 M9ProRegression 补进来（49 条断言），并顺带修了移植 M9 Pro 时漏掉的两处：TryDeviceKind 没有 FF05/0001 分支导致集合归不到鼠标；ReceiverDiscovered / PeripheralConfirmed 没有 M9Pro 分支导致型号确认后仍被当成未确认。
 - 断言数从 16219 涨到 16268。
+
+### v1.1.2 补充：更新器清理旧版并重建启动入口（2026-11-08）
+
+- 更新时除了覆盖文件，现在会**删掉安装目录里更新包已不包含的** .exe/.dll/.json/.pdb/.deps/.runtimeconfig，其余扩展名一律不碰，避免误删用户自己放的东西。
+- **自启动项先删后写**：HKCU\...\Run\MouseDock 在替换后被重建成 "<新 exe>" --tray。路径变了也不会留下指向旧 exe 的入口。
+- **桌面快捷方式先清后建**：删掉桌面上所有 MouseDock*.lnk（包括重复的），再建一个指向新 exe 的 MouseDock.lnk，带图标与描述。
+- 新增独立入口 MouseDock.exe --apply-update <包>，以及更新后自动清理备份的 --cleanup-update <目录>。更新模式排在单实例锁之前，避免和常驻实例抢 mutex。
+- 新增 Services/UpdateApplier.cs：本地包应用器，含哈希校验、目录级备份、失败回滚、COM 快捷方式创建。
+- 更新脚本语法检查通过，16268 条断言与 63/68 界面检查全部通过。
