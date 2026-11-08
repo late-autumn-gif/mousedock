@@ -627,3 +627,19 @@
 - 新增独立入口 MouseDock.exe --apply-update <包>，以及更新后自动清理备份的 --cleanup-update <目录>。更新模式排在单实例锁之前，避免和常驻实例抢 mutex。
 - 新增 Services/UpdateApplier.cs：本地包应用器，含哈希校验、目录级备份、失败回滚、COM 快捷方式创建。
 - 更新脚本语法检查通过，16268 条断言与 63/68 界面检查全部通过。
+
+### v1.1.2 补充：更新启动器改为独立进程（2026-11-08）
+
+- 之前 --apply-update 试图在自己进程里替换自己，Windows 不允许移动正在运行的 exe 所在目录，所以整段流程从来没真正跑起来。
+- 现在 --apply-update 只做一件事：把完整流程写成 pply.ps1，用独立 PowerShell 进程启动它，然后自己退出。后续全部由那个进程完成：
+  1. 等父进程退出
+  2. 循环 Kill 掉所有剩余 MouseDock 进程，确认清零
+  3. 删注册表 Run 项、删桌面所有 MouseDock*.lnk
+  4. 清空安装目录里的程序文件（.exe/.dll/.json/.pdb/.deps/.runtimeconfig/.xml/.config）
+  5. 解压更新包，铺新文件
+  6. 重建 Run 项为 "<exe>" --tray
+  7. 重建桌面快捷方式
+  8. 拉起新版本，清理暂存目录
+- 全程写 pply.log，失败时尽力拉起旧程序。
+- 实测日志逐步通过，keep-me.txt 保留、Stale.dll 删除、Run 项与快捷方式都改到新路径。
+- 16268 条断言与 63/68 界面检查全部通过。
