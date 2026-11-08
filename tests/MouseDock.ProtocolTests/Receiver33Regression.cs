@@ -46,10 +46,12 @@ internal static class Receiver33Regression
         bad = (byte[])inphic.Clone(); bad[3] = 0x0A;
         Check(!VendorProtocol.TryParseReceiver33Frame(bad, out _, out _, out _, out _), "Wrong version byte rejected");
 
-        // 只在这几个公共接收器号段上启用，且让开黑爵/多彩
-        Check(VendorProtocol.IsGenericReceiver33(0x248A, 0x5B2F, "Wireless-Receiver"), "248A:5B2F generic receiver accepted");
+        // 只在这几个公共接收器号段上启用，且让开黑爵/多彩。
+        // 248A:5B2F 例外：它归 M137 官方 GetInfo，公版旁路不再接手。
+        Check(!VendorProtocol.IsGenericReceiver33(0x248A, 0x5B2F, "Wireless-Receiver"),
+            "248A:5B2F belongs to the M137 GetInfo route");
         Check(VendorProtocol.IsGenericReceiver33(0x249A, 0x5C2F, "Wireless-Receiver"), "249A:5C2F generic receiver accepted");
-        Check(VendorProtocol.IsGenericReceiver33(0x248A, 0x5B2F, ""), "Empty product string still accepted");
+        Check(VendorProtocol.IsGenericReceiver33(0x249A, 0x5B2F, ""), "Empty product string still accepted");
         Check(!VendorProtocol.IsGenericReceiver33(0x248A, 0x5B2F, "AJ159 Receiver"), "AJAZZ AJ159 collision excluded");
         Check(!VendorProtocol.IsGenericReceiver33(0x248A, 0x5C2F, "DELUX Receiver"), "DELUX collision excluded");
         Check(!VendorProtocol.IsGenericReceiver33(0x046D, 0xC539, "USB Receiver"), "Logitech receiver not claimed");
@@ -93,7 +95,19 @@ internal static class Receiver33Regression
         Check(InphicDeviceTable.Describe(0x1D57, 0xFA65) == "非英菲克号段",
             "1D57 bridge IDs are not the 248A device table");
 
+        // 248A:5B2F 归 M137 官方 GetInfo 独占，公版 33 字节旁路不能再碰它，
+        // 否则两台接收器同时在线时名字互相覆盖。
+        Check(!VendorProtocol.IsGenericReceiver33(0x248A, 0x5B2F, "Wireless-Receiver"),
+            "248A:5B2F stays out of the generic 33-byte bypass");
+        Check(!VendorProtocol.IsGenericReceiver33(0x248A, 0x5B2F, ""),
+            "248A:5B2F stays out even without a product string");
+        Check(VendorProtocol.IsGenericReceiver33(0x248A, 0x5C2F, "Wireless-Receiver"),
+            "248A:5C2F still uses the generic bypass");
+        Check(VendorProtocol.IsGenericReceiver33(0x089D, 0x062F, "Wireless-Receiver"),
+            "089D:062F keeps the AULA route");
+        Check(M137FeatureProtocol.IsCandidate(0x248A, 0x5B2F, "Wireless-Receiver"),
+            "M137 owns 248A:5B2F");
+
         return assertions;
     }
 }
-

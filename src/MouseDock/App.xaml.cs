@@ -1109,7 +1109,7 @@ namespace MouseDock
             {
                 string level = d.Level >= 0 ? d.Level + "%" : "未知";
                 string charge = d.Charging ? "  充电=是" : "";
-                sb.AppendLine($"[{d.Kind}] {d.Name}  电量={level}{charge}  连接={(d.Connected ? "是" : "否")}  通道={d.Transport}  ({d.Detail})");
+                sb.AppendLine($"[{d.Kind}] {d.Name}  电量={level}{charge}  DPI={(d.Dpi > 0 ? d.Dpi.ToString() : "—")}  连接={(d.Connected ? "是" : "否")}  通道={d.Transport}  ({d.Detail})");
                 if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("    说明: " + d.Note);
             }
 

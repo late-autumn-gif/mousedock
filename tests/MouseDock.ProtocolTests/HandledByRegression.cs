@@ -16,7 +16,7 @@ internal static class HandledByRegression
         // 公版 33 字节接收器：没读到身份帧时品牌兜底，类型是鼠标
         var inphic = new HidDiscovery.Bucket
         {
-            Vid = 0x248A, Pid = 0x5B2F, Product = "Wireless-Receiver",
+            Vid = 0x248A, Pid = 0x5C2F, Product = "Wireless-Receiver",
             Kind = DeviceKind.Keyboard, HandledBy = HandledBy.Receiver33
         }.ToDevice();
         Check(inphic != null && inphic.Name == "英菲克 2.4G 接收器（型号未确认）" &&

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MouseDock.Services;
@@ -20,7 +20,11 @@ public static partial class HidDiscovery
             ReferenceBatteryProtocol.Reading r;
             using(InstanceScope.Enter(b.InstanceId)){try{r=query(channels[0].Path,b.Vid,b.Pid);}catch(Exception ex){r=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name);}}
             r??=ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
-            if(r.Level is >=0 and <=100 && r.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging){b.Battery=r.Level;b.Charging=r.ChargingKnown&&r.Charging;b.BatterySource=r.Diagnostic;}
+            if(r.Level is >=0 and <=100 && r.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging){b.Battery=r.Level;b.Charging=r.ChargingKnown&&r.Charging;b.BatterySource=r.Diagnostic;
+                // 官方网页驱动 0x12 0x67 只读请求；读不到就留未知，不影响电量。
+                var dpi=VendorProtocol.ReadMchoseDpi(channels[0].Path,false,out string dpiDiag);
+                if(dpi.Dpi>0){b.Dpi=dpi.Dpi;b.DpiSlots=dpi.Values;b.DpiText=dpiDiag;}
+                LastDiagnostics.Add($"{b.InstanceId} {dpiDiag}");}
             else b.BatteryFailures.Add(r.Diagnostic);
             LastDiagnostics.Add($"{b.InstanceId} G7专用 型号={b.G7Model} 电量={r.Level} {r.Diagnostic}");
         }

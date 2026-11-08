@@ -52,6 +52,8 @@ internal static class DeviceRoutes
         VendorProtocol.IsScopedInphic(vid, pid, product) ||
         VendorProtocol.IsReportedX23Se(vid, pid, product) ||
         OriginalGpwProtocol.IsCandidate(vid, pid) ||
+        // 248A:5B2F 的官方 GetInfo 是独立路由，公版 33 字节旁路已让出这个号段。
+        M137FeatureProtocol.IsCandidate(vid, pid, product) ||
         // Logitech HID++ (non-GPW receivers such as 046D:C53F) needs the probe lane too;
         // the GPW-specific model keeps its own dedicated route above.
         (vid == 0x046D && !OriginalGpwProtocol.IsCandidate(vid, pid)) ||

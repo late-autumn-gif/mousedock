@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Windows.Media;
 
@@ -41,6 +41,15 @@ namespace MouseDock.Models
         public string Source { get; set; } = "demo";
         public string Transport { get => _transport; set { if (_transport == value) return; _transport = value; Raise(nameof(Transport)); Raise(nameof(MetaLabel)); } }
         public string Detail { get; set; } = "";
+
+        private int _dpi = -1;
+        /// <summary>硬件 DPI；-1 表示没读到或设备不提供。</summary>
+        public int Dpi
+        {
+            get => _dpi;
+            set { if (_dpi == value) return; _dpi = value; Raise(nameof(Dpi)); Raise(nameof(DpiLabel)); }
+        }
+        public string DpiLabel => _dpi > 0 ? _dpi + " DPI" : "—";
 
         private string _note = "";
         public string Note

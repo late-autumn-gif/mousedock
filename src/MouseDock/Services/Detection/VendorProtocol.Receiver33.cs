@@ -21,6 +21,9 @@ internal static partial class VendorProtocol
 
     internal static bool IsGenericReceiver33(ushort vid, ushort pid, string product)
     {
+        // 248A:5B2F 归 M137 官方 GetInfo 独占：两套协议都读同一台接收器时，
+        // 谁先跑都可能把另一台设备的名字带歪，所以这里直接让出去。
+        if (vid == 0x248A && pid == 0x5B2F) return false;
         if (vid != 0x248A && vid != 0x249A && !(vid == 0x089D && pid == 0x062F)) return false;
         if (pid != 0x5B2F && pid != 0x5C2F && pid != 0x062F) return false;
         string p = product?.Trim().ToUpperInvariant();

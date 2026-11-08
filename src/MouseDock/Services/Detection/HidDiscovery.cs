@@ -268,6 +268,7 @@ namespace MouseDock.Services.Detection
             QueryRogScope(buckets, vendorCollections, safeMode, preferences);
             QueryScopedModernMouse(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedModernMouse);
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
+            QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
             QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
             QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadOriginalGpw);
 
@@ -1276,6 +1277,10 @@ namespace MouseDock.Services.Detection
             public string AulaModel, Sc630Product;
             /// <summary>248A:5B2F 官方 GetInfo 返回的型号名与身份串。</summary>
             public string M137Model;
+            /// <summary>MCHOSE 官方 0x12 0x67 读到的 DPI；-1 表示未知。</summary>
+            public int Dpi = -1;
+            public int[] DpiSlots;
+            public string DpiText;
             public string RogScopeModel;
             public string ZeroRainyModel;
             public string ModernModel;
@@ -1514,6 +1519,9 @@ namespace MouseDock.Services.Detection
                     Kind = kind,
                     Transport = transport,
                     Level = Battery,
+                    Dpi = Dpi,
+                    DpiSlots = DpiSlots,
+                    DpiText = DpiText ?? "",
                     Charging = charging,
                     IsStale = ReadStale,
                     Connected = true,

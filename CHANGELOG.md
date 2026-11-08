@@ -503,3 +503,14 @@
 - 调度上排在通用 33 字节旁路之前，并让旁路跳过已由 M137 接管的实例。HandledBy 增加 M137，ToDevice 输出确认型号，接收器电量不标记为外设已确认。
 - 未采纳 PR 的 ROG OMNI 部分：现有 QueryRogScope 已覆盖 1B7A 与 1C25，PR 只认 1B7A 且会替换掉更宽的配对表支持。
 - 16123 条离线断言通过（新增 30 条）；界面检查 59/64 + 5 skipped；真机 ROG 52%、迈从 83%。
+
+### v1.1.2 补充：接收器归属收紧与 DPI 读取框架（2026-11-08）
+
+- 收紧 33 字节接收器归属：248A:5B2F 现在只归 M137 官方 GetInfo，IsGenericReceiver33 不再接手这个号段，避免英菲克与狼蛛接收器同时在线时互相改名。IsKnown 补上 M137，Find 保持 M137 优先。
+- 修复连带断言：HandledBy 无身份帧用例改到 248A:5C2F，IsGenericReceiver33 的空产品串用例改到 249A:5B2F。
+- 新增 DPI 读取：依据官方网页驱动 eadMap 的 "0x12 0x67"（64 字节 Feature，dpi0..dpi5 小端、dpiSum、gDpiIndex/usbDpiIndex），落成 MchoseDpiProtocol + VendorProtocol.ReadMchoseDpi + QueryMchoseDpi，只在电量读到的迈从设备上发只读请求。
+- DPI 写入未实现：官方写入走 configManager.getCommandConfig 配置表，命令字节未取到，不猜。
+- 本机 A7 V2 Pro 实测不响应  x12 0x67（旧 11/F9 通道），DPI 显示 —，诊断写明"设备不响应"。能读的是 MHUB v2 系设备。
+- --detect 与报告新增 DPI 列；DeviceInfo.Dpi/DpiLabel、DetectedDevice.Dpi 贯通。
+- RK 官方 V4.6 包已解（innoextract），Dev 目录 200+ 款键盘定义里没有 R98Pro/R98，R98Pro 不在这版驱动覆盖范围。
+- 16147 条离线断言通过（+19 DPI）；界面检查 59/64 + 5 skipped；真机 ROG 52%、迈从 83%。
