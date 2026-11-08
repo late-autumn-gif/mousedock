@@ -554,3 +554,12 @@
 - VGN 蜻蜓 F1 MOBA（3554:F503）：VGN V HUB 的 asar 9777 个文件里搜不到 F503、蜻蜓、F1 MOBA；AULA 驱动里也没有该 PID。该型号走 VGN/VXE 旧版鼠标软件，现有资料给不出帧，维持未知。
 - 澄清一处误读：用户报告里的 F75 官方无线 Report13 TX=13050100…19 其实是 RK R98Pro 的身份帧（见 R9KeyboardChecks.cs），旧版本把它套在 F75 上，所以必然无响应。当前 1.1.2 没有 F75 读取器。
 - 未改代码，16167 条离线断言与 59/64 界面检查基线不变。
+
+### v1.1.2 新增：VGN 蜻蜓 F1 MOBA 与狼蛛 AULA F75（2026-11-08）
+
+- 用户提供的包 MouseDock-K87-StartupFix-win-x64.zip（1.1.1+bac923f）里有两套我方没有的协议类。用 DOTNET_BUNDLE_EXTRACT_BASE_DIR 让单文件包自解压拿到真实 MouseDock.dll（975,872 字节），再用 ilspycmd 反编译出 VgnF1Protocol 与 F75Protocol。
+- **VGN 蜻蜓 F1 MOBA**（3554:F503，产品串 VGN Mouse 2.4G Receiver）：新增 VgnF1Protocol + HidDiscovery.VgnF1 + VendorProtocol.ReadVgnF1。FF02/0002 17/17，帧  8 <cmd>，[16] = 0x55 - sum([0..15])；命令 1 取 CID/MID（2,5/2,6/2,33 判 MOBA）、命令 3 查在线、4 查电量、3 复核配对地址一致才采用。
+- **狼蛛 AULA F75**（3554:FA09，产品串 2.4G Wireless Receiver）：新增 F75Protocol + HidDiscovery.F75 + VendorProtocol.ReadF75。官方驱动界面是 ShowPower=0，但固件留了 FF02/0002 20 字节 Report13 通道：命令 5 返回  300000000CD 型号、74 返回 [5] 百分比，充电状态未确认。
+- 新增 VendorProtocol.HidLink（HidStreamLink）把原始 HID 读写包装成 ReferenceBatteryProtocol.ILink；DeviceRoutes 增加 VgnF1 / AulaF75 两条路由，IsKnown 与 Find 同步。
+- 16219 条离线断言通过（+52：VGN F1 24 条、F75 28 条）；界面检查 59/64 + 5 skipped；本机 detect 无回归（迈从 82%、ROG 夜魔 X 识别正常）。
+- 这两条协议的准确性等级是「用户构建验证过」，不是本机实测；本机没有这两台设备。

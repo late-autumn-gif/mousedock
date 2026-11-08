@@ -20,7 +20,11 @@ internal enum HandledBy
     MchoseModern,
     MchoseG7,
     ZeroRainy,
-    OriginalGpw
+    OriginalGpw,
+    /// <summary>VGN 蜻蜓 F1 MOBA（3554:F503），见 VgnF1Protocol。</summary>
+    VgnF1,
+    /// <summary>狼蛛 AULA F75（3554:FA09），见 F75Protocol。</summary>
+    AulaF75
 }
 
 /// <summary>
@@ -45,6 +49,8 @@ internal static class DeviceRoutes
 
     /// <summary>允许对这台设备发厂商查询。等同于旧 RecognitionPolicy.CanQuery。</summary>
     internal static bool IsKnown(ushort vid, ushort pid, string product) =>
+        VgnF1Protocol.IsCandidate(vid, pid, product) ||
+        F75Protocol.IsCandidate(vid, pid, product) ||
         VendorProtocol.IsRogOmni(vid, pid) ||
         VendorProtocol.IsScopedModernMouse(vid, pid, product) ||
         ReferenceProfiles.Find(vid, pid) != null ||
@@ -77,6 +83,12 @@ internal static class DeviceRoutes
     /// </summary>
     internal static Route Find(ushort vid, ushort pid, string product)
     {
+        // 3554:F503 / 3554:FA09 有精确产品串与精确集合要求，必须排在通用 33 字节旁路之前，
+        // 否则会被公版接收器协议抢先认领。
+        if (VgnF1Protocol.IsCandidate(vid, pid, product))
+            return new Route { Reader = "VgnF1", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (F75Protocol.IsCandidate(vid, pid, product))
+            return new Route { Reader = "AulaF75", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
         if (VendorProtocol.IsRogOmni(vid, pid))
             return new Route { Reader = "RogScope", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseA7V2(vid, pid))
