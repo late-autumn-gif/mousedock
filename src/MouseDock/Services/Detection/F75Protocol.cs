@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text;
 
 namespace MouseDock.Services.Detection;
@@ -6,19 +6,22 @@ namespace MouseDock.Services.Detection;
 /// <summary>
 /// 狼蛛 AULA F75（3554:FA09，产品串 "2.4G Wireless Receiver"）。
 ///
-/// 协议来源：用户提供的 1.1.1+bac923f 构建里 <c>F75Protocol</c> 的反编译结果。
-/// 注意与官方驱动配置的矛盾：官方 <c>AULA F75 Setup v2.0</c> 的
-/// <c>Dev\kb\F75KR\KB.ini</c> 写的是 <c>ShowPower=0</c>，即厂商软件自己不在界面上显示电量；
-/// 但接收器的 hid 通道确实提供 20 字节 Feature 报告，命令 5 返回型号、
-/// 命令 74 返回百分比。这条路径属于"厂商没显示但固件支持"，可靠性低于有官方显示的设备。
+/// 协议来源：合作者提供的 1.1.1+6329a7d 构建（"F75-Wireless-Retry"）反编译结果。
+/// 关键点是重试策略而不是帧格式：接收器在键盘刚唤醒时经常前几次不回应，
+/// 所以身份查询给 8 次 × 200ms、电量查询给 6 次 × 500ms，共用 5 秒总预算；
+/// 旧版只试 2 次 × 400ms，在真机上就会"未取得有效响应"。
 ///
 /// 帧：20 字节，<c>[0]=0x13</c>、<c>[1]=命令</c>、<c>[2] = 命令==5 时为 1</c>，
-/// <c>[19] = sum([0..18])</c>。应答 <c>[2]==1</c>、<c>[4]=数据长度</c>、<c>[19]</c> 校验。
+/// <c>[19] = sum([0..18])</c>。命令 5 身份回 <c>0300000000CD</c>，命令 74 回百分比。
+/// 官方驱动界面对这个型号是 ShowPower=0，走的是固件留的 Report13 通道，充电状态未提供。
 /// </summary>
 internal static class F75Protocol
 {
     internal const string Model = "AULA F75";
     internal const string Identity = "0300000000CD";
+
+    /// <summary>一次读数的总等待预算；身份 + 电量都在这 5 秒里。</summary>
+    internal const int QueryTimeoutMs = 5000;
 
     internal static bool IsCandidate(ushort vid, ushort pid, string product) =>
         vid == 0x3554 && pid == 0xFA09 &&
@@ -51,11 +54,17 @@ internal static class F75Protocol
         return packet[19] == (byte)sum;
     }
 
-    private static byte[] Exchange(ReferenceBatteryProtocol.ILink link, byte command, int dataLength, StringBuilder trace)
+    /// <summary>
+    /// 清旧队列 → 发 <paramref name="attempts"/> 轮请求，每轮等 <paramref name="waitMs"/> 收应答。
+    /// 全部时间受 <paramref name="deadline"/> 约束，避免某一次卡死把整轮读数拖过预算。
+    /// </summary>
+    private static byte[] Exchange(ReferenceBatteryProtocol.ILink link, byte command, int dataLength,
+        int attempts, int waitMs, long deadline, StringBuilder trace)
     {
         bool drained = false;
         for (int i = 0; i < 32; i++)
         {
+            if (link.Now >= deadline) break;
             byte[] stale = link.Read(1);
             if (stale == null || stale.Length <= 0)
             {
@@ -68,26 +77,33 @@ internal static class F75Protocol
             trace.Append("；旧报告队列未清空");
             return null;
         }
-        byte[] request = Request(command);
-        for (int attempt = 0; attempt < 2; attempt++)
+
+        var request = Request(command);
+        int received = 0;
+        for (int attempt = 0; attempt < attempts; attempt++)
         {
+            if (link.Now >= deadline) break;
+            long remaining = deadline - link.Now;
+            if (remaining <= 0) break;
             trace.Append(" TX=").Append(Convert.ToHexString(request));
-            if (!link.Write(request, 250))
+            if (!link.Write(request, (int)Math.Min(250L, remaining)))
             {
                 trace.Append("；请求未完整发送");
                 return null;
             }
-            long until = link.Now + 400;
+            long until = Math.Min(deadline, link.Now + waitMs);
             for (int i = 0; i < 32; i++)
             {
                 if (link.Now >= until) break;
                 byte[] reply = link.Read((int)Math.Max(1L, Math.Min(80L, until - link.Now)));
                 if (reply == null || reply.Length <= 0) continue;
+                received++;
                 trace.Append(" RX=").Append(Convert.ToHexString(reply.AsSpan(0, Math.Min(reply.Length, 20))));
                 if (ValidReply(reply, command, dataLength)) return reply;
             }
         }
-        trace.Append("；未取得本轮有效响应");
+        trace.Append(received == 0 ? "；查询超时，未收到输入报告" : "；收到输入报告，但没有本轮有效响应");
+        if (link.Now >= deadline) trace.Append("；本轮总等待预算已用尽");
         return null;
     }
 
@@ -96,10 +112,13 @@ internal static class F75Protocol
         var trace = new StringBuilder("F75 官方无线 Report13");
         try
         {
-            byte[] identity = Exchange(link, 5, 6, trace);
+            long deadline = link.Now + QueryTimeoutMs;
+            // 身份：短等多次，键盘唤醒后往往前几轮不应答。
+            byte[] identity = Exchange(link, 5, 6, 8, 200, deadline, trace);
             if (identity == null || Convert.ToHexString(identity.AsSpan(5, 6)) != Identity)
                 return ReferenceBatteryProtocol.Reading.Failed(trace + "；未确认 F75 型号");
-            byte[] battery = Exchange(link, 74, 2, trace);
+            // 电量：次数少一点、每次等久一点，给固件算电量的时间。
+            byte[] battery = Exchange(link, 74, 2, 6, 500, deadline, trace);
             if (battery == null || battery[5] > 100)
                 return ReferenceBatteryProtocol.Reading.Failed(trace + "；电量未知");
             return new ReferenceBatteryProtocol.Reading(battery[5], false, false,
@@ -111,4 +130,3 @@ internal static class F75Protocol
         }
     }
 }
-
