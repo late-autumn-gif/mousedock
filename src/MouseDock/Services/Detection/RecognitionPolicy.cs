@@ -3,6 +3,8 @@ namespace MouseDock.Services.Detection;
 internal static class RecognitionPolicy
 {
     internal static bool CanQuery(ushort vid, ushort pid, string product) =>
+        VgnF1Protocol.IsCandidate(vid, pid, product) ||
+        F75Protocol.IsCandidate(vid, pid, product) ||
         M137FeatureProtocol.IsCandidate(vid, pid, product) ||
         RogOmniKeyboardProtocol.IsCandidate(vid, pid, product) ||
         // Only IDs enter the candidate set here. Exact collection/capability validation

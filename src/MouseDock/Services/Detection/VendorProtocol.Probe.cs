@@ -70,6 +70,11 @@ namespace MouseDock.Services.Detection
             text.AppendLine($"安全模式: {(safeMode ? "开（只枚举，不发查询帧）" : "关")}");
             text.AppendLine();
 
+            if (vid == 0x3554 && pid is 0xF503 or 0xFA09)
+            {
+                text.AppendLine("此接收器仅由自动扫描按物理实例读取；查询及原始响应见 hid-devices.txt。");
+                return new DeviceProbeResult { Text = text.ToString() };
+            }
             // This diagnostic API has no physical-instance key. Do not reopen every
             // receiver sharing this public ID; dedicated scan routes already log
             // their exact channel, report metadata and transaction result.
