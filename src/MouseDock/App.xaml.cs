@@ -1379,15 +1379,24 @@ namespace MouseDock
                     FontSize = 13
                 };
 
+                var hint = new System.Windows.Controls.TextBlock
+                {
+                    Text = "替换完成后程序会自动重启，个人配置保留。",
+                    Margin = new Thickness(24, 4, 24, 0),
+                    FontSize = 11,
+                    Opacity = 0.7
+                };
+
                 var stack = new System.Windows.Controls.StackPanel();
                 stack.Children.Add(text);
                 stack.Children.Add(_updateBar);
+                stack.Children.Add(hint);
 
                 _updateWin = new Window
                 {
                     Title = "MouseDock 更新",
                     Content = stack,
-                    Width = 380, Height = 120,
+                    Width = 380, Height = 148,
                     WindowStartupLocation = WindowStartupLocation.CenterScreen,
                     ResizeMode = ResizeMode.NoResize,
                     WindowStyle = WindowStyle.ToolWindow,
