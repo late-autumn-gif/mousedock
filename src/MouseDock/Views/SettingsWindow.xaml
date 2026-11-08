@@ -306,6 +306,34 @@
                             <StackPanel x:Name="TaskbarStylePanel" Margin="0,12,0,0">
                                 <TextBlock Text="任务栏样式" FontWeight="SemiBold" Margin="0,0,0,6" />
                                 <UniformGrid x:Name="TaskbarStyleChoices" Columns="2" />
+                                <Grid Margin="0,10,0,0">
+                                    <TextBlock Text="文字颜色" Style="{StaticResource RowText}" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button x:Name="TaskbarTextColorButton" Tag="text" Style="{StaticResource GhostButton}"
+                                                Padding="7,5" ToolTip="选择任务栏文字颜色" Click="OnPickTaskbarColor">
+                                            <Border x:Name="TaskbarTextColorSwatch" Width="28" Height="16" CornerRadius="3"
+                                                    BorderBrush="#808080" BorderThickness="1" />
+                                        </Button>
+                                        <Button x:Name="ResetTaskbarTextColorButton" Tag="text" Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5"
+                                                ToolTip="恢复默认文字颜色" Click="OnResetTaskbarColor">
+                                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <TextBlock Text="电量颜色" Style="{StaticResource RowText}" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button x:Name="TaskbarBatteryColorButton" Tag="battery" Style="{StaticResource GhostButton}"
+                                                Padding="7,5" ToolTip="选择任务栏圆环和图标颜色" Click="OnPickTaskbarColor">
+                                            <Border x:Name="TaskbarBatteryColorSwatch" Width="28" Height="16" CornerRadius="3"
+                                                    BorderBrush="#808080" BorderThickness="1" />
+                                        </Button>
+                                        <Button x:Name="ResetTaskbarBatteryColorButton" Tag="battery" Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5"
+                                                ToolTip="恢复默认电量配色" Click="OnResetTaskbarColor">
+                                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
                             </StackPanel>
                             <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">
                                 <Grid.ColumnDefinitions>

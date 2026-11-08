@@ -280,6 +280,21 @@ internal static class DeviceManagementRegression
                 var stylePanel=(FrameworkElement)manager.FindName("TaskbarStylePanel");
                 stylePanel.BringIntoView(); Pump(40);
                 Check(stylePanel.IsVisible,"Taskbar style controls are visible in taskbar mode");
+                var applyColor=typeof(SettingsWindow).GetMethod("ApplyTaskbarColor",BindingFlags.Instance|BindingFlags.NonPublic)!;
+                applyColor.Invoke(manager,new object[]{"text","#FFCC00"});
+                applyColor.Invoke(manager,new object[]{"battery","#00AAFF"});
+                Pump(30);
+                Check(SettingsStore.Load().TaskbarTextColor=="#FFCC00" &&
+                    SettingsStore.Load().TaskbarBatteryColor=="#00AAFF","Taskbar color controls save independent choices");
+                var coloredStrip=(TaskbarBatteryStrip)((Viewbox)taskbar.Content).Child;
+                Check(((SolidColorBrush)Find<TextBlock>(coloredStrip,t=>t.Name=="BatteryNumber").Foreground).Color==Color.FromRgb(255,204,0),
+                    "Taskbar color controls update the live window immediately");
+                Capture(manager,Path.Combine(directory,"任务栏颜色-设置入口.png"));
+                ((Button)manager.FindName("ResetTaskbarTextColorButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                ((Button)manager.FindName("ResetTaskbarBatteryColorButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Pump(20);
+                Check(SettingsStore.Load().TaskbarTextColor=="" && SettingsStore.Load().TaskbarBatteryColor=="",
+                    "Taskbar reset buttons restore automatic colors and save the reset");
                 Capture(manager,Path.Combine(directory,"任务栏样式-设置入口.png"));
                 foreach(string style in new[]{"panel","ring"})
                 {

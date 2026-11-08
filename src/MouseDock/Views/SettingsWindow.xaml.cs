@@ -555,6 +555,10 @@ namespace MouseDock.Views
 
         private void RebuildTaskbarStyles()
         {
+            TaskbarTextColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarTextColor,
+                new SolidColorBrush(App.Theme.Text));
+            TaskbarBatteryColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarBatteryColor,
+                App.Settings.TaskbarStyle == "panel" ? Brushes.White : new SolidColorBrush(Color.FromRgb(52, 211, 153)));
             TaskbarStyleChoices.Children.Clear();
             foreach (var (style, label) in new[] { ("ring", "环内数字"), ("panel", "紧凑面板") })
             {
@@ -562,7 +566,8 @@ namespace MouseDock.Views
                 {
                     new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 28 },
                     new DeviceInfo { Kind = DeviceKind.Mouse, Level = 90 }
-                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(App.Theme.Text), App.Settings.LowBatteryWarn);
+                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(App.Theme.Text), App.Settings.LowBatteryWarn,
+                    App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor);
                 var content = new StackPanel();
                 content.Children.Add(new Viewbox { Width = 96, Height = 40, Child = preview, IsHitTestVisible = false });
                 content.Children.Add(new TextBlock { Text = label, FontSize = 11,
@@ -581,6 +586,34 @@ namespace MouseDock.Views
                 };
                 TaskbarStyleChoices.Children.Add(choice);
             }
+        }
+
+        private void OnPickTaskbarColor(object sender, RoutedEventArgs e)
+        {
+            string target = (sender as FrameworkElement)?.Tag as string;
+            var swatch = target == "text" ? TaskbarTextColorSwatch : TaskbarBatteryColorSwatch;
+            var color = ((SolidColorBrush)swatch.Background).Color;
+            using var dialog = new System.Windows.Forms.ColorDialog
+            {
+                FullOpen = true,
+                Color = System.Drawing.Color.FromArgb(color.R, color.G, color.B)
+            };
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                ApplyTaskbarColor(target, $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
+        }
+
+        private void OnResetTaskbarColor(object sender, RoutedEventArgs e) =>
+            ApplyTaskbarColor((sender as FrameworkElement)?.Tag as string, "");
+
+        private void ApplyTaskbarColor(string target, string color)
+        {
+            if (_loading) return;
+            if (target == "text") App.Settings.TaskbarTextColor = color;
+            else if (target == "battery") App.Settings.TaskbarBatteryColor = color;
+            else return;
+            App.Taskbar?.UpdateDevices();
+            RebuildTaskbarStyles();
+            App.SaveSettings();
         }
 
         private void OnBatteryNumberChanged(object sender, RoutedEventArgs e)

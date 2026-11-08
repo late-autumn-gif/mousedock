@@ -60,6 +60,47 @@ internal static class TaskbarStyleChecks
         }
     }
 
+    internal static void CustomColors()
+    {
+        var textProperty = typeof(AppSettings).GetProperty("TaskbarTextColor");
+        var batteryProperty = typeof(AppSettings).GetProperty("TaskbarBatteryColor");
+        Require(textProperty != null && batteryProperty != null, "Taskbar text and battery colors must be independent saved preferences.");
+        var settings = new AppSettings();
+        textProperty!.SetValue(settings, "#FFCC00");
+        batteryProperty!.SetValue(settings, "#00AAFF");
+        var options = new JsonSerializerOptions
+        { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals };
+        var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings.Clone(), options), options)!;
+        Require((string?)textProperty.GetValue(restored) == "#FFCC00" &&
+            (string?)batteryProperty.GetValue(restored) == "#00AAFF", "Color choices must survive cloning and restart.");
+        var type = typeof(AppSettings).Assembly.GetType("MouseDock.Controls.TaskbarBatteryStrip")!;
+        foreach (string style in new[] { "ring", "panel" })
+        {
+            var devices = new[] { new DeviceInfo { Level = 80, Kind = DeviceKind.Keyboard } };
+            var strip = (FrameworkElement)Activator.CreateInstance(type, devices, style, true, false,
+                Brushes.WhiteSmoke, 20, "#FFCC00", "#00AAFF")!;
+            Arrange(strip);
+            var number = Children<TextBlock>(strip).Single(t => t.Name == "BatteryNumber");
+            Require(((SolidColorBrush)number.Foreground).Color == Color.FromRgb(255, 204, 0), "Taskbar text must use its own chosen color.");
+            var glyph = Children<MouseDock.Controls.DeviceGlyph>(strip).Single(g => g.Visibility == Visibility.Visible);
+            Require(((SolidColorBrush)glyph.GlyphBrush).Color == Color.FromRgb(0, 170, 255), "Battery glyph must use its independent color.");
+            var bitmap = new RenderTargetBitmap((int)strip.Width * 3, (int)strip.Height * 3, 288, 288, PixelFormats.Pbgra32);
+            bitmap.Render(strip);
+            var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+            bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+            Require(Enumerable.Range(0, pixels.Length / 4).Count(i =>
+                pixels[i * 4] > 200 && pixels[i * 4 + 1] > 100 && pixels[i * 4 + 2] < 20) > (style == "ring" ? 250 : 20),
+                "The chosen battery color must be visible in the rendered ring or icon.");
+            devices[0].Level = 29; Arrange(strip);
+            Require(number.Text == "29", "Custom colors must retain live battery updates.");
+            var fallback = (FrameworkElement)Activator.CreateInstance(type, devices, style, true, false,
+                Brushes.WhiteSmoke, 20, "invalid", "")!;
+            Arrange(fallback);
+            Require(((SolidColorBrush)Children<TextBlock>(fallback).Single(t => t.Name == "BatteryNumber").Foreground).Color == Colors.WhiteSmoke,
+                "Invalid or reset color settings must fall back without breaking the panel.");
+        }
+    }
+
     private static FrameworkElement Strip(DeviceInfo[] devices, string style, bool numbers, bool vertical, Brush ink)
     {
         var type = typeof(AppSettings).Assembly.GetType("MouseDock.Controls.TaskbarBatteryStrip");

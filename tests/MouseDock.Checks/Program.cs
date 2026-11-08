@@ -32,6 +32,7 @@ internal static class Program
             ("Bluetooth startup recovery respects changed preferences and headset mode", StartupRecoveryChecks.BluetoothChangedPreferences),
             ("Taskbar styles stay inside every taskbar", TaskbarStyleChecks.Placement),
             ("Taskbar styles persist across restart", TaskbarStyleChecks.Preferences),
+            ("Taskbar colors persist and render independently", TaskbarStyleChecks.CustomColors),
             ("Taskbar styles render live values across DPI and themes", TaskbarStyleChecks.Rendering),
             ("Embedded taskbar uses a transparent native child", TaskbarEmbeddingChecks.AttachedToTaskbar),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),

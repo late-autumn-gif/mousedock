@@ -19,9 +19,26 @@ public sealed class TaskbarBatteryStrip : Border
 
     public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
         bool vertical, Brush foreground, int lowThreshold)
+        : this(devices, style, showNumber, vertical, foreground, lowThreshold, "", "") { }
+
+    public static Brush ResolveBrush(string value, Brush fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        try
+        {
+            var color = (Color)ColorConverter.ConvertFromString(value);
+            return new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B));
+        }
+        catch { return fallback; }
+    }
+
+    public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
+        bool vertical, Brush foreground, int lowThreshold, string textColor, string batteryColor)
     {
         StyleName = NormalizeStyle(style);
         bool panel = StyleName == "panel";
+        var textBrush = ResolveBrush(textColor, foreground);
+        var batteryBrush = ResolveBrush(batteryColor, null);
         var items = devices.ToArray();
         DeviceCount = items.Length;
         Background = Brushes.Transparent;
@@ -40,16 +57,17 @@ public sealed class TaskbarBatteryStrip : Border
             if (panel && i > 0)
                 stack.Children.Add(new Border
                 {
-                    Background = foreground, Opacity = .4,
+                    Background = textBrush, Opacity = .4,
                     Width = vertical ? 24 : 1, Height = vertical ? 1 : 24,
                     HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
                 });
-            stack.Children.Add(CreateBadge(items[i], panel, showNumber, vertical, foreground, lowThreshold));
+            stack.Children.Add(CreateBadge(items[i], panel, showNumber, vertical, foreground,
+                lowThreshold, textBrush, batteryBrush));
         }
     }
 
     private static Grid CreateBadge(DeviceInfo device, bool panel, bool showNumber, bool vertical,
-        Brush foreground, int lowThreshold)
+        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush)
     {
         var badge = new Grid
         {
@@ -62,7 +80,7 @@ public sealed class TaskbarBatteryStrip : Border
         {
             var ring = new DeviceBatteryRing
             {
-                GlyphBrush = foreground, LowBatteryThreshold = lowThreshold,
+                GlyphBrush = batteryBrush ?? foreground, BatteryBrush = batteryBrush, LowBatteryThreshold = lowThreshold,
                 ShowGlyph = false, ShowChargingMark = false
             };
             ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
@@ -74,7 +92,7 @@ public sealed class TaskbarBatteryStrip : Border
         {
             Width = showNumber ? (panel ? 14 : 12) : 21,
             Height = showNumber ? (panel ? 14 : 12) : 21,
-            Thickness = 1.8, GlyphBrush = panel ? Brushes.White : foreground,
+            Thickness = 1.8, GlyphBrush = batteryBrush ?? (panel ? Brushes.White : foreground),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = showNumber ? VerticalAlignment.Top : VerticalAlignment.Center,
             Margin = showNumber ? new Thickness(0, panel ? (badge.Height - 32) / 2 : 7, 0, 0) : new Thickness(0),
@@ -84,7 +102,7 @@ public sealed class TaskbarBatteryStrip : Border
         badge.Children.Add(glyph);
         var number = new TextBlock
         {
-            Name = "BatteryNumber", Foreground = foreground,
+            Name = "BatteryNumber", Foreground = textBrush,
             FontFamily = new FontFamily("Segoe UI"), FontWeight = FontWeights.SemiBold,
             FontSize = panel ? 14 : 12, Height = panel ? 18 : 15,
             TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
@@ -98,7 +116,7 @@ public sealed class TaskbarBatteryStrip : Border
         var charging = new TextBlock
         {
             Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
-            Foreground = foreground, FontSize = 9, Width = 9, Height = 11,
+            Foreground = textBrush, FontSize = 9, Width = 9, Height = 11,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 1, 1, 0), IsHitTestVisible = false
         };

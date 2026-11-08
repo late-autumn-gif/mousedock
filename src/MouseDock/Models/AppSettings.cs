@@ -71,6 +71,8 @@ namespace MouseDock.Models
         public double TaskbarOffset { get; set; } = 8;
         public bool ShowBatteryNumber { get; set; } = true;
         public string TaskbarStyle { get; set; } = "ring";
+        public string TaskbarTextColor { get; set; } = "";
+        public string TaskbarBatteryColor { get; set; } = "";
         public string EdgeGlyphColor { get; set; } = "#F5F5F5";
         public double EdgeVerticalPosition { get; set; } = 0.5;
         public double EdgeInset { get; set; } = 12;
@@ -145,6 +147,8 @@ namespace MouseDock.Models
                 TaskbarOffset = TaskbarOffset,
                 ShowBatteryNumber = ShowBatteryNumber,
                 TaskbarStyle = TaskbarStyle,
+                TaskbarTextColor = TaskbarTextColor,
+                TaskbarBatteryColor = TaskbarBatteryColor,
                 EdgeGlyphColor = EdgeGlyphColor,
                 EdgeVerticalPosition = EdgeVerticalPosition,
                 EdgeInset = EdgeInset,

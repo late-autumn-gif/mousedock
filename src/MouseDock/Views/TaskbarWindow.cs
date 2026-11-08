@@ -106,7 +106,7 @@ namespace MouseDock.Views
             catch { }
             _strip = new TaskbarBatteryStrip(App.Battery.VisibleDevices, App.Settings.TaskbarStyle,
                 App.Settings.ShowBatteryNumber, _vertical, light ? Brushes.Black : Brushes.WhiteSmoke,
-                App.Settings.LowBatteryWarn);
+                App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor);
             _viewport.Child = _strip;
             UpdateAnchor();
         }

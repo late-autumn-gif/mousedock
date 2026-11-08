@@ -25,6 +25,9 @@ namespace MouseDock.Controls
             new FrameworkPropertyMetadata(Brushes.WhiteSmoke, FrameworkPropertyMetadataOptions.AffectsRender));
         public static readonly DependencyProperty ShowGlyphProperty = DependencyProperty.Register(
             nameof(ShowGlyph), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
+        public static readonly DependencyProperty BatteryBrushProperty = DependencyProperty.Register(
+            nameof(BatteryBrush), typeof(Brush), typeof(DeviceBatteryRing),
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
         public static readonly DependencyProperty ShowChargingMarkProperty = DependencyProperty.Register(
             nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
 
@@ -33,6 +36,7 @@ namespace MouseDock.Controls
         public bool Charging { get => (bool)GetValue(ChargingProperty); set => SetValue(ChargingProperty, value); }
         public int LowBatteryThreshold { get => (int)GetValue(LowBatteryThresholdProperty); set => SetValue(LowBatteryThresholdProperty, value); }
         public Brush GlyphBrush { get => (Brush)GetValue(GlyphBrushProperty); set => SetValue(GlyphBrushProperty, value); }
+        public Brush BatteryBrush { get => (Brush)GetValue(BatteryBrushProperty); set => SetValue(BatteryBrushProperty, value); }
         public bool ShowGlyph { get => (bool)GetValue(ShowGlyphProperty); set => SetValue(ShowGlyphProperty, value); }
         public bool ShowChargingMark { get => (bool)GetValue(ShowChargingMarkProperty); set => SetValue(ShowChargingMarkProperty, value); }
 
@@ -94,7 +98,7 @@ namespace MouseDock.Controls
             var color = Charging ? Color.FromRgb(56, 189, 248)
                 : Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
                 : Color.FromRgb(52, 211, 153);
-            var pen = new Pen(new SolidColorBrush(color), 2.5)
+            var pen = new Pen(BatteryBrush ?? new SolidColorBrush(color), 2.5)
             {
                 StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round
             };
