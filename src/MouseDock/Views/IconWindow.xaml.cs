@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -335,6 +335,8 @@ namespace MouseDock.Views
                     Ink=new SolidColorBrush(_activeStyle=="plain"||App.Settings.IconHideBackground?_theme.Text:Color.FromRgb(30,43,42)),
                     Accent=new SolidColorBrush(App.Settings.IconFollowTheme?_theme.Accent:Color.FromRgb(82,125,108)),DataContext=item
                 };
+                // 陈旧（休眠或读不到）时压暗整个图标，读到新电量后 ValueOpacity 回到 1。
+                icon.SetBinding(OpacityProperty,new System.Windows.Data.Binding(nameof(DeviceInfo.ValueOpacity)));
                 if(multi)icon.Devices=shown.Select(d=>(d.Kind,d.HasLevel?d.Level:-1,d.IsStale,d.IsChargingActive)).ToList();
                 else if(item!=null)icon.Devices=new(){(item.Kind,item.HasLevel?item.Level:-1,item.IsStale,item.IsChargingActive)};
                 icon.ToolTip=multi?string.Join("\n",shown.Select(d=>d.Name+" · "+d.LevelText)):item==null?"尚未选择设备":item.Name+" · "+item.LevelText;
@@ -543,3 +545,4 @@ namespace MouseDock.Views
         }
     }
 }
+

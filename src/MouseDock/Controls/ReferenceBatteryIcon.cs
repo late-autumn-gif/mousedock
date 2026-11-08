@@ -67,7 +67,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 if(Devices.Count==0)Text("—",20,x,y,ink);
                 for(int i=0;i<Math.Min(6,Devices.Count);i++){var a=Devices[i];double cx=24+i*42;Glyph(a.Kind,cx,y-12);Text(a.Level<0?"—":a.Level.ToString(),16,cx,y+6,ink);if(a.Stale)Text("上次",8,cx,y+19,Accent);if(i>0)d.DrawLine(track,new Point(cx-21,y-15),new Point(cx-21,y+15));}break;
         }
-        if(StyleName!="multi" && item.Item3)Text("上次",9,x,y+(ActualHeight<90?26:39),Accent);
+        // 陈旧读数不再写字，靠整体压暗表达：Sleep 或读不到时图标变暗，拿到新电量自动恢复。
         if(item.Item4)Text("ϟ",15,x+35,y-30,Accent);
     }
 
