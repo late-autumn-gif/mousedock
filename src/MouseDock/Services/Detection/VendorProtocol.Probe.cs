@@ -73,6 +73,17 @@ namespace MouseDock.Services.Detection
             // This diagnostic API has no physical-instance key. Do not reopen every
             // receiver sharing this public ID; dedicated scan routes already log
             // their exact channel, report metadata and transaction result.
+            // 248A:5B2F 的身份走 FF00/0001 的 Feature 33 通道，与电量查询不在同一集合上，
+            // 通用探针只发公版 33 字节帧是拿不到身份串的，这里单独走专用诊断。
+            if (ReceiverIdentityProtocol.IsCandidate(vid, pid))
+            {
+                var identityNodes = HidProbe.Enumerate(vid, pid);
+                string identityInstance = identityNodes
+                    .Select(n => InstanceScope.ForPath(n.Path, ""))
+                    .FirstOrDefault(id => !string.IsNullOrEmpty(id)) ?? "";
+                return ReceiverIdentityProtocol.Capture(identityInstance, safeMode, identityNodes);
+            }
+
             if (IsRogOmni(vid, pid) || IsMchoseA7V2(vid, pid) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
             {
                 text.AppendLine("此设备命中专用读取器，不运行跨实例通用探针。");
