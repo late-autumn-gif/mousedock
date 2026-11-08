@@ -12,6 +12,7 @@ internal enum HandledBy
 {
     None,
     Receiver33,
+    M137,
     Aula,
     Inphic,
     RogScope,
@@ -77,6 +78,8 @@ internal static class DeviceRoutes
             return new Route { Reader = "MchoseA7V2", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseModern(vid, pid))
             return new Route { Reader = "MchoseModern", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (M137FeatureProtocol.IsCandidate(vid, pid, product))
+            return new Route { Reader = "M137", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsGenericReceiver33(vid, pid, product))
             return new Route { Reader = "Receiver33", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsScopedInphic(vid, pid, product))

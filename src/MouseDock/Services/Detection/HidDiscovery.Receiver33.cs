@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace MouseDock.Services.Detection;
@@ -12,7 +12,7 @@ public static partial class HidDiscovery
     {
         foreach (var b in buckets.Values)
         {
-            if (safeMode || b.Battery >= 0) continue;
+            if (safeMode || b.Battery >= 0 || b.HandledBy == HandledBy.M137) continue;
             if (!VendorProtocol.IsGenericReceiver33(b.Vid, b.Pid, b.Product)) continue;
             if (!DeviceRoutes.IsKnown(b.Vid, b.Pid, b.Product)) continue;
             if (!(preferences?.CanRead(b.InstanceId, $"hid-{b.Vid:X4}-{b.Pid:X4}") ?? true)) continue;

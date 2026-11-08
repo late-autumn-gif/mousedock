@@ -494,3 +494,12 @@
 - 新增 KNOWN_ISSUES.md 与 TESTING.md：记录 5 项跳过原因（Windows 11 XAML 任务栏 4 项、更新夹具 1 项）与两套测试基线。
 - 离线断言 16093 条通过（+1：Logitech 非 GPW 接收器进入探针、GPW 专用路由仍排除）。
 - 真机复验：ROG 游侠2 RX 无线版 52%、迈从 A7 V2 Pro 83%。
+
+### v1.1.2 补充：248A:5B2F 官方 GetInfo 接入（PR #8，2026-11-08）
+
+- 采纳 GitHub PR #8（late-autumn-gif/mousedock）提供的 AJAZZ Driver (X) 1.0.5.3 反汇编结论：248A:5B2F 走 33 字节 Feature、report id 12、帧头 12 01 20 00 seq，身份串在 [8..11]、电量在 [18]。
+- 新增 M137FeatureProtocol：候选判定（248A:5B2F + Wireless-Receiver）、集合签名（FF00/0001/0/0/33）、请求帧、身份解析、型号映射（M137=狼蛛 SC580、M139=黑爵 AJ139 Pro、M620=黑爵 AJ159、M184=黑爵 AJ179）。
+- 新增 VendorProtocol.ReadM137Feature：两次事务、每次最多两次 GET，两次读数一致才采用；只发官方 GetInfo 请求，不碰配置命令。
+- 调度上排在通用 33 字节旁路之前，并让旁路跳过已由 M137 接管的实例。HandledBy 增加 M137，ToDevice 输出确认型号，接收器电量不标记为外设已确认。
+- 未采纳 PR 的 ROG OMNI 部分：现有 QueryRogScope 已覆盖 1B7A 与 1C25，PR 只认 1B7A 且会替换掉更宽的配对表支持。
+- 16123 条离线断言通过（新增 30 条）；界面检查 59/64 + 5 skipped；真机 ROG 52%、迈从 83%。
