@@ -50,6 +50,12 @@ namespace Regression {
             public static List<Node> Nodes = new List<Node>();
             public static List<Node> Enumerate(int? vid, int? pid) { return Nodes; }
         }
+        // BuildHidReport 现在会附一段 HID 接口清单；这里给桩，避免脚本引用不到。
+        public static class HidInventory {
+            public sealed class Row { public int Vid, Pid; public string Product = "", Path = ""; }
+            public static List<Row> Enumerate(int? vid, int? pid) { return new List<Row>(); }
+            public static string Describe(IReadOnlyList<Row> rows, bool singleDevice) { return string.Empty; }
+        }
     }
     public static class Checks {
         __CAPS__
