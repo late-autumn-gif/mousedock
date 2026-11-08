@@ -10,6 +10,8 @@ internal static partial class VendorProtocol
     internal const string RogScopeRxWired = "ROG 游侠2 RX";
     internal const string RogScopeRxWireless = "ROG 游侠2 RX 98 无线版";
     internal const string RogScopeRxWirelessUnknown = "ROG 游侠2 RX 无线版";
+    /// <summary>ROG 夜魔 X（Azoth X）。</summary>
+    internal const string RogAzothX = "ROG 夜魔 X";
 
     internal static string RogScopeName(string product)
     {
@@ -25,14 +27,17 @@ internal static partial class VendorProtocol
 
     /// <summary>
     /// Omni 接收器配对表里出现过、且已确认是 ROG 键盘 2.4G 型号的编号。
-    /// 1B7A 是游侠2 RX 98 的既有型号；1C25 来自本机 0B05:1ACE + 游侠 RX2 实测
-    /// （配对表唯一型号 = 0x1C25，电量应答 02/12/01 → [6] 百分比）。
+    /// 1B7A 是游侠2 RX 98 的既有型号。
+    /// 1C25 来自本机 0B05:1ACE 实测（配对表唯一型号 = 0x1C25，电量应答 02/12/01 → [6] 百分比）；
+    /// 型号依据是 ASUS 官方 Armoury Crate 的 AZOTH-X 插件设备表
+    /// （D:\ROG\AZOTH-X\index.html 的 loaderData 列出设备 ID 7205，即 0x1C25），
+    /// 本机实际键盘是 ROG 夜魔 X。之前把它标成游侠2 RX 无线版是错的。
     /// 新机型只增加映射，不改判断逻辑；不认识的型号不猜名称、也不读电量。
     /// </summary>
     private static readonly Dictionary<ushort, string> RogPairedKeyboards = new()
     {
         [0x1B7A] = RogScopeRxWireless,
-        [0x1C25] = RogScopeRxWirelessUnknown
+        [0x1C25] = RogAzothX
     };
 
     internal static bool IsRogOmni(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1ACE;
@@ -158,7 +163,9 @@ internal static partial class VendorProtocol
             if (!unchanged)
                 return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表变化或复核失败，未采用本次电量");
             return new(percent, charging, true, charging ? ReferenceBatteryProtocol.State.Charging :
-                ReferenceBatteryProtocol.State.Online, "Omni 键盘电量 02/12/01", model);
+                ReferenceBatteryProtocol.State.Online,
+                "Omni 键盘电量 02/12/01 配对=" + RogPairedModelText(pids) +
+                " PID=" + string.Join("/", pids.ConvertAll(p => "0x" + p.ToString("X4"))), model);
         }, 3500);
     }
 

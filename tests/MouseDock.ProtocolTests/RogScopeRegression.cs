@@ -66,14 +66,17 @@ internal static class RogScopeRegression
         reply[2] = 7;
         Check(!VendorProtocol.TryParseRogScopeBattery(reply, out _, out _), "Reject the mouse battery command");
 
-        // 本机 0B05:1ACE + 游侠 RX2 实测：配对表唯一型号 0x1C25，电量应答 02 12 01 → [6]=53%。
+        // 本机 0B05:1ACE 实测：配对表唯一型号 0x1C25，电量应答 02 12 01 → [6]=53%。
+        // 型号依据 ASUS 官方 Armoury Crate 的 AZOTH-X 插件设备表（D:\ROG\AZOTH-X\index.html
+        // 的 loaderData 列出设备 ID 7205 = 0x1C25），本机键盘是 ROG 夜魔 X。
         var rx2 = new byte[64];
         rx2[0] = 1; rx2[1] = 0xA0;
         rx2[5] = 0x25; rx2[6] = 0x1C;
         rx2[9] = 0x02; rx2[10] = 0x04;
-        Check(VendorProtocol.RogOmniHasScopeRx(rx2), "Omni receiver with paired 1C25 is a Scope RX keyboard");
-        Check(VendorProtocol.RogPairedModel(rx2, out var rx2Pids) == VendorProtocol.RogScopeRxWirelessUnknown &&
-            rx2Pids.Count == 2 && rx2Pids[0] == 0x1C25, "1C25 maps to the RX wireless name without guessing a SKU");
+        Check(VendorProtocol.RogOmniHasScopeRx(rx2), "Omni receiver with paired 1C25 is a known ROG keyboard");
+        Check(VendorProtocol.RogPairedModel(rx2, out var rx2Pids) == VendorProtocol.RogAzothX &&
+            rx2Pids.Count == 2 && rx2Pids[0] == 0x1C25, "1C25 maps to ROG 夜魔 X, not a Scope RX SKU");
+        Check(VendorProtocol.RogAzothX == "ROG 夜魔 X", "Azoth X display name");
         var unknownPairing = (byte[])rx2.Clone();
         unknownPairing[5] = 0x5F; unknownPairing[6] = 0x1B;
         Check(!VendorProtocol.RogOmniHasScopeRx(unknownPairing), "Unknown paired model must not be read");

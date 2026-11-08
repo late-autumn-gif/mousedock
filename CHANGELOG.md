@@ -537,3 +537,12 @@
 - ZeroRainyProtocol 恢复为只对明确产品名（Rainy75 / WOB Rainy75 等）建立型号；通用串保持未确认，同 VID:PID 的 VGN S99 不受影响。
 - 保留上一版加的四段 trace（队列未清空 / TX 失败 / 无应答 / 解析被拒），诊断能力不回退。
 - 16166 条离线断言通过；界面检查 59/64 + 5 skipped。
+
+### v1.1.2 修正：ROG Omni 配对 0x1C25 是夜魔 X，不是游侠2 RX（2026-11-08）
+
+- 用户指出本机键盘是 ROG 夜魔 X（Azoth X），而 MouseDock 一直把它显示成「ROG 游侠2 RX 无线版」。
+- 实测配对表： B05:1ACE 的 Omni 接收器配对列表唯一型号 =  x1C25，电量应答  2 12 01 → [6] 百分比。
+- 型号依据换成 ASUS 官方 Armoury Crate 的 AZOTH-X 插件设备表：D:\ROG\AZOTH-X\index.html 的 loaderData 列出设备 ID 7205，即  x1C25；D:\ROG\驱动\ROG AZOTH 的 Config.ini 也写明 DisplayNameML = ROG 夜魔。
+- RogPairedKeyboards[0x1C25] 从 RogScopeRxWirelessUnknown 改为 RogAzothX = "ROG 夜魔 X"；1B7A 仍是游侠2 RX 98 无线版。
+- Omni 成功读数的诊断现在带原始配对 PID（PID=0x1C25），以后同类错配能直接从报告看出来。
+- 16167 条离线断言通过（+1 夜魔 X 映射）；界面检查 59/64 + 5 skipped；真机 ROG 夜魔 X 电量=50%。
