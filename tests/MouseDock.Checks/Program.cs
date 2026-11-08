@@ -27,6 +27,10 @@ internal static class Program
         }
         var checks = new (string Name, Action Check)[]
         {
+            ("Shared display styles preserve independent preferences", SharedDisplayStyleChecks.Preferences),
+            ("Shared display styles render upright and fit every orientation", SharedDisplayStyleChecks.Rendering),
+            ("Shared display styles are selectable in settings", SharedDisplayStyleChecks.Settings),
+            ("Shared display styles update live on the right edge", SharedDisplayStyleChecks.Edge),
             ("Embedded taskbar uses a transparent native child", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.AttachedToTaskbar)),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
             ("Embedded taskbar retains native alpha composition", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.TransparentComposition)),

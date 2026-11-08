@@ -12,9 +12,20 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     public Brush Accent=new SolidColorBrush(Color.FromRgb(82,125,108));
     public bool HideBackground;
     public Brush Ink = new SolidColorBrush(Color.FromRgb(30,43,42));
+    public bool Compact, Vertical, UseStatusColors;
+    public int LowBatteryThreshold = 20;
+    public static readonly DependencyProperty CompactLevelProperty = DependencyProperty.Register(
+        nameof(CompactLevel), typeof(int), typeof(ReferenceBatteryIcon),
+        new FrameworkPropertyMetadata(-1, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty CompactChargingProperty = DependencyProperty.Register(
+        nameof(CompactCharging), typeof(bool), typeof(ReferenceBatteryIcon),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+    public int CompactLevel { get => (int)GetValue(CompactLevelProperty); set => SetValue(CompactLevelProperty, value); }
+    public bool CompactCharging { get => (bool)GetValue(CompactChargingProperty); set => SetValue(CompactChargingProperty, value); }
     protected override void OnRender(DrawingContext d)
     {
         base.OnRender(d);
+        if (Compact) { DrawCompact(d); return; }
         var bg=HideBackground?Brushes.Transparent:Brushes.White;
         var ink=Ink;
         var item=Devices.Count>0?Devices[0]:(DeviceKind.Mouse,-1,false,false);
@@ -58,5 +69,52 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         }
         if(StyleName!="multi" && item.Item3)Text("上次",9,x,y+(ActualHeight<90?26:39),Accent);
         if(item.Item4)Text("ϟ",15,x+35,y-30,Accent);
+    }
+
+    private void DrawCompact(DrawingContext drawing)
+    {
+        var outline = Ink.Clone();
+        outline.Opacity *= .35;
+        var background = Ink.Clone();
+        background.Opacity *= HideBackground ? 0 : .08;
+        Brush accent = UseStatusColors ? new SolidColorBrush(CompactCharging ? Color.FromRgb(56, 189, 248)
+            : CompactLevel is >= 0 && CompactLevel <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
+            : Color.FromRgb(52, 211, 153)) : Accent;
+        var track = new Pen(outline, 1);
+        if (CompactLevel < 0) track.DashStyle = DashStyles.Dash;
+        double width = ActualWidth, height = ActualHeight;
+        double fraction = Math.Clamp(CompactLevel, 0, 100) / 100d;
+        var body = new Rect(2, 2, Math.Max(0, width - 4), Math.Max(0, height - 4));
+        if (StyleName is "tile" or "pill")
+        {
+            double radius = StyleName == "pill" ? Math.Min(width, height) / 2 : 7;
+            drawing.DrawRoundedRectangle(background, track, body, radius, radius);
+        }
+        if (StyleName == "battery")
+        {
+            body = Vertical ? new Rect(4, 7, width - 8, height - 10) : new Rect(3, 4, width - 10, height - 8);
+            drawing.DrawRoundedRectangle(background, track, body, 4, 4);
+            var cap = Vertical ? new Rect(width / 2 - 5, 2, 10, 3) : new Rect(width - 5, height / 2 - 5, 3, 10);
+            drawing.DrawRoundedRectangle(accent, null, cap, 1, 1);
+            if (CompactLevel >= 0)
+            {
+                var fill = accent.Clone();
+                fill.Opacity *= .25;
+                var inside = body;
+                inside.Inflate(-3, -3);
+                var charged = Vertical
+                    ? new Rect(inside.X, inside.Bottom - inside.Height * fraction, inside.Width, inside.Height * fraction)
+                    : new Rect(inside.X, inside.Y, inside.Width * fraction, inside.Height);
+                drawing.DrawRoundedRectangle(fill, null, charged, 2, 2);
+            }
+        }
+        if (StyleName is "tile" or "plain")
+        {
+            var from = new Point(7, height - 4);
+            var to = new Point(width - 7, height - 4);
+            drawing.DrawLine(new Pen(outline, 2), from, to);
+            if (CompactLevel >= 0)
+                drawing.DrawLine(new Pen(accent, 2), from, new Point(from.X + (to.X - from.X) * fraction, to.Y));
+        }
     }
 }

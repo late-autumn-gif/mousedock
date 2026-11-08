@@ -88,7 +88,8 @@ internal static class UiRegressionChecks
                         var options = (FrameworkElement)window.FindName("EdgeOptionsPanel");
                         Require(options.IsVisible && options.ActualHeight > 0, "Edge settings are hidden.");
                         foreach (var label in Descendants<TextBlock>(options))
-                            Require(label.ActualWidth >= label.DesiredSize.Width, "Edge settings text clipped.");
+                            Require(label.ActualWidth + label.Margin.Left + label.Margin.Right >= label.DesiredSize.Width,
+                                $"Edge settings text clipped: {label.Text}, actual={label.ActualWidth}, desired={label.DesiredSize.Width}.");
                     }
                 }
                 else if (surface == "icon")

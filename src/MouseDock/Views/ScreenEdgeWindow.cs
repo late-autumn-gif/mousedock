@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using MouseDock.Controls;
 using MouseDock.Services;
+using MouseDock.Models;
 
 namespace MouseDock.Views
 {
@@ -14,6 +15,8 @@ namespace MouseDock.Views
     {
         private readonly StackPanel _devices = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        private DeviceInfo[] _renderedDevices = Array.Empty<DeviceInfo>();
+        private (string Style, bool Numbers, Color Foreground, int Low) _presentation;
 
         public ScreenEdgeWindow()
         {
@@ -61,11 +64,24 @@ namespace MouseDock.Views
 
         public void UpdateDevices()
         {
-            _devices.Children.Clear();
-            var foreground = new SolidColorBrush(ResolveGlyphColor(App.Settings.EdgeGlyphColor));
-            foreach (var device in App.Battery.VisibleDevices.Take(5))
-                _devices.Children.Add(new DeviceBatteryBadge(device, foreground, App.Settings.ShowBatteryNumber, true,
-                    App.Settings.LowBatteryWarn) { Margin = new Thickness(0, 4, 0, 4) });
+            var devices = App.Battery.VisibleDevices.Take(5).ToArray();
+            var style = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle);
+            var color = ResolveGlyphColor(App.Settings.EdgeGlyphColor);
+            var presentation = (style, App.Settings.ShowBatteryNumber, color, App.Settings.LowBatteryWarn);
+            if (presentation != _presentation || !_renderedDevices.SequenceEqual(devices))
+            {
+                _devices.Children.Clear();
+                var foreground = new SolidColorBrush(color);
+                if (style == "ring")
+                    foreach (var device in devices)
+                        _devices.Children.Add(new DeviceBatteryBadge(device, foreground, App.Settings.ShowBatteryNumber, true,
+                            App.Settings.LowBatteryWarn) { Margin = new Thickness(0, 4, 0, 4) });
+                else if (devices.Length > 0)
+                    _devices.Children.Add(new TaskbarBatteryStrip(devices, style, App.Settings.ShowBatteryNumber, true,
+                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor));
+                _renderedDevices = devices;
+                _presentation = presentation;
+            }
             UpdateAnchor();
         }
 

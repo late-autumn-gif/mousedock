@@ -15,12 +15,15 @@ public sealed class TaskbarBatteryStrip : Border
 {
     public string StyleName { get; }
     public int DeviceCount { get; }
-    /// <summary>ring = 圆环；panel = 胶囊条；card = 迷你卡片（图标 + 百分比 + 型号）。</summary>
     public static string NormalizeStyle(string style) =>
-        style is "panel" or "card" ? style : "ring";
+        style is "panel" or "card" or "tile" or "pill" or "battery" or "plain" or "multi" ? style : "ring";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
     internal static Size CardSize(bool vertical) => vertical ? new Size(40, 58) : new Size(58, 40);
+    public static IEnumerable<(string Id, string Label)> Styles(bool vertical) =>
+        new[] { ("ring", "环内数字"), ("panel", "紧凑面板"), ("card", "迷你卡片"), ("tile", "柔角方块"),
+            ("pill", vertical ? "竖向胶囊" : "横向胶囊"), ("battery", "经典电池"),
+            ("plain", "轻量数字"), ("multi", "多电量迷你") };
 
     public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
         bool vertical, Brush foreground, int lowThreshold)
@@ -47,6 +50,7 @@ public sealed class TaskbarBatteryStrip : Border
         StyleName = NormalizeStyle(style);
         bool panel = StyleName == "panel";
         bool card = StyleName == "card";
+        bool multi = StyleName == "multi";
         var textBrush = ResolveBrush(textColor, foreground);
         var batteryBrush = ResolveBrush(batteryColor, themeAccent);
         var items = devices.ToArray();
@@ -62,13 +66,31 @@ public sealed class TaskbarBatteryStrip : Border
         if (card)
             Padding = vertical ? new Thickness(1, 2, 1, 2) : new Thickness(2, 1, 2, 1);
 
-        var size = CardSize(vertical);
-        double unit = card ? (vertical ? size.Width : size.Height) : 40;
-        double step = card ? (vertical ? size.Height : size.Width) + 5 : unit;
-        double length = Math.Max(1, items.Length) * step + (panel ? 8 + Math.Max(0, items.Length - 1) : 0);
-        if (card) length += 4;
-        Width = vertical ? unit : length;
-        Height = vertical ? length : unit;
+        var cell = StyleName switch
+        {
+            "card" => CardSize(vertical),
+            "pill" => vertical ? new Size(40, 64) : new Size(68, 40),
+            "battery" => vertical ? new Size(40, 60) : new Size(64, 40),
+            _ => new Size(40, 40)
+        };
+        double length = Math.Max(1, items.Length) * ((vertical ? cell.Height : cell.Width) + (card ? 5 : 0))
+            + (panel ? 8 + Math.Max(0, items.Length - 1) : 0) + (card ? 4 : 0);
+        Width = vertical ? 40 : length;
+        Height = vertical ? length : 40;
+        if (multi)
+        {
+            var outline = textBrush.Clone();
+            outline.Opacity *= .3;
+            var fill = textBrush.Clone();
+            fill.Opacity *= .08;
+            Background = fill;
+            BorderBrush = outline;
+            BorderThickness = new Thickness(1);
+            CornerRadius = new CornerRadius(6);
+            Width += vertical ? 0 : 2;
+            Height += vertical ? 2 : 0;
+            cell = vertical ? new Size(38, 40) : new Size(40, 38);
+        }
         for (int i = 0; i < items.Length; i++)
         {
             if (panel && i > 0)
@@ -84,7 +106,7 @@ public sealed class TaskbarBatteryStrip : Border
                     textBrush, batteryBrush));
                 continue;
             }
-            stack.Children.Add(CreateBadge(items[i], panel, showNumber, vertical, foreground,
+            stack.Children.Add(CreateBadge(items[i], StyleName, cell, showNumber, vertical, foreground,
                 lowThreshold, textBrush, batteryBrush));
         }
     }
@@ -175,17 +197,20 @@ public sealed class TaskbarBatteryStrip : Border
         return card;
     }
 
-    private static Grid CreateBadge(DeviceInfo device, bool panel, bool showNumber, bool vertical,
+    private static Grid CreateBadge(DeviceInfo device, string style, Size cell, bool showNumber, bool vertical,
         Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush)
     {
+        bool panel = style == "panel";
+        bool ringStyle = style == "ring";
+        bool horizontalPill = style == "pill" && !vertical;
         var badge = new Grid
         {
             Name = "TaskbarDevice", DataContext = device, Background = Brushes.Transparent,
-            Width = panel && vertical ? 36 : 40,
-            Height = panel && !vertical ? 36 : 40
+            Width = panel && vertical ? 36 : cell.Width,
+            Height = panel && !vertical ? 36 : cell.Height
         };
         badge.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
-        if (!panel)
+        if (ringStyle)
         {
             var ring = new DeviceBatteryRing
             {
@@ -197,14 +222,28 @@ public sealed class TaskbarBatteryStrip : Border
             ring.SetBinding(DeviceBatteryRing.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
             badge.Children.Add(ring);
         }
+        else if (style is "tile" or "pill" or "battery" or "plain")
+        {
+            var shape = new ReferenceBatteryIcon
+            {
+                StyleName = style, Compact = true, Vertical = vertical, Ink = foreground,
+                Accent = batteryBrush ?? Brushes.MediumSeaGreen, UseStatusColors = batteryBrush == null,
+                LowBatteryThreshold = lowThreshold, IsHitTestVisible = false
+            };
+            shape.SetBinding(ReferenceBatteryIcon.CompactLevelProperty, new Binding(nameof(DeviceInfo.Level)));
+            shape.SetBinding(ReferenceBatteryIcon.CompactChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+            badge.Children.Add(shape);
+        }
+        bool tall = vertical && style is "pill" or "battery";
         var glyph = new DeviceGlyph
         {
-            Width = showNumber ? (panel ? 14 : 12) : 21,
-            Height = showNumber ? (panel ? 14 : 12) : 21,
+            Width = showNumber ? (tall ? 16 : panel ? 14 : 12) : 21,
+            Height = showNumber ? (tall ? 16 : panel ? 14 : 12) : 21,
             Thickness = 1.8, GlyphBrush = batteryBrush ?? (panel ? Brushes.White : foreground),
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = horizontalPill && showNumber ? HorizontalAlignment.Left : HorizontalAlignment.Center,
             VerticalAlignment = showNumber ? VerticalAlignment.Top : VerticalAlignment.Center,
-            Margin = showNumber ? new Thickness(0, panel ? (badge.Height - 32) / 2 : 7, 0, 0) : new Thickness(0),
+            Margin = !showNumber ? new Thickness(0) : horizontalPill ? new Thickness(11, 14, 0, 0)
+                : new Thickness(0, tall ? 13 : panel ? (badge.Height - 32) / 2 : 7, 0, 0),
             IsHitTestVisible = false
         };
         glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
@@ -213,9 +252,10 @@ public sealed class TaskbarBatteryStrip : Border
         {
             Name = "BatteryNumber", Foreground = textBrush,
             FontFamily = new FontFamily("Segoe UI"), FontWeight = FontWeights.SemiBold,
-            FontSize = panel ? 14 : 12, Height = panel ? 18 : 15,
+            FontSize = ringStyle ? 12 : 14, Height = ringStyle ? 15 : 18,
             TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(6, 0, 6, panel ? (badge.Height - 32) / 2 : 5),
+            Margin = horizontalPill ? new Thickness(27, 0, 5, 11) : new Thickness(6, 0, 6,
+                tall ? 12 : panel ? (badge.Height - 32) / 2 : 5),
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };

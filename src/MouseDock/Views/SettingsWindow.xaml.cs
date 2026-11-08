@@ -112,6 +112,7 @@ namespace MouseDock.Views
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
                 RebuildTaskbarStyles();
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
+                RebuildEdgeStyles();
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(s.EdgeGlyphColor));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
                 EdgePositionValue.Text = $"{EdgePositionSlider.Value:0}";
@@ -182,6 +183,8 @@ namespace MouseDock.Views
                 BgTopStop.Color = theme.BgTop;
                 BgBottomStop.Color = theme.BgBottom;
             }
+            RebuildTaskbarStyles(theme);
+            RebuildEdgeStyles();
         }
 
         // ── 交互 ───────────────────────────────────────────────────────────
@@ -462,6 +465,8 @@ namespace MouseDock.Views
             App.Taskbar?.UpdateDevices();
             App.Edge?.UpdateDevices();
             ApplyWarnButtons(pct);
+            RebuildTaskbarStyles();
+            RebuildEdgeStyles();
             App.SaveSettings();
         }
 
@@ -558,6 +563,8 @@ namespace MouseDock.Views
             App.Settings.ShowBatteryNumber = BatteryNumberBox.IsChecked == true;
             App.Taskbar?.UpdateDevices();
             App.Edge?.UpdateDevices();
+            RebuildTaskbarStyles();
+            RebuildEdgeStyles();
             App.SaveSettings();
         }
 
@@ -609,34 +616,34 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        /// <summary>任务栏样式的预览选择器：环内数字 / 紧凑面板 / 迷你卡片。</summary>
-        private void RebuildTaskbarStyles()
+        private void RebuildTaskbarStyles(ThemePreset theme = null)
         {
             if (TaskbarTextColorSwatch == null || TaskbarStyleChoices == null) return;
+            theme ??= App.Theme;
             TaskbarTextColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarTextColor,
-                new SolidColorBrush(App.Theme.Text));
+                new SolidColorBrush(theme.Text));
             TaskbarBatteryColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarBatteryColor,
-                new SolidColorBrush(App.Theme.Accent));
+                new SolidColorBrush(theme.Accent));
             TaskbarTextColorLabel.Text = string.IsNullOrWhiteSpace(App.Settings.TaskbarTextColor)
                 ? "跟随主题" : App.Settings.TaskbarTextColor;
             TaskbarBatteryColorLabel.Text = string.IsNullOrWhiteSpace(App.Settings.TaskbarBatteryColor)
                 ? "跟随主题" : App.Settings.TaskbarBatteryColor;
             TaskbarStyleChoices.Children.Clear();
-            foreach (var (style, label) in new[] { ("ring", "环内数字"), ("panel", "紧凑面板"), ("card", "迷你卡片") })
+            foreach (var (style, label) in TaskbarBatteryStrip.Styles(false))
             {
                 var preview = new TaskbarBatteryStrip(new[]
                 {
                     new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Keyboard, Level = 28 },
                     new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Mouse, Level = 90 }
-                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(App.Theme.Text),
+                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(theme.Text),
                     App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor,
-                    new SolidColorBrush(App.Theme.Accent));
-                var content = new StackPanel { Orientation = Orientation.Horizontal };
-                content.Children.Add(new Viewbox { Width = 108, Height = 40, Child = preview, IsHitTestVisible = false });
+                    new SolidColorBrush(theme.Accent));
+                var content = new StackPanel();
+                content.Children.Add(new Viewbox { Width = 72, Height = 36, Child = preview, IsHitTestVisible = false });
                 content.Children.Add(new TextBlock
                 {
-                    Text = label, FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(10, 0, 0, 0)
+                    Text = label, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 5, 0, 0)
                 });
                 var choice = new RadioButton
                 {
@@ -647,6 +654,42 @@ namespace MouseDock.Views
                 choice.SetResourceReference(Control.ForegroundProperty, "TextBrush");
                 choice.Checked += (_, __) => { if (!_loading) App.SetTaskbarStyle(style); };
                 TaskbarStyleChoices.Children.Add(choice);
+            }
+        }
+
+        private void RebuildEdgeStyles()
+        {
+            EdgeStyleChoices.Children.Clear();
+            var foreground = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(App.Settings.EdgeGlyphColor));
+            foreach (var (style, label) in TaskbarBatteryStrip.Styles(true))
+            {
+                var device = new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 80 };
+                FrameworkElement preview = style == "ring"
+                    ? new DeviceBatteryBadge(device, foreground, App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn)
+                    : new TaskbarBatteryStrip(new[] { device }, style, App.Settings.ShowBatteryNumber, true,
+                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor);
+                var content = new StackPanel();
+                bool lightInk = foreground.Color.R * .2126 + foreground.Color.G * .7152 + foreground.Color.B * .0722 > 128;
+                content.Children.Add(new Border
+                {
+                    Width = 64, Height = 64, CornerRadius = new CornerRadius(4),
+                    Background = lightInk ? new SolidColorBrush(Color.FromRgb(48, 51, 55)) : Brushes.WhiteSmoke,
+                    Child = new Viewbox { Margin = new Thickness(4), Child = preview, IsHitTestVisible = false }
+                });
+                content.Children.Add(new TextBlock { Text = style == "ring" ? "电量圆环" : label, FontSize = 11,
+                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0) });
+                var choice = new RadioButton
+                {
+                    Tag = style, GroupName = "EdgeStyle", Content = content,
+                    Margin = new Thickness(3), Padding = new Thickness(4),
+                    IsChecked = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle) == style
+                };
+                choice.SetResourceReference(Control.ForegroundProperty, "TextBrush");
+                choice.Checked += (_, __) =>
+                {
+                    if (!_loading) App.SetEdgeStyle(style);
+                };
+                EdgeStyleChoices.Children.Add(choice);
             }
         }
         private void OnPickEdgeColor(object sender, RoutedEventArgs e)
@@ -667,6 +710,7 @@ namespace MouseDock.Views
             App.Settings.EdgeGlyphColor = color;
             EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(color));
             App.Edge?.UpdateDevices();
+            RebuildEdgeStyles();
             App.SaveSettings();
         }
 
@@ -695,6 +739,8 @@ namespace MouseDock.Views
         {
             if (string.IsNullOrEmpty(mode)) mode = "dock";
             TaskbarPositionRow.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
+            IconOptionsPanel.Visibility = mode == "icon" ? Visibility.Visible : Visibility.Collapsed;
+            TaskbarStylePanel.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             EdgeOptionsPanel.Visibility = mode == "edge" ? Visibility.Visible : Visibility.Collapsed;
             BatteryNumberBox.Visibility = mode == "edge" || mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon"),

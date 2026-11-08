@@ -286,6 +286,7 @@
                                 <Button x:Name="SurfaceEdge" Content="屏幕右侧" Tag="edge" Style="{StaticResource GhostButton}"
                                         Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                             </UniformGrid>
+                            <StackPanel x:Name="IconOptionsPanel">
                             <TextBlock Text="悬浮图标样式" FontWeight="SemiBold" Margin="0,14,0,5" />
                             <TextBlock Text="点击样式即可切换到悬浮图标；预览为示例电量。" FontSize="10" Opacity="0.65" TextWrapping="Wrap" />
                             <UniformGrid x:Name="IconStyleChoices" Columns="3" Margin="-3,5,-3,0" />
@@ -301,6 +302,7 @@
                                 <Button Content="重置" Grid.Column="2" Margin="6,0,0,0" Style="{StaticResource GhostButton}" Padding="4,3" Click="OnResetIconScale"/>
                             </Grid>
                             <TextBlock Text="50%–300%，仅影响悬浮图标。照片内部缩放使用 Ctrl+滚轮。" FontSize="10" TextWrapping="Wrap" Opacity="0.65" Margin="0,5,0,0"/>
+                            </StackPanel>
                             <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
                                       Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
                             <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">
@@ -319,7 +321,7 @@
                             </Grid>
                             <StackPanel x:Name="TaskbarStylePanel" Margin="0,14,0,0">
                                 <TextBlock Text="任务栏样式" Style="{StaticResource RowText}" />
-                                <StackPanel x:Name="TaskbarStyleChoices" Orientation="Vertical" Margin="0,6,0,0" />
+                                <UniformGrid x:Name="TaskbarStyleChoices" Columns="3" Margin="0,6,0,0" />
                                 <Grid Margin="0,10,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -344,6 +346,8 @@
                                 </Grid>
                             </StackPanel>
                             <StackPanel x:Name="EdgeOptionsPanel" Margin="0,12,0,0">
+                                <TextBlock Text="屏幕右侧样式" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <UniformGrid x:Name="EdgeStyleChoices" Columns="3" Margin="0,0,0,12" />
                                 <Grid Margin="0,0,0,12">
                                     <TextBlock Text="图标颜色" Style="{StaticResource RowText}" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

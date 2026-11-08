@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using MouseDock.Controls;
 using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Views;
@@ -679,12 +680,13 @@ namespace MouseDock
             if (Settings.SurfaceMode == "edge") Edge?.UpdateAnchor();
         }
 
-        /// <summary>切换任务栏样式（ring / panel / card），立即重绘并保存。</summary>
+        /// <summary>切换任务栏样式，立即重绘并保存。</summary>
         public static void SetTaskbarStyle(string style)
         {
             Settings.TaskbarStyle = Controls.TaskbarBatteryStrip.NormalizeStyle(style);
             Taskbar?.UpdateDevices();
             SaveSettings();
+            SettingsView?.Reload();
         }
 
         public static void ShowIconIfNeeded()
@@ -729,8 +731,21 @@ namespace MouseDock
             menu.Items.Add(Item((mode == "dock" ? "● " : "○ ") + "主面板", () => SetSurface("dock")));
             menu.Items.Add(Item((mode == "mini" ? "● " : "○ ") + "迷你窗", () => SetSurface("mini")));
             menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
-            menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量环", () => SetSurface("taskbar")));
-            menu.Items.Add(Item((mode == "edge" ? "● " : "○ ") + "屏幕右侧电量环", () => SetSurface("edge")));
+            menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量", () => SetSurface("taskbar")));
+            menu.Items.Add(Item((mode == "edge" ? "● " : "○ ") + "屏幕右侧电量", () => SetSurface("edge")));
+            if (mode is "taskbar" or "edge")
+            {
+                menu.Items.Add(new Separator());
+                bool edge = mode == "edge";
+                foreach (var (style, label) in TaskbarBatteryStrip.Styles(edge))
+                {
+                    var choice = Item(edge && style == "ring" ? "电量圆环" : label,
+                        () => { if (edge) SetEdgeStyle(style); else SetTaskbarStyle(style); });
+                    choice.IsCheckable = true;
+                    choice.IsChecked = TaskbarBatteryStrip.NormalizeStyle(edge ? Settings.EdgeStyle : Settings.TaskbarStyle) == style;
+                    menu.Items.Add(choice);
+                }
+            }
             menu.Items.Add(new Separator());
             if (owner == Icon)
             {
@@ -774,6 +789,14 @@ namespace MouseDock
             menu.PlacementTarget = owner;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
             menu.IsOpen = true;
+        }
+
+        public static void SetEdgeStyle(string style)
+        {
+            Settings.EdgeStyle = TaskbarBatteryStrip.NormalizeStyle(style);
+            Edge?.UpdateDevices();
+            SaveSettings();
+            SettingsView?.Reload();
         }
 
         /// <summary>右键菜单切显示方式：三选一，顺带把另外两个藏起来。</summary>
