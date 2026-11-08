@@ -3,6 +3,7 @@ namespace MouseDock.Services.Detection;
 internal static class RecognitionPolicy
 {
     internal static bool CanQuery(ushort vid, ushort pid, string product) =>
+        M137FeatureProtocol.IsCandidate(vid, pid, product) ||
         // Only IDs enter the candidate set here. Exact collection/capability validation
         // and the dedicated protocol route are mandatory before any reference I/O.
         VendorProtocol.IsScopedModernMouse(vid,pid,product) ||

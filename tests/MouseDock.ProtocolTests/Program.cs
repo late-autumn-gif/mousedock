@@ -24,6 +24,13 @@ if (args.Length > 0 && args[0] == "--inspect-k87-battery")
     return;
 }
 Console.WriteLine($"PASS {K87DiscoveryRegression.Run()} K87 discovery regression checks.");
+Console.WriteLine($"PASS {ReceiverIdentityRegression.Run()} receiver identity diagnostic checks.");
+Console.WriteLine($"PASS {M137FeatureRegression.Run()} M137 Feature battery checks.");
+if (args.Length == 2 && args[0] == "--replay-m137-report")
+{
+    M137FeatureRegression.ReplayReport(args[1]);
+    return;
+}
 if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.Export(args[1],args[2]);return;}
 if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
 if(args.Length>1&&args[0]=="--verify-published-update")

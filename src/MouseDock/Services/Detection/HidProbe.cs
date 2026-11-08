@@ -28,6 +28,15 @@ namespace MouseDock.Services.Detection
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        private struct SP_DEVINFO_DATA
+        {
+            public int cbSize;
+            public Guid ClassGuid;
+            public uint DevInst;
+            public IntPtr Reserved;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         private struct HIDD_ATTRIBUTES
         {
             public int Size;
@@ -70,6 +79,8 @@ namespace MouseDock.Services.Detection
         private static extern bool SetupDiEnumDeviceInterfaces(IntPtr set, IntPtr devInfo, ref Guid guid, uint index, ref SP_DEVICE_INTERFACE_DATA data);
         [DllImport("setupapi.dll", CharSet = CharSet.Unicode)]
         private static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data, IntPtr detail, int size, out int required, IntPtr devInfo);
+        [DllImport("setupapi.dll", CharSet = CharSet.Unicode)]
+        private static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data, IntPtr detail, int size, out int required, ref SP_DEVINFO_DATA devInfo);
         [DllImport("setupapi.dll")] private static extern bool SetupDiDestroyDeviceInfoList(IntPtr set);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -90,13 +101,14 @@ namespace MouseDock.Services.Detection
 
         public sealed class Node
         {
+            public string InstanceId = "";
             public string Path = "";
             public string Product = "";
             public ushort Vid, Pid, Version;
             public HIDP_CAPS Caps;
         }
 
-        public static List<Node> Enumerate(ushort? vid, ushort? pid)
+        public static List<Node> Enumerate(ushort? vid, ushort? pid, bool includeInstance = false)
         {
             var result = new List<Node>();
             HidD_GetHidGuid(out Guid hidGuid);
@@ -118,7 +130,8 @@ namespace MouseDock.Services.Detection
                     try
                     {
                         Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
-                        if (!SetupDiGetDeviceInterfaceDetail(set, ref did, detail, required, out _, IntPtr.Zero)) continue;
+                        var devInfo = new SP_DEVINFO_DATA { cbSize = Marshal.SizeOf<SP_DEVINFO_DATA>() };
+                        if (!SetupDiGetDeviceInterfaceDetail(set, ref did, detail, required, out _, ref devInfo)) continue;
 
                         string path = Marshal.PtrToStringUni(IntPtr.Add(detail, 4)) ?? "";
                         if (string.IsNullOrEmpty(path)) continue;
@@ -133,6 +146,7 @@ namespace MouseDock.Services.Detection
                         if (pid.HasValue && attr.ProductID != pid.Value) continue;
 
                         var node = new Node { Path = path, Vid = attr.VendorID, Pid = attr.ProductID, Version = attr.VersionNumber };
+                        if (includeInstance) node.InstanceId = HidDiscovery.InspectPhysicalInstance(devInfo.DevInst, path);
 
                         var sb = new StringBuilder(256);
                         if (HidD_GetProductString(h, sb, sb.Capacity * 2)) node.Product = sb.ToString();

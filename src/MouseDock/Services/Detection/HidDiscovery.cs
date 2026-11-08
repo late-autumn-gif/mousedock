@@ -154,6 +154,7 @@ namespace MouseDock.Services.Detection
                 foreach (var bucket in buckets.Values)
                 {
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                    if (ReceiverIdentityProtocol.IsCandidate(bucket.Vid, bucket.Pid)) continue;
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
@@ -237,6 +238,7 @@ namespace MouseDock.Services.Detection
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
             QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
             QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadOriginalGpw);
+            QueryM137FeatureCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
@@ -253,6 +255,7 @@ namespace MouseDock.Services.Detection
             foreach (var bucket in buckets.Values)
             {
                 using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                if (ReceiverIdentityProtocol.IsCandidate(bucket.Vid, bucket.Pid)) continue;
                 if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
                     VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
@@ -278,6 +281,7 @@ namespace MouseDock.Services.Detection
             {
                 // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
                 using var instanceScope = InstanceScope.Enter(b.InstanceId);
+                if (ReceiverIdentityProtocol.IsCandidate(b.Vid, b.Pid)) return b.ToDevice();
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
@@ -381,8 +385,19 @@ namespace MouseDock.Services.Detection
             return ExclusionReason(ancestors, integratedUsb);
         }
 
+        internal static string InspectPhysicalInstance(uint devInst, string path)
+        {
+            var ancestors = ReadAncestors(devInst, out bool integratedUsb);
+            if (ExclusionReason(ancestors, integratedUsb) != null ||
+                !ancestors.Any(x => x.InstanceId.StartsWith("USB\\VID_", StringComparison.OrdinalIgnoreCase) &&
+                    !x.InstanceId.Contains("&MI_", StringComparison.OrdinalIgnoreCase))) return "";
+            return InstanceScope.KeyFor(path, ancestors);
+        }
+
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if (M137FeatureProtocol.IsCandidate(vid, pid, product) && usagePage == 0xFF00 && usage == 1)
+            { kind = DeviceKind.Other; return true; }
             if(ZeroRainyProtocol.Candidate(vid,pid,product) && ((usagePage==0xFF05&&usage==1)||(usagePage==0xFF1C&&usage==0x92))){kind=vid==0x373B?DeviceKind.Mouse:DeviceKind.Keyboard;return true;}
             if (VendorProtocol.IsInphicSplitReceiver(vid,pid) && usagePage==0x000A && usage==0) { kind=DeviceKind.Mouse; return true; }
             if (OriginalGpwProtocol.IsCandidate(vid, pid) && usagePage == 0xFF00 &&
@@ -586,7 +601,8 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
+            if (ReceiverIdentityProtocol.IsCandidate(vid, pid)) { batteryTrace.Add("M137 Feature 电量由本实例精确集合确认身份后读取"); }
+            else if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
             else if((VendorProtocol.IsScopedModernMouse(vid,pid,product) || VendorProtocol.IsScopedG7(vid,pid,product))){batteryTrace.Add("迈从鼠标由本实例精确集合读取");}
             else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
             else if (OriginalGpwProtocol.IsCandidate(vid, pid))
@@ -774,7 +790,7 @@ namespace MouseDock.Services.Detection
             }
 
             string identity = null;
-            try { if (!AulaBatteryProtocol.IsCandidate(vid, pid, product)) identity = VendorProtocol.IdentityFor(vid, pid); } catch { }
+            try { if (!ReceiverIdentityProtocol.IsCandidate(vid, pid) && !AulaBatteryProtocol.IsCandidate(vid, pid, product)) identity = VendorProtocol.IdentityFor(vid, pid); } catch { }
             if (!string.IsNullOrEmpty(identity)) bucket.Identity = identity;
 
             // 记录厂商集合和接口号：无线接收器通常横跨 mi_00/01/02，有线鼠标只有一个接口
@@ -1070,7 +1086,8 @@ namespace MouseDock.Services.Detection
 
             foreach (var collection in collections)
             {
-                if (ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
+                if (ReceiverIdentityProtocol.IsCandidate(collection.Vid, collection.Pid) ||
+                    ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
                     VendorProtocol.IsReportedX23Se(collection.Vid, collection.Pid, collection.Product) ||
                     AulaBatteryProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
                     OriginalGpwProtocol.IsCandidate(collection.Vid,collection.Pid) || VendorProtocol.IsScopedInphic(collection.Vid,collection.Pid,collection.Product) || (VendorProtocol.IsScopedModernMouse(collection.Vid,collection.Pid,collection.Product) || VendorProtocol.IsScopedG7(collection.Vid,collection.Pid,collection.Product)) || ZeroRainyProtocol.Candidate(collection.Vid,collection.Pid,collection.Product) ||
@@ -1252,6 +1269,8 @@ namespace MouseDock.Services.Detection
             public bool ModernHandled;
             public string ModernModel;
             public bool G7Handled;
+            public bool M137FeatureHandled;
+            public string M137FeatureModel;
             public string G7Model;
             public bool GpwHandled, GpwLive;
             public string GpwModel;
@@ -1272,7 +1291,7 @@ namespace MouseDock.Services.Detection
 
             public DetectedDevice ToDevice()
             {
-                if (Kind == DeviceKind.Other) return null;
+                if (Kind == DeviceKind.Other && !M137FeatureHandled) return null;
 
                 string clean = VendorMap.CleanName(Product, out bool dongle);
                 string brand = VendorMap.Brand(Vid);
@@ -1424,17 +1443,24 @@ namespace MouseDock.Services.Detection
                 }
 
                 if(ModernHandled){name=ModernModel??Product;kind=DeviceKind.Mouse;transport=VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var profile)&&Pid==profile.Wired?"有线":"2.4G";}
+                if (M137FeatureHandled)
+                {
+                    name = M137FeatureModel ?? Product ?? "未确认型号的接收器";
+                    kind = M137FeatureModel != null ? DeviceKind.Mouse : DeviceKind.Other;
+                    transport = "2.4G";
+                    charging = false;
+                }
                 bool unresolved=kind==DeviceKind.Other && IsUnresolved8KReceiver();
                 if(unresolved)name=Product.Trim();
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = M137FeatureHandled ? M137FeatureModel ?? "" : ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
                     ReceiverDiscovered = ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
-                    PeripheralConfirmed = ModernHandled ? false : unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
+                    PeripheralConfirmed = M137FeatureHandled ? false : ModernHandled ? false : unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,
