@@ -780,6 +780,7 @@ namespace MouseDock
             Dock?.ApplyTheme(Theme, animate);
             Mini?.ApplyTheme(Theme, animate);
             Icon?.ApplyTheme(Theme, animate);
+            Taskbar?.UpdateDevices();
             SettingsView?.ApplyTheme(Theme, animate);
         }
 

@@ -70,7 +70,8 @@ namespace MouseDock.Services.Detection
             text.AppendLine($"安全模式: {(safeMode ? "开（只枚举，不发查询帧）" : "关")}");
             text.AppendLine();
 
-            if ((vid == 0x3554 && pid is 0xF503 or 0xFA09) || (vid == 0x3837 && pid == 0x1015))
+            if ((vid == 0x3554 && pid is 0xF503 or 0xFA09) || (vid == 0x3837 && pid == 0x1015) ||
+                (vid == 0x093A && pid == 0x522C))
             {
                 text.AppendLine("此接收器仅由自动扫描按物理实例读取；查询及原始响应见 hid-devices.txt。");
                 return new DeviceProbeResult { Text = text.ToString() };
@@ -325,6 +326,7 @@ namespace MouseDock.Services.Detection
         private static List<ProbeSpec> BuildProbes(ushort vid, ushort pid, HIDP_CAPS caps, string product)
         {
             var list = new List<ProbeSpec>();
+            if (vid == 0x093A && pid == 0x522C) return list;
             if (IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,product)||IsScopedG7(vid,pid,product)) || IsMchoseV9Pro(vid,pid,product) || IsScopedInphic(vid,pid,product) || AulaBatteryProtocol.IsCandidate(vid, pid, product) || OriginalGpwProtocol.IsCandidate(vid,pid)) return list;
             string p = product ?? "";
 

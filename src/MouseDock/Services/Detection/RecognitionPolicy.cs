@@ -5,6 +5,7 @@ internal static class RecognitionPolicy
     internal static bool CanQuery(ushort vid, ushort pid, string product) =>
         MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product) ||
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
+        M9ProProtocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
         M137FeatureProtocol.IsCandidate(vid, pid, product) ||
         RogOmniKeyboardProtocol.IsCandidate(vid, pid, product) ||

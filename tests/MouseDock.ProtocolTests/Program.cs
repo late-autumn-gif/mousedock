@@ -28,6 +28,7 @@ Console.WriteLine($"PASS {RogOmniKeyboardRegression.Run()} ROG OMNI keyboard reg
 Console.WriteLine($"PASS {ReceiverIdentityRegression.Run()} receiver identity diagnostic checks.");
 Console.WriteLine($"PASS {M137FeatureRegression.Run()} M137 Feature battery checks.");
 Console.WriteLine($"PASS {VgnF1Regression.Run()} VGN F1 receiver battery checks.");
+Console.WriteLine($"PASS {M9ProRegression.Run()} M9 Pro passive battery checks.");
 Console.WriteLine($"PASS {F75Regression.Run()} AULA F75 receiver battery checks.");
 if (args.Length == 2 && args[0] == "--replay-m137-report")
 {

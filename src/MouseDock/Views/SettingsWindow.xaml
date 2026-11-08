@@ -306,6 +306,8 @@
                             <StackPanel x:Name="TaskbarStylePanel" Margin="0,12,0,0">
                                 <TextBlock Text="任务栏样式" FontWeight="SemiBold" Margin="0,0,0,6" />
                                 <UniformGrid x:Name="TaskbarStyleChoices" Columns="2" />
+                                <CheckBox x:Name="TaskbarFollowThemeBox" Content="跟随界面主题色" Margin="0,9,0,0"
+                                          Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged" />
                                 <Grid Margin="0,10,0,0">
                                     <TextBlock Text="文字颜色" Style="{StaticResource RowText}" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

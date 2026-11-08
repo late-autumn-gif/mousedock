@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Interop;
 
@@ -28,12 +29,22 @@ namespace MouseDock.Services
         [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
         [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SetParent(IntPtr window, IntPtr parent);
         [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+        [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr window, ref NativePoint point);
         [DllImport("user32.dll")] private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
         [DllImport("user32.dll")] private static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
         [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr window, int index);
         [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr window, int index, int value);
+
+        private sealed class FailedAttachment
+        {
+            public IntPtr Window, Parent, WindowDpi, ParentDpi;
+            public uint ParentProcessId;
+        }
+        private static readonly ConditionalWeakTable<Window, FailedAttachment> FailedAttachments = new();
 
         private static Rect Convert(NativeRect r) =>
             new Rect(r.Left, r.Top, Math.Max(0, r.Right - r.Left), Math.Max(0, r.Bottom - r.Top));
@@ -65,9 +76,18 @@ namespace MouseDock.Services
             var handle = new WindowInteropHelper(window).Handle;
             if (handle == IntPtr.Zero || parent == IntPtr.Zero || !IsWindow(parent)) return false;
             if (GetParent(handle) == parent) return true;
-            // Do not let cross-process parenting reset either process's DPI awareness.
-            if (!AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(handle), GetWindowDpiAwarenessContext(parent)))
+            var windowDpi = GetWindowDpiAwarenessContext(handle);
+            var parentDpi = GetWindowDpiAwarenessContext(parent);
+            GetWindowThreadProcessId(parent, out uint parentProcessId);
+            // A denied native host is not retried every timer tick: demoting and restoring
+            // the floating fallback would otherwise visibly flash even while nothing changed.
+            if (FailedAttachments.TryGetValue(window, out var failed) &&
+                failed.Window == handle && failed.Parent == parent && failed.ParentProcessId == parentProcessId &&
+                failed.WindowDpi == windowDpi && failed.ParentDpi == parentDpi)
                 return false;
+            FailedAttachments.Remove(window);
+            // Do not let cross-process parenting reset either process's DPI awareness.
+            if (!AreDpiAwarenessContextsEqual(windowDpi, parentDpi)) return false;
             int style = GetWindowLong(handle, -16);
             SetWindowPos(handle, new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             SetWindowLong(handle, -16, (style & ~unchecked((int)0x80000000)) | 0x40000000);
@@ -76,6 +96,9 @@ namespace MouseDock.Services
             if (previous == IntPtr.Zero && Marshal.GetLastPInvokeError() != 0)
             {
                 SetWindowLong(handle, -16, style);
+                FailedAttachments.Add(window, new FailedAttachment
+                { Window = handle, Parent = parent, WindowDpi = windowDpi, ParentDpi = parentDpi,
+                    ParentProcessId = parentProcessId });
                 return false;
             }
             SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0020);
@@ -121,6 +144,36 @@ namespace MouseDock.Services
                 SetWindowPos(handle, IntPtr.Zero, position.X, position.Y,
                     Math.Max(1, (int)Math.Round(bounds.Width)), Math.Max(1, (int)Math.Round(bounds.Height)),
                     0x0004 | 0x0010 | 0x0200); // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+        }
+
+        public static void EnsureOrder(Window window, bool attached)
+        {
+            var handle = new WindowInteropHelper(window).Handle;
+            if (handle == IntPtr.Zero) return;
+            if (attached)
+            {
+                // Moving above a sibling preserves the parent and the existing composition surface.
+                if (GetWindow(handle, 3) != IntPtr.Zero)
+                    SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+                return;
+            }
+            var taskbar = FindWindow("Shell_TrayWnd", null);
+            if (taskbar == IntPtr.Zero || !IsWindowVisible(taskbar)) return;
+            // Repair only when the taskbar is above us, leaving its flyouts above both windows.
+            for (var above = GetWindow(handle, 3); above != IntPtr.Zero; above = GetWindow(above, 3))
+            {
+                if (above != taskbar) continue;
+                var previous = GetWindow(taskbar, 3);
+                while (previous != IntPtr.Zero && !IsWindowVisible(previous))
+                    previous = GetWindow(previous, 3);
+                // Inserting a non-topmost window after a topmost sibling does not
+                // reliably promote it. Enter the band once, then retain flyout order.
+                if ((GetWindowLong(handle, -20) & 8) == 0)
+                    SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+                SetWindowPos(handle, previous == IntPtr.Zero ? new IntPtr(-1) : previous,
+                    0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+                break;
+            }
         }
     }
 }

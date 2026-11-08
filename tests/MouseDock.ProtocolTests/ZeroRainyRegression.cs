@@ -27,6 +27,47 @@ internal static class ZeroRainyRegression
         Check(r.Level==42&&r.Model==null&&!r.ChargingKnown&&!r.Charging,"Shared protocol does not establish Rainy identity/charge semantics");
         var correlation=new Link(false){WrongCode=true};Check(ZeroRainyProtocol.Read(correlation,0x320F,0x5088,"Rainy75").Level==42,"Rainy checksum is not a request nonce and need not echo20");
         var opcode=new Link(false){WrongOpcode=true};Check(ZeroRainyProtocol.Read(opcode,0x320F,0x5088,"Rainy75").Level==-1,"Wrong Rainy opcode rejected");
+        var wireless = new WirelessLink();
+        r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+        Check(r.Level == 64 && wireless.Commands.SequenceEqual(new byte[] { 0xAA, 0x1A, 0x1A }),
+            "Wireless battery waits for official receiver readiness before two battery queries");
+        Check(r.Model == null && !r.ChargingKnown && !r.Charging,
+            "Receiver readiness does not identify a generic keyboard or its charge enum");
+        foreach (byte state in new byte[] { 0, 1, 100, 0xFE })
+        {
+            wireless = new WirelessLink { ReadyState = state };
+            r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+            Check(r.Level == -1 && wireless.Commands.SequenceEqual(new byte[] { 0xAA }),
+                "Unconfirmed RF readiness must not query or infer battery");
+        }
+        foreach (byte error in new byte[] { 0xFE, 0xFF })
+        {
+            wireless = new WirelessLink { Error = error };
+            r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+            Check(r.Level == -1 && wireless.Commands.SequenceEqual(new byte[] { 0xAA }),
+                "Receiver error cannot establish wireless readiness");
+        }
+        foreach (int malformed in new[] { 1, 2, 3, 4 })
+        {
+            wireless = new WirelessLink { Malformed = malformed };
+            r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+            Check(r.Level == -1 && wireless.Commands.SequenceEqual(new byte[] { 0xAA }),
+                "Wrong report, command, truncated packet or request echo cannot establish readiness");
+        }
+        foreach (byte percentage in new byte[] { 0, 100 })
+        {
+            wireless = new WirelessLink { Percentage = percentage };
+            r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+            Check(r.Level == percentage, "Wireless ready flag is separate from actual zero or full battery");
+        }
+        wireless = new WirelessLink { ReplyDelay = 900 };
+        r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+        Check(r.Level == 64 && wireless.Now <= 4500,
+            "Wireless replies slower than wired polling window remain within total deadline");
+        wireless = new WirelessLink { ReplyDelay = 10000 };
+        r = ZeroRainyProtocol.Read(wireless, 0x320F, 0x5088, "Wireless Gaming Keyboard");
+        Check(r.Level == -1 && wireless.Now <= 4500,
+            "Silent wireless receiver exhausts only bounded read budget");
         InstanceScope.BeginScan();const string aPath="test#rainy#A",bPath="test#rainy#B";
         string a=InstanceScope.Register(aPath,new[]{(@"USB\VID_320F&PID_5088\SYNTHETIC_A","usbccgp")});
         string b=InstanceScope.Register(bPath,new[]{(@"USB\VID_320F&PID_5088\SYNTHETIC_B","usbccgp")});
@@ -52,13 +93,60 @@ internal static class ZeroRainyRegression
         public byte[]? Read(int ms){Now+=Math.Max(1,ms);return Input.Count>0?Input.Dequeue():null;}
         public bool Write(byte[] tx,int ms)
         {
-            byte command=atk?tx[6]:(byte)0x1A;Commands.Add(command);Input.Enqueue(tx.ToArray());
+            byte command=atk?tx[6]:tx[3];Commands.Add(command);Input.Enqueue(tx.ToArray());
             var r=new byte[64];
             if(atk){r[0]=8;r[5]=command;if(command==0x89){r[8]=WrongModel?(byte)0:(byte)1;r[9]=WrongModel?(byte)0:(byte)1;}else if(command==7){batteries++;if(MissingSecond&&batteries>1)return true;r[7]=Percent;}else r[7]=BadCharge?(byte)255:Charge;
                 if(Pending){var waiting=r.ToArray();waiting[2]=1;Input.Enqueue(waiting);}}
-            else{r=tx.ToArray();r[7]=1;r[8]=Percent;r[9]=Charge;if(WrongCode)r[1]++;if(WrongOpcode)r[3]=0xFF;}
+            else{r=tx.ToArray();r[7]=1;r[8]=command==0xAA?(byte)0xFF:Percent;r[9]=command==0xAA?(byte)0:Charge;if(WrongCode)r[1]++;if(WrongOpcode)r[3]=0xFF;}
             Input.Enqueue(r);return true;
         }
         public bool SetFeature(byte[] b)=>throw new Exception();public byte[] GetFeature(byte id,int n)=>throw new Exception();public void Delay(int ms)=>throw new Exception();
+    }
+    private sealed class WirelessLink : ReferenceBatteryProtocol.ILink
+    {
+        public long Now { get; private set; }
+        public readonly List<byte> Commands = new();
+        public byte ReadyState = 0xFF, Error, Percentage = 64;
+        public int ReplyDelay, Malformed;
+        private byte[]? pending;
+        private long readyAt;
+        private bool ready;
+        public byte[]? Read(int ms)
+        {
+            Now += Math.Max(1, ms);
+            if (Now < readyAt) return null;
+            var result = pending;
+            pending = null;
+            return result;
+        }
+        public bool Write(byte[] request, int ms)
+        {
+            if (request.Length != 64 || request[0] != 4) throw new Exception("Unexpected wireless report");
+            byte command = request[3];
+            Commands.Add(command);
+            if (command == 0xAA)
+            {
+                if (!request.Take(8).SequenceEqual(new byte[] { 4, 0xAA, 0, 0xAA, 0, 0, 0, 0 }) ||
+                    request.Skip(8).Any(value => value != 0)) throw new Exception("Unexpected readiness request");
+                pending = request.ToArray();
+                pending[7] = Error;
+                pending[8] = ReadyState;
+                if (Malformed == 1) pending[0] = 9;
+                if (Malformed == 2) pending[3] = 0x1A;
+                if (Malformed == 3) pending = pending.Take(9).ToArray();
+                if (Malformed == 4) pending = request.ToArray();
+                ready = ReadyState == 0xFF && Error == 0;
+            }
+            else if (command == 0x1A && ready)
+            {
+                pending = new byte[64];
+                new byte[] { 4, 0x61, 0, 0x1A, 6, 0, 0, 0, Percentage, 1 }.CopyTo(pending, 0);
+            }
+            readyAt = Now + ReplyDelay;
+            return true;
+        }
+        public bool SetFeature(byte[] b) => throw new Exception();
+        public byte[] GetFeature(byte id, int n) => throw new Exception();
+        public void Delay(int ms) => throw new Exception();
     }
 }

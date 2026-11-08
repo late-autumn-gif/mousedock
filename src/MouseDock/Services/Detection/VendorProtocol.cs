@@ -71,6 +71,7 @@ namespace MouseDock.Services.Detection
         {
             charging = false;
             IdentifyStale = false;
+            if (vid == 0x093A && pid == 0x522C) return -1;
             var paths = Paths(vid, pid);
 
             for (int attempt = 0; attempt < 3; attempt++)

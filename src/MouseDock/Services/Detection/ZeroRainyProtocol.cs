@@ -17,6 +17,7 @@ internal static class ZeroRainyProtocol
     internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link,ushort vid,ushort pid,string product)
     {
         bool atk=VendorProtocol.IsAtkZeroBitMouse(vid,pid),receiver=pid!=0x1154;
+        bool rainyWireless=!atk && VendorProtocol.IsRainy75Wireless(vid,pid);
         string model=atk?"ATK ZERO":RainyName(product)?"WOBKEY Rainy 75":null;
         bool identified=atk && !receiver;
         string trace="";long deadline=link.Now+4500;
@@ -24,9 +25,11 @@ internal static class ZeroRainyProtocol
         {
             if(link.Now>=deadline)return null;
             bool drained=false;
-            for(int i=0;i<32;i++)if(link.Read(1) is not {Length:>0}){drained=true;break;}
-            if(!drained || !link.Write(tx,300))return null;
-            long until=Math.Min(deadline,link.Now+650);
+            for(int i=0;i<32 && link.Now<deadline;i++)if(link.Read(1) is not {Length:>0}){drained=true;break;}
+            if(!drained || link.Now>=deadline || !link.Write(tx,(int)Math.Min(300,deadline-link.Now)))return null;
+            // The official receiver path waits up to 5 s, unlike wired polling.
+            // All exchanges still share this reader's 4.5 s total budget.
+            long until=rainyWireless?deadline:Math.Min(deadline,link.Now+650);
             while(link.Now<until)
             {
                 var raw=link.Read((int)Math.Max(1,Math.Min(100,until-link.Now)));
@@ -38,6 +41,7 @@ internal static class ZeroRainyProtocol
                 // Native transport correlates command3; do not require checksum echo.
                 if(!atk && raw.Length!=64)continue;
                 if(atk?VendorProtocol.AtkReplyOffset(raw,command)>=0:
+                    command==0xAA?IsRainyWirelessReady(raw):
                     VendorProtocol.TryParseRainy75OfficialBattery(raw,out _,out _))return raw;
             }
             return null;
@@ -48,6 +52,15 @@ internal static class ZeroRainyProtocol
             for(int i=0;i<2;i++)if(!VendorProtocol.IsAtkZeroPairedModel(Query(VendorProtocol.BuildAtkZeroRequest(0x89,true),0x89)))
                 return Fail("ZERO接收器未取得两次CID/MID=1/1；不按公共接收器确认型号");
             identified=true;
+        }
+        if(rainyWireless)
+        {
+            // Rainy75.exe FUN_00492580 calls the read-only RF-ready query
+            // FUN_0047dd90 before its 0x1A battery request.
+            var readyRequest=new byte[64];
+            readyRequest[0]=4;readyRequest[1]=0xAA;readyRequest[3]=0xAA;
+            if(!IsRainyWirelessReady(Query(readyRequest,0xAA)))
+                return Fail("Rainy无线接收器未返回有效就绪状态；未继续查询电量");
         }
         int level=-1;bool charging=false,known=false;
         for(int i=0;i<2;i++)
@@ -66,4 +79,8 @@ internal static class ZeroRainyProtocol
             (atk?"ZERO两次电量响应":"Evision两次有效电量响应，通用名称不确认Rainy型号")+
             (known?"；充电字段已知":"；充电状态未知")+"；不推断独立RF在线位"+trace,model);
     }
+
+    private static bool IsRainyWirelessReady(ReadOnlySpan<byte> response) =>
+        response.Length==64 && response[0]==4 && response[3]==0xAA &&
+        response[7] is not (0xFE or 0xFF) && response[8]==0xFF;
 }

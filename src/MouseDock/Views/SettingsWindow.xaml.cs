@@ -105,6 +105,7 @@ namespace MouseDock.Views
             AutoUpdateBox.IsChecked = s.AutoUpdate;
                 ApplySurfaceButtons(s.SurfaceMode);
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
+                TaskbarFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
                 SyncIconScale();
                 RebuildIconStyles();
@@ -182,6 +183,7 @@ namespace MouseDock.Views
                 BgTopStop.Color = theme.BgTop;
                 BgBottomStop.Color = theme.BgBottom;
             }
+            RebuildTaskbarStyles(theme);
         }
 
         // ── 交互 ───────────────────────────────────────────────────────────
@@ -530,10 +532,19 @@ namespace MouseDock.Views
         private void OnIconOptionsChanged(object sender,RoutedEventArgs e)
         {
             if (_loading) return;
-            App.Settings.IconFollowTheme=IconFollowThemeBox.IsChecked==true;
+            App.Settings.IconFollowTheme=(sender == TaskbarFollowThemeBox
+                ? TaskbarFollowThemeBox : IconFollowThemeBox).IsChecked==true;
             App.Settings.IconHideBackground=IconHideBackgroundBox.IsChecked==true;
+            _loading = true;
+            try
+            {
+                IconFollowThemeBox.IsChecked=App.Settings.IconFollowTheme;
+                TaskbarFollowThemeBox.IsChecked=App.Settings.IconFollowTheme;
+            }
+            finally { _loading = false; }
             App.Icon?.ApplyStyle(App.Settings.IconStyle,false);
-            App.SaveSettings();RebuildIconStyles();
+            App.Taskbar?.UpdateDevices();
+            App.SaveSettings();RebuildIconStyles();RebuildTaskbarStyles();
         }
 
         private void OnSurfaceClick(object sender, RoutedEventArgs e)
@@ -553,12 +564,14 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        private void RebuildTaskbarStyles()
+        private void RebuildTaskbarStyles(ThemePreset theme = null)
         {
+            theme ??= App.Theme;
+            Brush themeAccent = App.Settings.IconFollowTheme ? new SolidColorBrush(theme.Accent) : null;
             TaskbarTextColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarTextColor,
-                new SolidColorBrush(App.Theme.Text));
+                new SolidColorBrush(theme.Text));
             TaskbarBatteryColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarBatteryColor,
-                App.Settings.TaskbarStyle == "panel" ? Brushes.White : new SolidColorBrush(Color.FromRgb(52, 211, 153)));
+                themeAccent ?? (App.Settings.TaskbarStyle == "panel" ? Brushes.White : new SolidColorBrush(Color.FromRgb(52, 211, 153))));
             TaskbarStyleChoices.Children.Clear();
             foreach (var (style, label) in new[] { ("ring", "环内数字"), ("panel", "紧凑面板") })
             {
@@ -566,8 +579,8 @@ namespace MouseDock.Views
                 {
                     new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 28 },
                     new DeviceInfo { Kind = DeviceKind.Mouse, Level = 90 }
-                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(App.Theme.Text), App.Settings.LowBatteryWarn,
-                    App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor);
+                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(theme.Text), App.Settings.LowBatteryWarn,
+                    App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor, themeAccent);
                 var content = new StackPanel();
                 content.Children.Add(new Viewbox { Width = 96, Height = 40, Child = preview, IsHitTestVisible = false });
                 content.Children.Add(new TextBlock { Text = label, FontSize = 11,

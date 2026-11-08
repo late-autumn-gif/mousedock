@@ -13,9 +13,14 @@ using MouseDock.Views;
 
 internal static class Program
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
     [STAThread]
     private static int Main(string[] args)
     {
+        // Match the production manifest when the checks are hosted by dotnet.exe.
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
         if (args.Contains("--taskbar-host-fixture"))
@@ -33,8 +38,14 @@ internal static class Program
             ("Taskbar styles stay inside every taskbar", TaskbarStyleChecks.Placement),
             ("Taskbar styles persist across restart", TaskbarStyleChecks.Preferences),
             ("Taskbar colors persist and render independently", TaskbarStyleChecks.CustomColors),
+            ("Taskbar theme colors preserve overrides", TaskbarThemeChecks.RendererColors),
+            ("Taskbar theme follows live changes and controls", TaskbarThemeChecks.LiveTheme),
             ("Taskbar styles render live values across DPI and themes", TaskbarStyleChecks.Rendering),
             ("Embedded taskbar uses a transparent native child", TaskbarEmbeddingChecks.AttachedToTaskbar),
+            ("Taskbar updates retain their surface and foreground focus", TaskbarEmbeddingChecks.StableUpdates),
+            ("Taskbar repeated anchor retains stable fallback or child", TaskbarEmbeddingChecks.RepeatedAnchorKeepsStableSurface),
+            ("Taskbar events recover without polling or hiding", TaskbarEmbeddingChecks.EventRecovery),
+            ("Taskbar floating fallback respects flyouts without repeated raises", TaskbarEmbeddingChecks.FloatingOrder),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
             ("Embedded taskbar retains native alpha composition", TaskbarEmbeddingChecks.TransparentComposition),
             ("Embedded taskbar recovers after its native host is destroyed", TaskbarEmbeddingChecks.HostLossRecovery),

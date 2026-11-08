@@ -157,6 +157,7 @@ namespace MouseDock.Services.Detection
                     if (ReceiverIdentityProtocol.IsCandidate(bucket.Vid, bucket.Pid)) continue;
                     if (RogOmniKeyboardProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (VgnF1Protocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (M9ProProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (F75Protocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
@@ -245,6 +246,7 @@ namespace MouseDock.Services.Detection
             QueryRogOmniKeyboards(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadRogOmniKeyboard);
             QueryM137FeatureCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
             QueryVgnF1Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadVgnF1);
+            QueryM9ProCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
             QueryF75Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
             QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
 
@@ -268,6 +270,7 @@ namespace MouseDock.Services.Detection
                 if (ReceiverIdentityProtocol.IsCandidate(b.Vid, b.Pid)) return b.ToDevice();
                 if (RogOmniKeyboardProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (VgnF1Protocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
+                if (M9ProProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (F75Protocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (MchoseKeyboardProtocol.IsSupportedDevice(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
@@ -384,6 +387,8 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if (M9ProProtocol.IsCandidate(vid, pid, product) && usagePage == 0xFF05 && usage == 1)
+            { kind = DeviceKind.Mouse; return true; }
             if (VgnF1Protocol.IsCandidate(vid, pid, product) && usagePage == 0xFF02 && usage == 2)
             { kind = DeviceKind.Mouse; return true; }
             if (F75Protocol.IsCandidate(vid, pid, product) && usagePage == 0xFF02 && usage == 2)
@@ -596,6 +601,7 @@ namespace MouseDock.Services.Detection
             if (ReceiverIdentityProtocol.IsCandidate(vid, pid)) { batteryTrace.Add("M137 Feature 电量由本实例精确集合确认身份后读取"); }
             else if (RogOmniKeyboardProtocol.IsCandidate(vid,pid,product)) { batteryTrace.Add("OMNI 键盘由本实例配对列表确认后读取，不走旧鼠标协议"); }
             else if (VgnF1Protocol.IsCandidate(vid, pid, product)) { batteryTrace.Add("VGN F1 由本实例 Report8 集合确认在线状态后读取"); }
+            else if (M9ProProtocol.IsCandidate(vid, pid, product)) { batteryTrace.Add("M9 Pro 由本实例精确集合被动读取 Input9，不发送厂商命令"); }
             else if (F75Protocol.IsCandidate(vid, pid, product)) { batteryTrace.Add("F75 由本实例 Report13 集合确认型号后读取"); }
             else if (MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product)) { batteryTrace.Add("K87 由本实例 QHW 集合读取"); }
             else if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
@@ -1084,6 +1090,7 @@ namespace MouseDock.Services.Detection
             {
                 if (ReceiverIdentityProtocol.IsCandidate(collection.Vid, collection.Pid) ||
                     VgnF1Protocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
+                    M9ProProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
                     F75Protocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
                     MchoseKeyboardProtocol.IsSupportedDevice(collection.Vid, collection.Pid, collection.Product) ||
                     RogOmniKeyboardProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
@@ -1275,6 +1282,8 @@ namespace MouseDock.Services.Detection
             public string M137FeatureModel;
             public bool VgnF1Handled;
             public string VgnF1Model;
+            public bool M9ProHandled;
+            public string M9ProModel;
             public bool F75Handled;
             public string F75Model;
             public string G7Model;
@@ -1462,6 +1471,12 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Mouse; transport = "2.4G";
                     charging = Battery >= 0 && Charging;
                 }
+                if (M9ProHandled)
+                {
+                    name = M9ProModel ?? "凌豹 M9 Pro（电量未确认）";
+                    kind = DeviceKind.Mouse; transport = "2.4G";
+                    charging = Battery >= 0 && Charging;
+                }
                 if (F75Handled)
                 {
                     name = F75Model ?? "无线键盘 3554:FA09（型号未确认）";
@@ -1480,10 +1495,10 @@ namespace MouseDock.Services.Detection
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = F75Handled ? F75Model ?? "" : VgnF1Handled ? VgnF1Model ?? "" : M137FeatureHandled ? M137FeatureModel ?? "" : RogOmniHandled ? RogOmniModel ?? "" : ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = M9ProHandled ? M9ProModel ?? "" : F75Handled ? F75Model ?? "" : VgnF1Handled ? VgnF1Model ?? "" : M137FeatureHandled ? M137FeatureModel ?? "" : RogOmniHandled ? RogOmniModel ?? "" : ModernHandled ? ModernModel??"" : unresolved ? "" : ZeroRainyHandled ? ZeroRainyModel ?? "" : G7Handled ? G7Model ?? "" : GpwHandled ? GpwModel ?? "" : AulaHandled ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : ""),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
+                    ReceiverDiscovered = M9ProHandled ? true : ModernHandled ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : ZeroRainyHandled ? Pid is 0x1155 or 0x124F or 0x5088 : G7Handled ? Vid==0x3837 && G7Model!=null : GpwHandled ? Pid==0xC539 : AulaHandled ? AulaDescriptorRoute == AulaBatteryProtocol.Route.Sc580Receiver || (InphicHandled && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product),
                     PeripheralConfirmed = F75Handled ? false : M137FeatureHandled ? false : ModernHandled ? false : unresolved ? false : ZeroRainyHandled ? false : G7Handled ? false : GpwHandled ? GpwLive : AulaHandled ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,

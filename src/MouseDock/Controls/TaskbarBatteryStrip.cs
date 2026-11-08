@@ -34,11 +34,15 @@ public sealed class TaskbarBatteryStrip : Border
 
     public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
         bool vertical, Brush foreground, int lowThreshold, string textColor, string batteryColor)
+        : this(devices, style, showNumber, vertical, foreground, lowThreshold, textColor, batteryColor, null) { }
+
+    public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
+        bool vertical, Brush foreground, int lowThreshold, string textColor, string batteryColor, Brush themeAccent)
     {
         StyleName = NormalizeStyle(style);
         bool panel = StyleName == "panel";
         var textBrush = ResolveBrush(textColor, foreground);
-        var batteryBrush = ResolveBrush(batteryColor, null);
+        var batteryBrush = ResolveBrush(batteryColor, themeAccent);
         var items = devices.ToArray();
         DeviceCount = items.Length;
         Background = Brushes.Transparent;

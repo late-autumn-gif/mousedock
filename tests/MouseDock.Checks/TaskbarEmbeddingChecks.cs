@@ -17,6 +17,9 @@ internal static class TaskbarEmbeddingChecks
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr window, int index);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect { public int Left, Top, Right, Bottom; }
@@ -30,7 +33,7 @@ internal static class TaskbarEmbeddingChecks
         IntPtr handle = new WindowInteropHelper(fixture.Window).Handle;
         IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
         Require(taskbar != IntPtr.Zero, "A Windows taskbar is required.");
-        Require(GetParent(handle) == taskbar, "The battery strip is still a separate top-level window.");
+        Require(GetParent(handle) == taskbar, $"The battery strip is still a separate top-level window (strip DPI={GetWindowDpiAwarenessContext(handle)}, taskbar DPI={GetWindowDpiAwarenessContext(taskbar)}).");
         Require((GetWindowLong(handle, -16) & 0x40000000) != 0, "The strip must use WS_CHILD.");
         Require((GetWindowLong(handle, -16) & unchecked((int)0x80000000)) == 0, "A child must not retain WS_POPUP.");
         Require((GetWindowLong(handle, -20) & 8) == 0, "The embedded strip must not compete for topmost order.");
@@ -44,6 +47,140 @@ internal static class TaskbarEmbeddingChecks
         fixture.Window.Show();
         fixture.Window.UpdateAnchor();
         Require(GetParent(handle) == taskbar && IsWindowVisible(handle), "The embedded strip did not return after Show.");
+    }
+
+    internal static void StableUpdates()
+    {
+        using var fixture = new Fixture();
+        fixture.Window.Show();
+        Pump(100);
+        var viewport = (System.Windows.Controls.Viewbox)fixture.Window.Content;
+        var initial = viewport.Child;
+        var handle = new WindowInteropHelper(fixture.Window).Handle;
+        var foreground = GetForegroundWindow();
+        MouseDock.App.Battery.Devices[0].Level = 100;
+        fixture.Window.UpdateDevices();
+        Require(ReferenceEquals(initial, viewport.Child),
+            "A battery refresh rebuilt the whole strip instead of updating its bound value.");
+        Require(new WindowInteropHelper(fixture.Window).Handle == handle && IsWindowVisible(handle),
+            "An ordinary battery update recreated or hid the native surface.");
+        var value = TaskbarStyleChecks.Children<System.Windows.Controls.TextBlock>(viewport)
+            .Single(t => t.Name == "BatteryNumber");
+        Require(value.Text == "100", "The retained strip did not receive the latest battery value.");
+        var taskbar = FindWindow("Shell_TrayWnd", null);
+        SetWindowPos(taskbar, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
+        fixture.Window.UpdateAnchor();
+        Require(IsWindowVisible(handle) && (GetParent(handle) == taskbar ||
+            (GetParent(handle) == IntPtr.Zero && IsAbove(handle, taskbar))),
+            "Taskbar activation detached its child or covered the floating fallback.");
+        Require(GetForegroundWindow() == foreground, "Restoring the taskbar strip stole foreground focus.");
+    }
+
+    internal static void RepeatedAnchorKeepsStableSurface()
+    {
+        using var fixture = new Fixture();
+        fixture.Window.Show();
+        fixture.Window.UpdateAnchor();
+        Pump(100);
+        var handle = new WindowInteropHelper(fixture.Window).Handle;
+        var initialParent = GetParent(handle);
+        var foreground = GetForegroundWindow();
+        int positions = 0, styles = 0;
+        HwndSourceHook watch = (IntPtr hwnd, int message, IntPtr w, IntPtr l, ref bool handled) =>
+        {
+            if (message == 0x0046) positions++;
+            if (message == 0x007C) styles++;
+            return IntPtr.Zero;
+        };
+        var source = HwndSource.FromHwnd(handle)!;
+        source.AddHook(watch);
+        try
+        {
+            for (int i = 0; i < 10; i++) fixture.Window.UpdateAnchor();
+        }
+        finally { source.RemoveHook(watch); }
+        Require(positions == 0 && styles == 0,
+            $"An unchanged anchor repeatedly changed native order/style (positions={positions}, styles={styles}).");
+        Require(GetParent(handle) == initialParent && IsWindowVisible(handle),
+            "Repeated anchor checks changed or hid the selected native surface.");
+        Require(GetForegroundWindow() == foreground, "Repeated anchor checks stole foreground focus.");
+    }
+
+    internal static void EventRecovery()
+    {
+        using var fixture = new Fixture();
+        fixture.Window.Show();
+        Pump(100);
+        var handle = new WindowInteropHelper(fixture.Window).Handle;
+        var taskbar = FindWindow("Shell_TrayWnd", null);
+        var timer = (DispatcherTimer)typeof(TaskbarWindow).GetField("_anchorTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture.Window)!;
+        timer.Stop();
+        int showMessages = 0;
+        HwndSourceHook watch = (IntPtr hwnd, int message, IntPtr w, IntPtr l, ref bool handled) =>
+        {
+            if (message == 0x0018) showMessages++;
+            return IntPtr.Zero;
+        };
+        var source = HwndSource.FromHwnd(handle)!;
+        source.AddHook(watch);
+        try
+        {
+            SetWindowPos(taskbar, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
+            Pump(150);
+            Require(GetParent(handle) == taskbar || IsAbove(handle, taskbar),
+                "The strip remained covered without the polling timer; the native event did not repair its order.");
+            Require(showMessages == 0 && IsWindowVisible(handle),
+                "Taskbar recovery hid or showed the entire strip.");
+        }
+        finally { source.RemoveHook(watch); }
+    }
+
+    internal static void FloatingOrder()
+    {
+        var strip = new Window { Width = 40, Height = 40, Left = -1800, Top = 100,
+            ShowActivated = false, ShowInTaskbar = false };
+        var flyout = new Window { Width = 80, Height = 80, Left = -1800, Top = 100,
+            ShowActivated = false, ShowInTaskbar = false, Topmost = true };
+        try
+        {
+            strip.Show();
+            flyout.Show();
+            var handle = new WindowInteropHelper(strip).Handle;
+            var overlay = new WindowInteropHelper(flyout).Handle;
+            var taskbar = FindWindow("Shell_TrayWnd", null);
+            SetWindowPos(handle, new IntPtr(-2), 0, 0, 0, 0, 0x0013);
+            SetWindowPos(taskbar, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
+            SetWindowPos(overlay, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
+            var foreground = GetForegroundWindow();
+            var anchor = typeof(AppSettings).Assembly.GetType("MouseDock.Services.TaskbarAnchor")!;
+            var repair = anchor.GetMethod("EnsureOrder");
+            Require(repair != null, "An incompatible taskbar needs an ordered floating fallback.");
+            repair!.Invoke(null, [strip, false]);
+            Require(IsAbove(handle, taskbar), "The floating strip remained behind the taskbar.");
+            Require(IsAbove(overlay, handle), "The floating strip covered a flyout above the taskbar.");
+            int positionMessages = 0;
+            HwndSourceHook watch = (IntPtr hwnd, int message, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                if (message == 0x0046) positionMessages++;
+                return IntPtr.Zero;
+            };
+            var source = HwndSource.FromHwnd(handle)!;
+            source.AddHook(watch);
+            for (int i = 0; i < 10; i++) repair.Invoke(null, [strip, false]);
+            source.RemoveHook(watch);
+            Require(positionMessages == 0, "A correctly ordered strip was raised again on every refresh.");
+            Require(IsWindowVisible(handle) && GetForegroundWindow() == foreground,
+                "The fallback hid its surface or stole focus.");
+        }
+        finally { strip.Close(); flyout.Close(); }
+    }
+
+    private static bool IsAbove(IntPtr first, IntPtr second)
+    {
+        for (var above = GetWindow(second, 3); above != IntPtr.Zero; above = GetWindow(above, 3))
+            if (above == first) return true;
+        return false;
     }
 
     internal static void FollowsParentWithoutRefresh()
@@ -94,7 +231,8 @@ internal static class TaskbarEmbeddingChecks
         {
             strip.Show();
             var type = typeof(AppSettings).Assembly.GetType("MouseDock.Services.TaskbarAnchor")!;
-            Require((bool)type.GetMethod("Attach")!.Invoke(null, [strip, taskbar])!, "Attachment failed.");
+            Require((bool)type.GetMethod("Attach")!.Invoke(null, [strip, taskbar])!,
+                "Windows refused taskbar attachment; native composition could not be exercised in this host.");
             type.GetMethod("Move")!.Invoke(null, [strip, target]);
             Pump(800);
             using var after = Capture(target);
@@ -270,4 +408,3 @@ internal static class TaskbarEmbeddingChecks
         }
     }
 }
-

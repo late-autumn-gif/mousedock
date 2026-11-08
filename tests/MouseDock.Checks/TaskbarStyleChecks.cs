@@ -108,7 +108,7 @@ internal static class TaskbarStyleChecks
         return (FrameworkElement)Activator.CreateInstance(type!, devices, style, numbers, vertical, ink, 20)!;
     }
 
-    private static IEnumerable<T> Children<T>(DependencyObject root) where T : DependencyObject
+    internal static IEnumerable<T> Children<T>(DependencyObject root) where T : DependencyObject
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
         {
