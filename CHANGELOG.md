@@ -514,3 +514,10 @@
 - --detect 与报告新增 DPI 列；DeviceInfo.Dpi/DpiLabel、DetectedDevice.Dpi 贯通。
 - RK 官方 V4.6 包已解（innoextract），Dev 目录 200+ 款键盘定义里没有 R98Pro/R98，R98Pro 不在这版驱动覆盖范围。
 - 16147 条离线断言通过（+19 DPI）；界面检查 59/64 + 5 skipped；真机 ROG 52%、迈从 83%。
+
+### v1.1.2 补充：凌豹 M9 Pro RealTek 电量与 Rainy75 诊断（2026-11-08）
+
+- 用户报告 MouseDock-report-LB-M9PRO（093A:522C）：FF00/0001 Feature 64，与迈从官方网页驱动的 RealTek 通道同形。新增 RealTekHidProtocol + VendorProtocol.ReadRealTekBattery + QueryRealTekBattery，发官方  x11 0x06（21 字节 Feature），回包按官方 parser 剥两字节命令头、逐字节取反后解 atteryLevel/chargeStatus，并校验 VID/PID 与 0..100。
+- 只放行 093A:522C（用户报告过的凌豹 M9 Pro），其余同形设备没有证据，不主动发帧。
+- 用户报告 MouseDock-report-Wireless Gaming Keyboard（320F:5088，Rainy75）：FF1C/0092 64/64 存在，读写链路已确认，但两次查询都没有任何应答字节。给 ZeroRainyProtocol.Query 补 trace：区分「输入队列未清空」「TX 写入失败」「TX 已发但无任何应答」「收到应答但解析被拒」，下一次报告能直接定位。
+- 16166 条离线断言通过（+19 RealTek）；界面检查 59/64 + 5 skipped；真机 ROG 52%、迈从 83%。

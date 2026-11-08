@@ -13,6 +13,7 @@ internal enum HandledBy
     None,
     Receiver33,
     M137,
+    RealTek,
     Aula,
     Inphic,
     RogScope,
@@ -54,6 +55,8 @@ internal static class DeviceRoutes
         OriginalGpwProtocol.IsCandidate(vid, pid) ||
         // 248A:5B2F 的官方 GetInfo 是独立路由，公版 33 字节旁路已让出这个号段。
         M137FeatureProtocol.IsCandidate(vid, pid, product) ||
+        // 凌豹 M9 Pro：RealTek 系 FF00/0001 Feature 64，官方 0x11 0x06 只读电量。
+        VendorProtocol.IsRealTekShape(vid, pid) ||
         // Logitech HID++ (non-GPW receivers such as 046D:C53F) needs the probe lane too;
         // the GPW-specific model keeps its own dedicated route above.
         (vid == 0x046D && !OriginalGpwProtocol.IsCandidate(vid, pid)) ||
@@ -82,6 +85,8 @@ internal static class DeviceRoutes
             return new Route { Reader = "MchoseModern", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (M137FeatureProtocol.IsCandidate(vid, pid, product))
             return new Route { Reader = "M137", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+        if (VendorProtocol.IsRealTekShape(vid, pid))
+            return new Route { Reader = "RealTek", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsGenericReceiver33(vid, pid, product))
             return new Route { Reader = "Receiver33", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsScopedInphic(vid, pid, product))

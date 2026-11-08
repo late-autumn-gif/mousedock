@@ -22,15 +22,17 @@ internal static class ZeroRainyProtocol
         string trace="";long deadline=link.Now+4500;
         byte[] Query(byte[] tx,byte command)
         {
-            if(link.Now>=deadline)return null;
+            if(link.Now>=deadline){trace=" 总时长超限";return null;}
             bool drained=false;
             for(int i=0;i<32;i++)if(link.Read(1) is not {Length:>0}){drained=true;break;}
-            if(!drained || !link.Write(tx,300))return null;
-            long until=Math.Min(deadline,link.Now+650);
+            if(!drained){trace=" 输入队列未清空，未发送";return null;}
+            if(!link.Write(tx,300)){trace=" TX 写入失败";return null;}
+            bool sawAny=false;long until=Math.Min(deadline,link.Now+650);
             while(link.Now<until)
             {
                 var raw=link.Read((int)Math.Max(1,Math.Min(100,until-link.Now)));
                 if(raw is not {Length:>0})continue;
+                sawAny=true;
                 trace=" RX="+Convert.ToHexString(raw.AsSpan(0,Math.Min(64,raw.Length)));
                 if(raw.AsSpan().SequenceEqual(tx))continue;
                 if(atk && (raw.Length!=64 || raw[2]!=0))continue;
@@ -40,6 +42,7 @@ internal static class ZeroRainyProtocol
                 if(atk?VendorProtocol.AtkReplyOffset(raw,command)>=0:
                     VendorProtocol.TryParseRainy75OfficialBattery(raw,out _,out _))return raw;
             }
+            if(!sawAny)trace=$" TX={Convert.ToHexString(tx.AsSpan(0,Math.Min(8,tx.Length)))} 无任何应答";
             return null;
         }
         ReferenceBatteryProtocol.Reading Fail(string why)=>ReferenceBatteryProtocol.Reading.Failed(why+trace) with {Model=atk&&!identified?null:model};
