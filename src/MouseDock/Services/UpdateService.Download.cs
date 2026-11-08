@@ -90,13 +90,13 @@ internal static partial class UpdateService
             work=Path.Combine(Path.GetTempPath(),"MouseDock-update-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(work);
             string downloaded=Path.Combine(work,info.AssetName);
             if(!await DownloadPackageAsync(info,downloaded,progress,status,ct).ConfigureAwait(false))return false;
-            status?.Report("正在解压并准备替换程序文件…");
-            string newExe=PreparePackage(downloaded,Path.Combine(work,"x"));
-            string currentExe=Environment.ProcessPath;
-            if(string.IsNullOrEmpty(currentExe)||!File.Exists(currentExe))return false;
-            using var installer=Process.Start(CreateApplyStartInfo(work,newExe,currentExe,Environment.ProcessId));
-            if(installer==null)return false;
-            work=null; // Installer owns staging and backups; retain them after installation.
+
+            // 下载完之后交给同一个独立进程去替换。在线路径和本地包路径必须是同一条路，
+            // 否则「删旧文件、重建入口」这两件事只在本地包路径生效，用户走自动更新就享受不到。
+            status?.Report("准备独立更新进程…");
+            string failure=UpdateApplier.Apply(downloaded, m=>status?.Report(m));
+            if(failure!=null){status?.Report(failure);return false;}
+            work=null; // The detached updater owns its own staging directory.
             return true;
         }
         catch{return false;}
