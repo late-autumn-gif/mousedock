@@ -24,7 +24,9 @@ internal enum HandledBy
     /// <summary>VGN 蜻蜓 F1 MOBA（3554:F503），见 VgnF1Protocol。</summary>
     VgnF1,
     /// <summary>狼蛛 AULA F75（3554:FA09），见 F75Protocol。</summary>
-    AulaF75
+    AulaF75,
+    /// <summary>凌豹 M9 Pro（093A:522C，产品串 LB-M9PRO），见 M9ProProtocol。</summary>
+    M9Pro
 }
 
 /// <summary>
@@ -51,6 +53,7 @@ internal static class DeviceRoutes
     internal static bool IsKnown(ushort vid, ushort pid, string product) =>
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
+        M9ProProtocol.IsCandidate(vid, pid, product) ||
         VendorProtocol.IsRogOmni(vid, pid) ||
         VendorProtocol.IsScopedModernMouse(vid, pid, product) ||
         ReferenceProfiles.Find(vid, pid) != null ||
@@ -89,6 +92,9 @@ internal static class DeviceRoutes
             return new Route { Reader = "VgnF1", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (F75Protocol.IsCandidate(vid, pid, product))
             return new Route { Reader = "AulaF75", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
+        // 凌豹 M9 Pro 走被动 Input9，优先于 RealTek 的 0x11 0x06 主动查询。
+        if (M9ProProtocol.IsCandidate(vid, pid, product))
+            return new Route { Reader = "M9Pro", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsRogOmni(vid, pid))
             return new Route { Reader = "RogScope", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseA7V2(vid, pid))
