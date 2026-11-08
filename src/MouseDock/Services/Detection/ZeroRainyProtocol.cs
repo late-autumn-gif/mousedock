@@ -7,15 +7,9 @@ internal static class ZeroRainyProtocol
         string n=(product??"").Trim().Replace(" ","").Replace("-","").ToUpperInvariant();
         return n is "RAINY75" or "WOBRAINY75" or "WOBKEYRAINY75" or "RAINY75RGB" or "WOBKEYRAINY75RGB";
     }
-    /// <summary>
-    /// 接收器模式下的产品串是通用的 "Wireless Gaming Keyboard"，
-    /// 但同一 VID:PID 下 VGN S99 用的是自己的串，所以这个通用串仍能定位到 Rainy 75。
-    /// 型号名按官方名给出，电量是否读得到另算——这里只解决"型号为空"。
-    /// </summary>
-    internal static bool RainyReceiverName(string product) =>
-        (product??"").Trim().ToUpperInvariant() is "WIRELESS GAMING KEYBOARD";
-    internal static string ReceiverModel(string product) =>
-        RainyName(product) || RainyReceiverName(product) ? "WOBKEY Rainy 75" : null;
+    // 接收器模式的通用产品串不做型号映射：WOB 官方驱动（wobwxe.com 的 JS）没有任何电量
+    // 或型号查询命令，见 scholzri/rainy75-zmk 的 docs/wob-driver-analysis.md。
+    // 拿通用串去表 Rainy 75 只是猜，不做。
     internal static bool Candidate(ushort vid,ushort pid,string product) => VendorProtocol.IsAtkZeroBitMouse(vid,pid) ||
         (VendorProtocol.IsRainy75Candidate(vid,pid) && (RainyName(product) ||
         (product?.Trim().ToUpperInvariant() is "WIRELESS GAMING KEYBOARD" or "USB KEYBOARD" or "GAMING KEYBOARD")));
@@ -26,7 +20,7 @@ internal static class ZeroRainyProtocol
     internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link,ushort vid,ushort pid,string product)
     {
         bool atk=VendorProtocol.IsAtkZeroBitMouse(vid,pid),receiver=pid!=0x1154;
-        string model=atk?"ATK ZERO":ReceiverModel(product);
+        string model=atk?"ATK ZERO":RainyName(product)?"WOBKEY Rainy 75":null;
         bool identified=atk && !receiver;
         string trace="";long deadline=link.Now+4500;
         byte[] Query(byte[] tx,byte command)
@@ -74,7 +68,7 @@ internal static class ZeroRainyProtocol
             known=raw is {Length:64} && raw[7]<=1;charging=known&&raw[7]==1;
         }
         // 型号可以由接收器产品串推定，但充电语义只有产品串明确是 Rainy 时才算已知。
-        else {known=RainyName(product);if(!known)charging=false;}
+        else {known=model!=null;if(!known)charging=false;}
         return new(level,charging,known,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
             (atk?"ZERO两次电量响应":"Evision两次有效电量响应；型号按接收器产品串推定，待实机确认")+
             (known?"；充电字段已知":"；充电状态未知")+"；不推断独立RF在线位"+trace,model);

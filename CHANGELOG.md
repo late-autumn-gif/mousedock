@@ -529,3 +529,11 @@
 - 充电语义仍不确认：只有产品串明确是 Rainy 时才标记 ChargingKnown，通用串一律保持未知，不编充电状态。
 - 电量读取仍是官方 Evision  4 20 00 1A 06 两次查询；无线接收器目前无任何应答，Query 的 trace 已能区分队列未清空 / TX 失败 / 无应答 / 解析被拒。
 - 16171 条离线断言通过（+5 Rainy 型号）；界面检查 59/64 + 5 skipped。
+
+### v1.1.2 修正：撤回 Rainy75 的型号映射，标为不支持（2026-11-08）
+
+- 撤回上一版把通用产品串 Wireless Gaming Keyboard 映射成 WOBKEY Rainy 75 的做法。那一步没有官方依据，是同号段推测，属于不该做的决定。
+- 证据来自 scholzri/rainy75-zmk 的 docs/wob-driver-analysis.md（已归档到 D:\WOB\）：WOB 官方驱动把协议分成按键、灯效、固件三类，没有电量或型号查询命令；官方 OTA 工具 Rainy75-Non-RGB-20260129.exe 也不含 HID.DLL/hidapi/attery 字符串。
+- ZeroRainyProtocol 恢复为只对明确产品名（Rainy75 / WOB Rainy75 等）建立型号；通用串保持未确认，同 VID:PID 的 VGN S99 不受影响。
+- 保留上一版加的四段 trace（队列未清空 / TX 失败 / 无应答 / 解析被拒），诊断能力不回退。
+- 16166 条离线断言通过；界面检查 59/64 + 5 skipped。
