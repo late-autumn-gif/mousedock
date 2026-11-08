@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -128,7 +128,9 @@ public sealed class TaskbarBatteryStrip : Border
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
             BorderThickness = new Thickness(1),
             ClipToBounds = true,
-            Margin = new Thickness(0)
+            // 相邻卡片之间留一点缝：竖排时上下分开，横排时左右分开。
+            // 卡片本身已经是圆角胶囊，贴在一起会连成一片，看不出是两台设备。
+            Margin = vertical ? new Thickness(0, 2, 0, 2) : new Thickness(2, 0, 2, 0)
         };
         card.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
 
