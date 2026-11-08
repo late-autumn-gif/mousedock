@@ -546,3 +546,11 @@
 - RogPairedKeyboards[0x1C25] 从 RogScopeRxWirelessUnknown 改为 RogAzothX = "ROG 夜魔 X"；1B7A 仍是游侠2 RX 98 无线版。
 - Omni 成功读数的诊断现在带原始配对 PID（PID=0x1C25），以后同类错配能直接从报告看出来。
 - 16167 条离线断言通过（+1 夜魔 X 映射）；界面检查 59/64 + 5 skipped；真机 ROG 夜魔 X 电量=50%。
+
+### v1.1.2 记录：狼蛛 F75 不支持、VGN 蜻蜓 F1 MOBA 未知（2026-11-08）
+
+- 按用户定下的标准（协议以厂商驱动和官方为准），对两款新报告的设备做了资料核验，都没有进入代码。
+- 狼蛛 F75（3554:FA09）：从狼蛛官网驱动下载页找到专用驱动 AULA F75 Setup v2.0 20240520.exe（2,454,816 字节，sha256 E075B8BE…F1A2），innoextract 解包后 Dev\kb\F75KR\KB.ini 明确写 Name=AULA F75 KR、PID_Wireless=0xfa09、ShowPower=0。官方软件自身不显示电量，因此判为不支持。同时确认 AULA Hub 2.6.5 里没有 F75 型号，F87/F99/F99 Pro 也全部 ShowPower=0。
+- VGN 蜻蜓 F1 MOBA（3554:F503）：VGN V HUB 的 asar 9777 个文件里搜不到 F503、蜻蜓、F1 MOBA；AULA 驱动里也没有该 PID。该型号走 VGN/VXE 旧版鼠标软件，现有资料给不出帧，维持未知。
+- 澄清一处误读：用户报告里的 F75 官方无线 Report13 TX=13050100…19 其实是 RK R98Pro 的身份帧（见 R9KeyboardChecks.cs），旧版本把它套在 F75 上，所以必然无响应。当前 1.1.2 没有 F75 读取器。
+- 未改代码，16167 条离线断言与 59/64 界面检查基线不变。
