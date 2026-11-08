@@ -70,6 +70,7 @@ namespace MouseDock.Models
         /// <summary>任务栏左侧/底部偏移，相对任务栏可用长度的百分比（0-100，v6 起；旧版是 DIP，启动时迁移）。</summary>
         public double TaskbarOffset { get; set; } = 8;
         public bool ShowBatteryNumber { get; set; } = true;
+        public string TaskbarStyle { get; set; } = "ring";
         public string EdgeGlyphColor { get; set; } = "#F5F5F5";
         public double EdgeVerticalPosition { get; set; } = 0.5;
         public double EdgeInset { get; set; } = 12;
@@ -143,6 +144,7 @@ namespace MouseDock.Models
                 SurfaceMode = SurfaceMode,
                 TaskbarOffset = TaskbarOffset,
                 ShowBatteryNumber = ShowBatteryNumber,
+                TaskbarStyle = TaskbarStyle,
                 EdgeGlyphColor = EdgeGlyphColor,
                 EdgeVerticalPosition = EdgeVerticalPosition,
                 EdgeInset = EdgeInset,

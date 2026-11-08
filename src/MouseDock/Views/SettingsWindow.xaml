@@ -303,6 +303,10 @@
                             <TextBlock Text="50%–300%，仅影响悬浮图标。照片内部缩放使用 Ctrl+滚轮。" FontSize="10" TextWrapping="Wrap" Opacity="0.65" Margin="0,5,0,0"/>
                             <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
                                       Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
+                            <StackPanel x:Name="TaskbarStylePanel" Margin="0,12,0,0">
+                                <TextBlock Text="任务栏样式" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <UniformGrid x:Name="TaskbarStyleChoices" Columns="2" />
+                            </StackPanel>
                             <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />

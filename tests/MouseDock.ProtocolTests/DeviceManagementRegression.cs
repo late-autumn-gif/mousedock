@@ -274,16 +274,35 @@ internal static class DeviceManagementRegression
                     }
                     Capture(icon,Path.Combine(directory,"实际悬浮窗-"+style+".png"));
                 }
-                var badge=new DeviceBatteryBadge(new DeviceInfo{Level=76},Brushes.White,true,true,20);
-                badge.Measure(new Size(40,56));badge.Arrange(new Rect(0,0,40,56));
-                var number=badge.Children.OfType<TextBlock>().Single();
-                Check(Grid.GetRow(number)==1&&Grid.GetColumn(number)==0&&badge.Width==40&&badge.Height==56&&badge.Ring.Width==40,"Taskbar uses screen-edge sized ring with number below");
-                Check(number.TransformToAncestor(badge).Transform(new Point()).Y>=badge.Ring.ActualHeight,"Rendered number is geometrically below ring");
-                Capture(badge,Path.Combine(directory,"任务栏电量-下方数字.png"));
+                var taskbar=new TaskbarWindow(); windows.Add(taskbar);
+                typeof(App).GetProperty(nameof(App.Taskbar))!.SetValue(null,taskbar);
+                App.SetSurface("taskbar"); manager.Show(); Pump(40);
+                var stylePanel=(FrameworkElement)manager.FindName("TaskbarStylePanel");
+                stylePanel.BringIntoView(); Pump(40);
+                Check(stylePanel.IsVisible,"Taskbar style controls are visible in taskbar mode");
+                Capture(manager,Path.Combine(directory,"任务栏样式-设置入口.png"));
+                foreach(string style in new[]{"panel","ring"})
+                {
+                    var taskbarChoices=(System.Windows.Controls.Primitives.UniformGrid)manager.FindName("TaskbarStyleChoices");
+                    taskbarChoices.Children.OfType<RadioButton>().Single(b=>Equals(b.Tag,style)).IsChecked=true;
+                    Pump(40);
+                    Check(settings.TaskbarStyle==style && SettingsStore.Load().TaskbarStyle==style,"Taskbar style choice persists: "+style);
+                    var strip=(TaskbarBatteryStrip)((Viewbox)taskbar.Content).Child;
+                    Check(strip.StyleName==style && strip.DeviceCount==2,"Actual taskbar changes style immediately: "+style);
+                    Check(settings.SurfaceMode=="taskbar","Style choice keeps taskbar mode");
+                    var numbers=(CheckBox)manager.FindName("BatteryNumberBox");
+                    numbers.IsChecked=true; Pump(20);
+                    strip=(TaskbarBatteryStrip)((Viewbox)taskbar.Content).Child;
+                    Check(Find<TextBlock>(strip,t=>t.Name=="BatteryNumber").Visibility==Visibility.Visible,"Number switch shows values");
+                    Capture(strip,Path.Combine(directory,"任务栏-"+style+".png"));
+                    numbers.IsChecked=false; Pump(20);
+                    strip=(TaskbarBatteryStrip)((Viewbox)taskbar.Content).Child;
+                    Check(Find<TextBlock>(strip,t=>t.Name=="BatteryNumber").Visibility==Visibility.Collapsed,"Number switch hides values");
+                }
                 foreach(double dpi in new[]{1d,1.25,1.5,2})
                 {
-                    var rect=TaskbarPlacement.CalculateBadges(new Rect(0,1000,1920,40*dpi),3,2,true,8,dpi);
-                    Check(Math.Abs(rect.Height-56*dpi)<.01&&Math.Abs(rect.Width-80*dpi)<.01,"Thin taskbar does not shrink full-size rings at DPI "+dpi);
+                    var bar=new Rect(0,1000,1920,32*dpi);
+                    Check(bar.Contains(TaskbarPlacement.CalculateBadges(bar,3,2,true,8,dpi)),"Digits stay inside thin taskbar at DPI "+dpi);
                 }
                 choices.BringIntoView();Pump(80);
                 Capture(manager,Path.Combine(directory,"悬浮样式-设置入口.png"));

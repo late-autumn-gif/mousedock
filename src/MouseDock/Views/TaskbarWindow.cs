@@ -16,7 +16,7 @@ namespace MouseDock.Views
 {
     public sealed class TaskbarWindow : Window
     {
-        private readonly StackPanel _devices = new StackPanel { Orientation = Orientation.Horizontal };
+        private TaskbarBatteryStrip _strip;
         private readonly Viewbox _viewport = new Viewbox { Stretch = Stretch.Uniform };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         private bool _vertical;
@@ -35,7 +35,6 @@ namespace MouseDock.Views
             Topmost = false;
             Width = 40;
             Height = 40;
-            _viewport.Child = _devices;
             Content = _viewport;
             SourceInitialized += (_, __) =>
             {
@@ -96,10 +95,8 @@ namespace MouseDock.Views
 
         public void UpdateDevices()
         {
-            _devices.Children.Clear();
             TaskbarAnchor.TryGet(out _, out uint edge, out _);
             _vertical = edge == 0 || edge == 2;
-            _devices.Orientation = _vertical ? Orientation.Vertical : Orientation.Horizontal;
             bool light = false;
             try
             {
@@ -107,18 +104,17 @@ namespace MouseDock.Views
                 light = key?.GetValue("SystemUsesLightTheme") is int value && value == 1;
             }
             catch { }
-            foreach (var device in App.Battery.VisibleDevices)
-            {
-                _devices.Children.Add(new DeviceBatteryBadge(device, light ? Brushes.Black : Brushes.WhiteSmoke,
-                    App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn));
-            }
+            _strip = new TaskbarBatteryStrip(App.Battery.VisibleDevices, App.Settings.TaskbarStyle,
+                App.Settings.ShowBatteryNumber, _vertical, light ? Brushes.Black : Brushes.WhiteSmoke,
+                App.Settings.LowBatteryWarn);
+            _viewport.Child = _strip;
             UpdateAnchor();
         }
 
         public void UpdateAnchor()
         {
             if (!IsVisible) return;
-            TaskbarAnchor.Detach(this); // Full-size badges cannot be clipped to a thin taskbar parent.
+            TaskbarAnchor.Detach(this);
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
                 Opacity = 0;
@@ -127,11 +123,12 @@ namespace MouseDock.Views
             }
             // DPI 上下文对不上时 SetParent 会失败：退回原来的浮窗行为，总要看得见电量。
             Topmost = true;
-            Opacity = _devices.Children.Count == 0 ? 0 : 1;
+            Opacity = _strip == null || _strip.DeviceCount == 0 ? 0 : 1;
             IsHitTestVisible = Opacity > 0;
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
-            var placement = TaskbarPlacement.CalculateBadges(bounds, edge, Math.Max(1,_devices.Children.Count),
-                App.Settings.ShowBatteryNumber,App.Settings.TaskbarOffset,dpi);
+            if (_strip == null) return;
+            var contentSize = _vertical ? new Size(_strip.Height, _strip.Width) : new Size(_strip.Width, _strip.Height);
+            var placement = TaskbarPlacement.Calculate(bounds, edge, contentSize, App.Settings.TaskbarOffset, dpi);
             TaskbarAnchor.Move(this, placement);
         }
     }

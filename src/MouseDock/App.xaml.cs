@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using MouseDock.Controls;
 using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Views;
@@ -690,8 +691,19 @@ namespace MouseDock
             menu.Items.Add(Item((mode == "dock" ? "● " : "○ ") + "主面板", () => SetSurface("dock")));
             menu.Items.Add(Item((mode == "mini" ? "● " : "○ ") + "迷你窗", () => SetSurface("mini")));
             menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
-            menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量环", () => SetSurface("taskbar")));
+            menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量", () => SetSurface("taskbar")));
             menu.Items.Add(Item((mode == "edge" ? "● " : "○ ") + "屏幕右侧电量环", () => SetSurface("edge")));
+            if (mode == "taskbar")
+            {
+                menu.Items.Add(new Separator());
+                foreach (var (style, label) in new[] { ("ring", "环内数字"), ("panel", "紧凑面板") })
+                {
+                    var choice = Item(label, () => SetTaskbarStyle(style));
+                    choice.IsCheckable = true;
+                    choice.IsChecked = TaskbarBatteryStrip.NormalizeStyle(Settings.TaskbarStyle) == style;
+                    menu.Items.Add(choice);
+                }
+            }
             menu.Items.Add(new Separator());
             if (owner == Icon)
             {
@@ -735,6 +747,14 @@ namespace MouseDock
             menu.PlacementTarget = owner;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
             menu.IsOpen = true;
+        }
+
+        public static void SetTaskbarStyle(string style)
+        {
+            Settings.TaskbarStyle = TaskbarBatteryStrip.NormalizeStyle(style);
+            Taskbar?.UpdateDevices();
+            SaveSettings();
+            SettingsView?.Reload();
         }
 
         /// <summary>右键菜单切显示方式：三选一，顺带把另外两个藏起来。</summary>

@@ -27,6 +27,9 @@ internal static class Program
         }
         var checks = new (string Name, Action Check)[]
         {
+            ("Taskbar styles stay inside every taskbar", TaskbarStyleChecks.Placement),
+            ("Taskbar styles persist across restart", TaskbarStyleChecks.Preferences),
+            ("Taskbar styles render live values across DPI and themes", TaskbarStyleChecks.Rendering),
             ("Embedded taskbar uses a transparent native child", TaskbarEmbeddingChecks.AttachedToTaskbar),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
             ("Embedded taskbar retains native alpha composition", TaskbarEmbeddingChecks.TransparentComposition),
@@ -184,21 +187,24 @@ internal static class Program
         var window = new TaskbarWindow();
         try
         {
-            var strip = (StackPanel)((Viewbox)window.Content).Child;
-            var rings = strip.Children.Cast<DeviceBatteryBadge>().Select(b => b.Ring).ToArray();
+            window.Show();
+            window.UpdateLayout();
+            var strip = (TaskbarBatteryStrip)((Viewbox)window.Content).Child;
+            var rings = ((StackPanel)strip.Child).Children.OfType<Grid>()
+                .SelectMany(b => b.Children.OfType<DeviceBatteryRing>()).ToArray();
             Require(rings.Length == 2, "Only selected connected devices may appear.");
             Require(rings[0].Kind == DeviceKind.Mouse && rings[0].Level == 75, "Mouse ring lost its identity.");
             Require(rings[1].Kind == DeviceKind.Keyboard && rings[1].Level == 30, "Keyboard ring lost its identity.");
             Require(rings.All(r => r.Children[0] is MouseDock.Controls.DeviceGlyph),
                 "Each ring should retain its device glyph.");
-            window.Show();
-            window.UpdateLayout();
             window.UpdateAnchor();
             Console.WriteLine($"Native taskbar window: {window.Left:0},{window.Top:0} {window.ActualWidth:0}x{window.ActualHeight:0}, opacity={window.Opacity:0}.");
             Require(window.ActualWidth > 0 && window.ActualHeight > 0, "The native taskbar window must have a usable size.");
             battery.Devices[0].Level = 12;
             window.UpdateDevices();
-            Require(((DeviceBatteryBadge)strip.Children[0]).Ring.Level == 12, "Battery changes must refresh.");
+            window.UpdateLayout();
+            strip = (TaskbarBatteryStrip)((Viewbox)window.Content).Child;
+            Require(((StackPanel)strip.Child).Children.OfType<Grid>().First().Children.OfType<DeviceBatteryRing>().Single().Level == 12, "Battery changes must refresh.");
 
             strip.Measure(new Size(144, 40));
             strip.Arrange(new Rect(0, 0, 144, 40));
@@ -216,7 +222,8 @@ internal static class Program
             battery.Devices[1].Selected = false;
             battery.VisibleDevices.Clear();
             window.UpdateDevices();
-            Require(strip.Children.Count == 0, "No selection must not display a fabricated device.");
+            Require(((TaskbarBatteryStrip)((Viewbox)window.Content).Child).DeviceCount == 0 && window.Opacity == 0,
+                "No selection must not display a fabricated device.");
         }
         finally { window.Close(); }
     }
