@@ -1,4 +1,4 @@
-﻿using MouseDock.Models;
+using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
 internal static class ZeroRainyRegression
@@ -9,6 +9,13 @@ internal static class ZeroRainyRegression
         Check(DeviceRoutes.IsKnown(0x373B,0x1155,"Receiver"),"ZERO candidate enabled");
         Check(DeviceRoutes.IsKnown(0x373B,0x11D8,"ATK Zero"),"Existing verified COMPX profile preserved");
         Check(ZeroRainyProtocol.Candidate(0x320F,0x5088,"Wireless Gaming Keyboard"),"Generic receiver is candidate, not identity");
+        // 接收器模式的产品串是通用名；同 VID:PID 下 VGN S99 用自己的串，能分开。
+        Check(ZeroRainyProtocol.ReceiverModel("Wireless Gaming Keyboard")=="WOBKEY Rainy 75","Generic receiver names the Rainy 75");
+        Check(ZeroRainyProtocol.ReceiverModel("Rainy75")=="WOBKEY Rainy 75","Direct product name also maps");
+        Check(ZeroRainyProtocol.ReceiverModel("VGN S99 2.4G Dongle")==null,"VGN sibling stays unnamed");
+        Check(ZeroRainyProtocol.ReceiverModel("")==null,"Empty product string stays unnamed");
+        var rainyReceiver=ZeroRainyProtocol.Read(new Link(false),0x320F,0x5088,"Wireless Gaming Keyboard");
+        Check(rainyReceiver.Model=="WOBKEY Rainy 75","Receiver read keeps the model even when the query fails");
         foreach(string other in new[]{"ATK V75X","VGN V98 Pro","Rainy68","WOB Other","VXE V75"})Check(!ZeroRainyProtocol.Candidate(0x320F,0x5088,other),"Other shared-ID products gated");
         Check(!ZeroRainyProtocol.Channel(0x320F,0x5088,"Rainy75",0xFF1C,0x92,64,64,64),"Wrong feature caps rejected");
         var atk=new Link(true);var r=ZeroRainyProtocol.Read(atk,0x373B,0x1155,"Receiver");
@@ -24,7 +31,7 @@ internal static class ZeroRainyRegression
             Check(r.Level==pct && r.Charging==(state==1) && r.Model=="WOBKEY Rainy 75","Rainy percentage and its own charge enum");
         }
         var generic=new Link(false){Charge=2};r=ZeroRainyProtocol.Read(generic,0x320F,0x5088,"Wireless Gaming Keyboard");
-        Check(r.Level==42&&r.Model==null&&!r.ChargingKnown&&!r.Charging,"Shared protocol does not establish Rainy identity/charge semantics");
+        Check(r.Level==42&&r.Model=="WOBKEY Rainy 75"&&!r.ChargingKnown&&!r.Charging,"Generic receiver names the model but never invents charge semantics");
         var correlation=new Link(false){WrongCode=true};Check(ZeroRainyProtocol.Read(correlation,0x320F,0x5088,"Rainy75").Level==42,"Rainy checksum is not a request nonce and need not echo20");
         var opcode=new Link(false){WrongOpcode=true};Check(ZeroRainyProtocol.Read(opcode,0x320F,0x5088,"Rainy75").Level==-1,"Wrong Rainy opcode rejected");
         InstanceScope.BeginScan();const string aPath="test#rainy#A",bPath="test#rainy#B";
@@ -36,7 +43,7 @@ internal static class ZeroRainyRegression
         var channels=new List<HidDiscovery.VendorCollectionInfo>{Channel(aPath),Channel(aPath),Channel(bPath)};int calls=0;
         ReferenceBatteryProtocol.Reading Query(string p,ushort vid,ushort pid){calls++;Check(p==aPath&&InstanceScope.Allows(p)&&!InstanceScope.Allows(bPath),"Exact physical instance");return new(42,false,false,ReferenceBatteryProtocol.State.Online,"synthetic");}
         HidDiscovery.QueryZeroRainy(buckets,channels,false,null,Query);var d=bucket.ToDevice();
-        Check(calls==1&&d.Level==42&&d.Name==bucket.Product&&d.ConfirmedModel==""&&!d.PeripheralConfirmed,"Generic keyboard keeps original identity with independent battery");
+        Check(calls==1&&d.Level==42&&d.Name=="WOBKEY Rainy 75"&&d.ConfirmedModel=="WOBKEY Rainy 75"&&!d.PeripheralConfirmed,"Generic receiver names the Rainy 75 and keeps the battery");
         calls=0;HidDiscovery.QueryZeroRainy(buckets,channels,true,null,Query);Check(calls==0&&bucket.Battery==-1,"Safe mode no query");
         var prefs=new DevicePreferences(new AppSettings{DisabledRecognitionDeviceIds=new(){a}});
         HidDiscovery.QueryZeroRainy(buckets,channels,false,prefs,Query);Check(calls==0,"Disabled instance no query");

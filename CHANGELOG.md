@@ -521,3 +521,11 @@
 - 只放行 093A:522C（用户报告过的凌豹 M9 Pro），其余同形设备没有证据，不主动发帧。
 - 用户报告 MouseDock-report-Wireless Gaming Keyboard（320F:5088，Rainy75）：FF1C/0092 64/64 存在，读写链路已确认，但两次查询都没有任何应答字节。给 ZeroRainyProtocol.Query 补 trace：区分「输入队列未清空」「TX 写入失败」「TX 已发但无任何应答」「收到应答但解析被拒」，下一次报告能直接定位。
 - 16166 条离线断言通过（+19 RealTek）；界面检查 59/64 + 5 skipped；真机 ROG 52%、迈从 83%。
+
+### v1.1.2 补充：Rainy75 接收器型号识别（2026-11-08）
+
+- 用户报告里的 Rainy75 以 2.4G 接收器形态出现，产品串是通用的 Wireless Gaming Keyboard，此前型号显示为空、名称回退到产品串。
+- 新增 ZeroRainyProtocol.ReceiverModel：320F:5055/5088 且产品串为 Wireless Gaming Keyboard 时归为 WOBKEY Rainy 75；同 VID:PID 下 VGN S99 用自己的产品串，不受影响。依据是用户报告与该接收器产品串，标待验证。
+- 充电语义仍不确认：只有产品串明确是 Rainy 时才标记 ChargingKnown，通用串一律保持未知，不编充电状态。
+- 电量读取仍是官方 Evision  4 20 00 1A 06 两次查询；无线接收器目前无任何应答，Query 的 trace 已能区分队列未清空 / TX 失败 / 无应答 / 解析被拒。
+- 16171 条离线断言通过（+5 Rainy 型号）；界面检查 59/64 + 5 skipped。
