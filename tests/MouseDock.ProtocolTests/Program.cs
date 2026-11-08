@@ -24,6 +24,7 @@ if (args.Length > 0 && args[0] == "--inspect-k87-battery")
     return;
 }
 Console.WriteLine($"PASS {K87DiscoveryRegression.Run()} K87 discovery regression checks.");
+Console.WriteLine($"PASS {RogOmniKeyboardRegression.Run()} ROG OMNI keyboard regression checks.");
 Console.WriteLine($"PASS {ReceiverIdentityRegression.Run()} receiver identity diagnostic checks.");
 Console.WriteLine($"PASS {M137FeatureRegression.Run()} M137 Feature battery checks.");
 if (args.Length == 2 && args[0] == "--replay-m137-report")

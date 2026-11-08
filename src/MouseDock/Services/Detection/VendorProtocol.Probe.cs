@@ -73,7 +73,7 @@ namespace MouseDock.Services.Detection
             // This diagnostic API has no physical-instance key. Do not reopen every
             // receiver sharing this public ID; dedicated scan routes already log
             // their exact channel, report metadata and transaction result.
-            if (ReceiverIdentityProtocol.IsCandidate(vid, pid) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
+            if (ReceiverIdentityProtocol.IsCandidate(vid, pid) || (vid == 0x0B05 && pid == 0x1ACE) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
             {
                 text.AppendLine("此设备不运行跨实例通用探针。专用协议仅由自动扫描的精确实例/集合读取；请查看 hid-devices.txt 的诊断。");
                 return new DeviceProbeResult { Text = text.ToString() };
