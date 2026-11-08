@@ -110,56 +110,54 @@ public sealed class TaskbarBatteryStrip : Border
         };
         card.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
 
+        // 只有图标和数字。型号名去掉了：任务栏本来就窄，多一行小字既挤又糊，
+        // 具体型号放进 ToolTip 和 AutomationProperties 里，悬停或读屏照样能看到。
         var grid = new Grid { Margin = new Thickness(4, 3, 4, 3) };
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        if (vertical)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+        else
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        }
         card.Child = grid;
 
         var glyph = new DeviceGlyph
         {
-            Width = 10, Height = 10, Thickness = 1.6,
+            Width = vertical ? 24 : 22, Height = vertical ? 24 : 22, Thickness = 2.1,
             GlyphBrush = batteryBrush ?? foreground,
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false
         };
         glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
+        if (vertical) Grid.SetRow(glyph, 0); else Grid.SetColumn(glyph, 0);
         grid.Children.Add(glyph);
 
         var number = new TextBlock
         {
             Name = "BatteryNumber", Foreground = textBrush,
             FontFamily = new FontFamily("Segoe UI"), FontWeight = FontWeights.Bold,
-            FontSize = 15, TextAlignment = TextAlignment.Center,
+            FontSize = 16, TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(vertical ? 0 : 4, 0, 0, 0),
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
-        Grid.SetRow(number, 1);
+        if (vertical) Grid.SetRow(number, 1); else Grid.SetColumn(number, 1);
         grid.Children.Add(number);
-
-        var label = new TextBlock
-        {
-            Name = "DeviceLabel", Foreground = textBrush, Opacity = .72,
-            FontFamily = new FontFamily("Segoe UI"), FontSize = 8, FontWeight = FontWeights.Normal,
-            TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            IsHitTestVisible = false
-        };
-        label.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Name)));
-        Grid.SetRow(label, 2);
-        grid.Children.Add(label);
 
         var charging = new TextBlock
         {
             Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
-            Foreground = batteryBrush ?? textBrush, FontSize = 8, Width = 8, Height = 10,
+            Foreground = batteryBrush ?? textBrush, FontSize = 8, Width = 9, Height = 10,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 0, 0, 0), IsHitTestVisible = false
+            Margin = new Thickness(0), IsHitTestVisible = false
         };
         charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.IsChargingActive))
             { Converter = new BooleanToVisibilityConverter() });
