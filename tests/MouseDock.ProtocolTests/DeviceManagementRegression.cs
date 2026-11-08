@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -286,7 +286,7 @@ internal static class DeviceManagementRegression
                 {
                     bool vertical = edge is 0 or 2;
                     var bar = new Rect(-800, 100, vertical ? 28 : 100, vertical ? 100 : 28);
-                    var rect = TaskbarPlacement.CalculateBadges(bar, edge, 6, offset, dpi);
+                    var rect = TaskbarPlacement.CalculateBadges(bar, edge, 6, true, offset, dpi);
                     Check(bar.Contains(rect) && rect.Width > 0 && rect.Height > 0,
                         $"Badges stay within taskbar at edge {edge}, offset {offset}, DPI {dpi}");
                 }
@@ -311,3 +311,4 @@ internal static class DeviceManagementRegression
         return checks;
     }
 }
+

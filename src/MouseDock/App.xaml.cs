@@ -679,6 +679,14 @@ namespace MouseDock
             if (Settings.SurfaceMode == "edge") Edge?.UpdateAnchor();
         }
 
+        /// <summary>切换任务栏样式（ring / panel / card），立即重绘并保存。</summary>
+        public static void SetTaskbarStyle(string style)
+        {
+            Settings.TaskbarStyle = Controls.TaskbarBatteryStrip.NormalizeStyle(style);
+            Taskbar?.UpdateDevices();
+            SaveSettings();
+        }
+
         public static void ShowIconIfNeeded()
         {
             if (Icon == null) return;

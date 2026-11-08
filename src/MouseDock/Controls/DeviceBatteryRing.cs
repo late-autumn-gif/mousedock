@@ -23,12 +23,22 @@ namespace MouseDock.Controls
         public static readonly DependencyProperty GlyphBrushProperty = DependencyProperty.Register(
             nameof(GlyphBrush), typeof(Brush), typeof(DeviceBatteryRing),
             new FrameworkPropertyMetadata(Brushes.WhiteSmoke, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty ShowGlyphProperty = DependencyProperty.Register(
+            nameof(ShowGlyph), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
+        public static readonly DependencyProperty BatteryBrushProperty = DependencyProperty.Register(
+            nameof(BatteryBrush), typeof(Brush), typeof(DeviceBatteryRing),
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty ShowChargingMarkProperty = DependencyProperty.Register(
+            nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
 
         public DeviceKind Kind { get => (DeviceKind)GetValue(KindProperty); set => SetValue(KindProperty, value); }
         public int Level { get => (int)GetValue(LevelProperty); set => SetValue(LevelProperty, value); }
         public bool Charging { get => (bool)GetValue(ChargingProperty); set => SetValue(ChargingProperty, value); }
         public int LowBatteryThreshold { get => (int)GetValue(LowBatteryThresholdProperty); set => SetValue(LowBatteryThresholdProperty, value); }
         public Brush GlyphBrush { get => (Brush)GetValue(GlyphBrushProperty); set => SetValue(GlyphBrushProperty, value); }
+        public Brush BatteryBrush { get => (Brush)GetValue(BatteryBrushProperty); set => SetValue(BatteryBrushProperty, value); }
+        public bool ShowGlyph { get => (bool)GetValue(ShowGlyphProperty); set => SetValue(ShowGlyphProperty, value); }
+        public bool ShowChargingMark { get => (bool)GetValue(ShowChargingMarkProperty); set => SetValue(ShowChargingMarkProperty, value); }
 
         public DeviceBatteryRing()
         {
@@ -43,6 +53,8 @@ namespace MouseDock.Controls
             };
             glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(Kind)) { Source = this });
             glyph.SetBinding(DeviceGlyph.GlyphBrushProperty, new Binding(nameof(GlyphBrush)) { Source = this });
+            glyph.SetBinding(VisibilityProperty, new Binding(nameof(ShowGlyph))
+                { Source = this, Converter = new BooleanToVisibilityConverter() });
             Children.Add(glyph);
             var bolt = new TextBlock
             {
@@ -56,11 +68,19 @@ namespace MouseDock.Controls
                 }
             };
             bolt.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(GlyphBrush)) { Source = this });
-            bolt.SetBinding(VisibilityProperty, new Binding(nameof(Charging))
-            {
-                Source = this, Converter = new BooleanToVisibilityConverter()
-            });
+            var chargingVisibility = new MultiBinding { Converter = new ChargingVisibilityConverter() };
+            chargingVisibility.Bindings.Add(new Binding(nameof(Charging)) { Source = this });
+            chargingVisibility.Bindings.Add(new Binding(nameof(ShowChargingMark)) { Source = this });
+            bolt.SetBinding(VisibilityProperty, chargingVisibility);
             Children.Add(bolt);
+        }
+
+        private sealed class ChargingVisibilityConverter : IMultiValueConverter
+        {
+            public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
+                values[0] is true && values[1] is true ? Visibility.Visible : Visibility.Collapsed;
+            public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) =>
+                throw new NotSupportedException();
         }
 
         protected override void OnRender(DrawingContext dc)
@@ -78,7 +98,7 @@ namespace MouseDock.Controls
             var color = Charging ? Color.FromRgb(56, 189, 248)
                 : Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
                 : Color.FromRgb(52, 211, 153);
-            var pen = new Pen(new SolidColorBrush(color), 2.5)
+            var pen = new Pen(BatteryBrush ?? new SolidColorBrush(color), 2.5)
             {
                 StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round
             };

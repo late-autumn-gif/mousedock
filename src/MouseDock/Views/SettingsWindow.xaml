@@ -317,6 +317,32 @@
                                 <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right"
                                            Style="{StaticResource RowText}" Opacity="0.65" />
                             </Grid>
+                            <StackPanel x:Name="TaskbarStylePanel" Margin="0,14,0,0">
+                                <TextBlock Text="任务栏样式" Style="{StaticResource RowText}" />
+                                <StackPanel x:Name="TaskbarStyleChoices" Orientation="Vertical" Margin="0,6,0,0" />
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="文字颜色" Style="{StaticResource RowText}" />
+                                    <Button x:Name="TaskbarTextColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0"
+                                            Tag="text" Click="OnPickTaskbarColor" BorderThickness="1" />
+                                    <TextBlock x:Name="TaskbarTextColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65" />
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="电量颜色" Style="{StaticResource RowText}" />
+                                    <Button x:Name="TaskbarBatteryColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0"
+                                            Tag="battery" Click="OnPickTaskbarColor" BorderThickness="1" />
+                                    <TextBlock x:Name="TaskbarBatteryColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65" />
+                                </Grid>
+                            </StackPanel>
                             <StackPanel x:Name="EdgeOptionsPanel" Margin="0,12,0,0">
                                 <Grid Margin="0,0,0,12">
                                     <TextBlock Text="图标颜色" Style="{StaticResource RowText}" />

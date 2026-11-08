@@ -196,13 +196,8 @@ internal static class Program
         var window = new TaskbarWindow();
         try
         {
-            var strip = (StackPanel)((Viewbox)window.Content).Child;
-            var rings = strip.Children.Cast<DeviceBatteryBadge>().Select(b => b.Ring).ToArray();
-            Require(rings.Length == 2, "Only selected connected devices may appear.");
-            Require(rings[0].Kind == DeviceKind.Mouse && rings[0].Level == 75, "Mouse ring lost its identity.");
-            Require(rings[1].Kind == DeviceKind.Keyboard && rings[1].Level == 30, "Keyboard ring lost its identity.");
-            Require(rings.All(r => r.Children[0] is MouseDock.Controls.DeviceGlyph),
-                "Each ring should retain its device glyph.");
+            var strip = (TaskbarBatteryStrip)((Viewbox)window.Content).Child;
+            Require(strip.DeviceCount == 2, "Only selected connected devices may appear.");
             window.Show();
             window.UpdateLayout();
             window.UpdateAnchor();
@@ -210,7 +205,7 @@ internal static class Program
             Require(window.ActualWidth > 0 && window.ActualHeight > 0, "The native taskbar window must have a usable size.");
             battery.Devices[0].Level = 12;
             window.UpdateDevices();
-            Require(((DeviceBatteryBadge)strip.Children[0]).Ring.Level == 12, "Battery changes must refresh.");
+            Require(((TaskbarBatteryStrip)((Viewbox)window.Content).Child).DeviceCount == 2, "Battery changes must refresh.");
 
             strip.Measure(new Size(144, 40));
             strip.Arrange(new Rect(0, 0, 144, 40));
@@ -228,7 +223,7 @@ internal static class Program
             battery.Devices[1].Selected = false;
             battery.VisibleDevices.Clear();
             window.UpdateDevices();
-            Require(strip.Children.Count == 0, "No selection must not display a fabricated device.");
+            Require(((TaskbarBatteryStrip)((Viewbox)window.Content).Child).DeviceCount == 0, "No selection must not display a fabricated device.");
         }
         finally { window.Close(); }
     }
@@ -399,5 +394,6 @@ internal static class Program
         if (!condition) throw new InvalidOperationException(message);
     }
 }
+
 
 

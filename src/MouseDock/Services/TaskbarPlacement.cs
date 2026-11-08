@@ -18,14 +18,15 @@ namespace MouseDock.Services
             (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase) &&
                 (className == "Windows.UI.Core.CoreWindow" || className == "XamlExplorerHostIslandWindow"));
 
-        // Taskbar badges use a 40 DIP square, including the optional number.
-        public static Rect CalculateBadges(Rect taskbar, uint edge, int count, double offset, double dpi) =>
-            Calculate(taskbar, edge, new Size(Math.Max(1, count) * 40.0, 40), offset,
+        // Both taskbar styles keep their digits inside a single 40-DIP cell.
+        public static Rect CalculateBadges(Rect taskbar,uint edge,int count,bool showNumber,double offset,double dpi)
+        {
+            return Calculate(taskbar, edge, new Size(Math.Max(1, count) * 40, 40), offset,
                 double.IsFinite(dpi) ? dpi : 1);
+        }
 
-        // taskbar rect and content size are physical pixels; the offset is a
-        // percentage (0-100) of the remaining taskbar length. Percent scales with
-        // 2K/4K and DPI automatically, so no extra dpi multiplication here.
+        // Taskbar bounds are physical pixels; content is horizontal length/thickness
+        // in DIPs. Offset is a percentage of the remaining taskbar length.
         public static Rect Calculate(Rect taskbar, uint edge, Size content, double offsetPercent, double dpiScale)
         {
             bool vertical = edge == 0 || edge == 2;

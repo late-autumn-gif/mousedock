@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace MouseDock.Models
 {
@@ -69,6 +69,10 @@ namespace MouseDock.Models
 
         /// <summary>任务栏左侧/底部偏移，相对任务栏可用长度的百分比（0-100，v6 起；旧版是 DIP，启动时迁移）。</summary>
         public double TaskbarOffset { get; set; } = 8;
+        /// <summary>ring = 圆环；panel = 胶囊条；card = 迷你卡片。</summary>
+        public string TaskbarStyle { get; set; } = "ring";
+        public string TaskbarTextColor { get; set; } = "";
+        public string TaskbarBatteryColor { get; set; } = "";
         public bool ShowBatteryNumber { get; set; } = true;
         public string EdgeGlyphColor { get; set; } = "#F5F5F5";
         public double EdgeVerticalPosition { get; set; } = 0.5;
@@ -142,6 +146,9 @@ namespace MouseDock.Models
                 LowBatteryWarn = LowBatteryWarn,
                 SurfaceMode = SurfaceMode,
                 TaskbarOffset = TaskbarOffset,
+            TaskbarStyle = TaskbarStyle,
+            TaskbarTextColor = TaskbarTextColor,
+            TaskbarBatteryColor = TaskbarBatteryColor,
                 ShowBatteryNumber = ShowBatteryNumber,
                 EdgeGlyphColor = EdgeGlyphColor,
                 EdgeVerticalPosition = EdgeVerticalPosition,
@@ -163,3 +170,4 @@ namespace MouseDock.Models
         }
     }
 }
+

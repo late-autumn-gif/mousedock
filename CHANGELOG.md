@@ -563,3 +563,12 @@
 - 新增 VendorProtocol.HidLink（HidStreamLink）把原始 HID 读写包装成 ReferenceBatteryProtocol.ILink；DeviceRoutes 增加 VgnF1 / AulaF75 两条路由，IsKnown 与 Find 同步。
 - 16219 条离线断言通过（+52：VGN F1 24 条、F75 28 条）；界面检查 59/64 + 5 skipped；本机 detect 无回归（迈从 82%、ROG 夜魔 X 识别正常）。
 - 这两条协议的准确性等级是「用户构建验证过」，不是本机实测；本机没有这两台设备。
+
+### v1.1.2 新增：任务栏迷你卡片样式 + 1C25 夜魔 X（2026-11-08）
+
+- 对照用户 GitHub 仓库（late-autumn-gif/mousedock）的 main 与 PR #8、#9 做了全量比对。结论：本地的设备识别（DeviceRoutes、RealTek、M137、RogScope、DPI）更强；GitHub 的任务栏 UI（TaskbarBatteryStrip、TaskbarChangeMonitor、颜色设置）更完整。这次把 GitHub 那边的任务栏能力移植到本地基座，不替换识别层。
+- 新增任务栏第三种样式 card（迷你卡片）：圆角、半透明底、图标 + 粗体百分比 + 型号名，全部矢量绘制，任务栏尺寸下不糊。ing 与 panel 保留。
+- 设置界面新增「任务栏样式」三选一（环内数字 / 紧凑面板 / 迷你卡片）与「文字颜色」「电量颜色」两个取色按钮，写入 TaskbarTextColor / TaskbarBatteryColor。
+- RogOmniKeyboardProtocol 增加  x1C25 → 「ROG 夜魔 X」映射（依据 ASUS 官方 AZOTH-X 插件设备表设备 ID 7205 与 D:\ROG\驱动\ROG AZOTH\Config.ini 的 DisplayNameML）。1B7A 仍是 ROG Strix Scope II 96 RX。
+- 任务栏检测诊断带配对 PID（配对=0x1C25），错配能从日志直接看出来。
+- 16219 条离线断言通过；界面检查 59/64 + 5 skipped；真机任务栏截图确认卡片样式与型号正确（迈从 A7 V2 82%、ROG 夜魔 X）。

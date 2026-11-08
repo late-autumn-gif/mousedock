@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -110,6 +110,7 @@ namespace MouseDock.Views
                 RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
+                RebuildTaskbarStyles();
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(s.EdgeGlyphColor));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
@@ -584,6 +585,70 @@ namespace MouseDock.Views
             public DialogOwner(Window window) { Handle = new System.Windows.Interop.WindowInteropHelper(window).Handle; }
         }
 
+        private void OnPickTaskbarColor(object sender, RoutedEventArgs e)
+        {
+            bool text = (sender as FrameworkElement)?.Tag as string == "text";
+            string current = text ? App.Settings.TaskbarTextColor : App.Settings.TaskbarBatteryColor;
+            var fallback = text ? App.Theme.Text : App.Theme.Accent;
+            var brush = TaskbarBatteryStrip.ResolveBrush(current, new SolidColorBrush(fallback)) as SolidColorBrush;
+            var baseColor = brush?.Color ?? fallback;
+            using var dialog = new System.Windows.Forms.ColorDialog
+            {
+                FullOpen = true, Color = System.Drawing.Color.FromArgb(baseColor.R, baseColor.G, baseColor.B)
+            };
+            if (dialog.ShowDialog(new DialogOwner(this)) != System.Windows.Forms.DialogResult.OK) return;
+            ApplyTaskbarColor(text, $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
+        }
+
+        private void ApplyTaskbarColor(bool text, string color)
+        {
+            if (text) App.Settings.TaskbarTextColor = color;
+            else App.Settings.TaskbarBatteryColor = color;
+            RebuildTaskbarStyles();
+            App.Taskbar?.UpdateDevices();
+            App.SaveSettings();
+        }
+
+        /// <summary>任务栏样式的预览选择器：环内数字 / 紧凑面板 / 迷你卡片。</summary>
+        private void RebuildTaskbarStyles()
+        {
+            if (TaskbarTextColorSwatch == null || TaskbarStyleChoices == null) return;
+            TaskbarTextColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarTextColor,
+                new SolidColorBrush(App.Theme.Text));
+            TaskbarBatteryColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarBatteryColor,
+                new SolidColorBrush(App.Theme.Accent));
+            TaskbarTextColorLabel.Text = string.IsNullOrWhiteSpace(App.Settings.TaskbarTextColor)
+                ? "跟随主题" : App.Settings.TaskbarTextColor;
+            TaskbarBatteryColorLabel.Text = string.IsNullOrWhiteSpace(App.Settings.TaskbarBatteryColor)
+                ? "跟随主题" : App.Settings.TaskbarBatteryColor;
+            TaskbarStyleChoices.Children.Clear();
+            foreach (var (style, label) in new[] { ("ring", "环内数字"), ("panel", "紧凑面板"), ("card", "迷你卡片") })
+            {
+                var preview = new TaskbarBatteryStrip(new[]
+                {
+                    new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Keyboard, Level = 28 },
+                    new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Mouse, Level = 90 }
+                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(App.Theme.Text),
+                    App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor,
+                    new SolidColorBrush(App.Theme.Accent));
+                var content = new StackPanel { Orientation = Orientation.Horizontal };
+                content.Children.Add(new Viewbox { Width = 108, Height = 40, Child = preview, IsHitTestVisible = false });
+                content.Children.Add(new TextBlock
+                {
+                    Text = label, FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(10, 0, 0, 0)
+                });
+                var choice = new RadioButton
+                {
+                    Tag = style, GroupName = "TaskbarStyle", Content = content,
+                    Margin = new Thickness(3), Padding = new Thickness(4),
+                    IsChecked = TaskbarBatteryStrip.NormalizeStyle(App.Settings.TaskbarStyle) == style
+                };
+                choice.SetResourceReference(Control.ForegroundProperty, "TextBrush");
+                choice.Checked += (_, __) => { if (!_loading) App.SetTaskbarStyle(style); };
+                TaskbarStyleChoices.Children.Add(choice);
+            }
+        }
         private void OnPickEdgeColor(object sender, RoutedEventArgs e)
         {
             var color = ScreenEdgeWindow.ResolveGlyphColor(App.Settings.EdgeGlyphColor);
@@ -702,3 +767,5 @@ namespace MouseDock.Views
         }
     }
 }
+
+
