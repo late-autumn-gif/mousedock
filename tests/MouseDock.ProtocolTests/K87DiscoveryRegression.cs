@@ -1,4 +1,4 @@
-﻿using MouseDock.Models;
+using MouseDock.Models;
 using MouseDock.Services.Detection;
 
 internal static class K87DiscoveryRegression
@@ -14,8 +14,9 @@ internal static class K87DiscoveryRegression
         }
 
         const string product = "MCHOSE K87 V3 2.4G";
-        Check(!DeviceRoutes.IsKnown(0x3837, 0x1015, product),
-            "K87 legacy reader remains closed until its native path enforces per-instance identity.");
+        // PR #7 的原始断言：K87 必须能从常规发现流程读到电量，极性是"可达"。
+        Check(DeviceRoutes.IsKnown(0x3837, 0x1015, product),
+            "The verified K87 battery reader must be reachable from normal discovery.");
         Check(!DeviceRoutes.IsKnown(0x3837, 0x1015, "MCHOSE G98 V3 2.4G"),
             "A shared PID must not admit a different keyboard.");
         Check(DeviceRoutes.IsKnown(0x3837, 0x1018, "MCHOSE K5 Ultra"),

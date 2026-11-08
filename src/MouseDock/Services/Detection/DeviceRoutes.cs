@@ -77,6 +77,9 @@ internal static class DeviceRoutes
         (VendorProtocol.IsVgnVid(vid) && pid != 0) ||
         (VendorProtocol.IsAjazzVid(vid) && VendorProtocol.IsAjazzPid(pid)) ||
         (vid == 0x3837 && VendorProtocol.IsMchoseA7V2(vid, pid)) ||
+        // K87 V3 是键盘。PR #7 的 K87DiscoveryRegression 明确要求它可从常规发现流程可达；
+        // 这里补回放行，实际读数仍优先走 HidDiscovery.K87 的按实例读取器。
+        MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product) ||
         (vid == 0x5253 && pid == 0x1021);
 
     /// <summary>

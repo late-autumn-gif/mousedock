@@ -603,3 +603,11 @@
 - 改为移植 PR #9 的专用读取器：新增 VendorProtocol.K87、HidDiscovery.K87、MchoseKeyboardProtocol.Read(ILink)，走 ReferenceQueryGate + InstanceScope 按物理实例打开句柄，只放行唯一 Report4D 的 FF80/0001 64/64 集合。
 - 旧的 legacy 调用从扫描链里移除，IsKnown 保持不放行 K87。
 - 16219 条断言（含 13 条 K87 回归）通过。
+
+### v1.1.2 修正：按 PR #7 恢复 K87 的可达性（2026-11-08）
+
+- 审查全部 8 个 PR 后确认：修好 K87 电量的是 PR #7（已合并 2026-11-06）。它新增的 K87DiscoveryRegression 断言原文是 RecognitionPolicy.CanQuery(3837:1015) == true，要求 K87 必须能从常规发现流程可达。
+- 我们在 34e922b 重构时把 RecognitionPolicy.CanQuery 换成 DeviceRoutes.IsKnown，K87 被移出放行集，断言极性也被翻成 !IsKnown。这是"以前可以、后来不行"的完整原因。
+- 现按 PR 原样恢复：IsKnown 重新放行 MchoseKeyboardProtocol.IsSupportedDevice，断言改回"必须可达"的原话。
+- 实际读数仍优先走 PR #9 的按实例读取器（QueryK87Collections），它不依赖 IsKnown，两条路径不冲突。
+- 16219 条断言（含 13 条 K87）通过；Checks 基线不变。
