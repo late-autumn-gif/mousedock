@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -19,7 +19,7 @@ public sealed class TaskbarBatteryStrip : Border
         style is "panel" or "card" or "tile" or "pill" or "battery" or "plain" or "multi" ? style : "ring";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
-    internal static Size CardSize(bool vertical) => vertical ? new Size(40, 58) : new Size(58, 40);
+    internal static Size CardSize(bool vertical) => vertical ? new Size(40, 62) : new Size(58, 40);
     public static IEnumerable<(string Id, string Label)> Styles(bool vertical) =>
         new[] { ("ring", "环内数字"), ("panel", "紧凑面板"), ("card", "迷你卡片"), ("tile", "柔角方块"),
             ("pill", vertical ? "竖向胶囊" : "横向胶囊"), ("battery", "经典电池"),
@@ -134,10 +134,12 @@ public sealed class TaskbarBatteryStrip : Border
 
         // 只有图标和数字。型号名去掉了：任务栏本来就窄，多一行小字既挤又糊，
         // 具体型号放进 ToolTip 和 AutomationProperties 里，悬停或读屏照样能看到。
-        var grid = new Grid { Margin = new Thickness(4, 3, 4, 3) };
+        var grid = new Grid { Margin = new Thickness(4, 4, 4, 4) };
         if (vertical)
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            // 两行都用 Auto 并整体居中，图标和数字之间留出固定间隔；
+            // 之前用 Star 撑满会把两者挤到贴在一起，看着喘不过气。
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
         else
@@ -166,7 +168,7 @@ public sealed class TaskbarBatteryStrip : Border
             FontSize = 16, TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(vertical ? 0 : 4, 0, 0, 0),
+            Margin = new Thickness(vertical ? 0 : 4, vertical ? 3 : 0, 0, 0),
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
@@ -300,3 +302,4 @@ public sealed class TaskbarBatteryStrip : Border
     }
 
 }
+

@@ -14,7 +14,7 @@ namespace MouseDock.Services.Detection;
 /// <summary>
 /// 248A:5B2F 的身份诊断。
 ///
-/// 帧与 M137FeatureProtocol 同源（12 01 20 00 seq），区别是走 FF00/0001 的 Feature 33 通道：
+/// 帧与 M137FeatureProtocol 同源（0C 01 20 00 seq，PR 原文写的十进制 12），区别是走 FF00/0001 的 Feature 33 通道：
 /// 先 SetFeature 一次，再 GetFeature 两次取身份串。只读身份，不碰电量。
 /// 依据 AJAZZ Driver (X) 1.0.5.3 的 GetInfo。
 /// </summary>
@@ -185,4 +185,5 @@ internal static class ReceiverIdentityProtocol
     [DllImport("hid.dll", SetLastError = true)]
     private static extern bool HidD_GetFeature(SafeFileHandle handle, byte[] buffer, int length);
 }
+
 

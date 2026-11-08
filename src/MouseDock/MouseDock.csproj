@@ -35,6 +35,7 @@
       CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Resource Include="Assets\Characters\Rikka.jpg;Assets\Characters\Roxy.jpg" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
+    <InternalsVisibleTo Include="MouseDock.Checks" />
     <Content Include="Assets\*.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -47,3 +48,4 @@
   </ItemGroup>
 
 </Project>
+
