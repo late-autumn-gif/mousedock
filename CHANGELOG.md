@@ -611,3 +611,10 @@
 - 现按 PR 原样恢复：IsKnown 重新放行 MchoseKeyboardProtocol.IsSupportedDevice，断言改回"必须可达"的原话。
 - 实际读数仍优先走 PR #9 的按实例读取器（QueryK87Collections），它不依赖 IsKnown，两条路径不冲突。
 - 16219 条断言（含 13 条 K87）通过；Checks 基线不变。
+
+### v1.1.2 补充：从 PR #9 补入 M9 Pro 回归并补齐分类（2026-11-08）
+
+- closed 状态的 PR 无法直接合并：gh pr merge 3 实测报 Pull request is not mergeable，mergeable=CONFLICTING，它们的 base 还停在 2026-11-04 的 main，而中间发生过 RecognitionPolicy → DeviceRoutes 的架构重构。
+- 逐文件核对后确认各 PR 的功能内容都已在 main：PR #3/#4 的 MchoseKeyboardProtocol、PR #5 的 A7 V2 Ultra+、PR #8 的 M137、PR #9 的 M9Pro 与 K87 读取器。
+- 缺失的只有几个测试文件和被等价实现取代的旧文件。本次把 PR #9 的 M9ProRegression 补进来（49 条断言），并顺带修了移植 M9 Pro 时漏掉的两处：TryDeviceKind 没有 FF05/0001 分支导致集合归不到鼠标；ReceiverDiscovered / PeripheralConfirmed 没有 M9Pro 分支导致型号确认后仍被当成未确认。
+- 断言数从 16219 涨到 16268。
