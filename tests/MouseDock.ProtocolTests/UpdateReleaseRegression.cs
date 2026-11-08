@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using MouseDock.Services;
 using MouseDock.Models;
 internal static class UpdateReleaseRegression
@@ -23,7 +23,12 @@ internal static class UpdateReleaseRegression
         Check(UpdateService.ParseRelease(Release("v1.1.1",new[]{Asset("MouseDock.exe")},draft:true),"1.1.0")==null,"Draft ignored");
         Check(UpdateService.ParseRelease(Release("v1.1.1",new[]{Asset("MouseDock.exe")},prerelease:true),"1.1.0")==null,"Prerelease ignored");
         foreach(var bad in new[]{"{}","garbage",Release("vunknown",new[]{Asset("MouseDock.exe")})})Check(UpdateService.ParseRelease(bad,"1.1.0")==null,"Malformed data never crashes startup");
-        Check(UpdateService.CurrentVersionText=="1.1.2","Use application assembly version, not test/host process");
+        // 版本号必须取自 MouseDock 程序集本身，不能被测试宿主的版本带偏。
+        // 这里不写死具体数字，否则每发一个版本都要回来改测试。
+        var appVersion = typeof(UpdateService).Assembly.GetName().Version;
+        Check(appVersion != null, "Application assembly must expose a version.");
+        Check(UpdateService.CurrentVersionText == $"{appVersion.Major}.{appVersion.Minor}.{appVersion.Build}",
+            "Use application assembly version, not test/host process");
         var settings=new AppSettings{Version=6,AutoUpdate=false};
         Check(SettingsStore.RestoreStartupUpdates(settings)&&settings.AutoUpdate&&settings.Version==7,"Renumbered old settings re-enable startup checks");
         settings.AutoUpdate=false;
