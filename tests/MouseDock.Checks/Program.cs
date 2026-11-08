@@ -27,6 +27,9 @@ internal static class Program
         }
         var checks = new (string Name, Action Check)[]
         {
+            ("Bluetooth startup stages time out without accumulating native operations", StartupRecoveryChecks.BluetoothStageTimeout),
+            ("Bluetooth startup late results stay isolated and recover as stale readings", StartupRecoveryChecks.BluetoothLateResults),
+            ("Bluetooth startup recovery respects changed preferences and headset mode", StartupRecoveryChecks.BluetoothChangedPreferences),
             ("Taskbar styles stay inside every taskbar", TaskbarStyleChecks.Placement),
             ("Taskbar styles persist across restart", TaskbarStyleChecks.Preferences),
             ("Taskbar styles render live values across DPI and themes", TaskbarStyleChecks.Rendering),

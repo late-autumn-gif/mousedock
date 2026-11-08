@@ -18,11 +18,14 @@ namespace MouseDock.Services.Detection
     /// </summary>
     public static class BluetoothDiscovery
     {
-        public static List<string> LastErrors { get; } = new List<string>();
+        private static readonly List<string> _lastErrors = new List<string>();
+        public static List<string> LastErrors { get { lock (_lastErrors) return _lastErrors.ToList(); } }
+        private sealed record PendingStage(Task<List<DetectedDevice>> Work, DevicePreferences Preferences, int Generation, bool IncludeHeadsets);
+        private static readonly Dictionary<string, PendingStage> _pendingStages = new();
 
         private static void Trace(string message)
         {
-            LastErrors.Add(message);
+            lock (_lastErrors) _lastErrors.Add(message);
             try
             {
                 string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mousedock-bt.log");
@@ -40,7 +43,7 @@ namespace MouseDock.Services.Detection
         {
             return Task.Run(async () =>
             {
-                LastErrors.Clear();
+                lock (_lastErrors) _lastErrors.Clear();
                 Trace("EnumerateAsync 进入(线程池)");
                 var result = new List<DetectedDevice>();
                 var systemBattery = await BtSystemBattery.ReadAsync().ConfigureAwait(false);
@@ -51,18 +54,79 @@ namespace MouseDock.Services.Detection
                     foreach (string detail in entry.Extra) Trace("  " + detail);
                 }
 
-                await SafeAsync(() => CollectBle(result, perDeviceTimeoutMs, hint, systemBattery, preferences, includeHeadsets), "BLE").ConfigureAwait(false);
-                await SafeAsync(() => CollectClassic(result, systemBattery, preferences, includeHeadsets), "经典蓝牙").ConfigureAwait(false);
+                var ble = await SafeAsync(async () =>
+                {
+                    var batch = new List<DetectedDevice>();
+                    await CollectBle(batch, perDeviceTimeoutMs, hint, systemBattery, preferences, includeHeadsets).ConfigureAwait(false);
+                    return batch;
+                }, "BLE", preferences: preferences, includeHeadsets: includeHeadsets).ConfigureAwait(false);
+                result.AddRange(ble);
+                var classic = await SafeAsync(async () =>
+                {
+                    var batch = new List<DetectedDevice>(ble);
+                    await CollectClassic(batch, systemBattery, preferences, includeHeadsets).ConfigureAwait(false);
+                    return batch.Skip(ble.Count).ToList();
+                }, "经典蓝牙", preferences: preferences, includeHeadsets: includeHeadsets).ConfigureAwait(false);
+                result.AddRange(classic);
 
                 Trace($"EnumerateAsync 结束，命中 {result.Count}");
                 return result;
             });
         }
 
-        private static async Task SafeAsync(Func<Task> work, string stage)
+        private static async Task<List<DetectedDevice>> SafeAsync(Func<Task<List<DetectedDevice>>> work, string stage,
+            int timeoutMs = 5000, DevicePreferences preferences = null, bool includeHeadsets = false)
         {
-            try { await work(); }
-            catch (Exception ex) { Trace(stage + " 失败: " + ex.GetType().FullName + " " + ex.Message); }
+            PendingStage pending;
+            bool late;
+            lock (_pendingStages)
+            {
+                late = _pendingStages.TryGetValue(stage, out pending);
+                if (late && !pending.Work.IsCompleted) return new List<DetectedDevice>();
+                if (!late)
+                {
+                    // A native discovery operation may ignore cancellation while Windows starts.
+                    // Keep one worker per transport instead of accumulating one on every poll.
+                    if (_pendingStages.Count >= 2) return new List<DetectedDevice>();
+                    pending = new PendingStage(Task.Run(work), preferences, preferences?.Generation ?? 0, includeHeadsets);
+                    _pendingStages.Add(stage, pending);
+                }
+            }
+
+            bool completed = false;
+            try
+            {
+                var batch = await pending.Work.WaitAsync(TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs))).ConfigureAwait(false);
+                completed = true;
+                if (pending.IncludeHeadsets != includeHeadsets || !ReferenceEquals(pending.Preferences, preferences) ||
+                    pending.Generation != (preferences?.Generation ?? 0))
+                    return new List<DetectedDevice>();
+                if (late)
+                {
+                    batch = batch.Where(device => device.Connected).ToList();
+                    foreach (var device in batch) device.IsStale = true;
+                }
+                return batch;
+            }
+            catch (TimeoutException)
+            {
+                completed = pending.Work.IsFaulted || pending.Work.IsCanceled;
+                Trace(stage + " 超时；保留进行中的查询，下轮继续检测。");
+                return new List<DetectedDevice>();
+            }
+            catch (Exception ex)
+            {
+                completed = true;
+                Trace(stage + " 失败: " + ex.GetType().FullName + " " + ex.Message);
+                return new List<DetectedDevice>();
+            }
+            finally
+            {
+                if (completed)
+                    lock (_pendingStages)
+                        if (_pendingStages.TryGetValue(stage, out var current) && ReferenceEquals(current, pending))
+                            _pendingStages.Remove(stage);
+            }
         }
 
         private static async Task CollectBle(List<DetectedDevice> sink, int timeoutMs, Func<string, Models.DeviceKind?> hint,
@@ -81,7 +145,7 @@ namespace MouseDock.Services.Detection
                 {
                     device = await BluetoothLEDevice.FromIdAsync(info.Id).AsTask().WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
                 }
-                catch (Exception ex) { LastErrors.Add("BLE 打开失败 " + info.Name + ": " + ex.GetType().Name); }
+                catch (Exception ex) { Trace("BLE 打开失败 " + info.Name + ": " + ex.GetType().Name); }
 
                 if (device == null) continue;
 
@@ -162,7 +226,7 @@ namespace MouseDock.Services.Detection
                             : "已连接但没读到 GATT 电量服务（0x180F）"
                     });
                 }
-                catch (Exception ex) { LastErrors.Add("BLE 处理失败 " + info.Name + ": " + ex.GetType().Name); }
+                catch (Exception ex) { Trace("BLE 处理失败 " + info.Name + ": " + ex.GetType().Name); }
                 finally { device.Dispose(); }
             }
         }
@@ -177,7 +241,7 @@ namespace MouseDock.Services.Detection
             {
                 BluetoothDevice device = null;
                 try { device = await BluetoothDevice.FromIdAsync(info.Id).AsTask().ConfigureAwait(false); }
-                catch (Exception ex) { LastErrors.Add("经典打开失败 " + info.Name + ": " + ex.GetType().Name); }
+                catch (Exception ex) { Trace("经典打开失败 " + info.Name + ": " + ex.GetType().Name); }
 
                 if (device == null) continue;
 
@@ -200,7 +264,7 @@ namespace MouseDock.Services.Detection
 
                     if (kind != DeviceKind.Headset && kind != DeviceKind.Mouse && kind != DeviceKind.Keyboard)
                     {
-                        LastErrors.Add($"经典跳过 {info.Name}（COD=0x{device.ClassOfDevice.RawValue:X6} → {kind}）");
+                        Trace($"经典跳过 {info.Name}（COD=0x{device.ClassOfDevice.RawValue:X6} → {kind}）");
                         continue;
                     }
 

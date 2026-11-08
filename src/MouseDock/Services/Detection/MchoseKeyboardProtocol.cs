@@ -1,9 +1,6 @@
 using System;
-using System.IO;
-using System.Runtime.InteropServices;
+using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Win32.SafeHandles;
 
 namespace MouseDock.Services.Detection
 {
@@ -51,47 +48,43 @@ namespace MouseDock.Services.Detection
 
         public static (int Level, bool Charging) TryRead(ushort vid, ushort pid, string product, bool safeMode)
         {
-            if (safeMode || !IsSupportedDevice(vid, pid, product)) return Unknown;
+            if (safeMode || !IsSupportedDevice(vid, pid, product) ||
+                string.IsNullOrWhiteSpace(InstanceScope.Current)) return Unknown;
             try
             {
-                foreach (var node in HidProbe.Enumerate(vid, pid))
-                {
-                    var caps = node.Caps;
-                    if (!IsSupportedDevice(node.Vid, node.Pid, node.Product) ||
-                        !IsSupportedInterface(caps.UsagePage, caps.Usage,
-                            caps.InputReportByteLength, caps.OutputReportByteLength))
-                        continue;
-                    var result = ReadAsync(node.Path).GetAwaiter().GetResult();
-                    if (result.Level >= 0) return result;
-                }
+                var nodes = HidProbe.Enumerate(vid, pid).Where(node => InstanceScope.Allows(node.Path) &&
+                    IsSupportedDevice(node.Vid, node.Pid, node.Product) &&
+                    IsSupportedInterface(node.Caps.UsagePage, node.Caps.Usage,
+                        node.Caps.InputReportByteLength, node.Caps.OutputReportByteLength)).ToArray();
+                if (nodes.Length != 1) return Unknown;
+                var result = VendorProtocol.ReadK87(nodes[0].Path);
+                return (result.Level, result.ChargingKnown && result.Charging);
             }
             catch (Exception) { }
             return Unknown;
         }
 
-        private static async Task<(int Level, bool Charging)> ReadAsync(string path)
+        internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link)
         {
-            using var handle = OpenDevice(path, 0xC0000000, 3, IntPtr.Zero, 3, 0x40000000, IntPtr.Zero);
-            if (handle.IsInvalid) return Unknown;
-            using var stream = new FileStream(handle, FileAccess.ReadWrite, 64, true);
-            using var timeout = new CancellationTokenSource(700);
+            bool drained = false;
+            for (int i = 0; i < 32; i++)
+                if (link.Read(1) is not { Length: > 0 }) { drained = true; break; }
+            if (!drained) return ReferenceBatteryProtocol.Reading.Failed("K87 旧输入队列未清空");
             byte sequence = unchecked((byte)Interlocked.Increment(ref _sequence));
-            await stream.WriteAsync(CreateBatteryQuery(sequence), timeout.Token).ConfigureAwait(false);
-            while (!timeout.IsCancellationRequested)
+            if (!link.Write(CreateBatteryQuery(sequence), 250))
+                return ReferenceBatteryProtocol.Reading.Failed("K87 电量查询未完整发送");
+            long until = link.Now + 700;
+            for (int i = 0; i < 64 && link.Now < until; i++)
             {
-                var report = new byte[64];
-                int count = await stream.ReadAsync(report, timeout.Token).ConfigureAwait(false);
-                if (count == 0) break;
-                if (count < 11) continue;
+                var report = link.Read((int)Math.Max(1, Math.Min(100, until - link.Now)));
+                if (report?.Length != 64) continue;
                 var result = ParseBatteryResponse(report, sequence);
-                if (result.Level >= 0) return result;
+                if (result.Level >= 0)
+                    return new(result.Level, result.Charging, true,
+                        result.Charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
+                        "MCHOSE K87 V3 QHW 电量查询；RX=" + Convert.ToHexString(report));
             }
-            // FileStream cancellation completes native I/O before buffers and handles are released.
-            return Unknown;
+            return ReferenceBatteryProtocol.Reading.Failed("K87 未取得本轮有效电量响应");
         }
-
-        [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern SafeFileHandle OpenDevice(string path, uint access, uint share,
-            IntPtr security, uint creation, uint flags, IntPtr template);
     }
 }

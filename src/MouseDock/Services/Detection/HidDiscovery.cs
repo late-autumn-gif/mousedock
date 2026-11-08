@@ -158,6 +158,7 @@ namespace MouseDock.Services.Detection
                     if (RogOmniKeyboardProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (VgnF1Protocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (F75Protocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
+                    if (MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
                     if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
@@ -245,6 +246,7 @@ namespace MouseDock.Services.Detection
             QueryM137FeatureCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
             QueryVgnF1Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadVgnF1);
             QueryF75Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
+            QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
@@ -257,33 +259,6 @@ namespace MouseDock.Services.Detection
                 return (result.Battery, result.Name, result.Charging, result.Diagnostic);
             }, ReadVendorCollection);
 
-            // MCHOSE K87 V3：2.4G 键盘的 QHW 电量在独立厂商集合上，按整机身份读一次。
-            foreach (var bucket in buckets.Values)
-            {
-                using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
-                if (ReceiverIdentityProtocol.IsCandidate(bucket.Vid, bucket.Pid)) continue;
-                if (RogOmniKeyboardProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (VgnF1Protocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (F75Protocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (!RecognitionPolicy.CanQuery(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
-                    VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true)) continue;
-                if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
-                if (VendorProtocol.IsReportedX23Se(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (AulaBatteryProtocol.IsCandidate(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                if (OriginalGpwProtocol.IsCandidate(bucket.Vid, bucket.Pid) || VendorProtocol.IsScopedInphic(bucket.Vid,bucket.Pid,bucket.Product) || (VendorProtocol.IsScopedModernMouse(bucket.Vid,bucket.Pid,bucket.Product) || VendorProtocol.IsScopedG7(bucket.Vid,bucket.Pid,bucket.Product)) || ZeroRainyProtocol.Candidate(bucket.Vid,bucket.Pid,bucket.Product)) continue;
-                if (buckets.Values.Count(x => x.Vid == bucket.Vid && x.Pid == bucket.Pid) > 1) continue;
-                if (!MchoseKeyboardProtocol.IsSupportedDevice(bucket.Vid, bucket.Pid, bucket.Product)) continue;
-                var result = MchoseKeyboardProtocol.TryRead(bucket.Vid, bucket.Pid, bucket.Product, safeMode);
-                if (result.Level >= 0)
-                {
-                    bucket.Battery = result.Level;
-                    bucket.Charging = result.Charging;
-                    bucket.BatterySource = "MCHOSE K87 V3 QHW 电量查询";
-                }
-                LastDiagnostics.Add($"MCHOSE K87 V3 QHW: battery={result.Level}, charging={result.Charging}");
-            }
-
             LastDiagnostics.Add($"扫描完成 用时={Environment.TickCount - scanStarted}ms 设备={buckets.Count}");
 
             return buckets.Values.Select(b =>
@@ -294,6 +269,7 @@ namespace MouseDock.Services.Detection
                 if (RogOmniKeyboardProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (VgnF1Protocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (F75Protocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
+                if (MchoseKeyboardProtocol.IsSupportedDevice(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (AulaBatteryProtocol.IsCandidate(b.Vid, b.Pid, b.Product)) return b.ToDevice();
@@ -621,6 +597,7 @@ namespace MouseDock.Services.Detection
             else if (RogOmniKeyboardProtocol.IsCandidate(vid,pid,product)) { batteryTrace.Add("OMNI 键盘由本实例配对列表确认后读取，不走旧鼠标协议"); }
             else if (VgnF1Protocol.IsCandidate(vid, pid, product)) { batteryTrace.Add("VGN F1 由本实例 Report8 集合确认在线状态后读取"); }
             else if (F75Protocol.IsCandidate(vid, pid, product)) { batteryTrace.Add("F75 由本实例 Report13 集合确认型号后读取"); }
+            else if (MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product)) { batteryTrace.Add("K87 由本实例 QHW 集合读取"); }
             else if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
             else if((VendorProtocol.IsScopedModernMouse(vid,pid,product) || VendorProtocol.IsScopedG7(vid,pid,product))){batteryTrace.Add("迈从鼠标由本实例精确集合读取");}
             else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
@@ -1108,6 +1085,7 @@ namespace MouseDock.Services.Detection
                 if (ReceiverIdentityProtocol.IsCandidate(collection.Vid, collection.Pid) ||
                     VgnF1Protocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
                     F75Protocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
+                    MchoseKeyboardProtocol.IsSupportedDevice(collection.Vid, collection.Pid, collection.Product) ||
                     RogOmniKeyboardProtocol.IsCandidate(collection.Vid, collection.Pid, collection.Product) ||
                     ReferenceProfiles.Find(collection.Vid, collection.Pid) != null ||
                     VendorProtocol.IsReportedX23Se(collection.Vid, collection.Pid, collection.Product) ||

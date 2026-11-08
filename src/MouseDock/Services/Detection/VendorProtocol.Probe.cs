@@ -70,7 +70,7 @@ namespace MouseDock.Services.Detection
             text.AppendLine($"安全模式: {(safeMode ? "开（只枚举，不发查询帧）" : "关")}");
             text.AppendLine();
 
-            if (vid == 0x3554 && pid is 0xF503 or 0xFA09)
+            if ((vid == 0x3554 && pid is 0xF503 or 0xFA09) || (vid == 0x3837 && pid == 0x1015))
             {
                 text.AppendLine("此接收器仅由自动扫描按物理实例读取；查询及原始响应见 hid-devices.txt。");
                 return new DeviceProbeResult { Text = text.ToString() };

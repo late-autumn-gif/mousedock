@@ -30,9 +30,6 @@ public sealed class TaskbarBatteryStrip : Border
         Child = stack;
         if (panel)
         {
-            BorderBrush = foreground;
-            BorderThickness = new Thickness(1);
-            CornerRadius = new CornerRadius(8);
             Padding = vertical ? new Thickness(1, 3, 1, 3) : new Thickness(3, 1, 3, 1);
         }
         double length = Math.Max(1, items.Length) * 40 + (panel ? 8 + Math.Max(0, items.Length - 1) : 0);
@@ -77,20 +74,13 @@ public sealed class TaskbarBatteryStrip : Border
         {
             Width = showNumber ? (panel ? 14 : 12) : 21,
             Height = showNumber ? (panel ? 14 : 12) : 21,
-            Thickness = 1.8, GlyphBrush = foreground,
+            Thickness = 1.8, GlyphBrush = panel ? Brushes.White : foreground,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = showNumber ? VerticalAlignment.Top : VerticalAlignment.Center,
             Margin = showNumber ? new Thickness(0, panel ? (badge.Height - 32) / 2 : 7, 0, 0) : new Thickness(0),
             IsHitTestVisible = false
         };
         glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
-        if (panel)
-        {
-            var color = new MultiBinding { Converter = new StatusColorConverter(lowThreshold) };
-            color.Bindings.Add(new Binding(nameof(DeviceInfo.Level)));
-            color.Bindings.Add(new Binding(nameof(DeviceInfo.IsChargingActive)));
-            glyph.SetBinding(DeviceGlyph.GlyphBrushProperty, color);
-        }
         badge.Children.Add(glyph);
         var number = new TextBlock
         {
@@ -142,12 +132,4 @@ public sealed class TaskbarBatteryStrip : Border
             throw new NotSupportedException();
     }
 
-    private sealed class StatusColorConverter(int lowThreshold) : IMultiValueConverter
-    {
-        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
-            values[1] is true ? Brushes.DeepSkyBlue :
-            values[0] is int level && level >= 0 && level <= lowThreshold ? Brushes.IndianRed : Brushes.MediumPurple;
-        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
-            throw new NotSupportedException();
-    }
 }
