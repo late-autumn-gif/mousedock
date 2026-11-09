@@ -305,7 +305,9 @@
                             </StackPanel>
                             <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
                                       Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
-                            <Grid x:Name="TaskbarPositionRow" Margin="0,14,0,0">
+                            <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0"
+                                      Checked="OnTaskbarFollowIconsChanged" Unchecked="OnTaskbarFollowIconsChanged" />
+                            <Grid x:Name="TaskbarPositionRow" Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />

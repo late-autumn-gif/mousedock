@@ -110,6 +110,8 @@ namespace MouseDock.Views
                 RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
+                TaskbarFollowIconsBox.IsChecked = s.TaskbarFollowIcons;
+                TaskbarPositionRow.IsEnabled = !s.TaskbarFollowIcons;
                 RebuildTaskbarStyles();
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
                 RebuildEdgeStyles();
@@ -557,6 +559,15 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
+        private void OnTaskbarFollowIconsChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.TaskbarFollowIcons = TaskbarFollowIconsBox.IsChecked == true;
+            TaskbarPositionRow.IsEnabled = !App.Settings.TaskbarFollowIcons;
+            App.Taskbar?.UpdateAnchor();
+            App.SaveSettings();
+        }
+
         private void OnBatteryNumberChanged(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
@@ -739,6 +750,7 @@ namespace MouseDock.Views
         {
             if (string.IsNullOrEmpty(mode)) mode = "dock";
             TaskbarPositionRow.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
+            TaskbarFollowIconsBox.Visibility = TaskbarPositionRow.Visibility;
             IconOptionsPanel.Visibility = mode == "icon" ? Visibility.Visible : Visibility.Collapsed;
             TaskbarStylePanel.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             EdgeOptionsPanel.Visibility = mode == "edge" ? Visibility.Visible : Visibility.Collapsed;

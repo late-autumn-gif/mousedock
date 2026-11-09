@@ -254,7 +254,8 @@ internal static class TaskbarEmbeddingChecks
         internal TaskbarWindow Window { get; }
         internal Fixture()
         {
-            var settings = new AppSettings { Provider = "json", JsonPath = "missing-embedded-fixture.json" };
+            var settings = new AppSettings { Provider = "json", JsonPath = "missing-embedded-fixture.json",
+                TaskbarFollowIcons = false };
             _testBattery = new BatteryService(settings);
             typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
             typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, _testBattery);
