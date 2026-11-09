@@ -76,6 +76,40 @@ namespace MouseDock.Services
         public static Task<UpdateInfo> CheckAsync(CancellationToken ct = default) =>
             CheckLatestAsync(_http,CurrentVersionText,ct);
 
+        /// <summary>
+        /// 手动检查专用：连失败原因一起返回。
+        /// CheckAsync 把所有异常都吞成 null，用户主动点「检查更新」时
+        /// 必须能分清「已经是最新版」和「根本连不上」，否则断网也会报最新版。
+        /// </summary>
+        public static async Task<(UpdateInfo Info, string Error)> CheckDetailedAsync(CancellationToken ct = default)
+        {
+            bool reached = false;
+            foreach(var url in new[]{ApiLatest,new Uri($"https://github.com/{Owner}/{Repo}/releases/latest/download/update.json")})
+            {
+                if(ct.IsCancellationRequested) return (null,"已取消");
+                try
+                {
+                    using var response=await _http.GetAsync(url,ct).ConfigureAwait(false);
+                    if(!response.IsSuccessStatusCode) continue;
+                    string json=await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    reached=true;
+                    var parsed=ParseRelease(json,CurrentVersionText);
+                    // 解析出更新，或者解析成功但没有更新版本（manifest 里带 tag_name）。
+                    if(parsed!=null) return (parsed,"");
+                    if(json.Contains("\"tag_name\"",StringComparison.Ordinal)) return (null,"");
+                    return (null,"服务器返回的内容无法识别");
+                }
+                catch(Exception ex)
+                {
+                    if(url==ApiLatest) continue;
+                    return (null,"网络请求失败：" + ex.Message);
+                }
+            }
+            return reached
+                ? (null,"服务器返回的内容无法识别")
+                : (null,"连不上 GitHub，请检查网络或代理后重试");
+        }
+
         internal static async Task<UpdateInfo> CheckLatestAsync(HttpClient client,string currentVersion,CancellationToken ct=default)
         {
             // Public GitHub API can return403 to anonymous desktop clients.

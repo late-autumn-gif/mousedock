@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -422,6 +422,7 @@ namespace MouseDock
             menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
+            menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("退出 MouseDock", null, (_, __) => ExitApp());
@@ -1323,16 +1324,38 @@ namespace MouseDock
         /// <summary>
         /// 启动后延迟检查更新。断网 / 超时 / 用户关掉开关都静默跳过。
         /// </summary>
-        private async Task CheckUpdateOnStartupAsync()
+        private async Task CheckUpdateOnStartupAsync(bool manual = false)
         {
             try
             {
-                if (Settings != null && !Settings.AutoUpdate) return;
+                if (!manual && Settings != null && !Settings.AutoUpdate) return;
 
-                await Task.Delay(TimeSpan.FromSeconds(10));
+                // 手动检查是用户主动点的，不要再等这 10 秒。
+                if (!manual) await Task.Delay(TimeSpan.FromSeconds(10));
 
-                var info = await Services.UpdateService.CheckAsync();
-                if (info == null) return;
+                Services.UpdateService.UpdateInfo info;
+                if (manual)
+                {
+                    var (found, error) = await Services.UpdateService.CheckDetailedAsync();
+                    if (found == null)
+                    {
+                        if (!string.IsNullOrEmpty(error))
+                            Dispatcher.Invoke(() => MessageBox.Show(
+                                "检查更新失败：\n\n" + error,
+                                "MouseDock 更新", MessageBoxButton.OK, MessageBoxImage.Warning));
+                        else
+                            Dispatcher.Invoke(() => MessageBox.Show(
+                                "当前已经是最新版（" + Services.UpdateService.CurrentVersionText + "）。",
+                                "MouseDock 更新", MessageBoxButton.OK, MessageBoxImage.Information));
+                        return;
+                    }
+                    info = found;
+                }
+                else
+                {
+                    info = await Services.UpdateService.CheckAsync();
+                    if (info == null) return;
+                }
 
                 bool go = Dispatcher.Invoke(() =>
                 {
