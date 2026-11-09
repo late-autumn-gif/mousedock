@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -123,6 +123,10 @@ namespace MouseDock
             }
 
             Settings = SettingsStore.Load();
+
+            // 启动时校正自启动项：开关开着就把 Run 项指到当前 exe，关了就删掉。
+            // 搬过目录、换过版本、或上次被别的测试改坏，都能在这一步自动纠回来。
+            Services.AutoStart.Sync(Settings.AutoStart);
 
             // Provider 选择已从界面撤掉，统一走自动检测；
             // 旧 settings.json 里残留的 "json"/"demo"/"hid" 会让面板显示假数据，这里强制覆盖。
@@ -1512,5 +1516,7 @@ namespace MouseDock
 
 }
 }
+
+
 
 

@@ -90,5 +90,38 @@ namespace MouseDock.Services
             }
             catch { /* 无权限时静默失败 */ }
         }
+
+        /// <summary>
+        /// 每次启动时把 Run 项对齐到「当前 exe + 设置里的开关」。
+        ///
+        /// 绿色版解压到哪就是哪，用户可能整个文件夹搬走、改名、或者上次更新把路径换了，
+        /// 这时旧值会指向一个不存在的文件，开机自然什么都不会发生。这里每次启动都校正一次，
+        /// 让入口永远指向正在运行的这个 exe。开关关掉时则确保值被删干净。
+        /// </summary>
+        public static void Sync(bool enabled)
+        {
+            try
+            {
+                string current = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(current) || !File.Exists(current)) return;
+
+                using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+                if (key == null) return;
+
+                if (!enabled)
+                {
+                    if (key.GetValue(ValueName) != null) key.DeleteValue(ValueName, false);
+                    return;
+                }
+
+                string want = "\"" + current + "\" --tray";
+                string existing = key.GetValue(ValueName) as string;
+                if (string.Equals(existing, want, StringComparison.OrdinalIgnoreCase)) return;
+
+                // 值不存在、路径变了、或者旧值指向的文件已经不在，都重写。
+                key.SetValue(ValueName, want);
+            }
+            catch { /* 无权限时静默失败，不影响主程序 */ }
+        }
     }
 }

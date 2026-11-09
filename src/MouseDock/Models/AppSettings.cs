@@ -41,7 +41,9 @@ namespace MouseDock.Models
         public bool ShowMini { get; set; } = true;
         public bool ShowIcon { get; set; } = true;
 
-        public bool AutoStart { get; set; }
+        // 默认开启：绿色版解压就能用的人，通常就是希望它一直在托盘里显示电量。
+        // 启动时会由 AutoStart.Sync 把 Run 项对齐到当前 exe，搬目录也跟得上。
+        public bool AutoStart { get; set; } = true;
 
         // 面板背景：theme（主题渐变）/ image（自定义壁纸，可来自 Wallpaper Engine 项目预览图）
         // 安全模式：关闭所有厂商通道写操作，只走标准 HID / GATT 读取
@@ -172,4 +174,5 @@ namespace MouseDock.Models
         }
     }
 }
+
 
