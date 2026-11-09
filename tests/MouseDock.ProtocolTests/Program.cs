@@ -305,7 +305,6 @@ assertions += MchoseRapooRegression.Run();
 assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
 assertions += OriginalGpwScopedRegression.Run();
-assertions += LogitechG603Regression.Run();
 assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += ZeroRainyRegression.Run();

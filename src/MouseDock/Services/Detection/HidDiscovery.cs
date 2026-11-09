@@ -636,7 +636,7 @@ namespace MouseDock.Services.Detection
             else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
             else if (OriginalGpwProtocol.IsCandidate(vid, pid))
             {
-                batteryTrace.Add(safeMode ? "安全模式已跳过罗技查询" : "罗技由本实例20字节长报文集合确认型号后查询，不走通用罗技探针");
+                batteryTrace.Add(safeMode ? "安全模式已跳过 GPW 查询" : "一代 GPW 由本实例20字节长报文集合确认身份后查询，不走通用罗技探针");
             }
             else if (AulaBatteryProtocol.IsCandidate(vid, pid, product))
             {
@@ -830,7 +830,7 @@ namespace MouseDock.Services.Detection
                     InstanceScope.ForPath(c.Path, legacy) == b.InstanceId &&
                     OriginalGpwProtocol.IsChannel(c.Vid,c.Pid,c.UsagePage,c.Usage,c.Input,c.Output,c.Feature))
                     .GroupBy(c=>c.Path,StringComparer.OrdinalIgnoreCase).Select(g=>g.First()).ToList();
-                string reason = safeMode ? "安全模式未查询罗技接收器" :
+                string reason = safeMode ? "安全模式未查询GPW" :
                     !(preferences?.CanRead(b.InstanceId,null) ?? true) ||
                     !(preferences?.CanRead(legacy,VendorMap.PhysicalKeyFromName(b.Product)) ?? true) ? "此实例识别已停用" :
                     string.IsNullOrWhiteSpace(b.InstanceId) ? "没有物理实例标识，未查询" :
@@ -842,23 +842,19 @@ namespace MouseDock.Services.Detection
                     try { result = query(channels[0].Path,b.Vid,b.Pid); }
                     catch(Exception ex) { result=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name+": "+ex.Message); }
                 }
-                result ??= ReferenceBatteryProtocol.Reading.Failed("罗技读取器没有返回结果");
-                bool g603 = b.Pid == 0xC539 && result.Model == OriginalGpwProtocol.G603Model &&
-                    OriginalGpwProtocol.IsG603Name(result.Identity);
-                if (g603 || (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model))
+                result ??= ReferenceBatteryProtocol.Reading.Failed("GPW读取器没有返回结果");
+                if (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model)
                 {
                     b.GpwModel = result.Model;
-                    b.GpwLive = g603 || (b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity));
+                    b.GpwLive = b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity);
                     if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
                     {
                         b.Battery=result.Level; b.Charging=result.ChargingKnown && result.Charging; b.GpwLive=true;
-                        if (g603) b.Charging = false;
-                        b.BatterySource=(g603 ? "G603：" : "GPW：")+result.Diagnostic;
+                        b.BatterySource="GPW："+result.Diagnostic;
                     }
                 }
-                string reader = g603 ? "G603" : "GPW";
-                if(b.Battery<0)b.BatteryFailures.Add(reader+"："+result.Diagnostic);
-                LastDiagnostics.Add($"{b.InstanceId} {reader}专用 状态={result.Status} 型号={result.Model} 电量={result.Level} {result.Diagnostic}");
+                if(b.Battery<0)b.BatteryFailures.Add("GPW："+result.Diagnostic);
+                LastDiagnostics.Add($"{b.InstanceId} GPW专用 状态={result.Status} 型号={result.Model} 电量={result.Level} {result.Diagnostic}");
             }
         }
 
