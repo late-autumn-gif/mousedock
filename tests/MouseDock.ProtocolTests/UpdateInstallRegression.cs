@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
@@ -82,7 +82,7 @@ internal static class UpdateInstallRegression
             File.WriteAllText(Path.Combine(install,"MouseDock.exe"),"old-program");File.WriteAllText(Path.Combine(install,"a.txt"),"old-companion");
             File.WriteAllText(Path.Combine(install,"personal.txt"),"keep-me");
             if(fail){File.WriteAllText(Path.Combine(source,"zblocked.dll"),"blocked");Directory.CreateDirectory(Path.Combine(install,"zblocked.dll"));}
-            var start=UpdateService.CreateApplyStartInfo(stage,Path.Combine(source,"MouseDock.exe"),Path.Combine(install,"MouseDock.exe"),0,restart:false);
+            var start=UpdateService.CreateApplyStartInfo(stage,Path.Combine(source,"MouseDock.exe"),Path.Combine(install,"MouseDock.exe"),0,restart:false,shellIntegration:false);
             Check(start.CreateNoWindow&&start.WindowStyle==ProcessWindowStyle.Hidden,"Installer helper does not open a console");
             using var process=Process.Start(start)!;
             Check(process.WaitForExit(30000),"Installer helper finishes within test deadline");
@@ -97,3 +97,4 @@ internal static class UpdateInstallRegression
         return count;
     }
 }
+

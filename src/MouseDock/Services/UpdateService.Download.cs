@@ -112,7 +112,7 @@ internal static partial class UpdateService
         // Keep staging on success or failure; temporary cleanup was explicitly cancelled.
     }
 
-    internal static ProcessStartInfo CreateApplyStartInfo(string work,string newExe,string currentExe,int processId,bool restart=true)
+    internal static ProcessStartInfo CreateApplyStartInfo(string work,string newExe,string currentExe,int processId,bool restart=true,bool shellIntegration=true)
     {
         work=Path.GetFullPath(work);newExe=Path.GetFullPath(newExe);currentExe=Path.GetFullPath(currentExe);
         string temp=Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar;
@@ -121,7 +121,7 @@ internal static partial class UpdateService
             !newExe.StartsWith(work+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) ||
             currentExe.StartsWith(work+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Invalid staging paths");
         File.WriteAllText(Path.Combine(work,"apply.json"),System.Text.Json.JsonSerializer.Serialize(new
-        {WorkRoot=work,PackageRoot=Path.GetDirectoryName(newExe),NewExe=newExe,CurrentExe=currentExe,ProcessId=processId,Restart=restart}));
+        {WorkRoot=work,PackageRoot=Path.GetDirectoryName(newExe),NewExe=newExe,CurrentExe=currentExe,ProcessId=processId,Restart=restart,ShellIntegration=shellIntegration}));
         const string script="""
             $ErrorActionPreference = 'Stop'
             $touched = [Collections.Generic.List[object]]::new()
@@ -180,6 +180,9 @@ internal static partial class UpdateService
                     if ($old.Extension -notin @('.exe','.dll','.json','.pdb','.deps','.runtimeconfig')) { continue }
                     try { [IO.File]::Delete($old.FullName) } catch { }
                 }
+                # 重建自启动项和桌面快捷方式。测试走这条路时必须关掉，否则一次测试
+                # 就会把用户真正的开机启动项改成测试目录，下次开机什么都不会发生。
+                if ($job.ShellIntegration -ne $false) {
                 # 重建自启动项：先删后写。路径变了就不会留下指向旧 exe 的入口。
                 try {
                     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -203,6 +206,7 @@ internal static partial class UpdateService
                         $sc.Save()
                     }
                 } catch { }
+                }
                 if ($job.Restart) {
                     $start = New-Object Diagnostics.ProcessStartInfo
                     $start.FileName = $target; $start.WorkingDirectory = $install
