@@ -9,8 +9,7 @@ using MouseDock.Services.Detection;
 /// 开机自启后的恢复能力。
 ///
 /// 来源：合作者 PR #9 的 StartupRecoveryChecks，按当前实现重写。
-/// 旧测试用反射驱动 BluetoothDiscovery 的私有阶段方法，还构造了一个自定义 RunStage。
-/// 现在那套编排已经不存在，真正要保证的是两件事：
+/// BluetoothStageChecks 另行覆盖有界等待、迟到结果与识别偏好变化；这里保留原有保证：
 /// 1. 蓝牙任何一个阶段抛异常都不能把整轮扫描带崩；
 /// 2. 任务栏锚点在拿到和拿不到任务栏时都要安全返回，不能抛。
 /// 这两条坏了，开机后任务栏卡片就恢复不出来——正是 KNOWN_ISSUES 里那条待验项。
@@ -27,16 +26,16 @@ internal static class StartupRecoveryChecks
         // 一、蓝牙阶段吞异常
         var safeAsync = typeof(BluetoothDiscovery).GetMethod("SafeAsync",
             BindingFlags.Static | BindingFlags.NonPublic);
-        Check(safeAsync != null, "BluetoothDiscovery.SafeAsync 必须存在，否则无法验证蓝牙阶段的异常隔离。");
+        if (safeAsync == null) throw new Exception("BluetoothDiscovery.SafeAsync 必须存在，否则无法验证蓝牙阶段的异常隔离。");
 
         bool threw = false;
         try
         {
-            var faulted = (Task)safeAsync.Invoke(null, new object[]
+            var faulted = (Task)safeAsync.Invoke(null, new object?[]
             {
-                new Func<Task>(() => throw new InvalidOperationException("stage fixture")),
-                "startup-fixture"
-            });
+                new Func<Task<List<DetectedDevice>>>(() => throw new InvalidOperationException("stage fixture")),
+                "startup-fixture", 5000, null, false
+            })!;
             faulted.GetAwaiter().GetResult();
         }
         catch { threw = true; }
@@ -44,14 +43,14 @@ internal static class StartupRecoveryChecks
 
         // 挂起但最终会完成的阶段必须正常收尾
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Task stalling = null;
+        Task? stalling = null;
         try
         {
-            stalling = (Task)safeAsync.Invoke(null, new object[]
+            stalling = (Task)safeAsync.Invoke(null, new object?[]
             {
-                new Func<Task>(() => release.Task),
-                "startup-fixture"
-            });
+                new Func<Task<List<DetectedDevice>>>(async () => { await release.Task; return []; }),
+                "startup-fixture", 5000, null, false
+            })!;
             Check(!stalling.IsCompleted, "未完成的阶段不应提前返回。");
         }
         finally
