@@ -107,6 +107,16 @@ namespace MouseDock.Views
                 Foreground = new SolidColorBrush(Color.FromRgb(0x7A, 0x7C, 0x8A))
             });
 
+            // 两张码横排。加载不到就只留文字，不让整块缺席。
+            var codes = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 14, 0, 0)
+            };
+            codes.Children.Add(CodeBlock("qq-group.png", "QQ 群 148894057"));
+            codes.Children.Add(CodeBlock("donate.png", "给六花赞赏"));
+            root.Children.Add(codes);
+
             root.Children.Add(Divider());
 
             // 按钮区
@@ -195,6 +205,76 @@ namespace MouseDock.Views
             Margin = new Thickness(0, 16, 0, 16),
             Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x2C, 0x36))
         };
+
+        /// <summary>
+        /// 一张码加一行说明。图片放在 Assets 下，读不到就只显示说明文字。
+        /// </summary>
+        private static StackPanel CodeBlock(string fileName, string caption)
+        {
+            var panel = new StackPanel { Margin = new Thickness(0, 0, 18, 0) };
+
+            var source = TryLoadAsset(fileName);
+            if (source != null)
+            {
+                panel.Children.Add(new Border
+                {
+                    Width = 132,
+                    Height = 132,
+                    CornerRadius = new CornerRadius(8),
+                    Background = Brushes.White,
+                    ClipToBounds = true,
+                    Child = new Image
+                    {
+                        Source = source,
+                        Stretch = Stretch.UniformToFill
+                    }
+                });
+            }
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = caption,
+                FontSize = 11,
+                Margin = new Thickness(0, 6, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x8C, 0x9A))
+            });
+
+            return panel;
+        }
+
+        private static ImageSource TryLoadAsset(string fileName)
+        {
+            // 优先从 exe 内嵌资源取。绿色版就是一个 exe，解压出来不带任何图片文件，
+            // 收款码和群码只活在程序里，不会在用户磁盘上多出文件夹。
+            try
+            {
+                var packed = new System.Windows.Media.Imaging.BitmapImage();
+                packed.BeginInit();
+                packed.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                packed.UriSource = new Uri("pack://application:,,,/Assets/" + fileName, UriKind.Absolute);
+                packed.EndInit();
+                packed.Freeze();
+                return packed;
+            }
+            catch { }
+
+            // 开发目录里资源还没写进程序集时，退回到旁边的 Assets 文件。
+            try
+            {
+                string path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", fileName);
+                if (!System.IO.File.Exists(path)) return null;
+
+                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+                bitmap.EndInit();
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch { return null; }
+        }
 
         private static Button MakeButton(string text, bool primary = false)
         {

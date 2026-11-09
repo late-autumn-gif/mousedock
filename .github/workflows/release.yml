@@ -50,9 +50,11 @@ jobs:
       - name: Package and hash
         shell: pwsh
         run: |
-          Copy-Item docs/DEVICE-SUPPORT-1.1.1.md,docs/DEVICE-CATALOGUE-1.1.1.csv,docs/SUPPORT-AUDIT-20261106.md dist/
+          # 只打包 exe。publish 会把 Assets 下的图片一并复制到 dist，
+          # 整目录打包的话，用户解压后磁盘上就会多出 Assets 文件夹和里面的收款码、群码。
+          # 关于面板的两张码是从 exe 内嵌资源读的，不需要外部文件。
           $package = "MouseDock-${{ github.ref_name }}-win-x64.zip"
-          Compress-Archive -Path dist/* -DestinationPath $package
+          Compress-Archive -Path dist/MouseDock.exe -DestinationPath $package
           $digest = (Get-FileHash $package -Algorithm SHA256).Hash.ToLower()
           "$digest  $package" | Out-File -Encoding utf8 SHA256.txt
           $manifest = @{ tag_name="${{ github.ref_name }}"; draft=$false; prerelease=$false; assets=@(@{name=$package; browser_download_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$package";size=(Get-Item $package).Length;digest="sha256:$digest"}) }

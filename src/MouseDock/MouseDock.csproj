@@ -9,9 +9,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>MouseDock</AssemblyName>
     <RootNamespace>MouseDock</RootNamespace>
-    <Version>1.1.4</Version>
-    <FileVersion>1.1.4.0</FileVersion>
-    <AssemblyVersion>1.1.4.0</AssemblyVersion>
+    <Version>1.1.5</Version>
+    <FileVersion>1.1.5.0</FileVersion>
+    <AssemblyVersion>1.1.5.0</AssemblyVersion>
     <Company>MouseDock</Company>
     <Product>MouseDock</Product>
     <Description>Windows 桌面外设电量面板：2.4G / 蓝牙 / 有线自动识别与实时电量</Description>
@@ -34,6 +34,8 @@
     <Content Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md"
       CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Resource Include="Assets\Characters\Rikka.jpg;Assets\Characters\Roxy.jpg" />
+    <!-- 关于面板的两张码：嵌进 exe，绿色版解压单个文件也能显示。 -->
+    <Resource Include="Assets\donate.png;Assets\qq-group.png" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
     <InternalsVisibleTo Include="MouseDock.Checks" />
     <Content Include="Assets\*.ico">
@@ -48,6 +50,8 @@
   </ItemGroup>
 
 </Project>
+
+
 
 
 
