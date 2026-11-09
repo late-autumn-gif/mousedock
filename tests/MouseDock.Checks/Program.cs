@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.IO;
 using System.IO.Compression;
 using System.Windows;
@@ -33,6 +33,7 @@ internal static class Program
             ("Shared display styles update live on the right edge", SharedDisplayStyleChecks.Edge),
             ("Taskbar card geometry and content stay compact", TaskbarRegressionChecks.Run),
             ("248A:5B2F identity probe keeps its channel and frame", ReceiverIdentityRegression.Run),
+            ("2.4G headsets on USB audio are recognised without a friendly name", HeadsetUsbRegression.Run),
             ("Bluetooth stages stay isolated and stale readings dim", StartupRecoveryChecks.Run),
             ("Embedded taskbar uses a transparent native child", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.AttachedToTaskbar)),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
@@ -401,6 +402,7 @@ internal static class Program
         if (!condition) throw new InvalidOperationException(message);
     }
 }
+
 
 
 
