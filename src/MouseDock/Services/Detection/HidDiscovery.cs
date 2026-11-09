@@ -316,9 +316,8 @@ namespace MouseDock.Services.Detection
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (b.HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) return b.ToDevice();
                 if (OriginalGpwProtocol.IsCandidate(b.Vid, b.Pid) || VendorProtocol.IsScopedInphic(b.Vid,b.Pid,b.Product) || (VendorProtocol.IsScopedModernMouse(b.Vid,b.Pid,b.Product) || VendorProtocol.IsScopedG7(b.Vid,b.Pid,b.Product)) || ZeroRainyProtocol.Candidate(b.Vid,b.Pid,b.Product)) return b.ToDevice();
-                var rk = !DeviceRoutes.IsKnown(b.Vid, b.Pid, b.Product) || buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid) > 1
-                    ? null : RkKeyboardProtocol.TryRead(b.Vid, b.Pid, safeMode);
-                if (rk != null) { rk.Id = b.InstanceId; rk.PhysicalKey = b.InstanceId; rk.RawName = b.Product; }
+                var rk = ReadRkReceiver(b, buckets.Values.Count(x => x.Vid == b.Vid && x.Pid == b.Pid),
+                    safeMode, preferences, RkKeyboardProtocol.TryRead);
                 if (rk != null) LastDiagnostics.Add($"RK R98Pro V2: connected={rk.Connected}, battery={rk.Level}");
                 return rk ?? b.ToDevice();
             }).Where(d => d != null).ToList();
@@ -630,6 +629,8 @@ namespace MouseDock.Services.Detection
             {
             if (VendorProtocol.IsRogOmni(vid, pid))
                 batteryTrace.Add("ROG Omni 由本实例的配对与键盘集合读取");
+            else if (RkKeyboardProtocol.IsCandidate(vid, pid))
+                batteryTrace.Add(safeMode ? "安全模式已跳过 RK 查询" : "RK 由本实例的精确集合确认身份后读取，不尝试通用协议");
             else if(ZeroRainyProtocol.Candidate(vid,pid,product)){batteryTrace.Add("ZERO/Rainy由本实例专用集合读取");}
             else if((VendorProtocol.IsScopedModernMouse(vid,pid,product) || VendorProtocol.IsScopedG7(vid,pid,product))){batteryTrace.Add("迈从鼠标由本实例精确集合读取");}
             else if (VendorProtocol.IsScopedInphic(vid,pid,product)) { batteryTrace.Add("英菲克由独立实例通道读取，不走旧通用兜底"); }
