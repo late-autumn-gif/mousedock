@@ -25,17 +25,18 @@ internal static class VisualAuditChecks
             window = surface == "dock" ? new DockWindow() : new MiniWindow();
             var apply = window.GetType().GetMethod("ApplyBackground")!;
             var root = (Border)window.FindName("Root");
+            bool HasImage() => root.Background is ImageBrush { ImageSource: BitmapSource };
             apply.Invoke(window, [corrupt]);
             Require(root.Background is LinearGradientBrush, "A corrupt saved background must fall back to the theme.");
             apply.Invoke(window, [valid]);
-            Require(root.Background is ImageBrush { ImageSource: BitmapSource }, "A valid image must still load.");
+            Require(HasImage(), "A valid image must still load.");
             apply.Invoke(window, [corrupt]);
             Require(root.Background is LinearGradientBrush, "A corrupt replacement must clear the old image.");
             window.GetType().GetMethod("ApplyTheme")!.Invoke(window, [ThemePreset.Presets[1], false]);
             Require(((LinearGradientBrush)root.Background).GradientStops[0].Color == ThemePreset.Presets[1].BgTop,
                 "The fallback background must still follow theme changes.");
             apply.Invoke(window, [valid]);
-            Require(root.Background is ImageBrush, "The window must recover when a valid background is chosen.");
+            Require(HasImage(), "The window must recover when a valid background is chosen.");
             apply.Invoke(window, [""]);
             Require(root.Background is LinearGradientBrush, "Clearing a recovered image must restore the theme.");
         }

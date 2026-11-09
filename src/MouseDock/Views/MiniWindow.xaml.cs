@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
@@ -22,6 +22,7 @@ namespace MouseDock.Views
 
         private readonly List<DeviceInfo> _visible = new List<DeviceInfo>();
         private readonly Brush _themeBackground;
+        private string _backgroundPath = "";
 
         public MiniWindow()
         {
@@ -66,18 +67,70 @@ namespace MouseDock.Views
         /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
         public void ApplyBackground(string path)
         {
-            var bmp = Palette.Load(path, 2048);
+            _backgroundPath = path;
+            var bmp = Palette.Load(path, DecodeWidthForWindow());
             if (bmp != null)
             {
                 RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
+                // 用 ImageBrush 直接铺在 Border.Background 上：Brush 不参与布局测量，
+                // 所以背景再大也不会把 SizeToContent 的窗口撑开。
                 Root.Background = new System.Windows.Media.ImageBrush(bmp)
                 {
                     Stretch = Stretch.UniformToFill
                 };
+                // 背景图什么颜色都有，得按它的实际亮度决定文字深浅，
+                // 否则浅色背景配白字基本等于看不见。
+                ApplyContrastFor(AverageBrightness(bmp));
                 return;
             }
             Root.Background = _themeBackground;
             ApplyTheme(App.Theme, false);
+        }
+
+        /// <summary>按窗口实际像素宽解码，避免原图在解码阶段就被压掉细节。</summary>
+        private int DecodeWidthForWindow()
+        {
+            double width = Root.ActualWidth > 1 ? Root.ActualWidth : 200;
+            double scale = 1;
+            try
+            {
+                var source = PresentationSource.FromVisual(this);
+                if (source?.CompositionTarget != null) scale = source.CompositionTarget.TransformToDevice.M11;
+            }
+            catch { }
+            return Math.Max(64, (int)Math.Ceiling(width * Math.Max(scale, 1) * 2));
+        }
+
+        /// <summary>缩到 24×24 采样平均亮度，0 全黑、1 全白。</summary>
+        private static double AverageBrightness(System.Windows.Media.Imaging.BitmapSource bmp)
+        {
+            try
+            {
+                var gray = new System.Windows.Media.Imaging.FormatConvertedBitmap(bmp, PixelFormats.Gray8, null, 0);
+                int w = Math.Min(24, gray.PixelWidth), h = Math.Min(24, gray.PixelHeight);
+                if (w <= 0 || h <= 0) return .5;
+                var scaled = new System.Windows.Media.Imaging.TransformedBitmap(gray,
+                    new ScaleTransform((double)w / gray.PixelWidth, (double)h / gray.PixelHeight));
+                var pixels = new byte[w * h];
+                scaled.CopyPixels(pixels, w, 0);
+                long sum = 0;
+                foreach (byte value in pixels) sum += value;
+                return sum / (double)(pixels.Length * 255);
+            }
+            catch { return .5; }
+        }
+
+        /// <summary>按背景亮度挑文字色：亮底用深色，暗底用浅色。</summary>
+        private void ApplyContrastFor(double brightness)
+        {
+            bool light = brightness > 0.55;
+            var text = light ? new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x22))
+                             : new SolidColorBrush(Color.FromRgb(0xF5, 0xF7, 0xFA));
+            TextElement.SetForeground(Root, text);
+            GlyphBrush = light ? new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x46))
+                               : new SolidColorBrush(Color.FromRgb(0xE6, 0xEA, 0xF2));
+            RootShadow.Color = light ? Color.FromRgb(0x8B, 0x93, 0xA6) : Colors.Black;
+            RootShadow.Opacity = light ? 0.16 : 0.42;
         }
 
         /// <summary>迷你窗样式：standard 标准 / compact 紧凑 / bare 极简。</summary>
@@ -142,3 +195,6 @@ namespace MouseDock.Views
         }
     }
 }
+
+
+

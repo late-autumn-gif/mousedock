@@ -36,11 +36,19 @@
                                            Opacity="0.6" Margin="0,0,0,3"
                                            GlyphBrush="{Binding GlyphBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding MiniText}" FontSize="18" FontWeight="Bold" />
+                                <TextBlock Text="{Binding MiniText}" FontSize="18" FontWeight="Bold">
+                                    <TextBlock.Effect>
+                                        <DropShadowEffect x:Name="TextHalo" Color="Black" ShadowDepth="0" BlurRadius="5" Opacity="0.85" />
+                                    </TextBlock.Effect>
+                                </TextBlock>
                                 <c:ChargingGlyph Active="{Binding IsChargingActive}" Width="18" Height="17" Margin="4,0,0,0" VerticalAlignment="Center" />
                             </StackPanel>
-                            <TextBlock Text="{Binding Name}" FontSize="8.5" Opacity="0.45"
-                                       TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                            <TextBlock Text="{Binding Name}" FontSize="9.5" FontWeight="SemiBold" Opacity="0.92"
+                                       TextTrimming="CharacterEllipsis" Margin="0,1,0,0">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect Color="Black" ShadowDepth="0" BlurRadius="7" Opacity="0.95" />
+                                </TextBlock.Effect>
+                            </TextBlock>
                         </StackPanel>
                     </Border>
                     <DataTemplate.Triggers>

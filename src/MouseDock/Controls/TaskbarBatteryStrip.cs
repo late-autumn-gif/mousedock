@@ -73,8 +73,9 @@ public sealed class TaskbarBatteryStrip : Border
             "battery" => vertical ? new Size(40, 60) : new Size(64, 40),
             _ => new Size(40, 40)
         };
-        double length = Math.Max(1, items.Length) * ((vertical ? cell.Height : cell.Width) + (card ? 5 : 0))
-            + (panel ? 8 + Math.Max(0, items.Length - 1) : 0) + (card ? 4 : 0);
+        // 每张卡片占「本体 + 15px 间隔」，首尾各多出半个间隔，所以整体再加一个间隔。
+        double length = Math.Max(1, items.Length) * ((vertical ? cell.Height : cell.Width) + (card ? 15 : 15))
+            + (panel ? 8 + Math.Max(0, items.Length - 1) : 0);
         Width = vertical ? 40 : length;
         Height = vertical ? length : 40;
         if (multi)
@@ -128,32 +129,38 @@ public sealed class TaskbarBatteryStrip : Border
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
             BorderThickness = new Thickness(1),
             ClipToBounds = true,
-            // 相邻卡片之间留一点缝：竖排时上下分开，横排时左右分开。
-            // 卡片本身已经是圆角胶囊，贴在一起会连成一片，看不出是两台设备。
-            Margin = vertical ? new Thickness(0, 2, 0, 2) : new Thickness(2, 0, 2, 0)
+            // 相邻卡片之间留 15px：两边各 7.5，合起来就是用户要的间隔。
+            Margin = vertical ? new Thickness(0, 7.5, 0, 7.5) : new Thickness(7.5, 0, 7.5, 0)
         };
         card.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
 
         // 只有图标和数字。型号名去掉了：任务栏本来就窄，多一行小字既挤又糊，
         // 具体型号放进 ToolTip 和 AutomationProperties 里，悬停或读屏照样能看到。
-        var grid = new Grid { Margin = new Thickness(4, 4, 4, 4) };
+        // 图标和数字紧挨着排，中间固定 5px，整组在卡片里居中。
+        // 之前贴左右边对齐，中间被拉开十几像素，看着像两块不相干的东西。
+        var grid = new Grid
+        {
+            Margin = new Thickness(4, 4, 4, 4),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         if (vertical)
         {
-            // 两行都用 Auto 并整体居中，图标和数字之间留出固定间隔；
-            // 之前用 Star 撑满会把两者挤到贴在一起，看着喘不过气。
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
         else
         {
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         }
         card.Child = grid;
 
         var glyph = new DeviceGlyph
         {
-            Width = vertical ? 24 : 22, Height = vertical ? 24 : 22, Thickness = 2.1,
+            Width = vertical ? 22 : 20, Height = vertical ? 22 : 20, Thickness = 2.1,
             GlyphBrush = batteryBrush ?? foreground,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -170,12 +177,11 @@ public sealed class TaskbarBatteryStrip : Border
             FontSize = 16, TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(vertical ? 0 : 4, vertical ? 3 : 0, 0, 0),
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
-        if (vertical) Grid.SetRow(number, 1); else Grid.SetColumn(number, 1);
+        if (vertical) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         grid.Children.Add(number);
 
         var charging = new TextBlock
@@ -211,7 +217,9 @@ public sealed class TaskbarBatteryStrip : Border
         {
             Name = "TaskbarDevice", DataContext = device, Background = Brushes.Transparent,
             Width = panel && vertical ? 36 : cell.Width,
-            Height = panel && !vertical ? 36 : cell.Height
+            Height = panel && !vertical ? 36 : cell.Height,
+            // 相邻设备的间隔统一 15px：两边各 7.5。
+            Margin = vertical ? new Thickness(0, 7.5, 0, 7.5) : new Thickness(7.5, 0, 7.5, 0)
         };
         badge.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
         if (ringStyle)
@@ -238,34 +246,72 @@ public sealed class TaskbarBatteryStrip : Border
             shape.SetBinding(ReferenceBatteryIcon.CompactChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
             badge.Children.Add(shape);
         }
-        bool tall = vertical && style is "pill" or "battery";
+        // 环样式保持原样：数字居中落在环里，不放图标。环本身就是进度指示，
+        // 再塞一个设备图标进去会把两者都挤变形，所以这里单独走一条路。
+        if (ringStyle)
+        {
+            var ringNumber = new TextBlock
+            {
+                Name = "BatteryNumber", Foreground = textBrush,
+                FontFamily = new FontFamily("Segoe UI"), FontWeight = FontWeights.SemiBold,
+                FontSize = 12, TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
+                IsHitTestVisible = false
+            };
+            ringNumber.SetBinding(TextBlock.TextProperty,
+                new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
+            badge.Children.Add(ringNumber);
+            AttachCharging(badge, device, textBrush);
+            return Finish(badge, device);
+        }
+
+        // 图标和数字排成一组，中间固定 5px，整组在格子内居中。
+        var row = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
         var glyph = new DeviceGlyph
         {
-            Width = showNumber ? (tall ? 16 : panel ? 14 : 12) : 21,
-            Height = showNumber ? (tall ? 16 : panel ? 14 : 12) : 21,
+            Width = showNumber ? (panel ? 13 : 14) : 21,
+            Height = showNumber ? (panel ? 13 : 14) : 21,
             Thickness = 1.8, GlyphBrush = batteryBrush ?? (panel ? Brushes.White : foreground),
-            HorizontalAlignment = horizontalPill && showNumber ? HorizontalAlignment.Left : HorizontalAlignment.Center,
-            VerticalAlignment = showNumber ? VerticalAlignment.Top : VerticalAlignment.Center,
-            Margin = !showNumber ? new Thickness(0) : horizontalPill ? new Thickness(11, 14, 0, 0)
-                : new Thickness(0, tall ? 13 : panel ? (badge.Height - 32) / 2 : 7, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false
         };
         glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
-        badge.Children.Add(glyph);
+        Grid.SetColumn(glyph, 0);
+        row.Children.Add(glyph);
+
         var number = new TextBlock
         {
             Name = "BatteryNumber", Foreground = textBrush,
             FontFamily = new FontFamily("Segoe UI"), FontWeight = FontWeights.SemiBold,
-            FontSize = ringStyle ? 12 : 14, Height = ringStyle ? 15 : 18,
-            TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = horizontalPill ? new Thickness(27, 0, 5, 11) : new Thickness(6, 0, 6,
-                tall ? 12 : panel ? (badge.Height - 32) / 2 : 5),
+            FontSize = ringStyle ? 12 : 14,
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
-        badge.Children.Add(number);
-        // Keep charging separate from the number, including three-digit values.
+        Grid.SetColumn(number, 2);
+        row.Children.Add(number);
+        badge.Children.Add(row);
+        AttachCharging(badge, device, textBrush);
+        return Finish(badge, device);
+    }
+
+    /// <summary>充电标记叠在右上角，不占图标和数字的位置。</summary>
+    private static void AttachCharging(Grid badge, DeviceInfo device, Brush textBrush)
+    {
         var charging = new TextBlock
         {
             Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
@@ -276,6 +322,11 @@ public sealed class TaskbarBatteryStrip : Border
         charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.IsChargingActive))
             { Converter = new BooleanToVisibilityConverter() });
         badge.Children.Add(charging);
+    }
+
+    /// <summary>挂上悬停提示与读屏名称，返回格子本身。</summary>
+    private static Grid Finish(Grid badge, DeviceInfo device)
+    {
         foreach (var property in new[] { ToolTipProperty, AutomationProperties.NameProperty })
         {
             var description = new MultiBinding { Converter = new DescriptionConverter() };
