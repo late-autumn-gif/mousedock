@@ -18,6 +18,8 @@ internal static class Program
     {
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
+        if (args.Contains("--r98-live"))
+            return R98KeyboardChecks.RunLive();
         if (args.Contains("--taskbar-host-fixture"))
             return TaskbarEmbeddingChecks.RunHostFixture();
         if (args.Contains("--audit"))
@@ -90,6 +92,9 @@ internal static class Program
             ("App edge mode respects selection color and live settings", EdgeDisplayChecks.WindowIntegration),
             ("Edge settings remain readable in both themes", () => UiRegressionChecks.ThemeForeground("settings", true)),
             ("R98 queries match verified read-only commands", R98KeyboardChecks.Queries),
+            ("R98 reader is reachable from normal discovery", R98KeyboardChecks.DiscoveryReachable),
+            ("R98 discovery preserves verified identity and physical instance", R98KeyboardChecks.DiscoveryIdentity),
+            ("R98 discovery respects safety preferences and ambiguous receivers", R98KeyboardChecks.DiscoveryGuards),
             ("R98 validates exact model identity", R98KeyboardChecks.Identity),
             ("R98 validates keyboard connection state", R98KeyboardChecks.Connection),
             ("R98 safe mode never opens hardware", R98KeyboardChecks.SafeMode),

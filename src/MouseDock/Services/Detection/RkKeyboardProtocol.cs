@@ -51,9 +51,12 @@ internal static class RkKeyboardProtocol
     public static bool IsSupportedInterface(ushort usagePage, ushort usage, ushort input, ushort output) =>
         usagePage == 0xFF02 && usage == 2 && input == 20 && output == 20;
 
+    internal static bool IsCandidate(ushort vid, ushort pid) =>
+        vid == 0x258A && (pid == 0x01BB || pid == 0x0233);
+
     public static DetectedDevice TryRead(ushort vid, ushort pid, bool safeMode)
     {
-        if (safeMode || vid != 0x258A || (pid != 0x01BB && pid != 0x0233)) return null;
+        if (safeMode || !IsCandidate(vid, pid)) return null;
         try { return ReadAsync(vid, pid).GetAwaiter().GetResult(); }
         catch { return null; }
     }

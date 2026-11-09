@@ -54,6 +54,7 @@ internal static class DeviceRoutes
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
         M9ProProtocol.IsCandidate(vid, pid, product) ||
+        RkKeyboardProtocol.IsCandidate(vid, pid) ||
         VendorProtocol.IsRogOmni(vid, pid) ||
         VendorProtocol.IsScopedModernMouse(vid, pid, product) ||
         ReferenceProfiles.Find(vid, pid) != null ||
