@@ -704,6 +704,18 @@ namespace MouseDock
             if (Settings.ShowIcon) Icon?.ApplyStyle(Settings.IconStyle, false);
             if (Settings.SurfaceMode == "taskbar") Taskbar?.UpdateAnchor();
             if (Settings.SurfaceMode == "edge") Edge?.UpdateAnchor();
+            UpdateTaskbarOverflow();
+        }
+
+        private static void UpdateTaskbarOverflow()
+        {
+            if (Settings.SurfaceMode != "taskbar" || Edge == null) return;
+            if (Taskbar?.IsVisible == true && Taskbar.UsesScreenEdge)
+            {
+                Edge.UpdateDevices();
+                if (!Edge.IsVisible) Edge.Show();
+            }
+            else if (Edge.IsVisible) Edge.Hide();
         }
 
         /// <summary>切换任务栏样式，立即重绘并保存。</summary>
@@ -1069,6 +1081,10 @@ namespace MouseDock
         private static TaskbarWindow CreateTaskbarWindow()
         {
             var window = new TaskbarWindow();
+            window.OverflowChanged += (_, _) =>
+            {
+                if (!_exiting && Taskbar == window) UpdateTaskbarOverflow();
+            };
             window.HostLost += (_, _) =>
             {
                 if (_exiting || window.Dispatcher.HasShutdownStarted || Taskbar != window) return;

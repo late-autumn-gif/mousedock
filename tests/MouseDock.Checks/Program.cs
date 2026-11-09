@@ -18,6 +18,8 @@ internal static class Program
     {
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
+        if (args.Length == 2 && args[0] == "--taskbar-button-fixture")
+            return TaskbarFollowChecks.RunButtonFixture(args[1]);
         if (args.Contains("--taskbar-host-fixture"))
             return TaskbarEmbeddingChecks.RunHostFixture();
         if (args.Contains("--audit"))
@@ -29,6 +31,22 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Taskbar follow tracks growing and shrinking icon groups", TaskbarFollowChecks.Motion),
+            ("Taskbar follow preserves signed icon offsets and a true zero", TaskbarFollowChecks.SignedOffset),
+            ("Taskbar follow avoids tray and widget obstructions", TaskbarFollowChecks.Obstacles),
+            ("Taskbar follow handles DPI and vertical taskbars", TaskbarFollowChecks.Scaling),
+            ("Taskbar follow restores with a stable space reserve", TaskbarFollowChecks.RestorationReserve),
+            ("Taskbar follow preserves automatic and manual preferences", TaskbarFollowChecks.Preferences),
+            ("Taskbar follow filters hidden and unrelated layout elements", TaskbarFollowChecks.LayoutFiltering),
+            ("Taskbar follow retains fresh geometry across a failed refresh", TaskbarFollowChecks.RefreshContinuity),
+            ("Taskbar follow overflow preserves surface selection and returns", TaskbarFollowChecks.OverflowRouting),
+            ("Taskbar follow has a working automatic/manual setting", TaskbarFollowChecks.SettingsControl),
+            ("Taskbar follow reads the live Explorer layout without blocking", () =>
+            {
+                if (TaskbarFollowChecks.IsLowIntegrity())
+                    throw new SkippedException("Low-integrity test host cannot read Explorer's XAML provider; run this check in a normal user host.");
+                TaskbarFollowChecks.LiveLayout();
+            }),
             ("Shared display styles preserve independent preferences", SharedDisplayStyleChecks.Preferences),
             ("Shared display styles render upright and fit every orientation", SharedDisplayStyleChecks.Rendering),
             ("Shared display styles are selectable in settings", SharedDisplayStyleChecks.Settings),

@@ -184,7 +184,7 @@ internal static class EdgeDisplayChecks
     public static void WindowIntegration()
     {
         var settings = new AppSettings { Provider = "json", JsonPath = "missing-edge-fixture.json",
-            SurfaceMode = "edge", EdgeGlyphColor = "#39A9F0", AlwaysOnTop = true };
+            SurfaceMode = "edge", EdgeGlyphColor = "#39A9F0", AlwaysOnTop = true, TaskbarFollowIcons = false };
         using var battery = new BatteryService(settings);
         typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
         typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, battery);
