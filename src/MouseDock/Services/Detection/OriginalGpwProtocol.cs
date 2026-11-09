@@ -9,6 +9,9 @@ namespace MouseDock.Services.Detection;
 internal static class OriginalGpwProtocol
 {
     internal const string Model = "Logitech G Pro Wireless";
+    internal const string G603Model = "Logitech G603";
+    internal static bool IsG603Name(string name) =>
+        string.Equals(name, "G603 Wireless Gaming Mouse", StringComparison.Ordinal);
     internal static bool IsCandidate(ushort vid, ushort pid) => vid == 0x046D && pid is 0xC539 or 0xC088 or 0xC547;
     internal static bool IsChannel(ushort vid, ushort pid, ushort page, ushort usage, int input, int output, int feature) =>
         IsCandidate(vid,pid) && page == 0xFF00 && input == 20 && output == 20 && feature == 0 &&
@@ -78,6 +81,7 @@ internal static class OriginalGpwProtocol
             foreach (byte slot in pid == 0xC539 ? new byte[] { 1 } : new byte[] { 1, 0xFF })
             {
                 string name = ReadName(slot);
+                if (pid == 0xC539 && IsG603Name(name)) return ReadG603(slot, name);
                 if (name != null && !LogitechHidpp.IsOriginalGpwName(name))
                     return Fail("实时设备名不是一代 GPW，未读取/套用 GPW 电压曲线：" + name);
                 if (name == null && pid == 0xC539) name = ReadDeviceIdentity(slot);
@@ -101,6 +105,29 @@ internal static class OriginalGpwProtocol
                     Model, name);
             }
             return Fail("没有取得一代 GPW 的实时名称/设备型号身份，接收器不等于外设型号：" + issue);
+        }
+
+        private ReferenceBatteryProtocol.Reading ReadG603(byte slot, string name)
+        {
+            if (ReadName(slot) != name)
+                return Fail("G603 两次实时身份不一致，未读取电量");
+            ReferenceBatteryProtocol.Reading Stop(string reason) =>
+                ReferenceBatteryProtocol.Reading.Failed(reason + "：" + issue + trace) with
+                { Model = G603Model, Identity = name };
+
+            // G603 uses replaceable AA cells; only its reported percentage is valid.
+            // Never apply the original GPW's lithium battery voltage curve here.
+            byte feature = Feature(slot, 0x1000);
+            if (feature == 0) return Stop("G603 未提供 0x1000 百分比特征");
+            var first = Call(slot, feature, 0);
+            if (first == null || !LogitechHidpp.TryParseBattery(0x1000, first, out _, out _))
+                return Stop("G603 第一次百分比响应无效");
+            var second = Call(slot, feature, 0);
+            if (second == null || !LogitechHidpp.TryParseBattery(0x1000, second, out int level, out _))
+                return Stop("G603 第二次百分比响应无效");
+            return new(level, false, true, ReferenceBatteryProtocol.State.Online,
+                "G603 实时身份确认；0x1000 设备百分比，两次有效响应；可更换电池，不支持充电" + trace,
+                G603Model, name);
         }
 
         private ReferenceBatteryProtocol.Reading ReadSuperlight()
