@@ -30,6 +30,7 @@ internal static class Program
         var checks = new (string Name, Action Check)[]
         {
             ("Taskbar follow tracks growing and shrinking icon groups", TaskbarFollowChecks.Motion),
+            ("Taskbar follow preserves signed icon offsets and a true zero", TaskbarFollowChecks.SignedOffset),
             ("Taskbar follow avoids tray and widget obstructions", TaskbarFollowChecks.Obstacles),
             ("Taskbar follow handles DPI and vertical taskbars", TaskbarFollowChecks.Scaling),
             ("Taskbar follow restores with a stable space reserve", TaskbarFollowChecks.RestorationReserve),

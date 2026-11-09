@@ -307,13 +307,44 @@
                                       Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
                             <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0"
                                       Checked="OnTaskbarFollowIconsChanged" Unchecked="OnTaskbarFollowIconsChanged" />
+                            <Grid x:Name="TaskbarIconOffsetRow" Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="图标偏移" Style="{StaticResource RowText}" />
+                                <Grid Grid.Column="1" Margin="14,0,8,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Slider x:Name="TaskbarIconOffsetSlider" Width="Auto" Minimum="-300" Maximum="300"
+                                            SmallChange="1" LargeChange="10" IsSnapToTickEnabled="True" TickFrequency="1"
+                                            ValueChanged="OnTaskbarIconOffsetChanged"
+                                            AutomationProperties.Name="图标偏移" />
+                                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" IsHitTestVisible="False">
+                                        <Border Width="1" Height="4" Background="{DynamicResource TextBrush}" Opacity="0.5" />
+                                        <TextBlock Text="0" FontSize="10" HorizontalAlignment="Center" Opacity="0.65" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="TaskbarIconOffsetInput" Width="52" Padding="3,2"
+                                             FontSize="12.5" TextAlignment="Center" VerticalContentAlignment="Center"
+                                             Foreground="{DynamicResource TextBrush}" Background="Transparent"
+                                             BorderBrush="{DynamicResource ButtonBrush}" BorderThickness="1"
+                                             LostFocus="OnTaskbarIconOffsetInputLostFocus" KeyDown="OnTaskbarIconOffsetInputKeyDown"
+                                             AutomationProperties.Name="图标偏移数值" />
+                                    <TextBlock Text="px" FontSize="10" Margin="4,0,0,0" VerticalAlignment="Center" Opacity="0.65" />
+                                </StackPanel>
+                            </Grid>
                             <Grid x:Name="TaskbarPositionRow" Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="48" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="左侧偏移（%）" Style="{StaticResource RowText}" />
+                                <TextBlock Text="任务栏位置（%）" Style="{StaticResource RowText}" />
                                 <Slider x:Name="TaskbarOffsetSlider" Grid.Column="1" Minimum="0" Maximum="100"
                                         Width="Auto" Margin="14,0,8,0" SmallChange="1" LargeChange="10"
                                         ToolTip="相对任务栏可用长度的百分比；2K/4K 和高 DPI 自动等比缩放"

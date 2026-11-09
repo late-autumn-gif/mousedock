@@ -72,6 +72,8 @@ namespace MouseDock.Models
         /// <summary>任务栏左侧/底部偏移，相对任务栏可用长度的百分比（0-100，v6 起；旧版是 DIP，启动时迁移）。</summary>
         public double TaskbarOffset { get; set; } = 8;
         public bool TaskbarFollowIcons { get; set; } = true;
+        /// <summary>图标组外的逻辑像素间距；负数在前，非负数在后，0 紧贴右边缘。</summary>
+        public double TaskbarIconOffset { get; set; }
         /// <summary>ring = 圆环；panel = 胶囊条；card = 迷你卡片。</summary>
         public string TaskbarStyle { get; set; } = "ring";
         public string TaskbarTextColor { get; set; } = "";
@@ -151,6 +153,7 @@ namespace MouseDock.Models
                 SurfaceMode = SurfaceMode,
                 TaskbarOffset = TaskbarOffset,
                 TaskbarFollowIcons = TaskbarFollowIcons,
+                TaskbarIconOffset = TaskbarIconOffset,
             TaskbarStyle = TaskbarStyle,
             TaskbarTextColor = TaskbarTextColor,
             TaskbarBatteryColor = TaskbarBatteryColor,

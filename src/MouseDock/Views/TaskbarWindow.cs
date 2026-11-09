@@ -163,7 +163,7 @@ namespace MouseDock.Views
                 _layout?.Request();
                 if (_layout == null || !_layout.TryGet(bounds, edge, out var snapshot) ||
                     !TaskbarPlacement.TryFollow(bounds, edge, contentSize, dpi, snapshot.Icons, snapshot.Occupied,
-                        out placement, UsesScreenEdge ? 8 : 0))
+                        out placement, UsesScreenEdge ? 8 : 0, App.Settings.TaskbarIconOffset))
                 {
                     Opacity = 0;
                     IsHitTestVisible = false;

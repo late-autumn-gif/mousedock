@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MouseDock.Models;
 using MouseDock.Services;
@@ -34,11 +36,11 @@ internal static class TaskbarFollowChecks
     }
 
     private static Rect Follow(Rect bar, uint edge, Size content, double dpi, Rect icons,
-        Rect[] occupied, double extra = 0)
+        Rect[] occupied, double extra = 0, double offset = 0)
     {
         var method = typeof(TaskbarPlacement).GetMethod("TryFollow");
         Require(method != null, "Taskbar placement cannot follow the application icon group.");
-        object[] args = [bar, edge, content, dpi, icons, occupied, Rect.Empty, extra];
+        object[] args = [bar, edge, content, dpi, icons, occupied, Rect.Empty, extra, offset];
         bool fits = (bool)method!.Invoke(null, args)!;
         return fits ? (Rect)args[6] : Rect.Empty;
     }
@@ -48,15 +50,32 @@ internal static class TaskbarFollowChecks
         var bar = new Rect(0, 1040, 1920, 40);
         var tray = new Rect(1700, 1040, 220, 40);
         foreach (var (icons, expected) in new[] {
-            (new Rect(500, 1040, 500, 40), new Rect(1008, 1040, 80, 40)),
-            (new Rect(400, 1040, 700, 40), new Rect(1108, 1040, 80, 40)),
-            (new Rect(550, 1040, 400, 40), new Rect(958, 1040, 80, 40))
+            (new Rect(500, 1040, 500, 40), new Rect(1000, 1040, 80, 40)),
+            (new Rect(400, 1040, 700, 40), new Rect(1100, 1040, 80, 40)),
+            (new Rect(550, 1040, 400, 40), new Rect(950, 1040, 80, 40))
         })
             Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray]) == expected,
                 "The strip failed to follow opening or closing applications.");
         var leftAligned = new Rect(0, 1040, 400, 40);
         Require(Follow(bar, 3, new Size(80, 40), 1, leftAligned, [leftAligned, tray]) ==
-            new Rect(408, 1040, 80, 40), "Left-aligned taskbars must follow the final application.");
+            new Rect(400, 1040, 80, 40), "Zero offset must touch the final application's edge.");
+    }
+
+    internal static void SignedOffset()
+    {
+        var bar = new Rect(0, 1040, 1920, 40);
+        var icons = new Rect(500, 1040, 500, 40);
+        var tray = new Rect(1700, 1040, 220, 40);
+        foreach (var (offset, expected) in new[] { (-24d, 396d), (0d, 1000d), (24d, 1024d),
+            (-1d, 419d), (1d, 1001d), (-900d, 120d), (900d, 1300d), (double.NaN, 1000d) })
+            Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray], offset: offset) ==
+                new Rect(expected, 1040, 80, 40),
+                $"Signed offset {offset} did not preserve its specified edge and distance.");
+        icons = new Rect(400, 1040, 700, 40);
+        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray], offset: -24) ==
+            new Rect(296, 1040, 80, 40), "Growing icons changed the saved negative gap.");
+        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray], offset: 24) ==
+            new Rect(1124, 1040, 80, 40), "Growing icons changed the saved positive gap.");
     }
 
     internal static void Obstacles()
@@ -64,11 +83,13 @@ internal static class TaskbarFollowChecks
         var bar = new Rect(0, 1040, 1920, 40);
         var icons = new Rect(500, 1040, 1000, 40);
         var tray = new Rect(1540, 1040, 380, 40);
-        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray]) ==
-            new Rect(412, 1040, 80, 40), "A growing tray must move the strip to the other side.");
+        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray]).IsEmpty,
+            "A blocked right-side position must overflow instead of changing sides.");
         var widget = new Rect(400, 1040, 80, 40);
-        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray, widget]) ==
-            new Rect(312, 1040, 80, 40), "Widgets must remain clickable and unobstructed.");
+        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray, widget], offset: -24).IsEmpty,
+            "A blocked negative offset must overflow instead of changing the saved gap.");
+        Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray], offset: -24) ==
+            new Rect(396, 1040, 80, 40), "An explicit negative offset should use the clear left side.");
         Require(Follow(bar, 3, new Size(80, 40), 1, icons,
             [icons, tray, new Rect(0, 1040, 500, 40)]).IsEmpty,
             "A full taskbar must request the right-edge surface instead of overlapping.");
@@ -80,15 +101,21 @@ internal static class TaskbarFollowChecks
     {
         var icons = new Rect(-1400, 1368, 600, 72);
         Require(Follow(new Rect(-2560, 1368, 2560, 72), 3, new Size(80, 40), 1.5,
-            icons, [icons, new Rect(-300, 1368, 300, 72)]) == new Rect(-788, 1374, 120, 60),
+            icons, [icons, new Rect(-300, 1368, 300, 72)], offset: 24) == new Rect(-764, 1374, 120, 60),
             "Following must preserve physical-pixel DPI and negative monitor coordinates.");
+        Require(Follow(new Rect(-2560, 1368, 2560, 72), 3, new Size(80, 40), 1.5,
+            icons, [icons, new Rect(-300, 1368, 300, 72)], offset: -24) == new Rect(-1556, 1374, 120, 60),
+            "Negative gaps must scale without including the content width twice.");
         var verticalIcons = new Rect(-48, 100, 48, 600);
         Require(Follow(new Rect(-48, 0, 48, 1080), 0, new Size(80, 40), 1,
-            verticalIcons, [verticalIcons, new Rect(-48, 950, 48, 130)]) ==
-            new Rect(-44, 708, 40, 80), "Vertical taskbars must follow along their long axis.");
+            verticalIcons, [verticalIcons, new Rect(-48, 950, 48, 130)], offset: 24) ==
+            new Rect(-44, 724, 40, 80), "Vertical taskbars must follow along their long axis.");
+        Require(Follow(new Rect(-48, 0, 48, 1080), 0, new Size(80, 40), 1,
+            verticalIcons, [verticalIcons, new Rect(-48, 950, 48, 130)], offset: -12) ==
+            new Rect(-44, 8, 40, 80), "Negative offsets must precede vertical icon groups.");
         Require(Follow(new Rect(0, 0, 320, 24), 1, new Size(80, 40), 1,
             new Rect(0, 0, 100, 24), [new Rect(0, 0, 100, 24)]) ==
-            new Rect(108, 0, 48, 24), "Thin taskbars must scale only to their thickness.");
+            new Rect(100, 0, 48, 24), "Thin taskbars must scale only to their thickness.");
         Require(Follow(new Rect(0, 0, 320, 40), 3, new Size(1000, 40), 1,
             new Rect(0, 0, 100, 40), [new Rect(0, 0, 100, 40)]).IsEmpty,
             "An oversized strip must overflow instead of becoming unreadably small.");
@@ -98,7 +125,7 @@ internal static class TaskbarFollowChecks
     {
         var bar = new Rect(0, 0, 400, 40);
         var icons = new Rect(0, 0, 300, 40);
-        var tray = new Rect(396, 0, 4, 40);
+        var tray = new Rect(384, 0, 16, 40);
         Require(!Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray]).IsEmpty,
             "An exact safe gap must fit while already on the taskbar.");
         Require(Follow(bar, 3, new Size(80, 40), 1, icons, [icons, tray], 8).IsEmpty,
@@ -111,17 +138,22 @@ internal static class TaskbarFollowChecks
     internal static void Preferences()
     {
         var property = typeof(AppSettings).GetProperty("TaskbarFollowIcons");
+        var offset = typeof(AppSettings).GetProperty("TaskbarIconOffset");
         Require(property != null, "Automatic following needs a saved opt-out.");
+        Require(offset != null, "Following needs an independent saved signed gap.");
         var settings = new AppSettings { TaskbarOffset = 17 };
+        offset!.SetValue(settings, -24d);
         Require((bool)property!.GetValue(settings)!, "Existing settings should enable automatic following.");
         property.SetValue(settings, false);
         var options = new JsonSerializerOptions {
             NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals };
         var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings.Clone(), options), options)!;
-        Require(!(bool)property.GetValue(restored)! && restored.TaskbarOffset == 17,
-            "Manual mode and its original offset must survive save/restart.");
-        Require((bool)property.GetValue(JsonSerializer.Deserialize<AppSettings>("{}")!)!,
-            "An old configuration must receive automatic following without a destructive migration.");
+        Require(!(bool)property.GetValue(restored)! && restored.TaskbarOffset == 17 &&
+            (double)offset.GetValue(restored)! == -24,
+            "Manual percentage and signed icon gap must independently survive save/restart.");
+        var old = JsonSerializer.Deserialize<AppSettings>("{\"TaskbarOffset\":26}")!;
+        Require((bool)property.GetValue(old)! && (double)offset.GetValue(old)! == 0 && old.TaskbarOffset == 26,
+            "An old percentage must not be reinterpreted as a pixel gap.");
     }
 
     internal static void LayoutFiltering()
@@ -231,15 +263,71 @@ internal static class TaskbarFollowChecks
             window.Reload();
             var check = window.FindName("TaskbarFollowIconsBox") as CheckBox;
             var row = (Grid)window.FindName("TaskbarPositionRow");
+            var offsetRow = window.FindName("TaskbarIconOffsetRow") as FrameworkElement;
+            var slider = window.FindName("TaskbarIconOffsetSlider") as Slider;
+            var input = window.FindName("TaskbarIconOffsetInput") as TextBox;
             Require(check != null, "The automatic-follow setting is missing.");
-            Require(check!.IsChecked == true && !row.IsEnabled,
-                "Automatic placement must disable the irrelevant percentage slider.");
+            Require(offsetRow != null && slider != null && input != null,
+                "The signed offset controls are missing.");
+            Require(check!.IsChecked == true && offsetRow!.IsEnabled &&
+                offsetRow.Visibility == Visibility.Visible && row.Visibility == Visibility.Collapsed,
+                "Following must expose its editable offset and hide the manual percentage.");
+            slider!.Value = -24;
+            var offset = typeof(AppSettings).GetProperty("TaskbarIconOffset")!;
+            Require((double)offset.GetValue(fixture.Settings)! == -24 && input!.Text == "-24",
+                "Moving the slider must save and display the signed gap.");
+            input!.Text = "+36";
+            input.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Require(slider.Value == 36 && (double)offset.GetValue(fixture.Settings)! == 36,
+                "Typing a positive gap must update the slider and saved settings.");
+            input.Text = "invalid";
+            input.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Require(input.Text == "+36" && slider.Value == 36,
+                "Invalid input must restore the last valid value.");
+            input.Text = "-999";
+            input.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Require(input.Text == "-300" && slider.Value == -300,
+                "Typed values outside the range must clamp consistently.");
             check.IsChecked = false;
-            Require(!fixture.Settings.TaskbarFollowIcons && row.IsEnabled && fixture.Settings.TaskbarOffset == 17,
+            Require(!fixture.Settings.TaskbarFollowIcons && row.Visibility == Visibility.Visible &&
+                offsetRow.Visibility == Visibility.Collapsed && fixture.Settings.TaskbarOffset == 17,
                 "Turning off automatic placement must restore the saved manual offset.");
             check.IsChecked = true;
-            Require(fixture.Settings.TaskbarFollowIcons && !row.IsEnabled,
-                "Automatic following cannot be re-enabled.");
+            Require(fixture.Settings.TaskbarFollowIcons && offsetRow.Visibility == Visibility.Visible &&
+                row.Visibility == Visibility.Collapsed && slider.Value == -300,
+                "Re-enabling following must preserve the independent signed gap.");
+            slider.Value = 0;
+            window.ShowActivated = false;
+            window.ShowInTaskbar = false;
+            window.Left = -20000;
+            window.Show();
+            foreach (var theme in ThemePreset.Presets.Take(2))
+            {
+                window.ApplyTheme(theme, false);
+                offsetRow.BringIntoView();
+                window.UpdateLayout();
+                foreach (var control in new FrameworkElement[] { slider, input })
+                    Require(new Rect(offsetRow.RenderSize).Contains(
+                        control.TransformToAncestor(offsetRow).TransformBounds(new Rect(control.RenderSize))),
+                        "Signed offset controls extend outside the settings row.");
+                foreach (double dpi in new[] { 1d, 1.5, 2 })
+                {
+                    var visual = new DrawingVisual();
+                    using (var draw = visual.RenderOpen())
+                    {
+                        draw.DrawRectangle(new SolidColorBrush(theme.BgTop), null, new Rect(offsetRow.RenderSize));
+                        draw.DrawRectangle(new VisualBrush(offsetRow), null, new Rect(offsetRow.RenderSize));
+                    }
+                    var image = new RenderTargetBitmap((int)Math.Ceiling(offsetRow.ActualWidth * dpi),
+                        (int)Math.Ceiling(offsetRow.ActualHeight * dpi), 96 * dpi, 96 * dpi, PixelFormats.Pbgra32);
+                    image.Render(visual);
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(image));
+                    Directory.CreateDirectory("artifacts/taskbar-offset");
+                    using var file = File.Create($"artifacts/taskbar-offset/offset-{theme.Id}-{dpi}.png");
+                    encoder.Save(file);
+                }
+            }
         }
         finally { window.Hide(); }
     }
@@ -267,7 +355,8 @@ internal static class TaskbarFollowChecks
         var occupied = (Rect[])layoutType.GetProperty("Occupied")!.GetValue(snapshot)!;
         var edge = (uint)layoutType.GetProperty("Edge")!.GetValue(snapshot)!;
         var placed = Follow(bar, edge, new Size(80, 40), 1, icons, occupied);
-        Require(placed.IsEmpty || occupied.All(rect => !rect.IntersectsWith(placed)),
+        Require(placed.IsEmpty || occupied.All(rect =>
+            !rect.IntersectsWith(placed) || Rect.Intersect(rect, placed).Width == 0 || Rect.Intersect(rect, placed).Height == 0),
             "The real Explorer layout selected a position over an existing button.");
         Directory.CreateDirectory("artifacts/taskbar-follow");
         File.WriteAllText("artifacts/taskbar-follow/live-layout.json",

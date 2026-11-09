@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -111,7 +112,8 @@ namespace MouseDock.Views
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
                 TaskbarFollowIconsBox.IsChecked = s.TaskbarFollowIcons;
-                TaskbarPositionRow.IsEnabled = !s.TaskbarFollowIcons;
+                TaskbarIconOffsetSlider.Value = TaskbarPlacement.NormalizeIconOffset(s.TaskbarIconOffset);
+                TaskbarIconOffsetInput.Text = TaskbarIconOffsetSlider.Value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
                 RebuildTaskbarStyles();
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
                 RebuildEdgeStyles();
@@ -563,9 +565,43 @@ namespace MouseDock.Views
         {
             if (_loading) return;
             App.Settings.TaskbarFollowIcons = TaskbarFollowIconsBox.IsChecked == true;
-            TaskbarPositionRow.IsEnabled = !App.Settings.TaskbarFollowIcons;
+            ApplyTaskbarPositionControls(App.Settings.SurfaceMode);
             App.Taskbar?.UpdateAnchor();
             App.SaveSettings();
+        }
+
+        private void OnTaskbarIconOffsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loading || TaskbarIconOffsetInput == null) return;
+            App.Settings.TaskbarIconOffset = TaskbarPlacement.NormalizeIconOffset(e.NewValue);
+            TaskbarIconOffsetInput.Text = App.Settings.TaskbarIconOffset.ToString("+0;-0;0", CultureInfo.InvariantCulture);
+            App.Taskbar?.UpdateAnchor();
+            App.SaveSettings();
+        }
+
+        private void ApplyTaskbarIconOffsetInput()
+        {
+            if (_loading) return;
+            if (int.TryParse(TaskbarIconOffsetInput.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                TaskbarIconOffsetSlider.Value = TaskbarPlacement.NormalizeIconOffset(value);
+            TaskbarIconOffsetInput.Text = TaskbarIconOffsetSlider.Value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
+        }
+
+        private void OnTaskbarIconOffsetInputLostFocus(object sender, RoutedEventArgs e) => ApplyTaskbarIconOffsetInput();
+
+        private void OnTaskbarIconOffsetInputKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            ApplyTaskbarIconOffsetInput();
+            e.Handled = true;
+        }
+
+        private void ApplyTaskbarPositionControls(string mode)
+        {
+            bool taskbar = mode == "taskbar";
+            TaskbarFollowIconsBox.Visibility = taskbar ? Visibility.Visible : Visibility.Collapsed;
+            TaskbarIconOffsetRow.Visibility = taskbar && App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
+            TaskbarPositionRow.Visibility = taskbar && !App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void OnBatteryNumberChanged(object sender, RoutedEventArgs e)
@@ -749,8 +785,7 @@ namespace MouseDock.Views
         private void ApplySurfaceButtons(string mode)
         {
             if (string.IsNullOrEmpty(mode)) mode = "dock";
-            TaskbarPositionRow.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
-            TaskbarFollowIconsBox.Visibility = TaskbarPositionRow.Visibility;
+            ApplyTaskbarPositionControls(mode);
             IconOptionsPanel.Visibility = mode == "icon" ? Visibility.Visible : Visibility.Collapsed;
             TaskbarStylePanel.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             EdgeOptionsPanel.Visibility = mode == "edge" ? Visibility.Visible : Visibility.Collapsed;
