@@ -70,7 +70,10 @@ internal static class StartupChecks
             poll.GetAwaiter().GetResult();
             if (!surfaces[mode].IsVisible || battery.VisibleDevices.Count != 1)
                 throw new InvalidOperationException($"Late discovery: visible={surfaces[mode].IsVisible}, devices={battery.Devices.Count}, displayed={battery.VisibleDevices.Count}.");
-            if (mode is "taskbar" or "edge" && surfaces[mode].Opacity <= 0)
+            var pinnedSurface = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? App.Edge : surfaces[mode];
+            if (mode == "taskbar" && App.Taskbar.UsesScreenEdge && !App.Edge.IsVisible)
+                throw new InvalidOperationException("Automatic taskbar overflow did not show the right-edge surface.");
+            if (mode is "taskbar" or "edge" && pinnedSurface.Opacity <= 0)
             {
                 object[] anchorArgs = { Rect.Empty, (uint)0, 0.0 };
                 var anchor = typeof(App).Assembly.GetType("MouseDock.Services.TaskbarAnchor")!

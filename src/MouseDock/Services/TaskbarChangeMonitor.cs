@@ -16,6 +16,8 @@ internal sealed class TaskbarChangeMonitor : IDisposable
     [DllImport("user32.dll")] private static extern IntPtr GetDesktopWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr FindWindow(string className, string title);
+    [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent, IntPtr window);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 
     private readonly Dispatcher _dispatcher;
     private readonly Action _update;
@@ -29,7 +31,7 @@ internal sealed class TaskbarChangeMonitor : IDisposable
         _update = update;
         _callback = OnEvent;
         _foregroundHook = SetWinEventHook(3, 3, IntPtr.Zero, _callback, 0, 0, 0);
-        _windowHook = SetWinEventHook(0x8002, 0x800B, IntPtr.Zero, _callback, 0, 0, 0);
+        _windowHook = SetWinEventHook(0x8000, 0x800B, IntPtr.Zero, _callback, 0, 0, 0);
     }
 
     private void OnEvent(IntPtr hook, uint type, IntPtr window, int objectId,
@@ -38,8 +40,11 @@ internal sealed class TaskbarChangeMonitor : IDisposable
         if (_disposed || _queued || _dispatcher.HasShutdownStarted) return;
         bool order = type == 0x8004 &&
             (objectId == 0 || (objectId == -4 && window == GetDesktopWindow()));
-        bool taskbar = (type == 0x8002 || type == 0x8003 || type == 0x800B) &&
-            objectId == 0 && window != IntPtr.Zero && window == FindWindow("Shell_TrayWnd", null);
+        var bar = FindWindow("Shell_TrayWnd", null);
+        GetWindowThreadProcessId(window, out uint processId);
+        bool taskbar = (type is 0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x800B) &&
+            window != IntPtr.Zero && processId != Environment.ProcessId &&
+            (window == bar || IsChild(bar, window));
         if (type != 3 && !order && !taskbar) return;
         _queued = true;
         _dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
