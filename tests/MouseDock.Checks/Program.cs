@@ -18,8 +18,6 @@ internal static class Program
     {
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
-        if (args.Contains("--r98-live"))
-            return R98KeyboardChecks.RunLive();
         if (args.Contains("--taskbar-host-fixture"))
             return TaskbarEmbeddingChecks.RunHostFixture();
         if (args.Contains("--audit"))
@@ -27,6 +25,8 @@ internal static class Program
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             return AuditChecks.Run();
         }
+        if (args.Contains("--r98-live"))
+            return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
             ("Shared display styles preserve independent preferences", SharedDisplayStyleChecks.Preferences),
