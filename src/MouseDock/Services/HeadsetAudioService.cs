@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using NAudio.CoreAudioApi;
@@ -6,14 +6,10 @@ using NAudio.CoreAudioApi;
 namespace MouseDock.Services;
 
 internal sealed record AudioEndpointInfo(string Id, string Name, bool Capture, Guid Container,
-    int FormFactor, int? Volume, bool? Muted, string Error = "", bool Usb = false)
+    int FormFactor, int? Volume, bool? Muted, string Error = "")
 {
-    // Windows ENDPOINT_FORM_FACTOR: Headphones=3, Headset=5, Digital(HDMI/SPDIF)=9.
-    //
-    // USB 音频设备单独放行：2.4G 耳机接收器走 UAC（wdma_usb.inf），Windows 给它报的
-    // FormFactor 经常是 1（Other），名字也只有型号（K01S 这种），三条文字条件全不满足。
-    // 主板的 Realtek、显卡的 NVIDIA 是 HDAUDIO，不会被这条带进来。
-    internal bool IsHeadset => !Capture && (FormFactor is 3 or 5 || Usb ||
+    // Windows ENDPOINT_FORM_FACTOR: Headphones=3, Headset=5.
+    internal bool IsHeadset => !Capture && (FormFactor is 3 or 5 ||
         System.Text.RegularExpressions.Regex.IsMatch(Name ?? "", @"(?:^|\()(?:\d+-\s*)?HyperX\s+Cloud\s+III(?:\s+S)?(?:\s+Wireless)?(?:\)|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
         System.Text.RegularExpressions.Regex.IsMatch(Name ?? "", @"(?:^|\()MCHOSE\s+V9\s*PRO(?:\)|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
         new[] { "耳机", "headphone", "headset", "earphone", "earbud" }
@@ -52,8 +48,6 @@ internal static class HeadsetAudioPolicy
 internal sealed class WindowsHeadsetAudioBackend : IHeadsetAudioBackend
 {
     private static readonly PropertyKey ContainerKey = new(new Guid("8C7ED206-3F8A-4827-B3AB-AE9E1FAEFC6C"), 2);
-    // DEVPKEY_Device_EnumeratorName：设备挂在哪个总线上，USB 音频设备这里就是 "USB"。
-    private static readonly PropertyKey EnumeratorKey = new(new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"), 24);
 
     public IReadOnlyList<AudioEndpointInfo> Enumerate()
     {
@@ -79,13 +73,6 @@ internal sealed class WindowsHeadsetAudioBackend : IHeadsetAudioBackend
                 catch { }
                 try { form = Convert.ToInt32(device.Properties[PropertyKeys.PKEY_AudioEndpoint_FormFactor]?.Value ?? -1); }
                 catch { }
-                bool usb = false;
-                try
-                {
-                    object bus = device.Properties[EnumeratorKey]?.Value;
-                    usb = bus != null && string.Equals(bus.ToString(), "USB", StringComparison.OrdinalIgnoreCase);
-                }
-                catch { }
                 int? volume = null;
                 bool? muted = null;
                 string error = "";
@@ -98,7 +85,7 @@ internal sealed class WindowsHeadsetAudioBackend : IHeadsetAudioBackend
                 catch { error = "Windows 暂未提供此设备的音量状态"; }
                 try { muted=device.AudioEndpointVolume.Mute; }
                 catch { error = "Windows 暂未提供此设备的静音状态"; }
-                result.Add(new(id, name, flow == DataFlow.Capture, container, form, volume, muted, error, usb));
+                result.Add(new(id, name, flow == DataFlow.Capture, container, form, volume, muted, error));
                 }
                 catch { /* An endpoint may disappear while enumerating; keep other devices available. */ }
             }
