@@ -37,9 +37,25 @@ namespace MouseDock.Views
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             _preview = new Border
             {
-                Width = 320, Height = 240, CornerRadius = new CornerRadius(8),
+                Name = "BackgroundPreview", Width = 320, Height = 240, CornerRadius = new CornerRadius(8),
                 ClipToBounds = true, Cursor = Cursors.SizeAll
             };
+            var main = App.Dock?.Content as FrameworkElement;
+            if (main != null)
+            {
+                if (main.ActualWidth <= 1 || main.ActualHeight <= 1)
+                    main.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                double width = main.ActualWidth > 1 ? main.ActualWidth : main.DesiredSize.Width;
+                double height = main.ActualHeight > 1 ? main.ActualHeight : main.DesiredSize.Height;
+                if (width > 0 && height > 0)
+                {
+                    double scale = Math.Min(320 / width, 300 / height);
+                    _preview.Width = width * scale;
+                    _preview.Height = height * scale;
+                }
+            }
+            NameScope.SetNameScope(this, new NameScope());
+            RegisterName(_preview.Name, _preview);
             _preview.SizeChanged += (_, __) =>
                 _preview.Clip = new RectangleGeometry(new Rect(_preview.RenderSize), 8, 8);
             panel.Children.Add(_preview);
@@ -76,12 +92,25 @@ namespace MouseDock.Views
             var choose = new Button { Content = "选择图片", Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 0, 8, 0) };
             choose.Click += (_, __) => ChooseImage();
             actions.Children.Add(choose);
+            var reset = new Button { Content = "复位", Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 0, 8, 0) };
+            reset.Click += (_, __) => ResetComposition();
+            actions.Children.Add(reset);
             var cancel = new Button { Content = "取消", IsCancel = true, Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 0, 8, 0) };
             actions.Children.Add(cancel);
             var done = new Button { Content = "完成", IsDefault = true, Padding = new Thickness(10, 5, 10, 5) };
             done.Click += (_, __) => { if (_image != null) DialogResult = true; };
             actions.Children.Add(done);
             Loaded += (_, __) => RefreshPreview();
+            RefreshPreview();
+        }
+
+        public void ResetComposition()
+        {
+            Draft.BackgroundPositionX = Draft.BackgroundPositionY = .5;
+            Draft.BackgroundZoom = 1;
+            Draft.BackgroundDepth = .35;
+            _zoom.Value = 1;
+            _depth.Value = 35;
             RefreshPreview();
         }
 

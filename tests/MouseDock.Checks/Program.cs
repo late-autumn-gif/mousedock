@@ -31,6 +31,8 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
+            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Multi-device icons remain square and preserve identity colors", IconCompositionChecks.Layout),
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
