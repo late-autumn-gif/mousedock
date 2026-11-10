@@ -13,6 +13,8 @@ namespace MouseDock.Controls;
 
 public sealed class CharacterBatteryIcon : FrameworkElement
 {
+    public const int MaximumPhotoDevices = 6;
+    public static Size PhotoSize(int count) => new(160, Math.Max(208, 72 + Math.Clamp(count, 0, MaximumPhotoDevices) * 58));
     private static readonly Dictionary<string, BitmapSource> Artwork = new();
     private static readonly Dictionary<string, Rect> VisibleArtwork = new();
     public static readonly DependencyProperty LevelProperty = DependencyProperty.Register(nameof(Level), typeof(int),
@@ -34,6 +36,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
     public double PhotoOffsetY { get; set; }
     public bool ShowNumber { get; set; } = true;
     public bool ShowGlyph { get; set; } = true;
+    public bool TransparentBackground { get; set; } = true;
     public Brush Accent { get; set; } = new SolidColorBrush(ThemePreset.C("#A6F5BF"));
     public Brush Ink { get; set; } = Brushes.WhiteSmoke;
     public Brush Surface { get; set; } = new SolidColorBrush(ThemePreset.C("#273348"));
@@ -58,6 +61,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
     {
         get
         {
+            if (Character == "photo" || !TransparentBackground) return new Rect(0, 0, ActualWidth, ActualHeight);
             if (Character == "photo") return new Rect(0, 0, ActualWidth, ActualHeight);
             var image = LoadArtwork(Character);
             if (!VisibleArtwork.TryGetValue(Character, out var pixels))
@@ -106,6 +110,8 @@ public sealed class CharacterBatteryIcon : FrameworkElement
 
     private void DrawCharacter(DrawingContext dc)
     {
+        if (!TransparentBackground)
+            dc.DrawRoundedRectangle(Surface, null, new Rect(0, 0, ActualWidth, ActualHeight), 8, 8);
         var image = LoadArtwork(Character);
         double scale = Math.Min(ActualWidth / image.PixelWidth, ActualHeight / image.PixelHeight);
         var bounds = new Rect((ActualWidth - image.PixelWidth * scale) / 2,
@@ -152,7 +158,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         }
         var bounds = new Rect(3, 2, Math.Max(1, ActualWidth - 6), Math.Max(1, ActualHeight - 4));
         dc.PushClip(new RectangleGeometry(bounds, 8, 8));
-        dc.DrawRectangle(Surface, null, bounds);
+        if (!TransparentBackground) dc.DrawRectangle(Surface, null, bounds);
         var image = _photo ?? LoadArtwork("rei");
         double zoom = double.IsFinite(PhotoZoom) ? Math.Clamp(PhotoZoom, 1, 4) : 1;
         double scale = Math.Max(bounds.Width / image.PixelWidth, bounds.Height / image.PixelHeight) * zoom;
@@ -167,11 +173,20 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         if (ShowNumber)
         {
             int count = Math.Max(1, Devices?.Count ?? 1);
-            double rowHeight = Math.Min(29, bounds.Height / (count + 1));
+            double rowHeight = Math.Min(54, (bounds.Height - 12) / count);
             double top = bounds.Bottom - count * rowHeight - 6;
+            Brush PhotoInk(Brush brush, double minimum = 4.5) => new SolidColorBrush(ColorContrast.Legible(
+                (brush as SolidColorBrush)?.Color ?? Colors.White, new[] { Color.FromRgb(23, 23, 23) }, minimum));
+            var ink = PhotoInk(Ink);
+            var low = PhotoInk(Low);
+            var muted = PhotoInk(Muted);
+            var accent = PhotoInk(Accent, 3);
+            Brush Status(int level, bool text = false) => AppearanceColors.Battery(level, text ? ink : accent, low, muted);
             dc.DrawRectangle(new LinearGradientBrush(Colors.Transparent, Color.FromArgb(220, 0, 0, 0),
                 new Point(0, 0), new Point(0, 1)), null,
                 new Rect(bounds.X, Math.Max(bounds.Y, top - rowHeight), bounds.Width, bounds.Bottom - Math.Max(bounds.Y, top - rowHeight)));
+            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(232, 0, 0, 0)), null,
+                new Rect(bounds.X, top, bounds.Width, bounds.Bottom - top));
             for (int i = 0; i < count; i++)
             {
                 var device = Devices != null && i < Devices.Count ? Devices[i] : null;
@@ -179,18 +194,26 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                 bool stale = device?.IsStale ?? Stale;
                 var row = new Rect(bounds.X + 7, top + i * rowHeight, bounds.Width - 14, rowHeight - 3);
                 dc.PushOpacity(stale ? .45 : 1);
+                double lineHeight = row.Height * .46;
                 DeviceGlyph.Draw(dc, device?.Kind ?? Kind,
-                    new Rect(row.X, row.Y, row.Height * .65, row.Height * .65), StatusBrush(level, true), 1.6);
-                var number = new Rect(row.X + row.Height, row.Y - 2, row.Width - row.Height, row.Height - 2);
+                    new Rect(row.X, row.Y + 3, 14, 14), Status(level, true), 1.6);
+                var number = new Rect(row.Right - 69, row.Y - 1, 69, lineHeight);
                 string value = level < 0 ? "\u2014" : level + "%";
                 if ((device?.IsChargingActive ?? Charging) && !stale) value += " \u26A1";
-                Text(dc, value, number, row.Height * .7, StatusBrush(level, true), true);
+                Text(dc, value, number, Math.Min(20, row.Height * .45), Status(level, true), true);
+                Label(dc, device?.Name ?? "", new Rect(row.X + 20, row.Y + 1, Math.Max(1, row.Width - 91), lineHeight),
+                    Math.Min(12, row.Height * .24), ink);
+                string status = device == null ? (level < 0 ? "电量未知" : "已连接") :
+                    stale ? $"上次读数 {device.LevelText} · 状态待刷新" :
+                    level < 0 ? device.IsChargingActive ? "充电中 · 电量未知" : "电量未知" : device.StatusText;
+                Label(dc, status, new Rect(row.X, row.Y + lineHeight, row.Width, lineHeight),
+                    Math.Min(11, row.Height * .23), level < 0 ? muted : ink);
                 var bar = new Rect(row.X, row.Bottom - 2, row.Width, 1.6);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar);
                 if (level > 0)
                 {
                     bar.Width *= Math.Clamp(level, 0, 100) / 100d;
-                    dc.DrawRectangle(StatusBrush(level), null, bar);
+                    dc.DrawRectangle(Status(level), null, bar);
                 }
                 dc.Pop();
             }
@@ -199,6 +222,14 @@ public sealed class CharacterBatteryIcon : FrameworkElement
     }
 
     private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
+
+    private void Label(DrawingContext dc, string text, Rect bounds, double size, Brush ink)
+    {
+        var value = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface("Segoe UI, Microsoft YaHei UI"), Math.Max(1, size), ink, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+        { MaxTextWidth = Math.Max(1, bounds.Width), MaxTextHeight = Math.Max(1, bounds.Height), Trimming = TextTrimming.CharacterEllipsis };
+        dc.DrawText(value, bounds.TopLeft);
+    }
 
     private void Text(DrawingContext dc, string text, Rect bounds, double size, Brush ink, bool shadow = false)
     {

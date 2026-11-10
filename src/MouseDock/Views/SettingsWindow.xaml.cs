@@ -618,16 +618,28 @@ namespace MouseDock.Views
 
         private void OnPickReferencePhoto(object sender, RoutedEventArgs e)
         {
-            var editor = new PortraitEditorWindow(App.Settings) { Owner = this };
+            EditCharacter("portrait");
+        }
+
+        private void OnEditCharacter(object sender, RoutedEventArgs e) => EditCharacter(null);
+
+        private void EditCharacter(string mode)
+        {
+            var editor = new CharacterEditorWindow(App.Settings, mode) { Owner = this };
             if (editor.ShowDialog() != true) return;
-            App.Settings.PhotoAsset = editor.Draft.PhotoAsset;
-            App.Settings.IconBackground = editor.Draft.IconBackground;
-            App.Settings.PhotoZoom = editor.Draft.PhotoZoom;
-            App.Settings.PhotoOffsetX = editor.Draft.PhotoOffsetX;
-            App.Settings.PhotoOffsetY = editor.Draft.PhotoOffsetY;
+            ApplyCharacterEdit(editor);
+        }
+
+        private void ApplyCharacterEdit(CharacterEditorWindow editor)
+        {
+            editor.ApplyTo(App.Settings);
+            App.Icon?.ApplyStyle(App.Settings.IconStyle, false);
+            if (editor.ShowAfterApply) App.SetSurface("icon");
+            else if (App.Settings.SurfaceMode == "taskbar") App.Settings.TaskbarStyle = editor.Draft.IconStyle;
+            else if (App.Settings.SurfaceMode == "edge") App.Settings.EdgeStyle = editor.Draft.IconStyle;
             App.RefreshDeviceViews();
             App.SaveSettings();
-            RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();
+            Reload();
         }
 
         private void OnClearReferencePhoto(object sender, RoutedEventArgs e)

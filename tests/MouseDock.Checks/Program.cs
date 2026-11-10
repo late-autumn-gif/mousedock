@@ -31,6 +31,11 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
+            ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
+            ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
+            ("Character editor preview matches photo layout and opaque bounds", CharacterEditorChecks.PreviewAndBounds),
+            ("Photo overlays correct dark text against the photo backing", CharacterEditorChecks.PhotoContrast),
             ("Floating and mini surfaces expand exclusively into the full panel", FloatingExpansionChecks.Expansion),
             ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
             ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
@@ -39,11 +44,15 @@ internal static class Program
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
             ("Battery state colors update ordinary icons and character plates", BatteryColorChecks.LiveStatus),
             ("Custom palettes correct contrast while retaining raw colors", AppearanceColorChecks.Contrast),
+            ("Battery state colors update ordinary icons and character plates", BatteryColorChecks.LiveStatus),
             ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
             ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
             ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
             ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
             ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
+            ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
+            ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
+            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),

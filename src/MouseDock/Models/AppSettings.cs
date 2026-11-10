@@ -36,6 +36,8 @@ namespace MouseDock.Models
         public string CharacterAsset { get; set; } = "";
         public string AnimatedCharacter { get; set; } = "otter";
         public string ReferenceCharacter { get; set; } = "rei";
+        public bool CharacterTransparentBackground { get; set; } = true;
+        public string CharacterBackgroundColor { get; set; } = "";
         public bool AnimatedPhotoBackground { get; set; }
         public string PhotoAsset { get; set; } = "";
         public double PhotoZoom { get; set; } = 1.0;
@@ -153,6 +155,8 @@ namespace MouseDock.Models
                 PhotoAsset = PhotoAsset,
                 AnimatedCharacter = AnimatedCharacter,
                 ReferenceCharacter = ReferenceCharacter,
+                CharacterTransparentBackground = CharacterTransparentBackground,
+                CharacterBackgroundColor = CharacterBackgroundColor,
                 AnimatedPhotoBackground = AnimatedPhotoBackground,
                 PhotoZoom = PhotoZoom,
                 PhotoOffsetX = PhotoOffsetX,
