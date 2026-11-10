@@ -39,6 +39,7 @@ internal static class Program
             ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
             ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
             ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
+            ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),

@@ -45,6 +45,7 @@ namespace MouseDock.Models
         public double Opacity { get; set; } = 0.96;
         public double Scale { get; set; } = 1.0;
         public double IconScale { get; set; } = 1.0;
+        public double? CharacterIconScale { get; set; }
 
         public bool ShowDock { get; set; } = true;
         public bool ShowMini { get; set; } = true;
@@ -159,6 +160,7 @@ namespace MouseDock.Models
                 Opacity = Opacity,
                 Scale = Scale,
                 IconScale = IconScale,
+                CharacterIconScale = CharacterIconScale,
                 ShowDock = ShowDock,
                 ShowMini = ShowMini,
                 ShowIcon = ShowIcon,

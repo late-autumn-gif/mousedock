@@ -538,14 +538,14 @@ namespace MouseDock.Views
         public void SyncIconScale()
         {
             bool prior=_loading;_loading=true;
-            try{double value=double.IsFinite(App.Settings.IconScale)?Math.Clamp(App.Settings.IconScale,.5,3):1;
+            try{double value=FloatingIconGeometry.Scale(App.Settings,App.Settings.IconStyle);
                 IconScaleSlider.Value=value;IconScaleValue.Text=$"{value*100:0}%";}
             finally{_loading=prior;}
         }
         private void OnIconScaleChanged(object sender,RoutedPropertyChangedEventArgs<double> e)
         {
             if(_loading||IconScaleValue==null)return;
-            App.Settings.IconScale=e.NewValue;IconScaleValue.Text=$"{e.NewValue*100:0}%";
+            FloatingIconGeometry.StoreScale(App.Settings,App.Settings.IconStyle,e.NewValue);IconScaleValue.Text=$"{e.NewValue*100:0}%";
             App.Icon?.SetSize(e.NewValue,false);App.SaveSettings();
         }
         private void OnResetIconScale(object sender,RoutedEventArgs e)=>IconScaleSlider.Value=1;
@@ -594,6 +594,7 @@ namespace MouseDock.Views
             App.SetSurface("icon");
             ApplySurfaceButtons("icon");
             RebuildIconStyles();
+            SyncIconScale();
         }
 
         private void OnIconOptionsChanged(object sender,RoutedEventArgs e)

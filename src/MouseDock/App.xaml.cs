@@ -883,7 +883,7 @@ namespace MouseDock
             double s = Math.Clamp(Settings.Scale, 0.7, 1.6);
             if (Dock?.Content is FrameworkElement dockRoot) dockRoot.LayoutTransform = new ScaleTransform(s, s);
             if (Mini?.Content is FrameworkElement miniRoot) miniRoot.LayoutTransform = new ScaleTransform(s, s);
-            Icon?.SetSize(Settings.IconScale,false);
+            Icon?.SetSize(Icon.CurrentScale,false);
             Edge?.UpdateAnchor();
             // 设置窗口不跟面板缩放：它是固定尺寸的配置面板，放大缩小只会让控件挤成一团。
         }
