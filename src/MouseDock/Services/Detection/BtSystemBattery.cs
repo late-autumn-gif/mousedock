@@ -24,9 +24,12 @@ namespace MouseDock.Services.Detection
             public List<string> Extra = new();
         }
 
+        internal const string BluetoothBatteryKey = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2";
+
         private static readonly string[] BatteryKeys =
         {
             "System.Devices.BatteryLife",
+            BluetoothBatteryKey,
             "System.Devices.ChargingState",
             "System.Devices.BatteryPlusCharging",
             "System.Devices.BatteryPlusChargingText"
@@ -148,6 +151,9 @@ namespace MouseDock.Services.Detection
             if (entry.Level < 0 && properties.TryGetValue("System.Devices.BatteryLife", out var battery)
                 && TryGetInteger(battery, out int level) && level >= 0 && level <= 100)
                 entry.Level = level;
+            if (entry.Level < 0 && properties.TryGetValue(BluetoothBatteryKey, out var bluetoothBattery)
+                && TryGetInteger(bluetoothBattery, out int bluetoothLevel) && bluetoothLevel >= 0 && bluetoothLevel <= 100)
+                entry.Level = bluetoothLevel;
 
             // ChargingState: 0=未充电，1=充电，2=未知。合并值和文本只保留原值，
             // BatteryPlusCharging 并非 bit7 标志，不能用 &0x7F / &0x80 解析。

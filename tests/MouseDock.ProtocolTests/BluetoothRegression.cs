@@ -52,6 +52,15 @@ internal static class BluetoothRegression
         Check(fallback is { Level: 63, Charging: true, ChargingKnown: true }, "container fills missing endpoint properties");
         BtSystemBattery.ApplyProperties(fallback, new Dictionary<string, object> { ["System.Devices.BatteryLife"] = (byte)80 }, "other");
         Check(fallback.Level == 63, "valid endpoint value is not replaced");
+        foreach (byte value in new byte[] { 0, 67, 100, 101, 255 })
+        {
+            var node = Apply((byte)101);
+            BtSystemBattery.ApplyProperties(node, new Dictionary<string, object>
+            {
+                [BtSystemBattery.BluetoothBatteryKey] = value
+            }, "Bluetooth node");
+            Check(node.Level == (value <= 100 ? value : -1) && !node.ChargingKnown, "Bluetooth node battery " + value);
+        }
         return checks;
     }
 }

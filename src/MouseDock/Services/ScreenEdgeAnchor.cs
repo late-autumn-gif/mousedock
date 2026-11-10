@@ -22,6 +22,21 @@ namespace MouseDock.Services
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after,
             int x, int y, int width, int height, uint flags);
 
+        internal static bool IsForegroundFullscreen(System.Drawing.Rectangle bounds)
+        {
+            bool suppressed = false;
+            var foreground = GetForegroundWindow();
+            if (foreground != IntPtr.Zero && GetWindowRect(foreground, out var rect))
+            {
+                var name = new StringBuilder(128);
+                GetClassName(foreground, name, name.Capacity);
+                suppressed = TaskbarPlacement.IsFullscreen(
+                    new Rect(rect.Left, rect.Top, Math.Max(0, rect.Right - rect.Left), Math.Max(0, rect.Bottom - rect.Top)),
+                    new Rect(bounds.Left, bounds.Top, bounds.Width, bounds.Height), IsZoomed(foreground), name.ToString());
+            }
+            return suppressed;
+        }
+
         public static void Update(Window window, Size content)
         {
             var screen = Screen.PrimaryScreen;
@@ -33,16 +48,7 @@ namespace MouseDock.Services
             var monitor = MonitorFromPoint(new NativePoint { X = bounds.Left + bounds.Width / 2,
                 Y = bounds.Top + bounds.Height / 2 }, 1);
             if (GetDpiForMonitor(monitor, 0, out uint dx, out _) == 0) dpi = Math.Max(96, dx) / 96d;
-            bool suppressed = false;
-            var foreground = GetForegroundWindow();
-            if (foreground != IntPtr.Zero && GetWindowRect(foreground, out var rect))
-            {
-                var name = new StringBuilder(128);
-                GetClassName(foreground, name, name.Capacity);
-                suppressed = TaskbarPlacement.IsFullscreen(
-                    new Rect(rect.Left, rect.Top, Math.Max(0, rect.Right - rect.Left), Math.Max(0, rect.Bottom - rect.Top)),
-                    new Rect(bounds.Left, bounds.Top, bounds.Width, bounds.Height), IsZoomed(foreground), name.ToString());
-            }
+            bool suppressed = IsForegroundFullscreen(bounds);
             double scale = double.IsFinite(App.Settings.Scale) ? Math.Clamp(App.Settings.Scale, 0.7, 1.6) : 1;
             var placement = ScreenEdgePlacement.Calculate(work, new Size(content.Width * scale, content.Height * scale),
                 App.Settings.EdgeVerticalPosition, App.Settings.EdgeInset, dpi);

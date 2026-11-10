@@ -166,7 +166,7 @@ namespace MouseDock.Services.Detection
 
                     // Appearance 常常是 0x0000（国产外设基本不填），不能因此直接丢掉：
                     // 先试读一次 GATT 电量，能读到就按名字推类型照样显示
-                    var systemReading = systemBattery.FirstOrDefault(e => e.Address == device.BluetoothAddress && e.Level >= 0 && e.Level <= 100);
+                    var systemReading = systemBattery.FirstOrDefault(e => e.Connected && e.Address == device.BluetoothAddress && e.Level >= 0 && e.Level <= 100);
                     int earlyLevel = recognitionEnabled ? systemReading?.Level ?? -1 : -1;
                     if (kind == null && earlyLevel >= 0) kind = VendorMap.KindFromName(info.Name);
                     if (recognitionEnabled && kind == null && earlyLevel < 0 && device.ConnectionStatus == BluetoothConnectionStatus.Connected)
@@ -248,7 +248,8 @@ namespace MouseDock.Services.Detection
 
                 try
                 {
-                    var kind = UsageMap.FromClassOfDevice(device.ClassOfDevice.RawValue);
+                    var kind = VendorMap.IsZhuAudioZg4(info.Name) ? DeviceKind.Headset
+                        : UsageMap.FromClassOfDevice(device.ClassOfDevice.RawValue);
                     if (!includeHeadsets && kind == DeviceKind.Headset) continue;
                     if (device.ConnectionStatus != BluetoothConnectionStatus.Connected)
                     {
@@ -269,47 +270,10 @@ namespace MouseDock.Services.Detection
                         continue;
                     }
 
-                    // 已经在 BLE 里出现过的同名设备不重复列
-                    if (sink.Any(d => d.Connected && string.Equals(d.Name, info.Name, StringComparison.OrdinalIgnoreCase)))
-                        continue;
-
-                    // 耳机：走 HFP 的 Apple 扩展（AT+IPHONEACCEV）读电量。
-                    // HFP 通道被 Windows 占用时连不上，直接返回 -1，不影响其它设备。
-                    var systemReading = systemBattery.FirstOrDefault(e => e.Address == device.BluetoothAddress && e.Level >= 0 && e.Level <= 100);
+                    var systemReading = systemBattery.FirstOrDefault(e => e.Connected && e.Address == device.BluetoothAddress && e.Level >= 0 && e.Level <= 100);
                     bool recognitionEnabled = preferences?.CanRead("bt-" + device.BluetoothAddress.ToString("X"),
                         VendorMap.PhysicalKeyFromName(info.Name)) ?? true;
-                    int hfpLevel = recognitionEnabled ? systemReading?.Level ?? -1 : -1;
-                    string batterySource = hfpLevel >= 0 ? "Windows 系统电量" : "";
-                    bool safeMode = App.Settings?.SafeMode ?? false;
-                    if (recognitionEnabled && hfpLevel < 0 && !safeMode && kind == Models.DeviceKind.Headset && !string.IsNullOrWhiteSpace(info.Name))
-                    {
-                        try { hfpLevel = HfpBattery.TryRead(device.BluetoothAddress, 5200, Trace); } catch { }
-                        if (hfpLevel >= 0) batterySource = "HFP 扩展上报";
-
-                        // 第二选择：厂商私有 RFCOMM 服务（配置过协议就直接读）
-                        if (hfpLevel < 0)
-                        {
-                            try { hfpLevel = VendorBt.TryRead(info.Name); } catch { }
-                            if (hfpLevel >= 0) batterySource = "已配置的蓝牙厂商协议";
-                        }
-
-                        // 都没有 → 这台设备第一次出现时，后台自动跑一次协议探测并记住结果
-                        if (hfpLevel < 0 && !VendorBt.AlreadyProbed(info.Name))
-                        {
-                            string devName = info.Name;
-                            string devKey = "bt-" + device.BluetoothAddress.ToString("X");
-                            _ = Task.Run(() =>
-                            {
-                                if (!(preferences?.CanRead(devKey, VendorMap.PhysicalKeyFromName(devName)) ?? true)) return;
-                                try
-                                {
-                                    int v = VendorBt.AutoLearnAsync(devName, Trace).GetAwaiter().GetResult();
-                                    Trace($"[自动识别] {devName} 结果 " + (v >= 0 ? v + "%" : "未知"));
-                                }
-                                catch (Exception ex) { Trace("[自动识别] 异常 " + ex.GetType().Name); }
-                            });
-                        }
-                    }
+                    int level = recognitionEnabled ? systemReading?.Level ?? -1 : -1;
 
                     sink.Add(new DetectedDevice
                     {
@@ -317,15 +281,13 @@ namespace MouseDock.Services.Detection
                         Name = string.IsNullOrWhiteSpace(info.Name) ? "蓝牙设备" : info.Name,
                         Kind = kind,
                         Transport = "蓝牙",
-                        Level = hfpLevel,
+                        Level = level,
                         Charging = recognitionEnabled && (systemReading?.Charging ?? false),
                         Connected = true,
                         Detail = device.BluetoothAddress.ToString("X12"),
                         PhysicalKey = VendorMap.PhysicalKeyFromName(info.Name),
-                        Note = !recognitionEnabled ? "用户已取消识别，未查询电量" : hfpLevel >= 0
-                            ? batterySource
-                            : (safeMode ? "安全模式：系统未提供电量，已跳过蓝牙写命令查询"
-                                : "Windows 未提供有效电量，已尝试的读取通道未返回电量；设备可能不支持或通道暂不可用")
+                        Note = !recognitionEnabled ? "用户已取消识别，未查询电量" : level >= 0
+                            ? "Windows 系统电量" : "已连接，但 Windows 未提供有效电量"
                     });
                 }
                 catch { }
@@ -476,7 +438,7 @@ namespace MouseDock.Services.Detection
             string n = (name ?? "").ToLowerInvariant();
             if (n.Contains("mouse") || n.Contains("鼠标")) return DeviceKind.Mouse;
             if (n.Contains("keyboard") || n.Contains("键盘")) return DeviceKind.Keyboard;
-            if (n.Contains("buds") || n.Contains("headset") || n.Contains("耳机") || n.Contains("airpods") || n.Contains("freebuds"))
+            if (VendorMap.IsZhuAudioZg4(name) || n.Contains("buds") || n.Contains("headset") || n.Contains("耳机") || n.Contains("airpods") || n.Contains("freebuds"))
                 return DeviceKind.Headset;
             return null;
         }

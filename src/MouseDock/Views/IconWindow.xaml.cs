@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -437,11 +437,6 @@ namespace MouseDock.Views
                         TransparentBackground = App.Settings.CharacterTransparentBackground,
                         Low = new SolidColorBrush(palette.Low),
                         Muted = new SolidColorBrush(palette.TextDim),
-                        Accent = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Accent),
-                        Ink = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Text),
-                        Surface = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Surface),
-                        Low = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Low),
-                        Muted = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).TextDim),
                         Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
                     };
                     if (item != null)

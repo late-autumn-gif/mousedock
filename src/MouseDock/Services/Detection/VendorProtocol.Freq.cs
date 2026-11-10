@@ -158,21 +158,35 @@ namespace MouseDock.Services.Detection
         internal static bool TrySingleFreqReportId(byte[] values, int valueCount, byte[] buttons, int buttonCount, out byte reportId)
         {
             reportId = 0;
-            if (valueCount < 0 || buttonCount < 0 || valueCount + buttonCount == 0 ||
-                valueCount > (values?.Length ?? 0) / HidpValueCapsStride ||
-                buttonCount > (buttons?.Length ?? 0) / HidpValueCapsStride) return false;
-            var ids = new HashSet<byte>();
-            for (int i = 0; i < valueCount; i++) ids.Add(values[i * HidpValueCapsStride + HidpValueCapsReportIdOffset]);
-            for (int i = 0; i < buttonCount; i++) ids.Add(buttons[i * HidpValueCapsStride + HidpValueCapsReportIdOffset]);
+            var ids = GetDescriptorReportIds(values, valueCount, buttons, buttonCount);
             if (ids.Count != 1) return false;
             foreach (byte id in ids) reportId = id;
             return true;
         }
 
+        internal static HashSet<byte> GetDescriptorReportIds(byte[] values, int valueCount, byte[] buttons, int buttonCount)
+        {
+            var ids = new HashSet<byte>();
+            if (valueCount < 0 || buttonCount < 0 || valueCount + buttonCount == 0 ||
+                valueCount > (values?.Length ?? 0) / HidpValueCapsStride ||
+                buttonCount > (buttons?.Length ?? 0) / HidpValueCapsStride) return ids;
+            for (int i = 0; i < valueCount; i++) ids.Add(values[i * HidpValueCapsStride + HidpValueCapsReportIdOffset]);
+            for (int i = 0; i < buttonCount; i++) ids.Add(buttons[i * HidpValueCapsStride + HidpValueCapsReportIdOffset]);
+            return ids;
+        }
+
         private static bool TryGetReportId(IntPtr prep, int reportType, ushort valueDeclared, ushort buttonDeclared, out byte reportId)
         {
             reportId = 0;
-            if (prep == IntPtr.Zero || valueDeclared + buttonDeclared == 0) return false;
+            var ids = ReadDescriptorReportIds(prep, reportType, valueDeclared, buttonDeclared);
+            if (ids.Count != 1) return false;
+            foreach (byte id in ids) reportId = id;
+            return true;
+        }
+
+        private static HashSet<byte> ReadDescriptorReportIds(IntPtr prep, int reportType, ushort valueDeclared, ushort buttonDeclared)
+        {
+            if (prep == IntPtr.Zero || valueDeclared + buttonDeclared == 0) return new HashSet<byte>();
             byte[] ReadCaps(bool buttons, ushort declared, out int count)
             {
                 count = 0;
@@ -187,7 +201,7 @@ namespace MouseDock.Services.Detection
             }
             var values = ReadCaps(false, valueDeclared, out int valueCount);
             var buttons = ReadCaps(true, buttonDeclared, out int buttonCount);
-            return values != null && buttons != null && TrySingleFreqReportId(values, valueCount, buttons, buttonCount, out reportId);
+            return values != null && buttons != null ? GetDescriptorReportIds(values, valueCount, buttons, buttonCount) : new HashSet<byte>();
         }
 
         /// <summary>

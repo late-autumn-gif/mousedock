@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -183,6 +183,27 @@ namespace MouseDock.Services.Detection
                 foreach (var bucket in buckets.Values)
                 {
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
+                    if (bucket.Vid == 0x3654 && bucket.Pid == 0x5055 && VendorMap.IsZhuAudioZg4(bucket.Product))
+                    {
+                        if ((preferences?.CanRead(bucket.InstanceId, null) ?? true) &&
+                            (preferences?.CanRead("hid-3654-5055", null) ?? true))
+                        {
+                            const string zg4Source = "竹林鸟 ZG4 接收器电量";
+                            var zg4Trace = new List<string>();
+                            bool zg4Charging = false;
+                            bucket.Battery = ReadBattery(zg4Source,
+                                () => VendorProtocol.TryReadZg4(bucket.InstanceId, out zg4Charging, zg4Trace), zg4Trace);
+                            if (bucket.Battery >= 0)
+                            {
+                                bucket.Identity = bucket.Product.Trim();
+                                bucket.Charging = zg4Charging;
+                                bucket.BatterySource = zg4Source;
+                            }
+                            else bucket.BatteryFailures.UnionWith(zg4Trace);
+                            LastDiagnostics.Add($"{bucket.InstanceId} {string.Join("；", zg4Trace)}");
+                        }
+                        continue;
+                    }
                     if (!DeviceRoutes.IsKnown(bucket.Vid, bucket.Pid, bucket.Product) ||
                         VendorProtocol.IsRogOmni(bucket.Vid, bucket.Pid)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
@@ -433,12 +454,13 @@ namespace MouseDock.Services.Detection
             if (VendorProtocol.IsMchoseV9Pro(vid, pid, product) &&
                 ((usagePage == 0xFF90 && usage == 1) || (usagePage == 0x0C && usage == 1)))
             { kind = DeviceKind.Headset; return true; }
-            if (VendorMap.TryUsbHeadset(vid, pid, out _))
+            if (VendorMap.TryUsbHeadset(vid, pid, out _, product))
             {
                 // 已确认是 USB 耳机的设备，除了消费者控制，还要把它的私有页一起认领。
                 // 不认的话 0xFF13 那条电量通道会被当成噪音丢掉。
                 if ((usagePage == 0x0C && usage == 1) ||
-                    usagePage is 0xFF13 or 0xFFC0 or 0x01C0 or 0x170F or 0x000B)
+                    usagePage is 0xFF13 or 0xFFC0 or 0x01C0 or 0x170F or 0x000B ||
+                    (vid == 0x3654 && usagePage >= 0xFF00))
                 {
                     kind = DeviceKind.Headset;
                     return true;
@@ -575,7 +597,7 @@ namespace MouseDock.Services.Detection
                 return false;
             }
 
-            if (kind == DeviceKind.Headset && VendorMap.TryUsbHeadset(vid, pid, out string headsetName))
+            if (kind == DeviceKind.Headset && VendorMap.TryUsbHeadset(vid, pid, out string headsetName, product))
             {
                 if (!buckets.TryGetValue(key, out var headset))
                     buckets[key] = headset = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path, Kind = kind };
@@ -602,7 +624,8 @@ namespace MouseDock.Services.Detection
                     headset.BatteryFailures.Add("安全模式已跳过耳机电量查询");
                 }
 
-                if (headset.Battery < 0 && !VendorProtocol.IsHyperXHeadset(vid, pid))
+                if (headset.Battery < 0 && !VendorProtocol.IsHyperXHeadset(vid, pid) &&
+                    !(vid == 0x3654 && pid == 0x5055 && VendorMap.IsZhuAudioZg4(product)))
                     headset.BatteryFailures.Add("已识别 USB 耳机；电量协议尚未适配，当前电量未知");
 
                 LastDiagnostics.Add($"{key} 已识别 USB 耳机 电量={(headset.Battery >= 0 ? headset.Battery + "%" : "未读到")} 路径={path}");
@@ -1449,7 +1472,7 @@ namespace MouseDock.Services.Detection
                 // 有线鼠标不会这样，用它判断 2.4G 比猜产品串靠谱
                 bool peerKeyboard = Kind == DeviceKind.Mouse && Counts.ContainsKey(DeviceKind.Keyboard);
 
-                bool usbHeadset = VendorMap.TryUsbHeadset(Vid, Pid, out string headsetName);
+                bool usbHeadset = VendorMap.TryUsbHeadset(Vid, Pid, out string headsetName, Product);
                 if (usbHeadset) { name = (Vid == 0x4C4A ? Product : headsetName) ?? "USB 音频设备（型号未确认）"; kind = DeviceKind.Headset; }
                 bool f99Wired = VendorProtocol.IsAulaF99Wired(Vid, Pid, Product);
                 string transport = bt ? "蓝牙" : usbHeadset ? "USB"
@@ -1460,6 +1483,8 @@ namespace MouseDock.Services.Detection
                 // 路由表给出的通道优先于产品串推断；后面的品牌分支仍可覆盖。
                 var route = DeviceRoutes.Find(Vid, Pid, Product);
                 if (route?.Transport != null) transport = route.Transport;
+                bool zg4Receiver = !bt && Vid == 0x3654 && Pid == 0x5055 && VendorMap.IsZhuAudioZg4(Identity);
+                if (zg4Receiver) transport = "2.4G";
 
                 if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product)) transport = "2.4G";
                 if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) transport = "2.4G";
@@ -1539,7 +1564,7 @@ namespace MouseDock.Services.Detection
                     ConfirmedModel = HandledBy == HandledBy.M137 ? M137Model ?? "" : HandledBy == HandledBy.RealTek ? Product?.Trim() ?? "" : HandledBy == HandledBy.VgnF1 ? VgnF1Model ?? "" : HandledBy == HandledBy.AulaF75 ? F75Model ?? "" : HandledBy == HandledBy.M9Pro ? M9ProModel ?? "" : RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = HandledBy == HandledBy.RogScope || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
+                    ReceiverDiscovered = zg4Receiver || HandledBy == HandledBy.RogScope || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
                     PeripheralConfirmed = HandledBy == HandledBy.M9Pro ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.M137 ? false : HandledBy == HandledBy.RealTek ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.MchoseModern ? false : unresolved ? false : HandledBy == HandledBy.ZeroRainy ? false : HandledBy == HandledBy.MchoseG7 ? false : HandledBy == HandledBy.OriginalGpw ? GpwLive : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
@@ -1555,7 +1580,9 @@ namespace MouseDock.Services.Detection
                     PhysicalKey = InstanceId,
                     HandledBy = HandledBy,
                     Note = HandledBy == HandledBy.RogScope ? BatterySource :
-                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && !DeviceRoutes.IsKnown(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
+                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 &&
+                        !(Vid == 0x3654 && Pid == 0x5055 && VendorMap.IsZhuAudioZg4(Product)) &&
+                        !DeviceRoutes.IsKnown(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
                         : (BatteryFailures.Count > 0 ? string.Join("；", BatteryFailures)
                             : "尚未取得有效电量，请查看设备报告中的读取诊断")

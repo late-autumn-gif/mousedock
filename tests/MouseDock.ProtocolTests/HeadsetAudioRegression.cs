@@ -16,6 +16,70 @@ internal static class HeadsetAudioRegression
     {
         int n=0;
         void Check(bool value,string reason) { n++; if (!value) throw new Exception(reason); }
+        const string zg4 = "ZhuAudio ZG4";
+        Check(HidDiscovery.TryDeviceKind(0x3654, 0x5055, 0xFF00, 1, out var zg4Kind, zg4) &&
+              zg4Kind == DeviceKind.Headset, "ZG4 HID product and WebHID filter classify together");
+        Check(!VendorMap.TryUsbHeadset(0x3654, 0x5055, out _, "ZhuAudio ZG3") &&
+              !VendorMap.TryUsbHeadset(0x3654, 0x5055, out _, null) &&
+              !DeviceRoutes.IsKnown(0x3654, 0x5055, zg4), "Shared USB ID must not enable a private query");
+        var zg4Usb = new HidDiscovery.Bucket { Vid = 0x3654, Pid = 0x5055, Product = zg4, Kind = zg4Kind }.ToDevice();
+        Check(zg4Usb is { Kind: DeviceKind.Headset, Transport: "USB", Level: -1 },
+              "ZG4 USB is listed with unknown battery and no inferred wireless channel");
+        const byte reportId = 0xCD;
+        const byte sequence = 0x31;
+        Check(VendorProtocol.BuildZg4DongleRequest(reportId, 64, 2).Take(9)
+            .SequenceEqual(new byte[] { reportId, 7, 0xAA, 0x5A, 0xCC, 0x80, 0x51, 1, 2 }),
+            "ZG4 online query matches the driver framing");
+        Check(VendorProtocol.BuildZg4DongleRequest(reportId, 64, 6).Take(9)
+            .SequenceEqual(new byte[] { reportId, 7, 0xAA, 0x5A, 0xCC, 0x81, 0x92, 1, 6 }),
+            "ZG4 identity query matches the driver framing");
+        byte[] online = { reportId, 0xAA, 0xCC, 0, 2, 0xC0, 0xA0, 2, 1 };
+        byte[] identity = { reportId, 0xAA, 0xCC, 0, 5, 0x8A, 0x9C, 6, 0, 0, 5, 16 };
+        Check(VendorProtocol.IsZg4Online(online, reportId) && VendorProtocol.IsZg4Identity(identity, reportId),
+            "ZG4 validates online status and little-endian MID");
+        Check(!VendorProtocol.IsZg4Online(null, reportId) && !VendorProtocol.IsZg4Identity(identity, 0),
+            "ZG4 rejects timeout and wrong report ID");
+        identity[5] ^= 1;
+        Check(!VendorProtocol.IsZg4Identity(identity, reportId), "ZG4 rejects bad CRC");
+        identity[5] ^= 1;
+        // Correct CRC for a valid reply containing the neighboring ZG3 MID (0x1009).
+        byte[] zg3Identity = { reportId, 0xAA, 0xCC, 0, 5, 0x8F, 0x9C, 6, 0, 0, 9, 16 };
+        Check(!VendorProtocol.IsZg4Identity(zg3Identity, reportId), "ZG4 rejects a different model");
+        Check(VendorProtocol.BuildZg4BatteryRequest(reportId, 64, sequence).Take(12)
+            .SequenceEqual(new byte[] { reportId, 0xEE, 0x80, 0, 6, 0, 0xFF, sequence, 2, 0xFE, 7, 0xAA }),
+            "ZG4 uses the read-only property command");
+        byte[] batteryReply = { reportId, 0xEA, 0x80, 0, 9, 0, 0xFF, sequence, 5, 0xFE, 7, 0xC3, 0, 0, 0xAA };
+        int usbLevel = VendorProtocol.ParseZg4Battery(batteryReply, reportId, sequence, out bool usbCharging);
+        var liveZg4 = new HidDiscovery.Bucket { Vid = 0x3654, Pid = 0x5055, Product = zg4, Identity = zg4,
+            Kind = DeviceKind.Headset, Battery = usbLevel, Charging = usbCharging }.ToDevice();
+        var displayedZg4 = new AutoDetectSource().UpdateFromDetection(new() { liveZg4 }).Single();
+        Check(displayedZg4 is { Name: zg4, Kind: DeviceKind.Headset, Transport: "2.4G", Level: 67, Charging: true },
+            "ZG4 wireless battery and charging flow to the display model");
+        Check(VendorProtocol.ParseZg4Battery(batteryReply, reportId, 0, out _) < 0 &&
+              VendorProtocol.ParseZg4Battery(batteryReply.AsSpan(0, 12), reportId, sequence, out _) < 0,
+            "ZG4 rejects an old sequence and a truncated frame");
+        foreach (byte level in new byte[] { 0, 100, 101 })
+        {
+            batteryReply[11] = level;
+            Check(VendorProtocol.ParseZg4Battery(batteryReply, reportId, sequence, out bool charging) ==
+                  (level <= 100 ? level : -1) && !charging, "ZG4 validates level " + level);
+        }
+        Check(VendorMap.KindFromName(zg4) == DeviceKind.Headset &&
+              !VendorMap.IsZhuAudioZg4("ZhuAudio ZG2") && !VendorMap.IsZhuAudioZg4("ZhuAudio ZG40"),
+              "ZG4 name classifies as a headset without matching neighboring names");
+        var battery = new BtSystemBattery.Entry();
+        BtSystemBattery.ApplyProperties(battery, new Dictionary<string, object>
+        {
+            [BtSystemBattery.BluetoothBatteryKey] = (byte)67
+        }, "synthetic Windows property");
+        var detected = new DetectedDevice { Id = "bt-test-zg4", Name = zg4, Kind = DeviceKind.Headset,
+            Transport = "蓝牙", Connected = true, Level = battery.Level };
+        var source = new AutoDetectSource();
+        Check(source.UpdateFromDetection(new() { detected }).Single() is { Kind: DeviceKind.Headset, Level: 67 },
+              "ZG4 synthetic system battery reaches the display model");
+        detected.Level = -1;
+        Check(source.UpdateFromDetection(new() { detected }).Single().Level == -1,
+              "ZG4 without a battery reading stays unknown");
         Guid a=Guid.NewGuid(), b=Guid.NewGuid();
         var ear=new AudioEndpointInfo("out","Windows 耳机原名",false,a,5,42,false);
         var mic=new AudioEndpointInfo("mic","Windows 麦克风原名",true,a,4,60,false);

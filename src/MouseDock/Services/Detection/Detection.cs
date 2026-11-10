@@ -62,9 +62,16 @@ namespace MouseDock.Services.Detection
 
         public static string Brand(ushort vid) => Brands.TryGetValue(vid, out var b) ? b : null;
 
-        internal static bool TryUsbHeadset(ushort vid, ushort pid, out string name)
+        internal static bool TryUsbHeadset(ushort vid, ushort pid, out string name, string product = null)
         {
             name = null;
+
+            // The WebHID filter is shared across models; also require the device's own product string.
+            if (vid == 0x3654 && pid == 0x5055 && IsZhuAudioZg4(product))
+            {
+                name = product.Trim();
+                return true;
+            }
 
             // Confirmed locally: USB audio endpoints and Consumer Control HID share this composite device.
             if (vid == 0x4C4A && pid == 0x4155) { name = "USB 音频设备（型号未确认）"; return true; }
@@ -173,9 +180,13 @@ namespace MouseDock.Services.Detection
 
         /// <summary>从蓝牙名字推同一只设备的合并键（"AULA-SC580" 与 2.4G 接收器是同一只鼠标）。</summary>
         /// <summary>按设备名猜类型（Appearance 为空时的兜底）。</summary>
+        internal static bool IsZhuAudioZg4(string name) =>
+            string.Equals(name?.Trim(), "ZhuAudio ZG4", StringComparison.OrdinalIgnoreCase);
+
         public static DeviceKind? KindFromName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
+            if (IsZhuAudioZg4(name)) return DeviceKind.Headset;
             if (VendorProtocol.RogScopeName(name) != null) return DeviceKind.Keyboard;
             string n = name.ToUpperInvariant();
             if (n.Contains("SC580") || n.Contains("MOUSE") || n.Contains("鼠标")) return DeviceKind.Mouse;

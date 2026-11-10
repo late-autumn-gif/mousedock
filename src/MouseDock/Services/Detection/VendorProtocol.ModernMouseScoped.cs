@@ -30,7 +30,8 @@ internal static partial class VendorProtocol
     };
     internal static bool IsScopedModernMouse(ushort vid,ushort pid,string product)=>vid==0x3837&&ModernMouseProfiles.TryGetValue((product??"").Trim(),out var p)&&(pid==p.Wired||p.Receivers.Contains(pid));
     internal static bool IsScopedModernChannel(ushort vid,ushort pid,string name,ushort page,ushort usage,int input,int output,int feature)=>
-        IsScopedModernMouse(vid,pid,name)&&page==0xFF01&&usage==1&&input==64&&output==64&&feature==64;
+        IsScopedModernMouse(vid,pid,name)&&page==0xFF01&&usage==1&&input==64&&output==64&&
+        (feature==64 || (feature==0 && string.Equals(name?.Trim(),"MCHOSE K5 Ultra",StringComparison.OrdinalIgnoreCase)));
     internal static bool TryModernScopedFrame(byte[] raw,string product,out int level,out bool charging)
     {
         level=-1;charging=false;
@@ -57,6 +58,9 @@ internal static partial class VendorProtocol
         return new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
             "MHUB4D/0900两次身份匹配百分比；connectStatus语义未确认，不推断RF在线"+trace,product.Trim(),product.Trim());
     }
+    internal static bool AllowsModernReport(HashSet<byte> ids, int declaredCaps, bool k5) =>
+        k5 ? ids.Contains(0x4D) : declaredCaps == 0 || (ids.Count == 1 && ids.Contains(0x4D));
+
     internal static ReferenceBatteryProtocol.Reading ReadScopedModernMouse(string path,ushort vid,ushort pid)
     {
         if(InstanceScope.Current==null||!InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("MHUB物理实例不符");
@@ -69,8 +73,12 @@ internal static partial class VendorProtocol
                 if(!HidD_GetAttributes(h,ref a)||a.VendorID!=vid||a.ProductID!=pid||!IsScopedModernChannel(vid,pid,product,c.UsagePage,c.Usage,c.InputReportByteLength,c.OutputReportByteLength,c.FeatureReportByteLength))throw new IOException("MHUB打开后身份/集合不符");
                 if(!HidD_GetPreparsedData(h,out var prep))throw new IOException("MHUB报告描述符不可读");
                 try{
-                    bool Check(int type,ushort values,ushort buttons)=>values+buttons==0||(TryGetReportId(prep,type,values,buttons,out byte id)&&id==0x4D);
-                    if(!Check(0,c.NumberInputValueCaps,c.NumberInputButtonCaps)||!Check(1,c.NumberOutputValueCaps,c.NumberOutputButtonCaps))throw new IOException("MHUB报告编号不是唯一4D");
+                    bool k5 = string.Equals(product?.Trim(), "MCHOSE K5 Ultra", StringComparison.OrdinalIgnoreCase);
+                    var inputIds = ReadDescriptorReportIds(prep, 0, c.NumberInputValueCaps, c.NumberInputButtonCaps);
+                    var outputIds = ReadDescriptorReportIds(prep, 1, c.NumberOutputValueCaps, c.NumberOutputButtonCaps);
+                    if (!AllowsModernReport(inputIds, c.NumberInputValueCaps + c.NumberInputButtonCaps, k5) ||
+                        !AllowsModernReport(outputIds, c.NumberOutputValueCaps + c.NumberOutputButtonCaps, k5))
+                        throw new IOException($"MHUB 报告编号不匹配（输入 {string.Join(",", inputIds.Select(id => id.ToString("X2")))}；输出 {string.Join(",", outputIds.Select(id => id.ToString("X2"))) }）");
                 }finally{HidD_FreePreparsedData(prep);}
                 signal=CreateEvent(IntPtr.Zero,true,false,IntPtr.Zero);if(signal==IntPtr.Zero)throw new IOException("MHUB事件创建失败");
                 return ReadModernMouseExchange(new G7Link(h,signal,64),product);

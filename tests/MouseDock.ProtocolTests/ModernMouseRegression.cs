@@ -1,4 +1,4 @@
-﻿using MouseDock.Services.Detection;
+using MouseDock.Services.Detection;
 using MouseDock.Services;
 using MouseDock.Models;
 internal static class ModernMouseRegression
@@ -40,12 +40,20 @@ internal static class ModernMouseRegression
             Check(VendorProtocol.ReadModernMouseExchange(link,name).Level<0,"Missing second reply not promoted");
         }
         Check(!DeviceRoutes.IsKnown(0x3837,0x1018,"USB Receiver"),"Generic receiver not sufficient");
-        const string nameA="MCHOSE A7 V3";InstanceScope.BeginScan();
+        Check(VendorProtocol.IsScopedModernChannel(0x3837,0x1018,"MCHOSE K5 Ultra",0xFF01,1,64,64,0),
+            "K5 Ultra Output/Input collection does not require Feature");
+        Check(!VendorProtocol.IsScopedModernChannel(0x3837,0x1018,"MCHOSE K5 Pro",0xFF01,1,64,64,0),
+            "Other receivers retain their collection constraints");
+        Check(VendorProtocol.AllowsModernReport(new HashSet<byte> { 0x4D, 0x4E }, 2, true) &&
+            !VendorProtocol.AllowsModernReport(new HashSet<byte> { 0x4D, 0x4E }, 2, false) &&
+            !VendorProtocol.AllowsModernReport(new HashSet<byte> { 0 }, 1, true),
+            "K5 Ultra accepts 4D alongside another ID but never guesses 4D");
+        const string nameA="MCHOSE K5 Ultra";InstanceScope.BeginScan();
         string a=InstanceScope.Register("fake#mhub#a",new[]{(@"USB\VID_3837&PID_1018\A","usbccgp")});
         string b=InstanceScope.Register("fake#mhub#b",new[]{(@"USB\VID_3837&PID_1018\B","usbccgp")});
         var bucket=new HidDiscovery.Bucket{Vid=0x3837,Pid=0x1018,Product=nameA,InstanceId=a,Kind=DeviceKind.Mouse};
         var buckets=new Dictionary<string,HidDiscovery.Bucket>{[a]=bucket};
-        HidDiscovery.VendorCollectionInfo Channel(string path)=>new(){Vid=0x3837,Pid=0x1018,Product=nameA,Path=path,UsagePage=0xFF01,Usage=1,Input=64,Output=64,Feature=64};
+        HidDiscovery.VendorCollectionInfo Channel(string path)=>new(){Vid=0x3837,Pid=0x1018,Product=nameA,Path=path,UsagePage=0xFF01,Usage=1,Input=64,Output=64,Feature=0};
         var channels=new List<HidDiscovery.VendorCollectionInfo>{Channel("fake#mhub#a"),Channel("fake#mhub#a"),Channel("fake#mhub#b")};int calls=0;
         ReferenceBatteryProtocol.Reading Query(string path,ushort vid,ushort pid){calls++;Check(path=="fake#mhub#a"&&InstanceScope.Current!=null,"Scoped path only");return new(76,false,true,ReferenceBatteryProtocol.State.Online,"mock",nameA,nameA);}
         HidDiscovery.QueryScopedModernMouse(buckets,channels,false,null,Query);

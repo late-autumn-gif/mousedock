@@ -73,6 +73,15 @@ internal static class StartupChecks
             var pinnedSurface = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? App.Edge : surfaces[mode];
             if (mode == "taskbar" && App.Taskbar.UsesScreenEdge && !App.Edge.IsVisible)
                 throw new InvalidOperationException("Automatic taskbar overflow did not show the right-edge surface.");
+            bool usesEdge = mode == "edge" || (mode == "taskbar" && App.Taskbar.UsesScreenEdge);
+            var screen = System.Windows.Forms.Screen.PrimaryScreen;
+            if (usesEdge && screen != null && ScreenEdgeAnchor.IsForegroundFullscreen(screen.Bounds))
+            {
+                if (pinnedSurface.Opacity != 0 || pinnedSurface.IsHitTestVisible)
+                    throw new InvalidOperationException("Fullscreen suppression must keep the restored edge surface transparent and non-interactive.");
+                Console.WriteLine($"PASS startup restores {mode} and respects fullscreen suppression.");
+                return 0;
+            }
             if (mode is "taskbar" or "edge" && pinnedSurface.Opacity <= 0)
             {
                 object[] anchorArgs = { Rect.Empty, (uint)0, 0.0 };
