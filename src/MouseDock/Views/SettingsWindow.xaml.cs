@@ -36,6 +36,7 @@ namespace MouseDock.Views
         }
 
         private bool _loading;
+        private readonly Brush _themeBackground;
 
         public static readonly DependencyProperty AccentBrushProperty = DependencyProperty.Register(
             nameof(AccentBrush), typeof(Brush), typeof(SettingsWindow),
@@ -46,6 +47,7 @@ namespace MouseDock.Views
         public SettingsWindow()
         {
             InitializeComponent();
+            _themeBackground = Root.Background;
             App.Battery.Refreshed += (_, __) =>
             {
                 if (IsVisible && !_loading) UpdateDeviceHint();
@@ -75,6 +77,7 @@ namespace MouseDock.Views
                 var s = App.Settings;
 
                 var rows = ThemePreset.Presets
+                    .Select(p => ReferenceThemes.Resolve(p.Id, s.ThemeMode) ?? p)
                     .Select(p => MakeRow(p.Id, p.Name, p.Accent, p.BgTop, p.BgBottom))
                     .ToList();
 
@@ -89,6 +92,9 @@ namespace MouseDock.Views
                 var current = rows.FirstOrDefault(r => r.Id == (hasBg ? "custom" : s.ThemeId)) ?? rows[2];
                 ThemeList.SelectedItem = current;
                 foreach (var r in rows) r.IsSelected = r == current;
+                ThemeDefault.IsChecked = s.ThemeMode != "dark" && s.ThemeMode != "light";
+                ThemeDark.IsChecked = s.ThemeMode == "dark";
+                ThemeLight.IsChecked = s.ThemeMode == "light";
 
                 var theme = App.Theme;
 
@@ -170,6 +176,12 @@ namespace MouseDock.Views
             Resources["ButtonHoverBrush"] = new SolidColorBrush(isLight
                 ? Color.FromArgb(0x24, 0x00, 0x00, 0x00)
                 : Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF));
+            if (theme.Hover.A != 0)
+            {
+                Resources["CardBrush"] = new SolidColorBrush(theme.Surface);
+                Resources["ButtonBrush"] = new SolidColorBrush(theme.Surface);
+                Resources["ButtonHoverBrush"] = new SolidColorBrush(theme.Hover);
+            }
             var accent = new SolidColorBrush(theme.Accent);
             accent.Freeze();
             AccentBrush = accent;
@@ -184,11 +196,14 @@ namespace MouseDock.Views
             }
             else
             {
+                BgTopStop.BeginAnimation(GradientStop.ColorProperty, null);
+                BgBottomStop.BeginAnimation(GradientStop.ColorProperty, null);
                 BgTopStop.Color = theme.BgTop;
                 BgBottomStop.Color = theme.BgBottom;
             }
             RebuildTaskbarStyles(theme);
             RebuildEdgeStyles();
+            PictureBackground.Apply(Root, "", _themeBackground, App.Settings, theme);
         }
 
         // ── 交互 ───────────────────────────────────────────────────────────
@@ -220,14 +235,24 @@ namespace MouseDock.Views
 
         private void OnPickBackground(object sender, RoutedEventArgs e)
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "选择背景图（会自动提取主色）",
-                Filter = "图片|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif"
-            };
-            if (dlg.ShowDialog(this) != true) return;
+            var editor = new BackgroundEditorWindow(App.Settings) { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            var draft = editor.Draft;
+            App.Settings.CustomBackground = draft.CustomBackground;
+            App.Settings.CustomAccent = draft.CustomAccent;
+            App.Settings.BackgroundZoom = draft.BackgroundZoom;
+            App.Settings.BackgroundPositionX = draft.BackgroundPositionX;
+            App.Settings.BackgroundPositionY = draft.BackgroundPositionY;
+            App.Settings.BackgroundDepth = draft.BackgroundDepth;
+            App.RefreshTheme();
+            App.SaveSettings();
+            Reload();
+        }
 
-            App.Settings.CustomBackground = dlg.FileName;
+        private void OnThemeModeChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading || sender is not RadioButton { IsChecked: true } button) return;
+            App.Settings.ThemeMode = (string)button.Tag;
             App.RefreshTheme();
             App.SaveSettings();
             Reload();

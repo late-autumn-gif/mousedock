@@ -31,6 +31,11 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
+            ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
+            ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
+            ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
+            ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
             ("Taskbar follow tracks growing and shrinking icon groups", TaskbarFollowChecks.Motion),
             ("Taskbar follow preserves signed icon offsets and a true zero", TaskbarFollowChecks.SignedOffset),
             ("Taskbar follow avoids tray and widget obstructions", TaskbarFollowChecks.Obstacles),

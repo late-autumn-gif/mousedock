@@ -61,20 +61,8 @@ namespace MouseDock.Views
         /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
         public void ApplyBackground(string path)
         {
-            var bmp = Palette.Load(path, 2048);
-            if (bmp != null)
-            {
-                // 高质量重采样，缩放时边缘不糊
-                RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
-                RenderOptions.SetEdgeMode(Root, EdgeMode.Unspecified);
-                Root.Background = new System.Windows.Media.ImageBrush(bmp)
-                {
-                    Stretch = Stretch.UniformToFill
-                };
-                return;
-            }
-            Root.Background = _themeBackground;
             ApplyTheme(App.Theme, false);
+            PictureBackground.Apply(Root, path, _themeBackground, App.Settings, App.Theme);
         }
 
         /// <summary>卡片窗样式：standard 标准 / compact 紧凑 / bare 极简（去底色去圆角阴影）。</summary>
