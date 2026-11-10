@@ -25,7 +25,7 @@ namespace MouseDock.Services
                 "f2edf5 fdfaff 382b42 473d58 86519f 704183 e7ddeb cebbd7 9b3923"),
             ("amber", "琥珀橙", false,
                 "201912 30251b faeee0 deccb9 f1b77e f6cea2 443526 66503a ff9c9c",
-                "f7efe6 fffcf7 453320 554128 a15e24 8b4d1e ede0d0 d9c1a4 a52536")
+                "f7efe6 fffcf7 453320 503f30 a15e24 8b4d1e ede0d0 d9c1a4 a52536")
         };
 
         public static ThemePreset Resolve(string id, string mode)

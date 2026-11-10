@@ -34,6 +34,8 @@ internal static class ReferenceThemeChecks
             }
         }
         Require(ThemePreset.ById("mint").Accent == ThemePreset.C("#7FE7C4"), "Legacy mint changed.");
+        Require(ReferenceThemes.Resolve("amber", "light").TextDim == ThemePreset.C("#503F30"),
+            "Amber secondary text differs from the original light palette.");
         Require(ThemePreset.ById("cloud").IsLight && ThemePreset.ById("missing").Id == "dusk", "Legacy theme fallback changed.");
     }
 
