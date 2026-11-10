@@ -36,6 +36,8 @@ internal static class Program
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
             ("Character editor preview matches photo layout and opaque bounds", CharacterEditorChecks.PreviewAndBounds),
             ("Photo overlays correct dark text against the photo backing", CharacterEditorChecks.PhotoContrast),
+            ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
+            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Multi-device icons remain square and preserve identity colors", IconCompositionChecks.Layout),
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
