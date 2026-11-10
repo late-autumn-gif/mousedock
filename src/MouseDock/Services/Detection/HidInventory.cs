@@ -178,10 +178,10 @@ internal static class HidInventory
         return rows;
     }
 
-    private static readonly Regex VidPid = new(@"vid_([0-9a-fA-F]{4})&pid_([0-9a-fA-F]{4})", RegexOptions.Compiled);
-    private static readonly Regex MiCol = new(@"&mi_(\d+)&col(\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex VidPid = new(@"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex MiCol = new(@"&mi_([0-9a-f]{2})(?:&col([0-9a-f]{2}))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static void ParsePath(string path, out ushort vid, out ushort pid, out string iface)
+    internal static void ParsePath(string path, out ushort vid, out ushort pid, out string iface)
     {
         vid = 0;
         pid = 0;
@@ -193,7 +193,8 @@ internal static class HidInventory
             ushort.TryParse(vp.Groups[2].Value, System.Globalization.NumberStyles.HexNumber, null, out pid);
         }
         var mc = MiCol.Match(path);
-        if (mc.Success) iface = "MI_" + mc.Groups[1].Value + "/COL_" + mc.Groups[2].Value;
+        if (mc.Success) iface = "MI_" + mc.Groups[1].Value.ToUpperInvariant() +
+            (mc.Groups[2].Success ? "/COL_" + mc.Groups[2].Value.ToUpperInvariant() : "");
     }
 
     /// <summary>接口按 MI 分组的中文摘要，一眼能看出哪一路打不开。</summary>

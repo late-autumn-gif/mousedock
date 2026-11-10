@@ -100,13 +100,14 @@ namespace MouseDock.Services.Detection
         }
 
         internal static List<DetectedDevice> Enumerate(DevicePreferences preferences, IEnumerable<string> selectedIds,
-            out BatteryReplay.Capture capture)
+            out BatteryReplay.Capture capture, Dictionary<string, string> aliases = null, bool? safeMode = null)
         {
             lock (ScanGate)
             {
-                var scan = new BatteryReplay.Scan();
+                var scan = new BatteryReplay.Scan(aliases, safeMode);
+                var scope = selectedIds?.ToHashSet(StringComparer.OrdinalIgnoreCase);
                 BatteryReplay.Current = scan;
-                try { return scan.Detected = ScanDevices(preferences); }
+                try { return scan.Detected = ScanDevices(preferences, scope); }
                 catch (Exception ex)
                 {
                     scan.ScanError = ex.GetType().Name;
@@ -120,7 +121,9 @@ namespace MouseDock.Services.Detection
             }
         }
 
-        private static List<DetectedDevice> ScanDevices(DevicePreferences preferences)
+        private static bool IsSafeMode => BatteryReplay.Current?.SafeMode ?? App.Settings?.SafeMode ?? false;
+
+        private static List<DetectedDevice> ScanDevices(DevicePreferences preferences, HashSet<string> scope = null)
         {
             LastDiagnostics.Clear();
             InstanceScope.BeginScan();
@@ -155,10 +158,20 @@ namespace MouseDock.Services.Detection
                         if (!SetupDiGetDeviceInterfaceDetail(set, ref did, detail, DETAIL_SIZE, out _, ref devInfo)) { noOpen++; continue; }
                         string path = Marshal.PtrToStringUni(new IntPtr(detail.ToInt64() + 4));
                         if (string.IsNullOrEmpty(path)) { noOpen++; continue; }
-                        if (!IsRunning(set, ref devInfo)) { notRunning++; continue; }
-
                         var ancestors = ReadAncestors(devInfo.DevInst, out bool integratedUsb);
-                        InstanceScope.Register(path, ancestors);
+                        string instance = InstanceScope.Register(path, ancestors);
+                        if (scope != null && !scope.Contains(instance)) continue;
+                        if (!IsRunning(set, ref devInfo))
+                        {
+                            notRunning++;
+                            if (BatteryReplay.Current is { } scan)
+                            {
+                                HidInventory.ParsePath(path, out ushort vid, out ushort pid, out _);
+                                scan.AddCollection(instance, path, vid, pid, null, 0, 0, 0, 0, 0,
+                                    true, status: "pnp-not-running");
+                            }
+                            continue;
+                        }
                         pending.Add((path, ancestors, integratedUsb));
                     }
                     finally { Marshal.FreeHGlobal(detail); }
@@ -177,8 +190,28 @@ namespace MouseDock.Services.Detection
                 if (verdict) collected++; else if (wasNoise) noise++; else kindRejected++;
             }
 
+            foreach (var bucket in buckets.Values)
+            {
+                if (!VendorProtocol.IsNeon75Air(bucket.Vid, bucket.Pid)) continue;
+                if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
+                    VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true) ||
+                    (IsSafeMode && BatteryReplay.Current != null))
+                {
+                    BatteryReplay.Current?.AddQuery(bucket.InstanceId, null, "Neon75Feature",
+                        IsSafeMode ? "SafeMode" : "RecognitionDisabled", "VGN Neon75 Air");
+                    continue;
+                }
+                using var scopeForRead = InstanceScope.Enter(bucket.InstanceId);
+                bucket.Battery = VendorProtocol.TryReadNeon75(bucket.Vid, bucket.Pid, !IsSafeMode,
+                    out bool charging, out bool stale);
+                bucket.Charging = charging;
+                bucket.ReadStale = stale;
+                if (bucket.Battery >= 0) bucket.BatterySource = stale ? "VGN F7 上次状态" : "VGN F7 状态查询";
+                else bucket.BatteryFailures.Add("VGN F7 未取得两次有效响应");
+            }
+
             // 专用电量接口不会参与输入类型归并。按归并后的设备读取一次。
-            if (!(App.Settings?.SafeMode ?? false))
+            if (!IsSafeMode)
             {
                 foreach (var bucket in buckets.Values)
                 {
@@ -276,7 +309,7 @@ namespace MouseDock.Services.Detection
             LastDiagnostics.Add($"接口={interfaces} 打开失败={noOpen} 未运行={notRunning} 用法不符={kindRejected} 噪音={noise} 采集={collected} 归并={buckets.Count}");
 
             bool safeMode = false;
-            try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
+            try { safeMode = IsSafeMode; } catch { }
 
             QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReferenceBattery);
@@ -295,7 +328,7 @@ namespace MouseDock.Services.Detection
             QueryRogScope(buckets, vendorCollections, safeMode, preferences);
             QueryScopedModernMouse(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedModernMouse);
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
-            QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
+            if (BatteryReplay.Current == null) QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
             QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
             QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadOriginalGpw);
 
@@ -495,30 +528,45 @@ namespace MouseDock.Services.Detection
             out bool wasNoise)
         {
             wasNoise = false;
+            string key = InstanceScope.Register(path, ancestors);
+
+            void RecordFailure(string status, int? error = null)
+            {
+                if (BatteryReplay.Current is not { } scan) return;
+                HidInventory.ParsePath(path, out ushort failedVid, out ushort failedPid, out _);
+                scan.AddCollection(key, path, failedVid, failedPid, null, 0, 0, 0, 0, 0,
+                    false, openError: error, status: status);
+            }
 
             // 键盘/鼠标集合常被系统独占，先用「零访问权限」打开，只做查询
             IntPtr probe = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
                 IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
             if (probe == IntPtr.Zero || probe == new IntPtr(-1))
             {
-                LastDiagnostics.Add($"查询打开失败 Win32={Marshal.GetLastWin32Error()} 路径={path}");
+                int error = Marshal.GetLastWin32Error();
+                RecordFailure("open-failed", error);
+                LastDiagnostics.Add($"查询打开失败 Win32={error} 路径={path}");
                 return false;
             }
 
             ushort vid, pid;
             HIDP_CAPS caps = default;
             string product, vendor;
+            ushort revision;
+            string reportIds = null;
 
             try
             {
                 var attr = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf<HIDD_ATTRIBUTES>() };
                 if (!HidD_GetAttributes(probe, ref attr))
                 {
+                    RecordFailure("attributes-unavailable");
                     LastDiagnostics.Add($"读取 VID/PID 失败 路径={path}");
                     return false;
                 }
                 vid = attr.VendorID;
                 pid = attr.ProductID;
+                revision = attr.VersionNumber;
 
                 if (HidD_GetPreparsedData(probe, out IntPtr pre))
                 {
@@ -527,12 +575,23 @@ namespace MouseDock.Services.Detection
                         int status = HidP_GetCaps(pre, ref caps);
                         if (status != 0x110000)
                         {
+                            RecordFailure("capabilities-unavailable", status);
                             LastDiagnostics.Add($"{vid:X4}:{pid:X4} 能力读取失败 NTSTATUS=0x{status:X8} 路径={path}");
                             return false;
+                        }
+                        if (BatteryReplay.Current != null)
+                        {
+                            string Ids(int type, ushort values, ushort buttons) => string.Join(",",
+                                VendorProtocol.ReadDescriptorReportIds(pre, type, values, buttons)
+                                    .OrderBy(id => id).Select(id => id.ToString("X2")));
+                            reportIds = $"IN[{Ids(0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps)}] " +
+                                $"OUT[{Ids(1, caps.NumberOutputValueCaps, caps.NumberOutputButtonCaps)}] " +
+                                $"FEATURE[{Ids(2, caps.NumberFeatureValueCaps, caps.NumberFeatureButtonCaps)}]";
                         }
                     }
                     finally { HidD_FreePreparsedData(pre); }
                 }
+                else { RecordFailure("preparsed-data-unavailable"); return false; }
 
                 // 蓝牙 HID（BTHLE/BTHENUM）在部分驱动上调用字符串接口会直接崩，
                 // 这两条链路的名字由 BluetoothDiscovery 提供，这里跳过即可
@@ -552,13 +611,22 @@ namespace MouseDock.Services.Detection
             finally { CloseHandle(probe); }
 
             string legacyKey = $"{vid:X4}:{pid:X4}";
-            string key = InstanceScope.Register(path, ancestors);
             using var instanceScope = InstanceScope.Enter(key);
             string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
             string exclusion = ExclusionReason(ancestors, integratedUsb);
             if(IsKnownHubSwitch(vid,pid))exclusion="HM Lab扩展坞切换键HID，不是独立外设";
-            BatteryReplay.Current?.AddCollection(key, path, vid, pid, product, caps.UsagePage, caps.Usage,
-                caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength, exclusion != null);
+            if (BatteryReplay.Current is { } evidence)
+            {
+                bool known = DeviceRoutes.IsKnown(vid, pid, product);
+                bool enabled = preferences?.CanRead(key, $"hid-{vid:X4}-{pid:X4}",
+                    VendorMap.PhysicalKeyFromName(product)) ?? true;
+                evidence.AddCollection(key, path, vid, pid, product, caps.UsagePage, caps.Usage,
+                    caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength,
+                    exclusion != null, revision, exclusion, reportIds: reportIds,
+                    route: DeviceRoutes.Find(vid, pid, product)?.Reader,
+                    queryPolicy: exclusion != null ? "excluded" : !enabled ? "recognition-disabled" :
+                        IsSafeMode ? "safe-mode" : known ? "known-route-only" : "unknown-no-vendor-probe");
+            }
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
                 $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
             if (exclusion != null)
@@ -569,7 +637,7 @@ namespace MouseDock.Services.Detection
             }
 
             bool safeMode = false;
-            try { safeMode = App.Settings?.SafeMode ?? false; } catch { }
+            try { safeMode = IsSafeMode; } catch { }
             bool recognitionEnabled = DeviceRoutes.IsKnown(vid, pid, product) && (preferences?.CanRead(key, null) ?? true) && (preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true);
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
@@ -682,11 +750,7 @@ namespace MouseDock.Services.Detection
                 batteryTrace.Add(safeMode ? "安全模式已跳过专用电量查询" : "专用电量由归并后的设备读取");
             }
             else if (VendorProtocol.IsNeon75Air(vid, pid))
-            {
-                battery = ReadBattery("VGN Neon75 Air F7 状态查询", () => VendorProtocol.TryReadNeon75(vid, pid, !safeMode,
-                    out batteryCharging, out batteryStale), batteryTrace);
-                batterySource = safeMode ? "VGN 接收器上次状态（安全模式未发送查询）" : "VGN Neon75 Air 官方 F7 状态查询";
-            }
+                batteryTrace.Add("Neon75 状态由本实例的 Feature 集合读取");
             else
             {
             if (caps.FeatureReportByteLength > 1 && caps.UsagePage == 0x06 && caps.Usage == 0x20)
@@ -1224,17 +1288,28 @@ namespace MouseDock.Services.Detection
 
         private static int ReadBattery(string reader, Func<int> read, List<string> trace)
         {
+            void Record(string status, int level = -1)
+            {
+                if (InstanceScope.Current is { } instance)
+                    BatteryReplay.Current?.AddQuery(instance, null, reader, status, null, level);
+            }
             try
             {
                 int value = read();
                 if (value >= 0 && value <= 100)
                 {
                     trace.Add($"{reader}: {value}%");
+                    Record("ReaderReturnedValue", value);
                     return value;
                 }
+                Record("NoValidValue");
                 trace.Add(reader + ": 未返回有效电量（未匹配接口或未取得有效响应）");
             }
-            catch (Exception ex) { trace.Add(reader + ": " + ex.GetType().Name + " " + ex.Message); }
+            catch (Exception ex)
+            {
+                Record(ex.GetType().Name);
+                trace.Add(reader + ": " + ex.GetType().Name + " " + ex.Message);
+            }
             return -1;
         }
 

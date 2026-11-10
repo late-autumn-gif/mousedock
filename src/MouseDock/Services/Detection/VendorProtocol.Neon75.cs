@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Runtime.InteropServices;
 
 namespace MouseDock.Services.Detection
 {
@@ -38,38 +39,68 @@ namespace MouseDock.Services.Detection
             if (!IsNeon75Air(vid, pid)) return -1;
             LoadBatteryCache();
             string key = InstanceScope.Current ?? $"{vid:X4}:{pid:X4}";
+            var scan = BatteryReplay.Current;
+            var trace = scan == null ? null : new BatteryReplay.Trace();
+            string instance = InstanceScope.Current;
+            string channel = null;
+            void Record(string status, int level = -1) =>
+                scan?.AddQuery(instance ?? key, channel, "Neon75Feature", status, "VGN Neon75 Air", level, trace);
             foreach (string path in Paths(vid, pid))
             {
                 IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                     IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-                if (h == IntPtr.Zero || h == new IntPtr(-1)) continue;
+                if (h == IntPtr.Zero || h == new IntPtr(-1))
+                {
+                    trace?.Add("open", false, nativeError: Marshal.GetLastWin32Error());
+                    continue;
+                }
                 try
                 {
                     var caps = Caps(h);
                     if (!IsNeon75StatusChannel(vid, pid, caps.UsagePage, caps.Usage, caps.FeatureReportByteLength)) continue;
+                    channel = path;
                     int validReplies = 0;
                     for (int attempt = 0; attempt < (allowQuery ? 3 : 1); attempt++)
                     {
                         if (allowQuery)
                         {
                             var request = BuildNeon75StatusRequest();
-                            if (!HidD_SetFeature(h, request, request.Length)) continue;
+                            bool sent = HidD_SetFeature(h, request, request.Length);
+                            trace?.Add("set-feature", sent, raw: request, keep: true,
+                                nativeError: sent ? null : Marshal.GetLastWin32Error());
+                            if (!sent) continue;
                             Thread.Sleep(20);
                         }
                         var response = new byte[65];
-                        if (!HidD_GetFeature(h, response, response.Length) ||
-                            !TryParseNeon75Status(response, out int level, out bool charge)) continue;
-                        if (!allowQuery) { stale = true; return level; }
+                        bool received = HidD_GetFeature(h, response, response.Length);
+                        int? error = received ? null : Marshal.GetLastWin32Error();
+                        int level = -1;
+                        bool charge = false;
+                        bool valid = received && TryParseNeon75Status(response, out level, out charge);
+                        if (trace != null)
+                        {
+                            var evidence = received ? new byte[response.Length] : null;
+                            if (received)
+                                foreach (int index in new[] { 0, 1, 2, 4, 10 }) evidence[index] = response[index];
+                            trace.Add("get-feature", valid, raw: evidence, keep: received,
+                                result: !received ? "read-failed" : valid ? "accepted" :
+                                    response[4] != 0 ? "asleep-or-not-ready" : "invalid-status-frame",
+                                nativeError: error);
+                        }
+                        if (!valid) continue;
+                        if (!allowQuery) { stale = true; Record("Cached"); return level; }
                         if (++validReplies < 2) continue;
                         charging = charge;
                         _lastGood[key] = level;
                         SaveBatteryCache();
+                        Record(charge ? "Charging" : "Online", level);
                         return level;
                     }
                 }
-                catch { }
+                catch (Exception ex) { trace?.Add("exception", false, result: ex.GetType().Name); }
                 finally { CloseHandle(h); }
             }
+            Record(channel == null ? "NoMatchingChannel" : "NoValidatedReply");
             if (_lastGood.TryGetValue(key, out int previous) && previous >= 0 && previous <= 100)
             {
                 stale = true;

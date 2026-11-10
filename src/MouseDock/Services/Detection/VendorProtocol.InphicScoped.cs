@@ -107,7 +107,14 @@ internal static partial class VendorProtocol
                             bool batteryHeader = pro ? raw.Length == 5 && raw[2] is 0x40 or 0x41 :
                                 raw.Length - offset == 32 && raw[offset] == 0x10 &&
                                 raw[offset + 1] == 0 && raw[offset + 2] == 1;
-                            trace.Add("input", decoded, raw: raw, keep: batteryHeader);
+                            var evidence = batteryHeader && !pro ? new byte[raw.Length] : raw;
+                            if (batteryHeader && !pro)
+                            {
+                                raw.AsSpan(0, offset + 8).CopyTo(evidence);
+                                raw.AsSpan(offset + 12, 3).CopyTo(evidence.AsSpan(offset + 12));
+                            }
+                            trace.Add("input", decoded, raw: evidence, keep: batteryHeader,
+                                result: decoded ? "accepted" : "rejected");
                         }
                         if (decoded) break;
                         current=null;

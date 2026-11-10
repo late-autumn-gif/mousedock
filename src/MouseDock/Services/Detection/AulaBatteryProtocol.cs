@@ -81,14 +81,21 @@ internal static class AulaBatteryProtocol
                 if (raw is not { Length: > 0 }) continue;
                 last = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, 65)));
                 if (raw.AsSpan().SequenceEqual(request) || (raw.Length == 32 && raw.AsSpan().SequenceEqual(request.AsSpan(1))))
-                { echoes++; continue; }
+                { echoes++; trace?.Add("echo", false, raw: raw); continue; }
                 bool decoded = TryDecodeIdentify(raw, out var reading);
                 if (trace != null)
                 {
                     int offset = raw.Length == 33 && raw[0] == 0 ? 1 : 0;
                     bool identifyHeader = raw.Length - offset == 32 && raw[offset] == 0x30 &&
                         raw[offset + 1] is 0 or 2 && raw[offset + 2] == 1;
-                    trace.Add("input", decoded, raw: raw, keep: identifyHeader);
+                    var evidence = identifyHeader ? new byte[raw.Length] : raw;
+                    if (identifyHeader)
+                    {
+                        raw.AsSpan(0, offset + 8).CopyTo(evidence);
+                        raw.AsSpan(offset + 12, 3).CopyTo(evidence.AsSpan(offset + 12));
+                    }
+                    trace.Add("input", decoded, raw: evidence, keep: identifyHeader,
+                        result: !decoded ? "rejected" : reading.Status.ToString());
                 }
                 if (!decoded) { rejected++; continue; }
                 if (reading.Status == ReferenceBatteryProtocol.State.Sleep)
@@ -100,6 +107,7 @@ internal static class AulaBatteryProtocol
                 first = reading;
                 break;
             }
+            if (link.Now >= deadline) trace?.Add("read-deadline", false);
         }
         if (first != null)
             return first with { Level = -1, Charging = false, ChargingKnown = false,
@@ -126,8 +134,14 @@ internal static class AulaBatteryProtocol
             var reply = link.GetFeature(6, 41);
             last = reply == null ? "GetFeature 失败" : Convert.ToHexString(reply.AsSpan(0, Math.Min(41, reply.Length)));
             bool decoded = VendorProtocol.TryParseAulaSc630Battery(reply, seq, out int level, out bool charging);
-            trace?.Add("get-feature", decoded, seq, reply,
-                keep: reply is { Length: 41 } && reply[0] == 6 && reply[3] == 0x81 && reply[8] == 3);
+            if (trace != null)
+            {
+                bool keep = reply is { Length: 41 } && reply[0] == 6 && reply[3] == 0x81 && reply[8] == 3;
+                byte[] evidence = keep ? new byte[reply.Length] : reply;
+                if (keep)
+                    foreach (int index in new[] { 0, 3, 4, 8, 9, 10 }) evidence[index] = reply[index];
+                trace.Add("get-feature", decoded, seq, evidence, keep, decoded ? "accepted" : "rejected");
+            }
             if (!decoded) continue;
             if (reply[4] == 0) notEchoed++;
             diagnostic += " RX=" + last;

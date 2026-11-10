@@ -129,6 +129,20 @@ internal static partial class VendorProtocol
         return true;
     }
 
+    private static byte[] RogOmniPairingEvidence(byte[] response)
+    {
+        if (!TryReadRogOmniPairing(response, out var pids)) return null;
+        var evidence = new byte[response.Length];
+        response.AsSpan(0, 3).CopyTo(evidence);
+        for (int i = 0; i < pids.Count; i++)
+        {
+            int offset = 5 + i * 4;
+            evidence[offset] = (byte)pids[i];
+            evidence[offset + 1] = (byte)(pids[i] >> 8);
+        }
+        return evidence;
+    }
+
     internal static ReferenceBatteryProtocol.Reading ReadRogScope(string pairingPath, string batteryPath, BatteryReplay.Trace trace = null)
     {
         if (InstanceScope.Current == null || !InstanceScope.Allows(pairingPath) || !InstanceScope.Allows(batteryPath))
@@ -137,7 +151,7 @@ internal static partial class VendorProtocol
         return ReferenceQueryGate.Run(pairingPath, () =>
         {
             var paired = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
-            trace?.Add("omni-paired", paired != null, raw: paired, keep: paired != null);
+            if (trace != null) trace.Add("omni-paired", paired != null, raw: RogOmniPairingEvidence(paired), keep: true);
             if (paired == null)
                 return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表无应答");
             if (!TryReadRogOmniPairing(paired, out var pids))
@@ -153,13 +167,25 @@ internal static partial class VendorProtocol
                 return new(-1, false, false, ReferenceBatteryProtocol.State.Failed, ex.Message, model);
             }
             bool decoded = TryParseRogScopeBattery(battery, out int percent, out bool charging);
-            trace?.Add("omni-battery", decoded, raw: battery, keep: battery != null);
+            if (trace != null)
+            {
+                var evidence = decoded ? new byte[battery.Length] : battery;
+                if (decoded)
+                {
+                    battery.AsSpan(0, 3).CopyTo(evidence);
+                    evidence[6] = battery[6];
+                    evidence[9] = battery[9];
+                    // Preserve the parser's non-empty-frame condition without retaining the payload.
+                    evidence[3] = 1;
+                }
+                trace.Add("omni-battery", decoded, raw: evidence, keep: decoded);
+            }
             if (!decoded)
                 return new(-1, false, false, ReferenceBatteryProtocol.State.Sleep,
                     "Omni 已配对 " + RogPairedModelText(pids) + "，未取得有效在线电量", model);
             var confirmed = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
             bool unchanged = RogOmniPairingUnchanged(paired, confirmed);
-            trace?.Add("omni-paired-after", unchanged, raw: confirmed, keep: confirmed != null);
+            if (trace != null) trace.Add("omni-paired-after", unchanged, raw: RogOmniPairingEvidence(confirmed), keep: true);
             if (!unchanged)
                 return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表变化或复核失败，未采用本次电量");
             return new(percent, charging, true, charging ? ReferenceBatteryProtocol.State.Charging :

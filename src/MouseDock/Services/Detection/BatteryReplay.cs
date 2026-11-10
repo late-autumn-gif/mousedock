@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace MouseDock.Services.Detection;
 
@@ -15,11 +16,15 @@ internal static class BatteryReplay
     [ThreadStatic] internal static Scan Current;
 
     internal sealed record Collection(string Receiver, int Interface, ushort Vid, ushort Pid, string Product,
-        ushort Page, ushort Usage, int Input, int Output, int Feature, bool Excluded, bool Mi02, int OmniReport = 0);
-    internal sealed record Sample(string Stage, bool Ok, byte Sequence = 0, int Length = 0, string Hex = null);
+        ushort Page, ushort Usage, int Input, int Output, int Feature, bool Excluded, bool Mi02, int OmniReport = 0, string InterfaceLabel = null, ushort? UsbRevision = null,
+        int? OpenError = null, string Exclusion = null, string Status = null,
+        string ReportIds = null, string Route = null, string QueryPolicy = null);
+    internal sealed record Sample(string Stage, bool Ok, byte Sequence = 0, int Length = 0, string Hex = null, DateTimeOffset? At = null, string Result = null, int? NativeError = null);
     internal sealed record Query(string Receiver, int? Interface, string Protocol, string Status, string Model,
         int? ObservedPercent, Sample[] Samples);
-    internal sealed record Observation(string Receiver, string Model, string Transport, int? Percent, bool Stale);
+    internal sealed record Observation(string Receiver, string Model, string Transport, int? Percent, bool Stale, bool Connected = true, bool? Charging = null, bool? Full = null,
+        string Reader = null, bool ReceiverPresent = false, bool PeripheralConfirmed = false, string Product = null,
+        string Name = null, string Source = null);
     internal sealed record Capture(int Schema, string AppVersion, Guid BuildId, string WindowsVersion, string ScanError,
         DateTimeOffset StartedAt, DateTimeOffset FinishedAt,
         Collection[] Collections, Query[] Queries, Observation[] Observations);
@@ -30,12 +35,12 @@ internal static class BatteryReplay
     {
         private readonly List<Sample> samples = new();
 
-        internal void Add(string stage, bool ok, byte sequence = 0, byte[] raw = null, bool keep = false)
+        internal void Add(string stage, bool ok, byte sequence = 0, byte[] raw = null, bool keep = false, string result = null, int? nativeError = null)
         {
             lock (samples)
             {
-                if (!ok && samples.Count >= 64) return;
-                samples.Add(new(stage, ok, sequence, raw?.Length ?? 0, keep ? Convert.ToHexString(raw) : null));
+                if (samples.Count >= 64) return;
+                samples.Add(new(stage, ok, sequence, raw?.Length ?? 0, keep && raw != null ? Convert.ToHexString(raw) : null, DateTimeOffset.UtcNow, result, nativeError));
             }
         }
 
@@ -45,7 +50,14 @@ internal static class BatteryReplay
     internal sealed class Scan
     {
         private readonly DateTimeOffset started = DateTimeOffset.UtcNow;
-        private readonly Dictionary<string, string> receivers = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> receivers;
+        internal bool? SafeMode { get; }
+
+        internal Scan(Dictionary<string, string> aliases = null, bool? safeMode = null)
+        {
+            receivers = aliases ?? new(StringComparer.OrdinalIgnoreCase);
+            SafeMode = safeMode;
+        }
         private readonly Dictionary<string, int> interfaces = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<Collection> collections = new();
         private readonly List<Query> queries = new();
@@ -53,29 +65,26 @@ internal static class BatteryReplay
         internal string ScanError;
         internal List<DetectedDevice> Detected = new();
 
-        private string Receiver(string instance)
-        {
-            if (!receivers.TryGetValue(instance, out string label))
-                receivers[instance] = label = "receiver-" + (receivers.Count + 1);
-            return label;
-        }
+        private string Receiver(string instance) => Alias(receivers, instance);
 
         internal void AddCollection(string instance, string path, ushort vid, ushort pid, string product,
-            ushort page, ushort usage, int input, int output, int feature, bool excluded)
+            ushort page, ushort usage, int input, int output, int feature, bool excluded, ushort? usbRevision = null, string exclusion = null,
+            int? openError = null, string status = "capabilities-read", string reportIds = null, string route = null, string queryPolicy = null)
         {
+            HidInventory.ParsePath(path, out _, out _, out string interfaceLabel);
             int number = collections.Count + 1;
             interfaces[path] = number;
-            collections.Add(new(Receiver(instance), number, vid, pid, product, page, usage, input, output, feature, excluded, path.Contains("&mi_02", StringComparison.OrdinalIgnoreCase),
+            collections.Add(new(Receiver(instance), number, vid, pid, SafeLabel(product), page, usage, input, output, feature, excluded, path.Contains("&mi_02", StringComparison.OrdinalIgnoreCase),
                 VendorProtocol.IsRogOmni(vid, pid)
                     ? VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 1) ? 1 :
                         VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 2) ? 2 : 0
-                    : 0));
+                    : 0, interfaceLabel, usbRevision, openError, exclusion, status, reportIds, route, queryPolicy));
         }
 
         internal void AddQuery(string instance, string path, string protocol, string status, string model,
             int level = -1, Trace trace = null) =>
             queries.Add(new(Receiver(instance), path != null && interfaces.TryGetValue(path, out int number) ? number : null,
-                protocol, status, model, level >= 0 ? level : null, trace?.Snapshot() ?? Array.Empty<Sample>()));
+                protocol, status, SafeLabel(model), level >= 0 ? level : null, trace?.Snapshot() ?? Array.Empty<Sample>()));
 
         internal Capture Finish(IEnumerable<string> selectedIds)
         {
@@ -87,9 +96,29 @@ internal static class BatteryReplay
                 queries.Where(q => selected == null || selected.Contains(q.Receiver)).ToArray(),
                 Detected.Where(device => receivers.TryGetValue(device.Id, out string label) &&
                         (selected == null || selected.Contains(label)))
-                    .Select(device => new Observation(receivers[device.Id], device.ConfirmedModel, device.Transport,
-                        device.Level is >= 0 and <= 100 ? device.Level : null, device.IsStale)).ToArray());
+                    .Select(device => new Observation(receivers[device.Id], SafeLabel(device.ConfirmedModel), device.Transport,
+                        device.Level is >= 0 and <= 100 ? device.Level : null, device.IsStale,
+                        device.Connected, device.IsStale || (!device.Charging &&
+                            !queries.Any(q => q.Receiver == receivers[device.Id] &&
+                                (q.Protocol is "Sc580Receiver" or "Neon75Feature") && q.ObservedPercent.HasValue))
+                            ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
+                        device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
+                        SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") : "unknown")).ToArray());
         }
+    }
+
+    internal static string Alias(Dictionary<string, string> aliases, string instance)
+    {
+        if (!aliases.TryGetValue(instance, out string label))
+            aliases[instance] = label = "receiver-" + (aliases.Count + 1);
+        return label;
+    }
+
+    internal static string SafeLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        string label = Regex.Replace(value, @"(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}|\b[0-9a-f]{12,}\b", "[ID]");
+        return label.Contains('\\') || label.Contains('/') ? "[名称已隐藏]" : label;
     }
 
     internal static string Serialize(Capture capture) => JsonSerializer.Serialize(capture, Json);
@@ -103,9 +132,22 @@ internal static class BatteryReplay
         }
 
         using var zip = ZipFile.OpenRead(path);
-        var entry = zip.GetEntry(EntryName) ?? throw new InvalidDataException("报告缺少 " + EntryName);
-        using var stream = entry.Open();
-        return ReplayStream(stream, entry.Length);
+        var first = zip.GetEntry(EntryName) ?? throw new InvalidDataException("报告缺少 " + EntryName);
+        var additional = new[] { zip.GetEntry("samples/02.json"), zip.GetEntry("samples/03.json") }
+            .Where(entry => entry != null).ToArray();
+        string ReplayEntry(ZipArchiveEntry entry)
+        {
+            using var stream = entry.Open();
+            return ReplayStream(stream, entry.Length);
+        }
+        if (additional.Length == 0) return ReplayEntry(first);
+        var rounds = new List<JsonElement>();
+        foreach (var entry in new[] { first }.Concat(additional))
+        {
+            using var json = JsonDocument.Parse(ReplayEntry(entry));
+            rounds.Add(json.RootElement.Clone());
+        }
+        return JsonSerializer.Serialize(new { Rounds = rounds }, Json);
     }
 
     private static string ReplayStream(Stream stream, long length)
@@ -125,6 +167,8 @@ internal static class BatteryReplay
 
     private static bool MatchesChannel(string protocol, Collection channel, Collection[] collections)
     {
+        if (protocol == "Neon75Feature")
+            return VendorProtocol.IsNeon75StatusChannel(channel.Vid, channel.Pid, channel.Page, channel.Usage, channel.Feature);
         if (protocol == "RogScopeRxOmni")
             return VendorProtocol.IsRogOmni(channel.Vid, channel.Pid) && channel.OmniReport == 2 &&
                 VendorProtocol.IsRogOmniReport(channel.Page, channel.Usage, channel.Input, channel.Output, 2) &&
@@ -188,6 +232,32 @@ internal static class BatteryReplay
             return new(query.Receiver, query.Interface, query.Protocol,
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
         if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
+        if (query.Protocol == "Neon75Feature")
+        {
+            bool pending = false, charging = false;
+            int level = -1, valid = 0;
+            foreach (var sample in query.Samples ?? Array.Empty<Sample>())
+            {
+                if (sample.Stage == "set-feature")
+                {
+                    pending = sample.Ok && sample.Length == 65 &&
+                        sample.Hex == Convert.ToHexString(VendorProtocol.BuildNeon75StatusRequest());
+                    continue;
+                }
+                if (sample.Stage != "get-feature" || !pending) continue;
+                pending = false;
+                if (!sample.Ok || sample.Length != 65 || sample.Hex?.Length != 130) continue;
+                try
+                {
+                    if (VendorProtocol.TryParseNeon75Status(Convert.FromHexString(sample.Hex), out int next, out bool charge))
+                    { valid++; level = next; charging = charge; }
+                }
+                catch (FormatException) { }
+            }
+            bool neonVerified = valid >= 2 && (query.Status is "Online" or "Charging");
+            return new(query.Receiver, query.Interface, query.Protocol, query.Status, query.Model,
+                neonVerified ? level : null, neonVerified ? charging : null, neonVerified ? "captured" : "unavailable");
+        }
 
         ReferenceBatteryProtocol.Reading last = null;
         int count = 0;
@@ -198,7 +268,8 @@ internal static class BatteryReplay
         {
             if (sample.Stage is "write-identify" or "write-identity" or "set-feature")
             {
-                requestPending = sample.Ok;
+                requestPending = sample.Ok && (query.Protocol != "Sc580Receiver" ||
+                    sample.Hex == Convert.ToHexString(AulaBatteryProtocol.IdentifyRequest()));
                 sequence = sample.Sequence;
                 continue;
             }

@@ -5,6 +5,9 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using MouseDock.Models;
@@ -14,11 +17,7 @@ namespace MouseDock.Services
     /// <summary>
     /// 反馈与错误报告。
     ///
-    /// 错误报告做什么：
-    ///   1. 枚举本机所有 HID 设备（VID/PID/产品名/用法页/能力）
-    ///   2. 标出哪些被 MouseDock 认出来了、哪些读不到电量
-    ///   3. 附上识别结果、设置、系统信息
-    ///   4. 打包成 zip
+    /// 使用正常设备读取器采集有界、脱敏的诊断快照，并导出本地 ZIP。
     ///
     /// 报告放哪：
     ///   不往 C 盘的 %APPDATA% 里塞。导出时弹一次「另存为」对话框，
@@ -39,8 +38,7 @@ namespace MouseDock.Services
     {
         public const string ContactEmail = "2653880019@qq.com";
 
-        private static string DataDir =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock");
+        private static readonly object CaptureGate = new();
 
         // ─────────────────────────── 报告放哪 ───────────────────────────
 
@@ -161,26 +159,43 @@ namespace MouseDock.Services
 
         /// <summary>
         /// 先弹设备选择框，再弹「另存为」。选中哪台就只抓哪台；
-        /// 选「全部设备」保留旧版全量报告。三个入口（设置页 / 关于 / 反馈）都走这里。
+        /// 全量和单设备采用同一采样格式；查询前按物理实例限定单设备范围。
         /// HID 枚举、只读查询和压缩放到后台线程。
         /// </summary>
         public static async Task<ReportExportResult> ExportReportWithPromptAsync(
             Window owner, AppSettings settings, IEnumerable<DeviceInfo> detected)
         {
             var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
-            var selected = Views.ReportDevicePicker.Pick(owner, detectedList, out bool canceled);
+            var selected = Views.ReportDevicePicker.Pick(owner, detectedList, out bool canceled, out bool cableConnected);
             if (canceled) return ReportExportResult.CanceledByUser;
 
             string target = AskSavePath(owner, selected);
             if (string.IsNullOrEmpty(target)) return ReportExportResult.CanceledByUser;
 
-            return await Task.Run(() =>
+            var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var snapshot = CreateDisplaySnapshot(selected == null ? detectedList : new List<DeviceInfo> { selected }, aliases);
+            var snapshotAt = DateTimeOffset.UtcNow;
+            var preferences = App.Battery?.Preferences ?? new DevicePreferences(settings ?? new AppSettings());
+            var scope = selected == null ? null : DevicePreferences.Keys(selected);
+            bool safeMode = settings?.SafeMode == true;
+            return await Task.Run(() => TryExportReport(settings, null, target, selected,
+                CaptureRounds(preferences, scope, safeMode, aliases), snapshot, snapshotAt, cableConnected)).ConfigureAwait(true);
+        }
+
+        internal static Detection.BatteryReplay.Capture[] CaptureRounds(
+            DevicePreferences preferences, IEnumerable<string> scope, bool safeMode, Dictionary<string, string> aliases = null)
+        {
+            lock (CaptureGate)
             {
-                Detection.HidDiscovery.Enumerate(App.Battery?.Preferences ?? new DevicePreferences(settings ?? new AppSettings()),
-                    selected == null ? null : DevicePreferences.Keys(selected), out var capture);
-                return TryExportReport(settings, detectedList, target, selected, capture);
-            })
-                             .ConfigureAwait(true);
+                aliases ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var rounds = new Detection.BatteryReplay.Capture[3];
+                for (int i = 0; i < rounds.Length; i++)
+                {
+                    if (i > 0) Thread.Sleep(TimeSpan.FromSeconds(8));
+                    Detection.HidDiscovery.Enumerate(preferences, scope, out rounds[i], aliases, safeMode);
+                }
+                return rounds;
+            }
         }
 
         /// <summary>
@@ -202,7 +217,7 @@ namespace MouseDock.Services
         /// </summary>
         public static ReportExportResult TryExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected,
                                                          string zipPath = null, DeviceInfo target = null,
-                                                         Detection.BatteryReplay.Capture capture = null)
+                                                         Detection.BatteryReplay.Capture[] rounds = null, DisplayReading[] snapshot = null, DateTimeOffset? snapshotAt = null, bool cableConnected = false)
         {
             string resolvedTarget = null;
             string temporaryPath = null;
@@ -221,38 +236,11 @@ namespace MouseDock.Services
                 return ReportExportResult.Failed(ReportExportFailureKind.WriteFailed, resolvedTarget,
                                                  "目标路径没有上级目录。");
 
-            var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
+            snapshotAt ??= DateTimeOffset.UtcNow;
+            snapshot ??= CreateDisplaySnapshot(target == null ? detected ?? Array.Empty<DeviceInfo>() : new[] { target });
+            rounds ??= Array.Empty<Detection.BatteryReplay.Capture>();
 
-            // 内容先在内存里生成完，再一次性写盘 —— 生成失败和写盘失败不会混在一起。
-            string hidReport;
-            string summary;
-            string deviceReport = null;
-            Detection.DeviceProbeResult probe = null;
-            try
-            {
-                hidReport = BuildHidReport(detectedList, target);
-                summary = BuildSummary(settings, detectedList, target);
-
-                if (target != null)
-                {
-                    if (TryGetVidPid(target, out ushort vid, out ushort pid))
-                    {
-                        deviceReport = BuildDeviceSnapshot(settings, target, vid, pid);
-                        probe = Detection.VendorProtocol.ProbeDevice(vid, pid, target.Name,
-                            settings?.SafeMode == true, scanOnly: Detection.AulaBatteryProtocol.IsCandidate(vid, pid, target.RawName) || Detection.VendorProtocol.IsScopedG7(vid,pid,target.RawName) || Detection.VendorProtocol.IsMchoseV9Pro(vid,pid,target.RawName));
-                    }
-                    else
-                    {
-                        deviceReport = BuildDeviceSnapshot(settings, target, 0, 0);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                return ReportExportResult.Failed(ReportExportFailureKind.GenerateFailed, resolvedTarget,
-                                                 ex.Message, ex);
-            }
-
+            var series = DescribeSeries(rounds);
             try
             {
                 Directory.CreateDirectory(dir);
@@ -263,28 +251,23 @@ namespace MouseDock.Services
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    AddText(zip, "hid-devices.txt", hidReport);
-                    AddText(zip, "summary.txt", summary);
-                    if (capture != null)
-                        AddText(zip, Detection.BatteryReplay.EntryName, Detection.BatteryReplay.Serialize(capture));
-                    if (!string.IsNullOrEmpty(deviceReport)) AddText(zip, "device.txt", deviceReport);
-                    if (probe != null)
+                    AddText(zip, "summary.txt", BuildSummary(settings, target != null, snapshot, rounds, series, cableConnected));
+                    AddText(zip, "report.json", JsonSerializer.Serialize(new
                     {
-                        AddText(zip, "probe.txt", probe.Text);
-                        AddText(zip, "probe-events.jsonl", probe.Jsonl);
-                    }
-
-                    // 全量报告才捎带全局缓存；单设备报告只留选中设备的文件。
-                    if (target == null)
-                    {
-                        foreach (var name in new[] { "settings.json", "battery-cache.json", "vendor-identity.json",
-                                                     "detect.txt", "hid-probe.txt", "ble-scan.txt" })
+                        Schema = 2, Scope = target == null ? "all" : "single",
+                        AppVersion = UpdateService.CurrentVersionText,
+                        WindowsVersion = Environment.OSVersion.VersionString,
+                        SafeMode = settings?.SafeMode == true, RefreshSeconds = settings?.RefreshSeconds,
+                        DisplaySnapshotAt = snapshotAt, DisplaySnapshot = snapshot,
+                        UserContext = cableConnected ? "cable-connected" : null,
+                        Series = series,
+                        Rounds = rounds.Select((r, i) => new
                         {
-                            string src = Path.Combine(DataDir, name);
-                            if (!File.Exists(src)) continue;
-                            try { zip.CreateEntryFromFile(src, name, CompressionLevel.Optimal); } catch { }
-                        }
-                    }
+                            Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, r.ScanError
+                        })
+                    }, new JsonSerializerOptions { WriteIndented = true }));
+                    for (int i = 0; i < rounds.Length; i++)
+                        AddText(zip, ReplayEntry(i), Detection.BatteryReplay.Serialize(rounds[i]));
                 }
 
                 // 原子替换：目标文件正被预览窗格、压缩软件或同步盘占着时，
@@ -317,357 +300,70 @@ namespace MouseDock.Services
             }
         }
 
-        /// <summary>
-        /// 枚举本机全部 HID 设备，逐台标注 MouseDock 认不认得。
-        /// </summary>
-        private static string BuildHidReport(List<DeviceInfo> detected, DeviceInfo target = null)
-        {
-            bool single = target != null;
-            var selected = single
-                ? detected.Where(d => SameDevice(d, target)).ToList()
-                : detected;
-            if (single && selected.Count == 0) selected.Add(target);
+        internal sealed record DisplayReading(string Name, string Product, string Model, string Kind, string Transport,
+            string VidPid, bool Connected, bool ReceiverPresent, bool PeripheralConfirmed, int? Percent,
+            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances);
 
-            var sb = new StringBuilder();
-            sb.AppendLine(single ? "MouseDock 单设备报告" : "MouseDock 设备报告");
-            sb.AppendLine("生成时间: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-            sb.AppendLine();
+        private static DisplayReading[] CreateDisplaySnapshot(IEnumerable<DeviceInfo> devices,
+            Dictionary<string, string> aliases = null) =>
+            devices.Select(d => new DisplayReading(
+                Detection.BatteryReplay.SafeLabel(d.Name), Detection.BatteryReplay.SafeLabel(d.RawName),
+                Detection.BatteryReplay.SafeLabel(d.ConfirmedModel), d.Kind.ToString(), d.Transport,
+                Regex.Match(d.Detail ?? "", @"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$").Value,
+                d.Connected, d.ReceiverDiscovered, d.PeripheralConfirmed, d.Level is >= 0 and <= 100 ? d.Level : null,
+                d.Level < 0 ? "unknown" : d.IsStale || !d.Connected ? "cached" : "display-snapshot",
+                d.IsChargingActive ? true : null, d.IsFullActive ? true : null, d.HandledByLabel, d.Source,
+                aliases == null ? Array.Empty<string>() : DevicePreferences.Keys(d)
+                    .Where(key => key.StartsWith("instance-", StringComparison.OrdinalIgnoreCase))
+                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray())).ToArray();
 
-            TryGetVidPid(target, out ushort targetVid, out ushort targetPid);
+        private static string ReplayEntry(int index) => index == 0 ? Detection.BatteryReplay.EntryName :
+            $"samples/{index + 1:D2}.json";
 
-            if (single)
-            {
-                sb.AppendLine("========== 抓取目标 ==========");
-                sb.AppendLine($"只抓这一台：{target.Name}");
-                sb.AppendLine($"设备 ID = {target.Id}；标识 = {target.Detail}；通道 = {target.Transport}");
-                sb.AppendLine("报告里不会出现其他设备的 HID 集合，也不会向其他设备发查询帧。");
-                sb.AppendLine();
-            }
+        internal sealed record ReadingSeries(string Receiver, string Transport, int Samples, int[] ReportedValues,
+            string Assessment);
 
-            // 能发现设备与能读到电量是两个独立结果。
-            sb.AppendLine("========== 已发现设备（含电量未读到） ==========");
-            sb.AppendLine($"电量已读到: {selected.Count(d => d.Level >= 0)}；电量未读到: {selected.Count(d => d.Level < 0)}");
-            if (selected.Count == 0)
-            {
-                sb.AppendLine("  （无）");
-            }
-            else
-            {
-                foreach (var d in selected)
+        private static ReadingSeries[] DescribeSeries(Detection.BatteryReplay.Capture[] rounds) =>
+            rounds.SelectMany(r => r.Observations).Where(item => item.Connected && !item.Stale && item.Percent.HasValue)
+                .GroupBy(item => (item.Receiver, item.Transport))
+                .Select(group =>
                 {
-                    sb.AppendLine($"  [{d.Kind}] {d.Name}");
-                sb.AppendLine($"      原始名称={d.RawName}；确认型号={d.ConfirmedModel}；接口={d.InterfaceDiscovered}；接收器={d.ReceiverDiscovered}；外设确认={d.PeripheralConfirmed}；电量有效={d.Level >= 0 && !d.IsStale}");
-                    sb.AppendLine($"      设备 ID  = {d.Id}");
-                    if (!string.IsNullOrWhiteSpace(d.Detail)) sb.AppendLine($"      标识     = {d.Detail}");
-                    sb.AppendLine($"      通道     = {d.Transport}");
-                    sb.AppendLine($"      电量     = {(d.Level < 0 ? "读不到" : d.Level + "%")}");
-                    sb.AppendLine($"      连接     = {(d.Connected ? "已连接" : "未连接")}");
-                    if (d.IsStale) sb.AppendLine("      读数状态 = 上一次成功读取的缓存值");
-                    if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine($"      读取说明 = {d.Note}");
-                    else if (d.Level < 0) sb.AppendLine("      读取说明 = 未记录具体失败原因，请参阅下方扫描诊断");
-                    sb.AppendLine();
-                }
-            }
+                    int[] values = group.Select(item => item.Percent.Value).ToArray();
+                    string assessment = values.Length < 2 ? "insufficient-samples" :
+                        values.All(value => value == 100) ? "repeated-100-unverified" :
+                        values.All(value => value == values[0]) ? "unchanged" : "reported-change";
+                    return new ReadingSeries(group.Key.Receiver, group.Key.Transport, values.Length, values, assessment);
+                }).ToArray();
 
-            // HID 集合：单设备模式只列该 VID:PID
-            sb.AppendLine(single ? "========== 该设备的 HID 集合 ==========" : "========== 本机全部 HID 集合 ==========");
-            sb.AppendLine("格式: VID:PID  产品名  [用法页/用法]  能力(in/out/feature)");
-            sb.AppendLine("同一物理设备可暴露多个集合；集合数量不等于物理设备数量。");
-            if (!single) sb.AppendLine("上方标识可能是蓝牙地址，不一定是 VID:PID。");
-            sb.AppendLine();
-
-            try
-            {
-                if (single && targetVid != 0)
-                {
-                    var inventory = Detection.HidInventory.Enumerate(targetVid, targetPid);
-                    sb.Append(Detection.HidInventory.Describe(inventory, true));
-                }
-                else
-                {
-                    var nodes = single
-                        ? new List<Detection.HidProbe.Node>()
-                        : Detection.HidProbe.Enumerate(null, null);
-                    var seen = new HashSet<string>();
-                    int idx = 0;
-
-                    foreach (var n in nodes)
-                    {
-                        string key = n.Path;
-                        if (!seen.Add(key)) continue;
-
-                        idx++;
-                        string up = $"0x{n.Caps.UsagePage:X4}";
-                        string us = $"0x{n.Caps.Usage:X4}";
-                        string caps = $"in={n.Caps.InputReportByteLength} out={n.Caps.OutputReportByteLength} feat={n.Caps.FeatureReportByteLength}";
-
-                        // 标出标准电量用法页
-                        string tag = "";
-                        if (n.Caps.UsagePage == 0x06 && n.Caps.Usage == 0x20) tag = "  ← 标准电量";
-                        else if (n.Caps.UsagePage >= 0xFF00) tag = "  ← 厂商私有接口";
-                        else if (n.Caps.UsagePage == 0x0C) tag = "  （消费类，通常无电量）";
-                        else if (n.Caps.UsagePage == 0x01) tag = "  （通用桌面）";
-
-                        sb.AppendLine($"  {idx:D2}. {n.Vid:X4}:{n.Pid:X4}  {n.Product}");
-                        sb.AppendLine($"      用法页 {up}/{us}  {caps}{tag}");
-                        sb.AppendLine($"      路径: {n.Path}");
-                        sb.AppendLine();
-                    }
-
-                    if (single && targetVid == 0)
-                        sb.AppendLine("  （蓝牙设备：没有 HID 路径，身份与电量看 device.txt）");
-                    else if (idx == 0)
-                        sb.AppendLine(single ? "  （这台设备没有枚举到 HID 接口）" : "  （枚举不到任何 HID 设备）");
-                }
-            }
-            catch (Exception ex)
-            {
-                sb.AppendLine("  枚举异常: " + ex.Message);
-            }
-
-            sb.AppendLine();
-            sb.AppendLine(single ? "========== 该设备相关的 HID 扫描诊断 ==========" : "========== 最近一次 HID 自动扫描诊断 ==========");
-            sb.AppendLine("包含过滤依据与读取结果；来自最近一次扫描，可能早于本次报告导出。");
-            var diagnostics = Detection.HidDiscovery.LastDiagnostics.ToArray();
-            var filteredDiagnostics = single
-                ? diagnostics.Where(line => MentionsDevice(line, target, targetVid, targetPid)).ToArray()
-                : diagnostics;
-            if (filteredDiagnostics.Length == 0) sb.AppendLine("  （本次运行尚无该设备的 HID 扫描诊断）");
-            foreach (string line in filteredDiagnostics) sb.AppendLine("  " + line);
-
-            sb.AppendLine();
-            sb.AppendLine(single ? "========== 该设备相关的蓝牙扫描诊断 ==========" : "========== 最近一次蓝牙自动扫描诊断 ==========");
-            var bluetoothDiagnostics = Detection.BluetoothDiscovery.LastErrors.ToArray();
-            var filteredBluetooth = single
-                ? bluetoothDiagnostics.Where(line => MentionsDevice(line, target, 0, 0) ||
-                    (!string.IsNullOrWhiteSpace(target.Detail) && line.Contains(target.Detail))).ToArray()
-                : bluetoothDiagnostics;
-            if (filteredBluetooth.Length == 0) sb.AppendLine("  （本次运行尚无该设备的蓝牙扫描诊断）");
-            foreach (string line in filteredBluetooth) sb.AppendLine("  " + line);
-
-            return sb.ToString();
-        }
-
-        private static string BuildDeviceSnapshot(AppSettings settings, DeviceInfo device, ushort vid, ushort pid)
+        private static string BuildSummary(AppSettings settings, bool single, DisplayReading[] snapshot,
+            Detection.BatteryReplay.Capture[] rounds, ReadingSeries[] series, bool cableConnected)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("MouseDock 单设备快照");
-            sb.AppendLine("生成时间: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-            sb.AppendLine();
-            sb.AppendLine("==== 已识别结果 ====");
-            sb.AppendLine("名称: " + device.Name);
-            sb.AppendLine("类型: " + device.Kind);
-            sb.AppendLine("通道: " + device.Transport);
-            sb.AppendLine("设备 ID: " + device.Id);
-            sb.AppendLine("标识: " + device.Detail);
-            sb.AppendLine("连接: " + (device.Connected ? "是" : "否"));
-            sb.AppendLine("电量: " + (device.Level < 0 ? "未读到" : device.Level + "%"));
-            sb.AppendLine("充电: " + (device.Charging ? "是" : "否"));
-            sb.AppendLine("缓存读数: " + (device.IsStale ? "是" : "否"));
-            if (!string.IsNullOrWhiteSpace(device.Note)) sb.AppendLine("读取说明: " + device.Note);
-            if (device.DetectionIds != null && device.DetectionIds.Length > 0)
-                sb.AppendLine("DetectionIds: " + string.Join(", ", device.DetectionIds));
-            sb.AppendLine();
-
-            var nodes = new List<Detection.HidProbe.Node>();
-            try
+            sb.AppendLine("MouseDock 设备诊断报告 v2");
+            sb.AppendLine($"版本: {UpdateService.CurrentVersionText} / Windows: {Environment.OSVersion.VersionString}");
+            sb.AppendLine($"范围: {(single ? "单设备（按实例限定）" : "全部设备")}");
+            if (cableConnected) sb.AppendLine("用户标注: 插线后采样。");
+            sb.AppendLine($"安全模式: {(settings?.SafeMode == true ? "开" : "关")}；应用刷新: {settings?.RefreshSeconds} 秒");
+            sb.AppendLine("界面快照仅记录采样前的显示状态；蓝牙和其他非 HID 来源在本报告中仅记录界面快照。");
+            foreach (var item in snapshot)
+                sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {item.Percent?.ToString() ?? "—"} ({item.Freshness})");
+            for (int i = 0; i < rounds.Length; i++)
             {
-                if (vid != 0) nodes = Detection.HidProbe.Enumerate(vid, pid);
+                var round = rounds[i];
+                sb.AppendLine($"第 {i + 1} 轮 {round.StartedAt:O} – {round.FinishedAt:O}，集合 {round.Collections.Length}，查询记录 {round.Queries.Length}。");
+                if (round.ScanError != null) sb.AppendLine($"  扫描错误: {round.ScanError}");
+                else if (round.Collections.Length == 0) sb.AppendLine("  此轮没有找到范围内的 HID 集合。");
+                foreach (var item in round.Observations)
+                    sb.AppendLine($"  {item.Receiver} {item.Name} {item.Transport} {item.Percent?.ToString() ?? "—"} " +
+                        $"{item.Source}；充电 {item.Charging?.ToString() ?? "未知"}");
+                foreach (var query in round.Queries)
+                    sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}");
             }
-            catch { }
-            string product = nodes.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n.Product))?.Product
-                             ?? device.Name;
-
-            sb.AppendLine("==== 名称判定 ====");
-            sb.AppendLine("USB 产品串: " + product);
-            var route = Detection.DeviceRoutes.Find(vid, pid, product);
-            if (route == null)
-                sb.AppendLine("识别路由: 未命中路由表（类型/通道按 HID 集合计数推断）");
-            else
-                sb.AppendLine($"识别路由: {route.Reader} → 类型 {route.Kind}，通道 {route.Transport ?? "按集合推断"}");
-            if (!string.IsNullOrWhiteSpace(device.HandledByLabel) && device.HandledByLabel != "None")
-                sb.AppendLine("处理链: " + device.HandledByLabel);
-            if (Detection.InphicDeviceTable.IsInphicVid(vid))
-                sb.AppendLine("英菲克官方表: " + Detection.InphicDeviceTable.Describe(vid, pid));
-            sb.AppendLine("允许查询: " + Detection.DeviceRoutes.IsKnown(vid, pid, product));
-            try
-            {
-                string brand = Detection.VendorMap.Brand(vid);
-                if (!string.IsNullOrEmpty(brand)) sb.AppendLine("品牌表: " + brand);
-            }
-            catch { }
-            try
-            {
-                if (Detection.VendorMap.TryKnownReceiver($"{vid:X4}:{pid:X4}", out string known, out DeviceKind knownKind, out string knownKey))
-                    sb.AppendLine($"已知接收器: {known} ({knownKind}, key={knownKey})");
-            }
-            catch { }
-            try
-            {
-                string identity = Detection.VendorProtocol.IdentityFor(vid, pid);
-                if (!string.IsNullOrEmpty(identity)) sb.AppendLine("型号串(IdentityFor): " + identity);
-            }
-            catch { }
-            try
-            {
-                sb.AppendLine("英菲克判定: " + Detection.VendorProtocol.IsInphicDevice(vid, pid, product));
-                sb.AppendLine("ROG Omni 判定: " + Detection.VendorProtocol.IsRogOmni(vid, pid));
-                sb.AppendLine("迈从 A7 V2 判定: " + Detection.VendorProtocol.IsMchoseA7V2(vid, pid));
-                sb.AppendLine("迈从 MHUB 型号收录: " +
-                    (Detection.VendorProtocol.ModernMouseProfiles.ContainsKey((product ?? "").Trim()) ? "是" : "否"));
-                sb.AppendLine("ATK V75X 判定: " + Detection.VendorProtocol.IsAtkV75X(vid, pid, product));
-                sb.AppendLine("Rainy 候选: " + Detection.VendorProtocol.IsRainy75Candidate(vid, pid) +
-                              " / 名字含 Rainy/WOB: " + Detection.VendorProtocol.IsRainy75Name(product));
-                sb.AppendLine("ATK ZERO 判定: " + Detection.VendorProtocol.IsAtkZeroBitMouse(vid, pid));
-                sb.AppendLine("MCHOSE G7 判定: " + Detection.VendorProtocol.IsMchoseG7(vid, pid, product));
-                sb.AppendLine("MCHOSE V9 Pro 判定: " + Detection.VendorProtocol.IsMchoseV9Pro(vid, pid, product));
-                sb.AppendLine("雷柏 VT7 判定: " + Detection.VendorProtocol.IsRapooVt7(vid, pid));
-                sb.AppendLine("AULA F99 判定: " + Detection.VendorProtocol.IsAulaF99(vid, pid, product));
-                sb.AppendLine("AULA SC630 判定: " + Detection.VendorProtocol.IsAulaSc630(product));
-                sb.AppendLine("初代 GPW 名称: " + Detection.LogitechHidpp.IsOriginalGpwName(product));
-            }
-            catch { }
-            sb.AppendLine();
-
-            sb.AppendLine("==== 该设备的全部 HID 接口（含打不开的） ====");
-            if (vid != 0)
-            {
-                var inventory = Detection.HidInventory.Enumerate(vid, pid);
-                sb.Append(Detection.HidInventory.Describe(inventory, true));
-            }
-            else
-            {
-                sb.AppendLine("（蓝牙设备没有 HID 路径，身份与电量看 device.txt）");
-            }
-            sb.AppendLine();
-
-            sb.AppendLine("==== 该设备相关的 HID 扫描诊断 ====");
-            var diagnostics = Detection.HidDiscovery.LastDiagnostics
-                .Where(line => MentionsDevice(line, device, vid, pid)).ToArray();
-            if (diagnostics.Length == 0) sb.AppendLine("（无）");
-            foreach (string line in diagnostics) sb.AppendLine("  " + line);
-            sb.AppendLine();
-
-            sb.AppendLine("==== 该设备相关的蓝牙扫描诊断 ====");
-            var bluetooth = Detection.BluetoothDiscovery.LastErrors
-                .Where(line => MentionsDevice(line, device, vid, pid) ||
-                               (!string.IsNullOrWhiteSpace(device.Detail) && line.Contains(device.Detail)))
-                .ToArray();
-            if (bluetooth.Length == 0) sb.AppendLine("（无）");
-            foreach (string line in bluetooth) sb.AppendLine("  " + line);
-            sb.AppendLine();
-
-            sb.AppendLine("==== 当前设置 ====");
-            sb.AppendLine("安全模式: " + (settings?.SafeMode == true ? "开" : "关"));
-            sb.AppendLine("刷新间隔: " + settings?.RefreshSeconds + " 秒");
-            sb.AppendLine("报告范围: 只抓这一台");
-            return sb.ToString();
-        }
-
-        private static bool SameDevice(DeviceInfo a, DeviceInfo b)
-        {
-            if (a == null || b == null) return false;
-            if (string.Equals(a.Id, b.Id, StringComparison.OrdinalIgnoreCase)) return true;
-            if (!string.IsNullOrWhiteSpace(a.Detail) && !string.IsNullOrWhiteSpace(b.Detail) &&
-                string.Equals(a.Detail, b.Detail, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-
-        private static bool TryGetVidPid(DeviceInfo device, out ushort vid, out ushort pid)
-        {
-            vid = pid = 0;
-            if (device == null) return false;
-            var match = System.Text.RegularExpressions.Regex.Match(device.Detail ?? "",
-                @"\b([0-9A-Fa-f]{4}):([0-9A-Fa-f]{4})\b");
-            if (!match.Success)
-                match = System.Text.RegularExpressions.Regex.Match(device.Id ?? "",
-                    @"hid-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{4})");
-            if (!match.Success) return false;
-            return ushort.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out vid)
-                & ushort.TryParse(match.Groups[2].Value, System.Globalization.NumberStyles.HexNumber, null, out pid);
-        }
-
-        private static bool MentionsDevice(string line, DeviceInfo target, ushort vid, ushort pid)
-        {
-            if (string.IsNullOrEmpty(line) || target == null) return false;
-            if (!string.IsNullOrWhiteSpace(target.Name) &&
-                line.IndexOf(target.Name, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (!string.IsNullOrWhiteSpace(target.Id) &&
-                line.IndexOf(target.Id, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (vid != 0)
-            {
-                string vidPid = $"{vid:X4}:{pid:X4}";
-                string pathVidPid = $"VID_{vid:X4}&PID_{pid:X4}";
-                string hidId = $"hid-{vid:X4}-{pid:X4}";
-                if (line.IndexOf(vidPid, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                if (line.IndexOf(pathVidPid, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                if (line.IndexOf(hidId, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            }
-            return false;
-        }
-
-        private static string BuildSummary(AppSettings settings, List<DeviceInfo> detected, DeviceInfo target = null)
-        {
-            bool single = target != null;
-            var selected = single
-                ? detected.Where(d => SameDevice(d, target)).ToList()
-                : detected;
-            if (single && selected.Count == 0) selected.Add(target);
-
-            var sb = new StringBuilder();
-            sb.AppendLine(single ? "MouseDock 单设备抓取摘要" : "MouseDock 反馈摘要");
-            sb.AppendLine("==================");
-            sb.AppendLine();
-            sb.AppendLine("版本: " + UpdateService.CurrentVersionText);
-            sb.AppendLine("系统: " + Environment.OSVersion.VersionString);
-            sb.AppendLine("64位: " + Environment.Is64BitOperatingSystem);
-
-            // StartTime 在受限令牌、沙箱、部分 EDR 环境里会抛 Win32Exception。
-            // 它只是一行运行时长，没有理由拖垮整份报告。
-            string uptime;
-            try
-            {
-                uptime = (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMinutes.ToString("F0") + " 分钟";
-            }
-            catch (Exception ex)
-            {
-                uptime = "读取不到（" + ex.GetType().Name + "）";
-            }
-            sb.AppendLine("运行时长: " + uptime);
-            sb.AppendLine();
-
-            if (single)
-            {
-                sb.AppendLine("抓取目标: " + target.Name);
-                sb.AppendLine("设备 ID: " + target.Id);
-                sb.AppendLine("标识: " + target.Detail);
-                sb.AppendLine("通道: " + target.Transport);
-                sb.AppendLine("报告只包含这一台设备；probe.txt 是只读查询帧与原始应答。");
-                sb.AppendLine();
-            }
-
-            sb.AppendLine("已识别设备: " + selected.Count + " 台");
-            sb.AppendLine("电量已读到: " + selected.Count(d => d.Level >= 0) + " 台；未读到: " + selected.Count(d => d.Level < 0) + " 台");
-            foreach (var d in selected)
-            {
-                sb.AppendLine($"  - [{d.Kind}] {d.Name}  {(d.Level < 0 ? "读不到" : d.Level + "%")}");
-                if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("      读取说明: " + d.Note);
-            }
-            sb.AppendLine();
-            sb.AppendLine("设置:");
-            sb.AppendLine("  刷新间隔 = " + settings?.RefreshSeconds + " 秒");
-            sb.AppendLine("  低电量提醒 = " + settings?.LowBatteryWarn + "%");
-            sb.AppendLine("  自动更新 = " + (settings?.AutoUpdate == true ? "开" : "关"));
-            sb.AppendLine("  安全模式 = " + (settings?.SafeMode == true ? "开（跳过需要发送命令的厂商读取）" : "关"));
-            sb.AppendLine();
-            sb.AppendLine("说明:");
-            sb.AppendLine(single
-                ? "  device.txt 是这一台的名称/身份/接口快照；probe.txt 是只读查询与原始应答。"
-                : "  hid-devices.txt 列出 HID 集合、完整路径及最近扫描中的过滤/读取诊断。");
-            sb.AppendLine("  电量显示「—」表示尚未取得有效读数；设备已发现并不代表电量协议已适配。");
-            sb.AppendLine("  反馈时请提供报告、型号和连接方式；适配可能仍需官方协议或实际响应数据。");
-
+            foreach (var item in series.Where(item => item.Assessment == "repeated-100-unverified"))
+                sb.AppendLine($"  {item.Receiver} {item.Transport} 连续 {item.Samples} 次上报 100%；实时电量未验证。");
+            sb.AppendLine("仅使用应用现有设备读取器；不试探未知厂商命令，不收集输入按键、全局设置、缓存文件或原始路径。");
+            sb.AppendLine("已接入帧采集的协议保存限定范围的查询和响应，脱敏后可离线重放。其他读取器可能只有结果或失败阶段。");
+            sb.AppendLine("重复的有效百分比表示设备仍返回相同数值，不能证明固件的更新频率。");
             return sb.ToString();
         }
 

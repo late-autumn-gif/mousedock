@@ -351,7 +351,7 @@ internal static class Program
 
             using var zip = ZipFile.OpenRead(zipPath);
             var entries = zip.Entries.Select(e => e.FullName).ToHashSet();
-            Require(entries.Contains("summary.txt") && entries.Contains("hid-devices.txt"),
+            Require(entries.Contains("summary.txt") && entries.Contains("report.json"),
                 "The zip must carry the generated reports.");
             Require(Directory.GetDirectories(root, "work-*").Length == 0,
                 "The export must not leave a scratch folder behind.");
@@ -406,7 +406,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         try
         {
-            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null])!;
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null, null, null, false])!;
             string kind = result.GetType().GetProperty("FailureKind")!.GetValue(result)!.ToString()!;
             Require(kind == "WriteFailed", $"A directory target must fail at the write step, got {kind}.");
 
@@ -430,7 +430,7 @@ internal static class Program
             string blocked = Path.Combine(dir, "blocked");
             File.WriteAllText(blocked, "x");
             var result = tryExport.Invoke(null,
-                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null])!;
+                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null, null, null, false])!;
             string log = result.GetType().GetProperty("LogPath")!.GetValue(result) as string ?? "";
             Require(!string.IsNullOrEmpty(log), "A failed export must report where its log went.");
             Require(File.Exists(log), $"The diagnostic log must exist, got {log}.");

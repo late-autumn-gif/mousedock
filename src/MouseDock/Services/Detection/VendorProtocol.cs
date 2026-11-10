@@ -44,8 +44,8 @@ namespace MouseDock.Services.Detection
         private static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data, IntPtr detail, int size, out int needed, IntPtr info);
         [DllImport("setupapi.dll")] private static extern bool SetupDiDestroyDeviceInfoList(IntPtr set);
         [DllImport("hid.dll")] private static extern bool HidD_GetAttributes(IntPtr h, ref HIDD_ATTRIBUTES attr);
-        [DllImport("hid.dll")] private static extern bool HidD_GetFeature(IntPtr h, byte[] buf, int len);
-        [DllImport("hid.dll")] private static extern bool HidD_SetFeature(IntPtr h, byte[] buf, int len);
+        [DllImport("hid.dll", SetLastError = true)] private static extern bool HidD_GetFeature(IntPtr h, byte[] buf, int len);
+        [DllImport("hid.dll", SetLastError = true)] private static extern bool HidD_SetFeature(IntPtr h, byte[] buf, int len);
         [DllImport("hid.dll")] private static extern bool HidD_GetPreparsedData(IntPtr h, out IntPtr prep);
         [DllImport("hid.dll")] private static extern bool HidD_FreePreparsedData(IntPtr prep);
         [DllImport("hid.dll")] private static extern int HidP_GetCaps(IntPtr prep, ref HIDP_CAPS caps);
@@ -708,11 +708,12 @@ namespace MouseDock.Services.Detection
                         if (SetupDiGetDeviceInterfaceDetail(set, ref did, buf, need, out _, IntPtr.Zero))
                         {
                             string path = Marshal.PtrToStringUni(buf + 4) ?? "";
+                            if (string.IsNullOrEmpty(path) || !InstanceScope.Allows(path)) continue;
                             IntPtr hh = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
                             if (hh != IntPtr.Zero && hh != new IntPtr(-1))
                             {
                                 var a = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf(typeof(HIDD_ATTRIBUTES)) };
-                                if (HidD_GetAttributes(hh, ref a) && a.VendorID == vid && a.ProductID == pid && InstanceScope.Allows(path)) list.Add(path);
+                                if (HidD_GetAttributes(hh, ref a) && a.VendorID == vid && a.ProductID == pid) list.Add(path);
                                 CloseHandle(hh);
                             }
                         }

@@ -10,8 +10,7 @@ namespace MouseDock.Views
 {
     /// <summary>
     /// 导出错误报告前的设备选择框。
-    /// 只抓一台设备时，报告里只放这一台的接口、身份、只读查询和原始应答；
-    /// 选「全部设备」则保留旧版全量报告。
+    /// 单设备和全部设备使用同一诊断规格。
     /// </summary>
     internal static class ReportDevicePicker
     {
@@ -23,9 +22,10 @@ namespace MouseDock.Views
             public string Detail;
         }
 
-        internal static DeviceInfo Pick(Window owner, IReadOnlyList<DeviceInfo> devices, out bool canceled)
+        internal static DeviceInfo Pick(Window owner, IReadOnlyList<DeviceInfo> devices, out bool canceled, out bool cableConnected)
         {
             canceled = true;
+            cableConnected = false;
 
             var window = new Window
             {
@@ -50,10 +50,11 @@ namespace MouseDock.Views
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var title = new TextBlock
             {
-                Text = "只抓这一台",
+                Text = "设备诊断抓取",
                 FontSize = 17,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 4)
@@ -63,8 +64,8 @@ namespace MouseDock.Views
 
             var desc = new TextBlock
             {
-                Text = "选中哪台，报告里就只放哪台。会抓：产品名、VID:PID、全部 HID 接口、只读查询帧与原始应答、电量判定。" +
-                       "\n不会发配置写入，也不会碰没选中的设备。",
+                Text = "记录设备接口、连接、电量和读取结果。采样三轮，轮间等待约 8 秒。测试充电时，请先插线并保持要诊断的连接方式。\n" +
+                       "仅用已有电量读取器；安全模式跳过厂商主动查询。导出的 ZIP 保存在本机。",
                 FontSize = 11.5,
                 Foreground = new SolidColorBrush(Color.FromRgb(0xA8, 0xAE, 0xBC)),
                 TextWrapping = TextWrapping.Wrap,
@@ -89,9 +90,9 @@ namespace MouseDock.Views
             var all = new Target
             {
                 Device = null,
-                Title = "全部设备（旧版报告）",
-                Subtitle = "不发送查询帧，只列本机全部 HID 集合",
-                Detail = "兼容旧报告，不针对单台设备"
+                Title = "全部设备",
+                Subtitle = "逐轮记录 HID 接口和现有读取结果",
+                Detail = "包含当前界面上的蓝牙和非 HID 设备快照"
             };
             list.Items.Add(MakeItem(all, false));
 
@@ -110,16 +111,25 @@ namespace MouseDock.Views
             // 默认选中第一台真实设备；没有设备时退回「全部」。
             list.SelectedIndex = devices != null && devices.Count > 0 ? 1 : 0;
 
+            var chargingTest = new CheckBox
+            {
+                Content = "正在测试插线后的电量（手动标注）",
+                Foreground = Brushes.White,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            Grid.SetRow(chargingTest, 3);
+            root.Children.Add(chargingTest);
+
             var bottom = new Grid();
             bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetRow(bottom, 3);
+            Grid.SetRow(bottom, 4);
 
             var hint = new TextBlock
             {
                 Text = devices != null && devices.Count > 0
                     ? "双击设备也可以直接开始。"
-                    : "当前没有已识别设备，只能导出全量报告。",
+                    : "没有已识别设备时，仍可抓取未识别的 HID 接口。",
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x90, 0x9C)),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -166,6 +176,7 @@ namespace MouseDock.Views
             if (result != true) return null;
 
             canceled = false;
+            cableConnected = chargingTest.IsChecked == true;
             return (window.Tag as Target)?.Device;
         }
 

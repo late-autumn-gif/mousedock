@@ -184,7 +184,7 @@ namespace MouseDock.Services.Detection
             return true;
         }
 
-        private static HashSet<byte> ReadDescriptorReportIds(IntPtr prep, int reportType, ushort valueDeclared, ushort buttonDeclared)
+        internal static HashSet<byte> ReadDescriptorReportIds(IntPtr prep, int reportType, ushort valueDeclared, ushort buttonDeclared)
         {
             if (prep == IntPtr.Zero || valueDeclared + buttonDeclared == 0) return new HashSet<byte>();
             byte[] ReadCaps(bool buttons, ushort declared, out int count)
