@@ -176,11 +176,6 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 Math.Min(31, cell.Width * .58), new Point(center, cell.Y + cell.Height * .73),
                 Ink, cell.Width - 4);
             if (item.Charging && !item.Stale) Bolt(dc, new Point(center + 14, cell.Y + 27), 9);
-            DeviceGlyph.Draw(dc, item.Kind, new Rect(center - 14, 12, 22, 22), Alpha(Ink, .85), 1.8);
-            dc.DrawEllipse(StatusBrush(item.Level), null, new Point(center + 14, 22), 2.5, 2.5);
-            Text(dc, item.Level < 0 ? "\u2014" : item.Level.ToString(CultureInfo.InvariantCulture),
-                Math.Min(31, cell * .58), new Point(center, ActualHeight * .68), StatusBrush(item.Level, true), cell - 8);
-            if (item.Charging && !item.Stale) Bolt(dc, new Point(center + 14, 35), 9);
             dc.Pop();
         }
     }
