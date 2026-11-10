@@ -436,6 +436,20 @@ namespace MouseDock.Services
                     continue;
                 }
 
+                // 同一物理设备暂时只剩接收器名称时，保留上一次可确认的显示名称。
+                if (incoming.RecognitionEnabled && existing != null &&
+                    (incoming.Level < 0 || incoming.IsStale) &&
+                    incoming.Transport == existing.Transport && incoming.Detail == existing.Detail &&
+                    string.IsNullOrWhiteSpace(incoming.ConfirmedModel) &&
+                    (!string.IsNullOrWhiteSpace(existing.ConfirmedModel) ||
+                     (existing.Level >= 0 && incoming.Name?.Contains("接收器", StringComparison.Ordinal) == true &&
+                      existing.Name?.Contains("接收器", StringComparison.Ordinal) == false)))
+                {
+                    incoming.Name = existing.Name;
+                    incoming.Kind = existing.Kind;
+                    incoming.ConfirmedModel = existing.ConfirmedModel;
+                }
+
                 // 设备还在，只是这一次没读到（厂商通道忙/设备刚唤醒）：
                 // 保留上一次的有效读数，避免百分比闪成「—」；连续 6 次读不到再清零
                 if (incoming.RecognitionEnabled && existing != null && incoming.Level < 0 && existing.Level >= 0)

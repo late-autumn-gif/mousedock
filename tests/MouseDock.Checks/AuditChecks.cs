@@ -82,16 +82,22 @@ internal static class AuditChecks
         Wait(battery.PollAsync());
         int first = battery.Devices.Single().Level;
         source.Reading = -1;
+        source.Device.Name = "狼蛛 2.4G 接收器（型号未确认）";
         Wait(battery.PollAsync());
         Console.WriteLine($"AUDIT cached reading: first={first}%, next read failed, displayed={battery.Devices.Single().Level}, stale={battery.Devices.Single().IsStale}.");
         Require(first == 70 && battery.Devices.Single().Level == 70, "A failed read erased the last valid level.");
+        Require(battery.Devices.Single() is { Name: "Audit device", ValueOpacity: 0.45 },
+            "A sleeping receiver must preserve the last model name and dim the cached value.");
         Require(source.Device.Level == -1, "The cached display value must not be written back to the source.");
         Wait(battery.PollAsync());
         Wait(battery.PollAsync());
         Require(battery.Devices.Single().Level == 70 && battery.Devices.Single().IsStale,
             "Repeated failures must retain the level and mark it stale.");
         source.Reading = 64;
+        source.Device.Name = "Awake mouse";
         Wait(battery.PollAsync());
+        Require(battery.Devices.Single() is { Name: "Awake mouse", ValueOpacity: 1 },
+            "Fresh detection must replace the retained name and restore brightness.");
         Require(battery.Devices.Single().Level == 64 && !battery.Devices.Single().IsStale,
             "A successful reading must replace the cached level and clear stale state.");
         }
