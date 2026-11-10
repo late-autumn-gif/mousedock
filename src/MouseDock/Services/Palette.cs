@@ -10,22 +10,7 @@ namespace MouseDock.Services
     public static class Palette
     {
         public static BitmapSource Load(string path, int decodePixelWidth = 0)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
-            try
-            {
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.UriSource = new Uri(path, UriKind.Absolute);
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                if (decodePixelWidth > 0) bmp.DecodePixelWidth = decodePixelWidth;
-                bmp.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
-                bmp.EndInit();
-                bmp.Freeze();
-                return bmp;
-            }
-            catch { return null; }
-        }
+            => ImageImport.Load(path, decodePixelWidth);
 
         /// <summary>主色抽取：忽略近白/近黑像素，按饱和度加权，最后做一次饱和度提升。</summary>
         public static bool TryExtractAccent(string imagePath, out Color accent, out double luma)
@@ -172,6 +157,11 @@ namespace MouseDock.Services
 
         /// <summary>根据设置解析当前主题：有自定义背景就跟随它，否则用预设。</summary>
         public static ThemePreset ResolveTheme(AppSettings settings, out Color? extracted)
+        {
+            return AppearanceColors.Apply(ResolveBaseTheme(settings, out extracted), settings.ThemeColors);
+        }
+
+        private static ThemePreset ResolveBaseTheme(AppSettings settings, out Color? extracted)
         {
             extracted = null;
             if (!string.IsNullOrWhiteSpace(settings.CustomBackground) && File.Exists(settings.CustomBackground))

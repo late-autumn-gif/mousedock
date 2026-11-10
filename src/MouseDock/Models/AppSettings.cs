@@ -14,6 +14,9 @@ namespace MouseDock.Models
         public string CustomBackground { get; set; } = "";
         public string CustomAccent { get; set; } = "";
         public string CustomSurface { get; set; } = "";
+        public Dictionary<string, string> ThemeColors { get; set; } = new();
+        public Dictionary<string, string> IconColors { get; set; } = new();
+        public Dictionary<string, string> TrayColors { get; set; } = new();
         public double BackgroundZoom { get; set; } = 1;
         public double BackgroundPositionX { get; set; } = .5;
         public double BackgroundPositionY { get; set; } = .5;
@@ -42,6 +45,7 @@ namespace MouseDock.Models
         public double Opacity { get; set; } = 0.96;
         public double Scale { get; set; } = 1.0;
         public double IconScale { get; set; } = 1.0;
+        public double? CharacterIconScale { get; set; }
 
         public bool ShowDock { get; set; } = true;
         public bool ShowMini { get; set; } = true;
@@ -133,6 +137,9 @@ namespace MouseDock.Models
                 CustomBackground = CustomBackground,
                 CustomAccent = CustomAccent,
                 CustomSurface = CustomSurface,
+                ThemeColors = new(ThemeColors ?? new()),
+                IconColors = new(IconColors ?? new()),
+                TrayColors = new(TrayColors ?? new()),
                 BackgroundZoom = BackgroundZoom,
                 BackgroundPositionX = BackgroundPositionX,
                 BackgroundPositionY = BackgroundPositionY,
@@ -153,6 +160,7 @@ namespace MouseDock.Models
                 Opacity = Opacity,
                 Scale = Scale,
                 IconScale = IconScale,
+                CharacterIconScale = CharacterIconScale,
                 ShowDock = ShowDock,
                 ShowMini = ShowMini,
                 ShowIcon = ShowIcon,

@@ -200,6 +200,11 @@
                         <RadioButton x:Name="ThemeLight" Content="浅色" Tag="light" GroupName="ThemeMode"
                                      Checked="OnThemeModeChanged" />
                     </UniformGrid>
+                    <WrapPanel Margin="0,8,0,6">
+                        <Button Content="主题配色" Tag="theme" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0" />
+                        <Button Content="悬浮配色" Tag="icon" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0" />
+                        <Button Content="托盘配色" Tag="tray" Style="{StaticResource GhostButton}" Click="OnEditColors" />
+                    </WrapPanel>
                     <ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0"
                              Foreground="{DynamicResource TextBrush}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
