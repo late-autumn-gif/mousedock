@@ -60,7 +60,7 @@ public sealed class TaskbarBatteryStrip : Border
 
     public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
         bool vertical, Brush foreground, int lowThreshold, string textColor, string batteryColor, Brush themeAccent,
-        AppSettings appearance, ThemePreset theme)
+        AppSettings appearance, ThemePreset theme, bool screenEdge = false)
     {
         StyleName = NormalizeStyle(style);
         bool panel = StyleName == "panel";
@@ -88,6 +88,7 @@ public sealed class TaskbarBatteryStrip : Border
         var cell = StyleName switch
         {
             "card" => CardSize(vertical),
+            "tile" when screenEdge && vertical => new Size(50, 50),
             "pill" => vertical ? new Size(40, 64) : new Size(68, 40),
             "battery" => vertical ? new Size(40, 60) : new Size(64, 40),
             "plain" => vertical ? new Size(40, 52) : new Size(64, 40),
@@ -97,7 +98,7 @@ public sealed class TaskbarBatteryStrip : Border
         // 每张卡片占「本体 + 15px 间隔」，首尾各多出半个间隔，所以整体再加一个间隔。
         double length = Math.Max(1, items.Length) * ((vertical ? cell.Height : cell.Width) + (card ? 15 : 15))
             + (panel ? 8 + Math.Max(0, items.Length - 1) : 0);
-        Width = vertical ? 40 : length;
+        Width = vertical ? cell.Width : length;
         Height = vertical ? length : 40;
         if (multi)
         {

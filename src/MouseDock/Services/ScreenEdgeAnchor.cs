@@ -49,7 +49,7 @@ namespace MouseDock.Services
                 Y = bounds.Top + bounds.Height / 2 }, 1);
             if (GetDpiForMonitor(monitor, 0, out uint dx, out _) == 0) dpi = Math.Max(96, dx) / 96d;
             bool suppressed = IsForegroundFullscreen(bounds);
-            double scale = double.IsFinite(App.Settings.Scale) ? Math.Clamp(App.Settings.Scale, 0.7, 1.6) : 1;
+            double scale = ScreenEdgePlacement.NormalizeSizePercent(App.Settings.EdgeSizePercent) / 100;
             var placement = ScreenEdgePlacement.Calculate(work, new Size(content.Width * scale, content.Height * scale),
                 App.Settings.EdgeVerticalPosition, App.Settings.EdgeInset, dpi);
             var handle = new WindowInteropHelper(window).Handle;

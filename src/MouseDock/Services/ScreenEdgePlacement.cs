@@ -5,6 +5,9 @@ namespace MouseDock.Services
 {
     public static class ScreenEdgePlacement
     {
+        public static double NormalizeSizePercent(double value) =>
+            double.IsFinite(value) ? Math.Round(Math.Clamp(value, 50, 150)) : 100;
+
         public static Rect Calculate(Rect workArea, Size content, double position, double inset, double dpiScale)
         {
             double dpi = double.IsFinite(dpiScale) ? Math.Max(0.1, dpiScale) : 1;

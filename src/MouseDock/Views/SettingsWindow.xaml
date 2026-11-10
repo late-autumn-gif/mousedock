@@ -434,6 +434,16 @@
                                 <TextBlock Text="屏幕右侧样式" FontWeight="SemiBold" Margin="0,0,0,6" />
                                 <UniformGrid x:Name="EdgeStyleChoices" Columns="3" Margin="0,0,0,12" />
                                 <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="整体大小" Style="{StaticResource RowText}" />
+                                    <Slider x:Name="EdgeSizeSlider" Grid.Column="1" Minimum="50" Maximum="150"
+                                            TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0"
+                                            ToolTip="也可将鼠标移到屏幕右侧电量面板上滚动调节" ValueChanged="OnEdgeSizeChanged" />
+                                    <TextBlock x:Name="EdgeSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
                                     <TextBlock Text="图标颜色" Style="{StaticResource RowText}" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <Button x:Name="EdgeColorButton" Style="{StaticResource GhostButton}"

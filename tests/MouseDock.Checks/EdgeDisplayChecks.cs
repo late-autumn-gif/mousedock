@@ -92,6 +92,7 @@ internal static class EdgeDisplayChecks
         Set(settings, "EdgeGlyphColor", "#39A9F0");
         Set(settings, "EdgeVerticalPosition", 0.8);
         Set(settings, "EdgeInset", 24d);
+        settings.EdgeSizePercent = 135;
         settings.SurfaceMode = "edge";
         var options = new JsonSerializerOptions
         {
@@ -105,6 +106,12 @@ internal static class EdgeDisplayChecks
         Require((double)restored.GetType().GetProperty("EdgeVerticalPosition")!.GetValue(restored)! == 0.8 &&
             (double)restored.GetType().GetProperty("EdgeInset")!.GetValue(restored)! == 24,
             "Placement preferences lost during clone/save.");
+        Require(restored.EdgeSizePercent == 135 && new AppSettings().EdgeSizePercent == 100,
+            "Edge size must persist independently and default to 100%.");
+        Require(ScreenEdgePlacement.NormalizeSizePercent(1) == 50 &&
+            ScreenEdgePlacement.NormalizeSizePercent(200) == 150 &&
+            ScreenEdgePlacement.NormalizeSizePercent(double.NaN) == 100,
+            "Edge size must clamp invalid and out-of-range settings.");
     }
 
     public static void Placement()

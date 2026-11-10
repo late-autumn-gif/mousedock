@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace MouseDock.Models
 {
@@ -95,6 +95,7 @@ namespace MouseDock.Models
         public bool EdgeGlyphColorCustomized { get; set; }
         public string EdgeStyle { get; set; } = "ring";
         public double EdgeVerticalPosition { get; set; } = 0.5;
+        public double EdgeSizePercent { get; set; } = 100;
         public double EdgeInset { get; set; } = 12;
 
         /// <summary>悬浮图标样式：photo（照片）/ tile（圆角方块）/ ring（环形刻度）/ pill（横向胶囊）/ battery（经典电池）。</summary>
@@ -187,6 +188,7 @@ namespace MouseDock.Models
                 EdgeGlyphColorCustomized = EdgeGlyphColorCustomized,
                 EdgeStyle = EdgeStyle,
                 EdgeVerticalPosition = EdgeVerticalPosition,
+                EdgeSizePercent = EdgeSizePercent,
                 EdgeInset = EdgeInset,
                 IconStyle = IconStyle,
                 IconFollowTheme=IconFollowTheme, IconHideBackground=IconHideBackground,

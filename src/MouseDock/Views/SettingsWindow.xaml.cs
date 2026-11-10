@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -130,6 +130,7 @@ namespace MouseDock.Views
                 EdgePositionValue.Text = $"{EdgePositionSlider.Value:0}";
                 EdgeInsetSlider.Value = double.IsFinite(s.EdgeInset) ? Math.Clamp(s.EdgeInset, 0, 160) : 12;
                 EdgeInsetValue.Text = $"{EdgeInsetSlider.Value:0}";
+                SyncEdgeSize();
                 if (TopmostBox != null) TopmostBox.IsChecked = s.AlwaysOnTop;
                 if (ClickThroughBox != null) ClickThroughBox.IsChecked = s.ClickThrough;
 
@@ -731,6 +732,26 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
+        private bool _syncingEdgeSize;
+
+        internal void SyncEdgeSize()
+        {
+            double value = ScreenEdgePlacement.NormalizeSizePercent(App.Settings.EdgeSizePercent);
+            _syncingEdgeSize = true;
+            try { EdgeSizeSlider.Value = value; }
+            finally { _syncingEdgeSize = false; }
+            EdgeSizeValue.Text = $"{value:0}%";
+        }
+
+        private void OnEdgeSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loading || _syncingEdgeSize || EdgeSizeValue == null) return;
+            App.Settings.EdgeSizePercent = ScreenEdgePlacement.NormalizeSizePercent(e.NewValue);
+            EdgeSizeValue.Text = $"{App.Settings.EdgeSizePercent:0}%";
+            App.Edge?.UpdateAnchor();
+            App.SaveSettings();
+        }
+
         private void OnEdgeInsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_loading || EdgeInsetValue == null) return;
@@ -822,7 +843,7 @@ namespace MouseDock.Views
                     ? ScreenEdgeWindow.CreateRingBadge(device, App.Settings, App.Theme)
                     : new TaskbarBatteryStrip(new[] { device }, style, App.Settings.ShowBatteryNumber, true,
                         foreground, App.Settings.LowBatteryWarn, "", "",
-                        ScreenEdgeWindow.ResolveBatteryBrush(App.Settings, App.Theme), App.Settings, App.Theme);
+                        ScreenEdgeWindow.ResolveBatteryBrush(App.Settings, App.Theme), App.Settings, App.Theme, screenEdge: true);
                 var content = new StackPanel();
                 bool lightInk = foreground.Color.R * .2126 + foreground.Color.G * .7152 + foreground.Color.B * .0722 > 128;
                 content.Children.Add(new Border

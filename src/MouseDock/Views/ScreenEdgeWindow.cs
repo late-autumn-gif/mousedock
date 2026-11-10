@@ -40,6 +40,20 @@ namespace MouseDock.Views
             };
             _anchorTimer.Tick += (_, __) => UpdateAnchor();
             App.Battery.Refreshed += OnRefreshed;
+            MouseWheel += (_, e) =>
+            {
+                if (e.Delta == 0) return;
+                double current = ScreenEdgePlacement.NormalizeSizePercent(App.Settings.EdgeSizePercent);
+                double next = ScreenEdgePlacement.NormalizeSizePercent(current + e.Delta / 120d * 5);
+                if (next != current)
+                {
+                    App.Settings.EdgeSizePercent = next;
+                    UpdateAnchor();
+                    App.SettingsView?.SyncEdgeSize();
+                    App.SaveSettings();
+                }
+                e.Handled = true;
+            };
             MouseRightButtonUp += (_, e) => { e.Handled = true; App.ShowQuickMenu(this); };
             MouseLeftButtonDown += (_, e) =>
             {
@@ -106,7 +120,7 @@ namespace MouseDock.Views
                 else if (devices.Length > 0)
                     _devices.Children.Add(new TaskbarBatteryStrip(devices, style, App.Settings.ShowBatteryNumber, true,
                         foreground, App.Settings.LowBatteryWarn, "", "",
-                        battery, App.Settings, App.Theme));
+                        battery, App.Settings, App.Theme, screenEdge: true));
                 _renderedDevices = devices;
                 _presentation = presentation;
             }
