@@ -25,13 +25,23 @@ namespace MouseDock.Views
         private bool _dragging;
         private Point _dragStart;
         private double _dragOriginX, _dragOriginY;
+        private int _resizeEdges;
+        private Rect _resizeStart, _resizeWorkArea, _resizeContent;
+        private Point _resizePointer;
+        private double _resizeScale, _resizeDpi = 1, _currentScale = 1;
+        public double CurrentScale => FloatingIconGeometry.Scale(App.Settings, _activeStyle);
 
         public IconWindow()
         {
             InitializeComponent();
+            RootGrid.Background = Brushes.Transparent;
+            RootGrid.PreviewMouseLeftButtonDown += OnResizeStart;
+            RootGrid.PreviewMouseMove += OnResizeMove;
+            RootGrid.PreviewMouseLeftButtonUp += OnResizeEnd;
+            RootGrid.LostMouseCapture += (_, __) => FinishResize();
             PreviewMouseWheel+=(_,e)=>{
                 if((Keyboard.Modifiers&ModifierKeys.Control)!=0 && _activeStyle is "photo" or "portrait")return;
-                SetSize(App.Settings.IconScale*(e.Delta>0?1.08:1/1.08),true);e.Handled=true;
+                SetSize(CurrentScale*(e.Delta>0?1.08:1/1.08),true);e.Handled=true;
             };
             _photoTransform.Children.Add(_photoScale);
             _photoTransform.Children.Add(_photoOffset);
@@ -43,7 +53,7 @@ namespace MouseDock.Views
             {
                 ApplyStyle(App.Settings.IconStyle, false);
                 UpdateValue();
-                SetSize(App.Settings.IconScale,false);
+                SetSize(CurrentScale,false);
                 RootGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
             };
         }
@@ -64,8 +74,9 @@ namespace MouseDock.Views
         public void SetSize(double scale,bool persist)
         {
             scale=double.IsFinite(scale)?Math.Clamp(scale,.5,3):1;
+            _currentScale = scale;
             RootGrid.LayoutTransform=new ScaleTransform(scale,scale);
-            if(persist){App.Settings.IconScale=scale;App.SaveSettings();App.SettingsView?.SyncIconScale();}
+            if(persist){FloatingIconGeometry.StoreScale(App.Settings,_activeStyle,scale);App.SaveSettings();App.SettingsView?.SyncIconScale();}
         }
 
         private string _shape = "soft";
@@ -140,6 +151,79 @@ namespace MouseDock.Views
             }
 
             UpdateValue();
+            SetSize(CurrentScale, false);
+        }
+
+        private Rect VisibleContentBounds()
+        {
+            Rect bounds = Rect.Empty;
+            foreach (var child in ReferenceIcons.Children.OfType<CharacterBatteryIcon>())
+                if (child.ActualWidth > 0 && child.ActualHeight > 0)
+                    bounds.Union(child.TransformToAncestor(RootGrid).TransformBounds(child.VisibleArtworkBounds));
+            return bounds.IsEmpty ? new Rect(0, 0, Math.Max(1, RootGrid.Width), Math.Max(1, RootGrid.Height)) : bounds;
+        }
+
+        private static Cursor ResizeCursor(int edges) => edges switch
+        {
+            1 or 2 => Cursors.SizeWE, 4 or 8 => Cursors.SizeNS,
+            5 or 10 => Cursors.SizeNWSE, 6 or 9 => Cursors.SizeNESW, _ => Cursors.Arrow
+        };
+
+        private void OnResizeStart(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount > 1 || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
+            _resizeContent = VisibleContentBounds();
+            _resizeEdges = FloatingIconGeometry.HitTest(e.GetPosition(RootGrid), _resizeContent, 7 / _currentScale);
+            if (_resizeEdges == 0) return;
+            _resizeDpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+            var pointer = System.Windows.Forms.Cursor.Position;
+            _resizePointer = new Point(pointer.X / _resizeDpi, pointer.Y / _resizeDpi);
+            _resizeScale = _currentScale;
+            _resizeStart = new Rect(Left + _resizeContent.X * _resizeScale, Top + _resizeContent.Y * _resizeScale,
+                _resizeContent.Width * _resizeScale, _resizeContent.Height * _resizeScale);
+            var work = System.Windows.Forms.Screen.FromPoint(pointer).WorkingArea;
+            _resizeWorkArea = new Rect(work.X / _resizeDpi, work.Y / _resizeDpi, work.Width / _resizeDpi, work.Height / _resizeDpi);
+            RootGrid.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void OnResizeMove(object sender, MouseEventArgs e)
+        {
+            if (_resizeEdges == 0)
+            {
+                if (!_iconDrag && !_dragging)
+                    RootGrid.Cursor = ResizeCursor(FloatingIconGeometry.HitTest(e.GetPosition(RootGrid),
+                        VisibleContentBounds(), 7 / _currentScale));
+                return;
+            }
+            if (e.LeftButton != MouseButtonState.Pressed) { FinishResize(); return; }
+            var pointer = System.Windows.Forms.Cursor.Position;
+            var delta = new Point(pointer.X / _resizeDpi, pointer.Y / _resizeDpi) - _resizePointer;
+            var bounds = FloatingIconGeometry.Resize(_resizeStart, delta, _resizeEdges,
+                .5 / _resizeScale, 3 / _resizeScale, _resizeWorkArea);
+            double scale = _resizeScale * bounds.Width / _resizeStart.Width;
+            SetSize(scale, false);
+            Left = bounds.X - _resizeContent.X * scale;
+            Top = bounds.Y - _resizeContent.Y * scale;
+            e.Handled = true;
+        }
+
+        private void OnResizeEnd(object sender, MouseButtonEventArgs e)
+        {
+            if (_resizeEdges == 0) return;
+            e.Handled = true;
+            FinishResize();
+        }
+
+        private void FinishResize()
+        {
+            if (_resizeEdges == 0) return;
+            _resizeEdges = 0;
+            RootGrid.ReleaseMouseCapture();
+            RootGrid.Cursor = Cursors.Arrow;
+            FloatingIconGeometry.StoreScale(App.Settings, _activeStyle, _currentScale);
+            App.SaveWindowPositions();
+            App.SettingsView?.SyncIconScale();
         }
 
         public void LoadCharacter()
