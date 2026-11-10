@@ -23,6 +23,15 @@ internal static class BatteryColorChecks
         Require(Count(Snapshot(character), ThemePreset.C("#FF687D")) > 5, "Character battery plate ignores low status color.");
         character.Level = -1;
         Require(Count(Snapshot(character), ThemePreset.C("#BCC6C1")) > 1, "Character unknown reading is not muted.");
+        var theme = ThemePreset.ById("ocean").Clone();
+        string initialKey = TaskbarBatteryStrip.AppearanceKey(new AppSettings(), theme);
+        theme.Low = Colors.Red;
+        Require(TaskbarBatteryStrip.AppearanceKey(new AppSettings(), theme) != initialKey,
+            "Changing only the low color leaves taskbar and edge character plates cached.");
+        string lowKey = TaskbarBatteryStrip.AppearanceKey(new AppSettings(), theme);
+        theme.TextDim = Colors.Gray;
+        Require(TaskbarBatteryStrip.AppearanceKey(new AppSettings(), theme) != lowKey,
+            "Changing only the unknown color leaves compact character plates cached.");
     }
 
     private static byte[] Snapshot(FrameworkElement element)

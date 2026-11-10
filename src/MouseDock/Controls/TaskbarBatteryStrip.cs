@@ -25,7 +25,7 @@ public sealed class TaskbarBatteryStrip : Border
     public static string AppearanceKey(AppSettings settings, ThemePreset theme) =>
         $"{settings.ReferenceCharacter}|{settings.IconBackground}|{settings.PhotoAsset}|{settings.PhotoZoom}|" +
         $"{settings.PhotoOffsetX}|{settings.PhotoOffsetY}|{settings.IconHideBackground}|{settings.IconFollowTheme}|" +
-        $"{theme.Surface}|{theme.Text}|{theme.Accent}";
+        $"{theme.Surface}|{theme.Text}|{theme.Accent}|{theme.Low}|{theme.TextDim}";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
     internal static Size CardSize(bool vertical) => vertical ? new Size(40, 62) : new Size(58, 40);
