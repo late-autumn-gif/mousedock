@@ -119,7 +119,7 @@ namespace MouseDock.Views
                 RebuildTaskbarStyles();
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
                 RebuildEdgeStyles();
-                EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(s.EdgeGlyphColor));
+                EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(s, App.Theme));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
                 EdgePositionValue.Text = $"{EdgePositionSlider.Value:0}";
                 EdgeInsetSlider.Value = double.IsFinite(s.EdgeInset) ? Math.Clamp(s.EdgeInset, 0, 160) : 12;
@@ -191,6 +191,7 @@ namespace MouseDock.Views
             }
             RebuildTaskbarStyles(theme);
             RebuildEdgeStyles();
+            EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, theme));
         }
 
         // ── 交互 ───────────────────────────────────────────────────────────
@@ -556,6 +557,7 @@ namespace MouseDock.Views
             if (_loading) return;
             App.Settings.IconFollowTheme=IconFollowThemeBox.IsChecked==true;
             App.Settings.IconHideBackground=IconHideBackgroundBox.IsChecked==true;
+            EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, App.Theme));
             App.RefreshDeviceViews();
             App.SaveSettings();RebuildIconStyles();RebuildTaskbarStyles();RebuildEdgeStyles();
         }
@@ -755,15 +757,15 @@ namespace MouseDock.Views
         private void RebuildEdgeStyles()
         {
             EdgeStyleChoices.Children.Clear();
-            var foreground = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(App.Settings.EdgeGlyphColor));
+            var foreground = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, App.Theme));
             foreach (var (style, label) in TaskbarBatteryStrip.Styles(true))
             {
                 var device = new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 80 };
                 FrameworkElement preview = style == "ring"
-                    ? new DeviceBatteryBadge(device, foreground, App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn)
+                    ? ScreenEdgeWindow.CreateRingBadge(device, App.Settings, App.Theme)
                     : new TaskbarBatteryStrip(new[] { device }, style, App.Settings.ShowBatteryNumber, true,
-                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor,
-                        App.Settings.IconFollowTheme ? new SolidColorBrush(App.Theme.Accent) : null, App.Settings, App.Theme);
+                        foreground, App.Settings.LowBatteryWarn, "", "",
+                        ScreenEdgeWindow.ResolveBatteryBrush(App.Settings, App.Theme), App.Settings, App.Theme);
                 var content = new StackPanel();
                 bool lightInk = foreground.Color.R * .2126 + foreground.Color.G * .7152 + foreground.Color.B * .0722 > 128;
                 content.Children.Add(new Border
@@ -790,7 +792,7 @@ namespace MouseDock.Views
         }
         private void OnPickEdgeColor(object sender, RoutedEventArgs e)
         {
-            var color = ScreenEdgeWindow.ResolveGlyphColor(App.Settings.EdgeGlyphColor);
+            var color = ScreenEdgeWindow.ResolveForeground(App.Settings, App.Theme);
             using var dialog = new System.Windows.Forms.ColorDialog
             {
                 FullOpen = true, Color = System.Drawing.Color.FromArgb(color.R, color.G, color.B)
@@ -799,12 +801,23 @@ namespace MouseDock.Views
             ApplyEdgeColor($"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
         }
 
-        private void OnResetEdgeColor(object sender, RoutedEventArgs e) => ApplyEdgeColor("#F5F5F5");
+        private void OnResetEdgeColor(object sender, RoutedEventArgs e)
+        {
+            App.Settings.EdgeGlyphColor = "#F5F5F5";
+            App.Settings.EdgeGlyphColorCustomized = false;
+            RefreshEdgeColor();
+        }
 
         private void ApplyEdgeColor(string color)
         {
             App.Settings.EdgeGlyphColor = color;
-            EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveGlyphColor(color));
+            App.Settings.EdgeGlyphColorCustomized = true;
+            RefreshEdgeColor();
+        }
+
+        private void RefreshEdgeColor()
+        {
+            EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, App.Theme));
             App.Edge?.UpdateDevices();
             RebuildEdgeStyles();
             App.SaveSettings();

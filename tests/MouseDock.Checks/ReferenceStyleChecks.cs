@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -194,6 +195,40 @@ internal static class ReferenceStyleChecks
                     .All(t => ((SolidColorBrush)t.Foreground).Color == ThemePreset.C("#1E2230")),
                     "Theme changes left a taskbar or edge appearance using the previous palette.");
             }
+            foreach (var theme in new[] { ThemePreset.ById("dusk"), ThemePreset.ById("cloud") })
+            {
+                properties[^1].SetValue(null, theme);
+                foreach (var (style, _) in TaskbarBatteryStrip.Styles(true))
+                {
+                    settings.EdgeStyle = style;
+                    edge.UpdateDevices();
+                    var surface = (FrameworkElement)edge.Content;
+                    Arrange(surface);
+                    Require(Children<TextBlock>(surface).Where(t => t.Name == "BatteryNumber")
+                        .All(t => ((SolidColorBrush)t.Foreground).Color == theme.Text),
+                        $"{style} edge text ignores theme following.");
+                    CheckEdgeInk(surface, theme.Accent, style);
+                    settings.EdgeGlyphColor = "#CC44AA";
+                    edge.UpdateDevices();
+                    Arrange(surface);
+                    CheckEdgeInk(surface, ThemePreset.C("#CC44AA"), style);
+                    settings.EdgeGlyphColor = "#F5F5F5";
+                }
+            }
+            settings.EdgeStyle = "ring";
+            typeof(SettingsWindow).GetMethod("ApplyEdgeColor", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(window, ["#F5F5F5"]);
+            edge.UpdateDevices();
+            CheckEdgeInk((FrameworkElement)edge.Content, ThemePreset.C("#F5F5F5"), "manual white");
+            var jsonOptions = new JsonSerializerOptions
+                { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals };
+            Require(settings.Clone().EdgeGlyphColorCustomized &&
+                JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, jsonOptions), jsonOptions)!
+                    .EdgeGlyphColorCustomized, "Explicit white color was lost across clone or restart.");
+            typeof(SettingsWindow).GetMethod("OnResetEdgeColor", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(window, [window, new RoutedEventArgs()]);
+            edge.UpdateDevices();
+            CheckEdgeInk((FrameworkElement)edge.Content, ThemePreset.ById("cloud").Accent, "reset");
         }
         finally
         {
@@ -204,6 +239,16 @@ internal static class ReferenceStyleChecks
             for (int i = 0; i < properties.Length; i++) properties[i].SetValue(null, previous[i]);
             directory.SetValue(null, oldDirectory);
         }
+    }
+
+    private static void CheckEdgeInk(FrameworkElement surface, Color expected, string style)
+    {
+        var brushes = Children<DeviceBatteryRing>(surface).Select(r => r.BatteryBrush)
+            .Concat(Children<DeviceGlyph>(surface).Select(g => g.GlyphBrush))
+            .Concat(Children<ReferenceBatteryIcon>(surface).Select(i => i.Accent))
+            .Concat(Children<CharacterBatteryIcon>(surface).Select(i => i.Accent)).ToArray();
+        Require(brushes.Length > 0 && brushes.All(b => b is SolidColorBrush solid && solid.Color == expected),
+            $"{style} edge glyph or progress ignores its effective color.");
     }
 
     private static IEnumerable<T> Children<T>(DependencyObject root) where T : DependencyObject

@@ -16,7 +16,7 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         private DeviceInfo[] _renderedDevices = Array.Empty<DeviceInfo>();
-        private (string Style, bool Numbers, Color Foreground, int Low, string Appearance) _presentation;
+        private (string Style, bool Numbers, Color Foreground, string Battery, int Low, string Appearance) _presentation;
 
         public ScreenEdgeWindow()
         {
@@ -62,12 +62,35 @@ namespace MouseDock.Views
             catch { return Colors.WhiteSmoke; }
         }
 
+        private static bool HasCustomColor(AppSettings settings) =>
+            settings.EdgeGlyphColorCustomized || (!string.IsNullOrWhiteSpace(settings.EdgeGlyphColor) &&
+                !string.Equals(settings.EdgeGlyphColor, "#F5F5F5", StringComparison.OrdinalIgnoreCase));
+
+        public static Color ResolveForeground(AppSettings settings, ThemePreset theme) =>
+            HasCustomColor(settings) || !settings.IconFollowTheme
+                ? ResolveGlyphColor(settings.EdgeGlyphColor) : theme.Text;
+
+        public static Brush ResolveBatteryBrush(AppSettings settings, ThemePreset theme) =>
+            HasCustomColor(settings) ? new SolidColorBrush(ResolveGlyphColor(settings.EdgeGlyphColor)) :
+                settings.IconFollowTheme ? new SolidColorBrush(theme.Accent) : null;
+
+        public static DeviceBatteryBadge CreateRingBadge(DeviceInfo device, AppSettings settings, ThemePreset theme)
+        {
+            var badge = new DeviceBatteryBadge(device, new SolidColorBrush(ResolveForeground(settings, theme)),
+                settings.ShowBatteryNumber, true, settings.LowBatteryWarn);
+            var battery = ResolveBatteryBrush(settings, theme);
+            badge.Ring.BatteryBrush = battery;
+            if (battery != null) badge.Ring.GlyphBrush = battery;
+            return badge;
+        }
+
         public void UpdateDevices()
         {
             var devices = App.Battery.VisibleDevices.Take(5).ToArray();
             var style = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle);
-            var color = ResolveGlyphColor(App.Settings.EdgeGlyphColor);
-            var presentation = (style, App.Settings.ShowBatteryNumber, color, App.Settings.LowBatteryWarn,
+            var color = ResolveForeground(App.Settings, App.Theme);
+            var battery = ResolveBatteryBrush(App.Settings, App.Theme);
+            var presentation = (style, App.Settings.ShowBatteryNumber, color, battery?.ToString() ?? "", App.Settings.LowBatteryWarn,
                 TaskbarBatteryStrip.AppearanceKey(App.Settings, App.Theme));
             if (presentation != _presentation || !_renderedDevices.SequenceEqual(devices))
             {
@@ -75,12 +98,15 @@ namespace MouseDock.Views
                 var foreground = new SolidColorBrush(color);
                 if (style == "ring")
                     foreach (var device in devices)
-                        _devices.Children.Add(new DeviceBatteryBadge(device, foreground, App.Settings.ShowBatteryNumber, true,
-                            App.Settings.LowBatteryWarn) { Margin = new Thickness(0, 4, 0, 4) });
+                    {
+                        var badge = CreateRingBadge(device, App.Settings, App.Theme);
+                        badge.Margin = new Thickness(0, 4, 0, 4);
+                        _devices.Children.Add(badge);
+                    }
                 else if (devices.Length > 0)
                     _devices.Children.Add(new TaskbarBatteryStrip(devices, style, App.Settings.ShowBatteryNumber, true,
-                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor,
-                        App.Settings.IconFollowTheme ? new SolidColorBrush(App.Theme.Accent) : null, App.Settings, App.Theme));
+                        foreground, App.Settings.LowBatteryWarn, "", "",
+                        battery, App.Settings, App.Theme));
                 _renderedDevices = devices;
                 _presentation = presentation;
             }
