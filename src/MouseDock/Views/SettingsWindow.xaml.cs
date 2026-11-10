@@ -211,6 +211,25 @@ namespace MouseDock.Views
 
         // ── 交互 ───────────────────────────────────────────────────────────
 
+        private void OnEditColors(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button { Tag: string target }) return;
+            var settings = App.Settings;
+            var values = target == "theme" ? settings.ThemeColors : target == "icon" ? settings.IconColors : settings.TrayColors;
+            var palette = target == "theme" ? App.Theme : target == "icon"
+                ? AppearanceColors.IconPalette(settings, App.Theme, settings.IconFollowTheme)
+                : AppearanceColors.TrayPalette(settings, App.Theme);
+            var editor = new ColorEditorWindow(target == "theme" ? "主题配色" : target == "icon" ? "悬浮配色" : "托盘配色",
+                values, palette, target == "theme") { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            if (target == "theme") settings.ThemeColors = editor.Draft;
+            else if (target == "icon") settings.IconColors = editor.Draft;
+            else settings.TrayColors = editor.Draft;
+            App.RefreshTheme();
+            App.SaveSettings();
+            Reload();
+        }
+
         private void OnThemeSelected(object sender, SelectionChangedEventArgs e)
         {
             if (_loading) return;
@@ -519,14 +538,14 @@ namespace MouseDock.Views
         public void SyncIconScale()
         {
             bool prior=_loading;_loading=true;
-            try{double value=double.IsFinite(App.Settings.IconScale)?Math.Clamp(App.Settings.IconScale,.5,3):1;
+            try{double value=FloatingIconGeometry.Scale(App.Settings,App.Settings.IconStyle);
                 IconScaleSlider.Value=value;IconScaleValue.Text=$"{value*100:0}%";}
             finally{_loading=prior;}
         }
         private void OnIconScaleChanged(object sender,RoutedPropertyChangedEventArgs<double> e)
         {
             if(_loading||IconScaleValue==null)return;
-            App.Settings.IconScale=e.NewValue;IconScaleValue.Text=$"{e.NewValue*100:0}%";
+            FloatingIconGeometry.StoreScale(App.Settings,App.Settings.IconStyle,e.NewValue);IconScaleValue.Text=$"{e.NewValue*100:0}%";
             App.Icon?.SetSize(e.NewValue,false);App.SaveSettings();
         }
         private void OnResetIconScale(object sender,RoutedEventArgs e)=>IconScaleSlider.Value=1;
@@ -552,7 +571,7 @@ namespace MouseDock.Views
                         Height=entry.Item1=="multi"?76:144,
                         Devices=new(){(DeviceKind.Mouse,76,false,false),(DeviceKind.Headset,-1,false,false)},
                         HideBackground=App.Settings.IconHideBackground };
-                    reference.ApplyPalette(App.Theme, App.Settings.IconFollowTheme);
+                    reference.ApplyPalette(App.Theme, App.Settings);
                     preview = reference;
                 }
                 var content=new StackPanel();
@@ -575,6 +594,7 @@ namespace MouseDock.Views
             App.SetSurface("icon");
             ApplySurfaceButtons("icon");
             RebuildIconStyles();
+            SyncIconScale();
         }
 
         private void OnIconOptionsChanged(object sender,RoutedEventArgs e)
