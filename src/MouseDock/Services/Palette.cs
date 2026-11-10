@@ -173,6 +173,11 @@ namespace MouseDock.Services
         /// <summary>根据设置解析当前主题：有自定义背景就跟随它，否则用预设。</summary>
         public static ThemePreset ResolveTheme(AppSettings settings, out Color? extracted)
         {
+            return AppearanceColors.Apply(ResolveBaseTheme(settings, out extracted), settings.ThemeColors);
+        }
+
+        private static ThemePreset ResolveBaseTheme(AppSettings settings, out Color? extracted)
+        {
             extracted = null;
             if (!string.IsNullOrWhiteSpace(settings.CustomBackground) && File.Exists(settings.CustomBackground))
             {

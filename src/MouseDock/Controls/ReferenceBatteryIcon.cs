@@ -53,6 +53,12 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         Outline.Opacity = .16;
     }
 
+    public void ApplyPalette(ThemePreset theme, AppSettings settings)
+    {
+        var palette = AppearanceColors.IconPalette(settings, theme, settings.IconFollowTheme);
+        ApplyPalette(palette, true);
+    }
+
     protected override void OnRender(DrawingContext drawing)
     {
         base.OnRender(drawing);
