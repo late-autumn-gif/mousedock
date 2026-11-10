@@ -31,6 +31,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Floating and mini surfaces expand exclusively into the full panel", FloatingExpansionChecks.Expansion),
             ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
             ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),

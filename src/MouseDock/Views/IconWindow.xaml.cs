@@ -34,6 +34,14 @@ namespace MouseDock.Views
         public IconWindow()
         {
             InitializeComponent();
+            PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (e.ClickCount != 2 || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
+                _iconDrag = _dragging = false;
+                Mouse.Capture(null);
+                App.ExpandDock();
+                e.Handled = true;
+            };
             RootGrid.Background = Brushes.Transparent;
             RootGrid.PreviewMouseLeftButtonDown += OnResizeStart;
             RootGrid.PreviewMouseMove += OnResizeMove;
