@@ -340,6 +340,8 @@ namespace MouseDock.Views
                         Accent = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Accent),
                         Ink = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Text),
                         Surface = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Surface),
+                        Low = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Low),
+                        Muted = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).TextDim),
                         Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
                     };
                     if (item != null)
