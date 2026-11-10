@@ -36,6 +36,8 @@ public sealed class CharacterBatteryIcon : FrameworkElement
     public Brush Accent { get; set; } = new SolidColorBrush(ThemePreset.C("#A6F5BF"));
     public Brush Ink { get; set; } = Brushes.WhiteSmoke;
     public Brush Surface { get; set; } = new SolidColorBrush(ThemePreset.C("#273348"));
+    public Brush Low { get; set; } = new SolidColorBrush(ThemePreset.C("#FF687D"));
+    public Brush Muted { get; set; } = new SolidColorBrush(ThemePreset.C("#BCC6C1"));
     private IReadOnlyList<DeviceInfo> _devices;
     public IReadOnlyList<DeviceInfo> Devices
     {
@@ -97,10 +99,10 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         {
             var fill = plate;
             fill.Width *= Math.Clamp(Level, 0, 100) / 100d;
-            dc.DrawRoundedRectangle(Accent, null, fill, 2, 2);
+            dc.DrawRoundedRectangle(StatusBrush(Level), null, fill, 2, 2);
         }
         if (ShowNumber)
-            Text(dc, Level < 0 ? "\u2014" : Level + "%", plate, Math.Min(plate.Height * .8, 24), Brushes.WhiteSmoke, true);
+            Text(dc, Level < 0 ? "\u2014" : Level + "%", plate, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
         if (Charging && !Stale)
             Text(dc, "\u26A1", new Rect(plate.Right + 2, plate.Top, Math.Max(8, plate.Height), plate.Height),
                 Math.Max(8, plate.Height * .7), Accent);
@@ -152,23 +154,25 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                 var row = new Rect(bounds.X + 7, top + i * rowHeight, bounds.Width - 14, rowHeight - 3);
                 dc.PushOpacity(stale ? .45 : 1);
                 DeviceGlyph.Draw(dc, device?.Kind ?? Kind,
-                    new Rect(row.X, row.Y, row.Height * .65, row.Height * .65), Ink, 1.6);
+                    new Rect(row.X, row.Y, row.Height * .65, row.Height * .65), StatusBrush(level, true), 1.6);
                 var number = new Rect(row.X + row.Height, row.Y - 2, row.Width - row.Height, row.Height - 2);
                 string value = level < 0 ? "\u2014" : level + "%";
                 if ((device?.IsChargingActive ?? Charging) && !stale) value += " \u26A1";
-                Text(dc, value, number, row.Height * .7, Ink, true);
+                Text(dc, value, number, row.Height * .7, StatusBrush(level, true), true);
                 var bar = new Rect(row.X, row.Bottom - 2, row.Width, 1.6);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar);
                 if (level > 0)
                 {
                     bar.Width *= Math.Clamp(level, 0, 100) / 100d;
-                    dc.DrawRectangle(Accent, null, bar);
+                    dc.DrawRectangle(StatusBrush(level), null, bar);
                 }
                 dc.Pop();
             }
         }
         dc.Pop();
     }
+
+    private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
 
     private void Text(DrawingContext dc, string text, Rect bounds, double size, Brush ink, bool shadow = false)
     {

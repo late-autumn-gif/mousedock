@@ -32,6 +32,7 @@ internal static class Program
         var checks = new (string Name, Action Check)[]
         {
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
+            ("Battery state colors update ordinary icons and character plates", BatteryColorChecks.LiveStatus),
             ("Custom palettes correct contrast while retaining raw colors", AppearanceColorChecks.Contrast),
             ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
             ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
