@@ -70,12 +70,11 @@ internal sealed class ChargeSweep
             ? new Rect(track.X, track.Bottom - track.Height * fraction, track.Width, track.Height * fraction)
             : new Rect(track.X, track.Y, track.Width * fraction, track.Height);
         double span = vertical ? track.Height : track.Width;
-        double amplitude = phase >= 0 && Wave
+        double amplitude = phase >= 0
             ? Math.Min(3, span * Math.Min(fraction, 1 - fraction) * .45) : 0;
         if (amplitude <= 0)
         {
             dc.DrawRoundedRectangle(brush, null, fill, radius, radius);
-            if (!Wave) Bar(dc, fill, radius, phase, vertical);
             return;
         }
         var geometry = new StreamGeometry();
@@ -103,20 +102,6 @@ internal sealed class ChargeSweep
         dc.DrawGeometry(brush, null, geometry);
         dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(95, 120, 255, 230)), 3), edge);
         dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(185, 220, 255, 247)), 1), edge);
-        dc.Pop();
-    }
-
-    internal static void Bar(DrawingContext dc, Rect fill, double radius, double phase, bool vertical = false)
-    {
-        if (phase < 0 || fill.Width <= 0 || fill.Height <= 0) return;
-        double width = Math.Max(3, (vertical ? fill.Height : fill.Width) * .28);
-        var highlight = vertical
-            ? new Rect(fill.X, fill.Bottom - (fill.Height + width) * phase, fill.Width, width)
-            : new Rect(fill.X + (fill.Width + width) * phase - width, fill.Y, width, fill.Height);
-        var brush = new LinearGradientBrush(Colors.Transparent, Colors.Transparent, vertical ? 90 : 0);
-        brush.GradientStops.Add(new GradientStop(Color.FromArgb(145, 255, 255, 255), .5));
-        dc.PushClip(new RectangleGeometry(fill, radius, radius));
-        dc.DrawRectangle(brush, null, highlight);
         dc.Pop();
     }
 

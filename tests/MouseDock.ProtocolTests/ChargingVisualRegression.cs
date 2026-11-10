@@ -87,6 +87,25 @@ internal static class ChargingVisualRegression
                     var previousSettings = settingsProperty.GetValue(null);
                     try
                     {
+                        settingsProperty.SetValue(null, new AppSettings { ChargeEffect = "lightning" });
+                        DrawingGroup Fill(double level, double phase, bool vertical)
+                        {
+                            var drawing = new DrawingGroup();
+                            using (var dc = drawing.Open())
+                                ChargeSweep.Fill(dc, new Rect(0, 0, 40, 40), level, 2, Brushes.Green, phase, vertical);
+                            return drawing.Children[0] as DrawingGroup ?? drawing;
+                        }
+
+                        var vertical42 = ((GeometryDrawing)Fill(.42, .25, true).Children[0]).Geometry.Bounds;
+                        var vertical68 = ((GeometryDrawing)Fill(.68, .25, true).Children[0]).Geometry.Bounds;
+                        var horizontal42 = ((GeometryDrawing)Fill(.42, .25, false).Children[0]).Geometry.Bounds;
+                        var horizontal68 = ((GeometryDrawing)Fill(.68, .25, false).Children[0]).Geometry.Bounds;
+                        Check(vertical42.Bottom == 40 && vertical68.Bottom == 40 && vertical68.Top < vertical42.Top &&
+                            Fill(.42, .25, true).Children.Count == 3, "Vertical battery waves at the top and advances upward");
+                        Check(horizontal42.Left == 0 && horizontal68.Left == 0 && horizontal68.Right > horizontal42.Right &&
+                            Fill(.42, .25, false).Children.Count == 3, "Horizontal battery waves at the right and advances rightward");
+                        Check(Fill(1, .25, true).Children.Count == 1 && Fill(.42, -1, true).Children.Count == 1,
+                            "Full fill and stopped animation both have a flat surface");
                         settingsProperty.SetValue(null, new AppSettings { ChargeEffect = "wave" });
                         devices[0].Level = 42; Pump(330);
                         var wave = Capture("波浪充电-42.png");

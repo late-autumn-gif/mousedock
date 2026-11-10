@@ -86,7 +86,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 : Devices.Take(6).ToArray();
             if (items.Length == 0) items = new[] { (DeviceKind.Mouse, -1, false, false) };
             _sweep ??= new ChargeSweep(this);
-            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale && (item.Level > 0 || !ChargeSweep.Wave)));
+            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale && (item.Level > 0 || (style == "ring" && !ChargeSweep.Wave))));
             if (style == "multi") DrawMulti(drawing, items);
             else if (items.Length > 1) DrawRows(drawing, style, items);
             else DrawSingle(drawing, style, items[0]);
@@ -259,7 +259,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.DrawText(value, new Point(center.X - value.Width / 2, center.Y - value.Height / 2));
     }
     private void Bolt(DrawingContext dc, Point center, double size) =>
-        Text(dc, "\u26A1", size, center, _phase >= 0 && !ChargeSweep.Wave ? Alpha(Accent, .76 + .24 * Math.Cos(_phase * 2 * Math.PI)) : Accent, size * 1.5);
+        Text(dc, "\u26A1", size, center, _phase >= 0 && StyleName == "ring" && !ChargeSweep.Wave ? Alpha(Accent, .76 + .24 * Math.Cos(_phase * 2 * Math.PI)) : Accent, size * 1.5);
     private static Brush Brush(string color) => new SolidColorBrush(ThemePreset.C(color));
     private static Brush Alpha(Brush source, double opacity) { var brush = source.Clone(); brush.Opacity *= opacity; return brush; }
 
