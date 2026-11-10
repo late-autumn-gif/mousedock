@@ -8,6 +8,8 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using MouseDock.Models;
 using MouseDock.Services;
+using MouseDock.Controls;
+using System.Windows.Data;
 
 namespace MouseDock.Views
 {
@@ -28,7 +30,7 @@ namespace MouseDock.Views
         {
             InitializeComponent();
             PreviewMouseWheel+=(_,e)=>{
-                if((Keyboard.Modifiers&ModifierKeys.Control)!=0 && _activeStyle=="photo")return;
+                if((Keyboard.Modifiers&ModifierKeys.Control)!=0 && _activeStyle is "photo" or "portrait")return;
                 SetSize(App.Settings.IconScale*(e.Delta>0?1.08:1/1.08),true);e.Handled=true;
             };
             _photoTransform.Children.Add(_photoScale);
@@ -99,6 +101,7 @@ namespace MouseDock.Views
         public void ApplyStyle(string style, bool persist)
         {
             style = (style ?? "photo").ToLowerInvariant();
+            if (style is "digits" or "compact") style = TaskbarBatteryStrip.NormalizeStyle(style);
             _activeStyle = style;
             if (persist) App.Settings.IconStyle = style;
 
@@ -218,7 +221,7 @@ namespace MouseDock.Views
             var dev = App.PrimaryDevice;
 
             if (DeviceList != null) DeviceList.ItemsSource = devices;
-            bool reference = new[] {"ring","tile","pill","battery","plain","multi"}.Contains(_activeStyle);
+            bool reference = new[] {"ring","tile","pill","battery","plain","multi","character","portrait"}.Contains(_activeStyle);
             LegacyLayers.Visibility=reference?Visibility.Collapsed:Visibility.Visible;
             DeviceList.Visibility=reference?Visibility.Collapsed:Visibility.Visible;
             ReferenceIcons.Visibility=reference?Visibility.Visible:Visibility.Collapsed;
@@ -319,34 +322,63 @@ namespace MouseDock.Views
         private void UpdateReferenceIcons(System.Collections.Generic.List<DeviceInfo> devices)
         {
             ReferenceIcons.Children.Clear();
-            bool multi=_activeStyle=="multi";
-            double cellWidth=_activeStyle is "pill" or "battery" or "plain"?112:96;
-            double cellHeight=_activeStyle is "ring" or "tile"?96:64;
-            var shown=devices.Take(6).ToList();
-            int count=multi?1:Math.Max(1,shown.Count);
-            int columns=multi?1:Math.Min(2,count);
-            ReferenceIcons.Columns=columns;
-            for(int i=0;i<count;i++)
+            var shown = devices.Take(6).ToList();
+            ReferenceIcons.Columns = _activeStyle == "character" ? Math.Min(2, Math.Max(1, shown.Count)) : 1;
+            if (_activeStyle is "character" or "portrait")
             {
-                DeviceInfo item=i<shown.Count?shown[i]:null;
-                var icon=new MouseDock.Controls.ReferenceBatteryIcon {
-                    StyleName=_activeStyle,Width=multi?Math.Max(56,shown.Count*42+12):cellWidth,Height=cellHeight,
-                    HideBackground=App.Settings.IconHideBackground,
-                    Ink=new SolidColorBrush(_activeStyle=="plain"||App.Settings.IconHideBackground?_theme.Text:Color.FromRgb(30,43,42)),
-                    Accent=new SolidColorBrush(App.Settings.IconFollowTheme?_theme.Accent:Color.FromRgb(82,125,108)),DataContext=item
-                };
-                // 陈旧（休眠或读不到）时压暗整个图标，读到新电量后 ValueOpacity 回到 1。
-                icon.SetBinding(OpacityProperty,new System.Windows.Data.Binding(nameof(DeviceInfo.ValueOpacity)));
-                if(multi)icon.Devices=shown.Select(d=>(d.Kind,d.HasLevel?d.Level:-1,d.IsStale,d.IsChargingActive)).ToList();
-                else if(item!=null)icon.Devices=new(){(item.Kind,item.HasLevel?item.Level:-1,item.IsStale,item.IsChargingActive)};
-                icon.ToolTip=multi?string.Join("\n",shown.Select(d=>d.Name+" · "+d.LevelText)):item==null?"尚未选择设备":item.Name+" · "+item.LevelText;
-                System.Windows.Automation.AutomationProperties.SetName(icon,icon.ToolTip.ToString());
-                icon.MouseLeftButtonDown+=OnDragWindow;icon.MouseMove+=OnDragMove;icon.MouseLeftButtonUp+=OnDragEnd;
-                icon.MouseRightButtonUp+=OnContextMenu;icon.MouseWheel+=OnWheel;
+                int count = _activeStyle == "portrait" ? 1 : Math.Max(1, shown.Count);
+                for (int i = 0; i < count; i++)
+                {
+                    var item = i < shown.Count ? shown[i] : null;
+                    var portrait = new CharacterBatteryIcon
+                    {
+                        Width = _activeStyle == "portrait" ? 160 : 120,
+                        Height = _activeStyle == "portrait" ? Math.Max(192, 80 + shown.Count * 30) : 120,
+                        Character = _activeStyle == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
+                        PhotoPath = string.IsNullOrWhiteSpace(App.Settings.IconBackground) ? App.Settings.PhotoAsset : App.Settings.IconBackground,
+                        PhotoZoom = App.Settings.PhotoZoom, PhotoOffsetX = App.Settings.PhotoOffsetX, PhotoOffsetY = App.Settings.PhotoOffsetY,
+                        Accent = new SolidColorBrush(App.Settings.IconFollowTheme ? _theme.Accent : ThemePreset.C("#A6F5BF")),
+                        Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
+                    };
+                    if (item != null)
+                    {
+                        portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
+                        portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+                        portrait.SetBinding(CharacterBatteryIcon.StaleProperty, new Binding(nameof(DeviceInfo.IsStale)));
+                        portrait.SetBinding(CharacterBatteryIcon.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
+                    }
+                    Attach(portrait, item);
+                }
+                RootGrid.Width = _activeStyle == "portrait" ? 160 : ReferenceIcons.Columns * 120;
+                RootGrid.Height = _activeStyle == "portrait" ? Math.Max(192, 80 + shown.Count * 30)
+                    : Math.Ceiling(count / (double)ReferenceIcons.Columns) * 120;
+                return;
+            }
+            bool multi = _activeStyle == "multi";
+            double width = multi ? Math.Max(72, shown.Count * 58 + 16) : shown.Count > 1 ? 144 : 112;
+            double height = multi ? 80 : shown.Count > 1 ? shown.Count * 64 + 12 : 112;
+            var icon = new ReferenceBatteryIcon
+            {
+                StyleName = _activeStyle, Width = width, Height = height,
+                HideBackground = App.Settings.IconHideBackground, DeviceModels = shown
+            };
+            icon.ApplyPalette(_theme, App.Settings.IconFollowTheme);
+            Attach(icon, null);
+            RootGrid.Width = width;
+            RootGrid.Height = height;
+
+            void Attach(FrameworkElement icon, DeviceInfo item)
+            {
+                icon.ToolTip = item == null ? string.Join("\n", shown.Select(d => d.Name + " · " + d.LevelText))
+                    : item.Name + " · " + item.LevelText;
+                System.Windows.Automation.AutomationProperties.SetName(icon, icon.ToolTip.ToString());
+                icon.MouseLeftButtonDown += OnDragWindow;
+                icon.MouseMove += OnDragMove;
+                icon.MouseLeftButtonUp += OnDragEnd;
+                icon.MouseRightButtonUp += OnContextMenu;
+                icon.MouseWheel += OnWheel;
                 ReferenceIcons.Children.Add(icon);
             }
-            RootGrid.Width=multi?Math.Max(56,shown.Count*42+12):columns*cellWidth;
-            RootGrid.Height=((count+columns-1)/columns)*cellHeight;
         }
 
         private void FitSize(string longestName, int count)
@@ -462,6 +494,7 @@ namespace MouseDock.Views
         }
 
         private bool _iconDrag;
+        private bool _photoCropDrag;
         private Point _iconDragStart;
 
         private void OnDragWindow(object sender, MouseButtonEventArgs e)
@@ -469,6 +502,9 @@ namespace MouseDock.Views
             if (e.ChangedButton != MouseButton.Left) return;
             _iconDragStart = e.GetPosition(this);
             _iconDrag = true;
+            _photoCropDrag = _activeStyle == "portrait" && (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            _dragOriginX = App.Settings.PhotoOffsetX;
+            _dragOriginY = App.Settings.PhotoOffsetY;
             (sender as UIElement)?.CaptureMouse();
             e.Handled = true;
         }
@@ -477,6 +513,15 @@ namespace MouseDock.Views
         {
             if (!_iconDrag) return;
             var p = e.GetPosition(this);
+            if (_photoCropDrag && sender is CharacterBatteryIcon portrait)
+            {
+                App.Settings.PhotoOffsetX = Math.Clamp(_dragOriginX + (p.X - _iconDragStart.X) / Math.Max(1, portrait.ActualWidth), -.5, .5);
+                App.Settings.PhotoOffsetY = Math.Clamp(_dragOriginY + (p.Y - _iconDragStart.Y) / Math.Max(1, portrait.ActualHeight), -.5, .5);
+                portrait.PhotoOffsetX = App.Settings.PhotoOffsetX;
+                portrait.PhotoOffsetY = App.Settings.PhotoOffsetY;
+                portrait.InvalidateVisual();
+                return;
+            }
             Left += p.X - _iconDragStart.X;
             Top += p.Y - _iconDragStart.Y;
         }
@@ -487,11 +532,22 @@ namespace MouseDock.Views
             _iconDrag = false;
             (sender as UIElement)?.ReleaseMouseCapture();
             e.Handled = true;
-            App.SaveWindowPositions();
+            if (_photoCropDrag) { _photoCropDrag = false; App.SaveSettings(); App.Taskbar?.UpdateDevices(); App.Edge?.UpdateDevices(); }
+            else App.SaveWindowPositions();
         }
 
         private void OnWheel(object sender, MouseWheelEventArgs e)
         {
+            if (_activeStyle == "portrait")
+            {
+                e.Handled = true;
+                App.Settings.PhotoZoom = Math.Clamp(App.Settings.PhotoZoom * (e.Delta > 0 ? 1.08 : 1 / 1.08), 1, 4);
+                UpdateValue();
+                App.Taskbar?.UpdateDevices();
+                App.Edge?.UpdateDevices();
+                App.SaveSettings();
+                return;
+            }
             if (PhotoLayer.Visibility != Visibility.Visible || App.Settings.AnimatedPhotoBackground) return;
             e.Handled = true;
             double factor = e.Delta > 0 ? 1.08 : 1 / 1.08;
@@ -532,7 +588,7 @@ namespace MouseDock.Views
         {
             e.Handled = true;
             var menu=new ContextMenu();
-            foreach(var entry in new[] {("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你")}) {
+            foreach(var entry in new[] {("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你"),("character","角色电量"),("portrait","我的照片")}) {
                 var item=new MenuItem {Header=entry.Item2,IsCheckable=true,IsChecked=App.Settings.IconStyle==entry.Item1};
                 item.Click+=(_,__)=>{ApplyStyle(entry.Item1,true);App.SaveSettings();};menu.Items.Add(item);
             }

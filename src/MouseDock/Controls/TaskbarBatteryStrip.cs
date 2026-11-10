@@ -15,15 +15,24 @@ public sealed class TaskbarBatteryStrip : Border
 {
     public string StyleName { get; }
     public int DeviceCount { get; }
-    public static string NormalizeStyle(string style) =>
-        style is "panel" or "card" or "tile" or "pill" or "battery" or "plain" or "multi" ? style : "ring";
+    public static string NormalizeStyle(string style) => style?.ToLowerInvariant() switch
+    {
+        "digits" => "plain",
+        "compact" => "multi",
+        "panel" or "card" or "tile" or "pill" or "battery" or "plain" or "multi" or "character" or "portrait" => style.ToLowerInvariant(),
+        _ => "ring"
+    };
+    public static string AppearanceKey(AppSettings settings, ThemePreset theme) =>
+        $"{settings.ReferenceCharacter}|{settings.IconBackground}|{settings.PhotoAsset}|{settings.PhotoZoom}|" +
+        $"{settings.PhotoOffsetX}|{settings.PhotoOffsetY}|{settings.IconHideBackground}|{settings.IconFollowTheme}|" +
+        $"{theme.Surface}|{theme.Text}|{theme.Accent}";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
     internal static Size CardSize(bool vertical) => vertical ? new Size(40, 62) : new Size(58, 40);
     public static IEnumerable<(string Id, string Label)> Styles(bool vertical) =>
         new[] { ("ring", "环内数字"), ("panel", "紧凑面板"), ("card", "迷你卡片"), ("tile", "柔角方块"),
             ("pill", vertical ? "竖向胶囊" : "横向胶囊"), ("battery", "经典电池"),
-            ("plain", "轻量数字"), ("multi", "多电量迷你") };
+            ("plain", "轻量数字"), ("multi", "多电量迷你"), ("character", "角色电量"), ("portrait", "我的照片") };
 
     public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
         bool vertical, Brush foreground, int lowThreshold)
@@ -46,12 +55,21 @@ public sealed class TaskbarBatteryStrip : Border
 
     public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
         bool vertical, Brush foreground, int lowThreshold, string textColor, string batteryColor, Brush themeAccent)
+        : this(devices, style, showNumber, vertical, foreground, lowThreshold, textColor, batteryColor, themeAccent, null, null) { }
+
+    public TaskbarBatteryStrip(IEnumerable<DeviceInfo> devices, string style, bool showNumber,
+        bool vertical, Brush foreground, int lowThreshold, string textColor, string batteryColor, Brush themeAccent,
+        AppSettings appearance, ThemePreset theme)
     {
         StyleName = NormalizeStyle(style);
         bool panel = StyleName == "panel";
         bool card = StyleName == "card";
         bool multi = StyleName == "multi";
-        var textBrush = ResolveBrush(textColor, foreground);
+        appearance ??= new AppSettings();
+        if (!appearance.IconHideBackground && theme != null && StyleName is "tile" or "pill" or "battery" or "multi")
+            foreground = new SolidColorBrush(theme.Text);
+        var textBrush = ResolveBrush(textColor, appearance.IconFollowTheme && theme != null
+            ? new SolidColorBrush(theme.Text) : foreground);
         var batteryBrush = ResolveBrush(batteryColor, themeAccent);
         var items = devices.ToArray();
         DeviceCount = items.Length;
@@ -71,6 +89,8 @@ public sealed class TaskbarBatteryStrip : Border
             "card" => CardSize(vertical),
             "pill" => vertical ? new Size(40, 64) : new Size(68, 40),
             "battery" => vertical ? new Size(40, 60) : new Size(64, 40),
+            "plain" => vertical ? new Size(40, 52) : new Size(64, 40),
+            "character" or "portrait" => vertical ? new Size(40, 68) : new Size(76, 40),
             _ => new Size(40, 40)
         };
         // 每张卡片占「本体 + 15px 间隔」，首尾各多出半个间隔，所以整体再加一个间隔。
@@ -80,13 +100,9 @@ public sealed class TaskbarBatteryStrip : Border
         Height = vertical ? length : 40;
         if (multi)
         {
-            var outline = textBrush.Clone();
-            outline.Opacity *= .3;
-            var fill = textBrush.Clone();
-            fill.Opacity *= .08;
-            Background = fill;
-            BorderBrush = outline;
-            BorderThickness = new Thickness(1);
+            Background = appearance.IconHideBackground ? Brushes.Transparent :
+                new SolidColorBrush(theme?.Surface ?? ThemePreset.C("#1B1F21"));
+            BorderThickness = new Thickness(0);
             CornerRadius = new CornerRadius(6);
             Width += vertical ? 0 : 2;
             Height += vertical ? 2 : 0;
@@ -108,7 +124,7 @@ public sealed class TaskbarBatteryStrip : Border
                 continue;
             }
             stack.Children.Add(CreateBadge(items[i], StyleName, cell, showNumber, vertical, foreground,
-                lowThreshold, textBrush, batteryBrush));
+                lowThreshold, textBrush, batteryBrush, appearance, theme));
         }
     }
 
@@ -208,7 +224,7 @@ public sealed class TaskbarBatteryStrip : Border
     }
 
     private static Grid CreateBadge(DeviceInfo device, string style, Size cell, bool showNumber, bool vertical,
-        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush)
+        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush, AppSettings appearance, ThemePreset theme)
     {
         bool panel = style == "panel";
         bool ringStyle = style == "ring";
@@ -222,6 +238,45 @@ public sealed class TaskbarBatteryStrip : Border
             Margin = vertical ? new Thickness(0, 7.5, 0, 7.5) : new Thickness(7.5, 0, 7.5, 0)
         };
         badge.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
+        if (style is "character" or "portrait")
+        {
+            var content = new Grid { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var portrait = new CharacterBatteryIcon
+            {
+                Width = 36, Height = 36, Character = style == "portrait" ? "photo" : appearance.ReferenceCharacter,
+                PhotoPath = string.IsNullOrWhiteSpace(appearance.IconBackground) ? appearance.PhotoAsset : appearance.IconBackground,
+                PhotoZoom = appearance.PhotoZoom, PhotoOffsetX = appearance.PhotoOffsetX, PhotoOffsetY = appearance.PhotoOffsetY,
+                ShowNumber = false, ShowGlyph = false, Accent = batteryBrush ?? foreground
+            };
+            portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
+            portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+            content.Children.Add(portrait);
+            var value = new TextBlock
+            {
+                Name = "BatteryNumber", FontFamily = new FontFamily("Segoe UI"), FontSize = 16,
+                FontWeight = FontWeights.SemiBold, Foreground = textBrush, VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
+            };
+            value.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
+            if (vertical)
+            {
+                content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                Grid.SetRow(value, 1);
+            }
+            else
+            {
+                content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+                content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(value, 2);
+            }
+            content.Children.Add(value);
+            badge.Children.Add(content);
+            AttachCharging(badge, device, textBrush);
+            return Finish(badge, device);
+        }
         if (ringStyle)
         {
             var ring = new DeviceBatteryRing
@@ -240,7 +295,9 @@ public sealed class TaskbarBatteryStrip : Border
             {
                 StyleName = style, Compact = true, Vertical = vertical, Ink = foreground,
                 Accent = batteryBrush ?? Brushes.MediumSeaGreen, UseStatusColors = batteryBrush == null,
-                LowBatteryThreshold = lowThreshold, IsHitTestVisible = false
+                LowBatteryThreshold = lowThreshold, IsHitTestVisible = false,
+                Surface = theme != null ? new SolidColorBrush(theme.Surface) : new SolidColorBrush(ThemePreset.C("#1B1F21")),
+                HideBackground = appearance.IconHideBackground
             };
             shape.SetBinding(ReferenceBatteryIcon.CompactLevelProperty, new Binding(nameof(DeviceInfo.Level)));
             shape.SetBinding(ReferenceBatteryIcon.CompactChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
@@ -273,9 +330,19 @@ public sealed class TaskbarBatteryStrip : Border
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bool stacked = vertical || style is "tile" or "multi";
+        if (stacked)
+        {
+            row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            row.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2) });
+            row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+        else
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        }
 
         var glyph = new DeviceGlyph
         {
@@ -302,7 +369,7 @@ public sealed class TaskbarBatteryStrip : Border
             IsHitTestVisible = false
         };
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
-        Grid.SetColumn(number, 2);
+        if (stacked) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         row.Children.Add(number);
         badge.Children.Add(row);
         AttachCharging(badge, device, textBrush);

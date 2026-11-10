@@ -107,6 +107,8 @@ namespace MouseDock.Views
                 ApplySurfaceButtons(s.SurfaceMode);
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
+                ReferenceCharacterChoices.SelectedItem = ReferenceCharacterChoices.Items.OfType<ComboBoxItem>()
+                    .FirstOrDefault(item => (string)item.Tag == s.ReferenceCharacter) ?? ReferenceCharacterChoices.Items[0];
                 SyncIconScale();
                 RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
@@ -506,13 +508,27 @@ namespace MouseDock.Views
         private void RebuildIconStyles()
         {
             IconStyleChoices.Children.Clear();
-            foreach(var entry in new[]{("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你")})
+            foreach(var entry in new[]{("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你"),("character","角色电量"),("portrait","我的照片")})
             {
-                var preview=new ReferenceBatteryIcon { StyleName=entry.Item1, Width=140, Height=96,
-                    Devices=new(){(DeviceKind.Mouse,76,false,false),(DeviceKind.Keyboard,48,false,false),(DeviceKind.Headset,-1,false,false)},
-                    HideBackground=App.Settings.IconHideBackground,
-                    Ink=new SolidColorBrush(entry.Item1=="plain"||App.Settings.IconHideBackground?App.Theme.Text:Color.FromRgb(30,43,42)),
-                    Accent=new SolidColorBrush(App.Settings.IconFollowTheme?App.Theme.Accent:Color.FromRgb(82,125,108)) };
+                FrameworkElement preview;
+                if (entry.Item1 is "character" or "portrait")
+                    preview = new CharacterBatteryIcon
+                    {
+                        Width = 120, Height = 120, Level = 76,
+                        Character = entry.Item1 == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
+                        PhotoPath = string.IsNullOrWhiteSpace(App.Settings.IconBackground) ? App.Settings.PhotoAsset : App.Settings.IconBackground,
+                        PhotoZoom = App.Settings.PhotoZoom, PhotoOffsetX = App.Settings.PhotoOffsetX, PhotoOffsetY = App.Settings.PhotoOffsetY,
+                        Accent = new SolidColorBrush(App.Settings.IconFollowTheme ? App.Theme.Accent : ThemePreset.C("#A6F5BF"))
+                    };
+                else
+                {
+                    var reference = new ReferenceBatteryIcon { StyleName=entry.Item1, Width=144,
+                        Height=entry.Item1=="multi"?76:144,
+                        Devices=new(){(DeviceKind.Mouse,76,false,false),(DeviceKind.Headset,-1,false,false)},
+                        HideBackground=App.Settings.IconHideBackground };
+                    reference.ApplyPalette(App.Theme, App.Settings.IconFollowTheme);
+                    preview = reference;
+                }
                 var content=new StackPanel();
                 content.Children.Add(new Viewbox{Width=82,Height=55,Child=preview});
                 content.Children.Add(new TextBlock{Text=entry.Item2,FontSize=10,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
@@ -540,8 +556,40 @@ namespace MouseDock.Views
             if (_loading) return;
             App.Settings.IconFollowTheme=IconFollowThemeBox.IsChecked==true;
             App.Settings.IconHideBackground=IconHideBackgroundBox.IsChecked==true;
-            App.Icon?.ApplyStyle(App.Settings.IconStyle,false);
-            App.SaveSettings();RebuildIconStyles();
+            App.RefreshDeviceViews();
+            App.SaveSettings();RebuildIconStyles();RebuildTaskbarStyles();RebuildEdgeStyles();
+        }
+
+        private void OnReferenceCharacterChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || ReferenceCharacterChoices.SelectedItem is not ComboBoxItem { Tag: string kind }) return;
+            App.Settings.ReferenceCharacter = kind;
+            App.RefreshDeviceViews();
+            App.SaveSettings();
+            RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();
+        }
+
+        private void OnPickReferencePhoto(object sender, RoutedEventArgs e)
+        {
+            var editor = new PortraitEditorWindow(App.Settings) { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            App.Settings.PhotoAsset = editor.Draft.PhotoAsset;
+            App.Settings.IconBackground = editor.Draft.IconBackground;
+            App.Settings.PhotoZoom = editor.Draft.PhotoZoom;
+            App.Settings.PhotoOffsetX = editor.Draft.PhotoOffsetX;
+            App.Settings.PhotoOffsetY = editor.Draft.PhotoOffsetY;
+            App.RefreshDeviceViews();
+            App.SaveSettings();
+            RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();
+        }
+
+        private void OnClearReferencePhoto(object sender, RoutedEventArgs e)
+        {
+            App.Settings.PhotoAsset = "";
+            App.Settings.IconBackground = "";
+            App.RefreshDeviceViews();
+            App.SaveSettings();
+            RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();
         }
 
         private void OnSurfaceClick(object sender, RoutedEventArgs e)
@@ -684,7 +732,7 @@ namespace MouseDock.Views
                     new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Mouse, Level = 90 }
                 }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(theme.Text),
                     App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor,
-                    new SolidColorBrush(theme.Accent));
+                    new SolidColorBrush(theme.Accent), App.Settings, theme);
                 var content = new StackPanel();
                 content.Children.Add(new Viewbox { Width = 72, Height = 36, Child = preview, IsHitTestVisible = false });
                 content.Children.Add(new TextBlock
@@ -714,7 +762,8 @@ namespace MouseDock.Views
                 FrameworkElement preview = style == "ring"
                     ? new DeviceBatteryBadge(device, foreground, App.Settings.ShowBatteryNumber, true, App.Settings.LowBatteryWarn)
                     : new TaskbarBatteryStrip(new[] { device }, style, App.Settings.ShowBatteryNumber, true,
-                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor);
+                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor,
+                        App.Settings.IconFollowTheme ? new SolidColorBrush(App.Theme.Accent) : null, App.Settings, App.Theme);
                 var content = new StackPanel();
                 bool lightInk = foreground.Color.R * .2126 + foreground.Color.G * .7152 + foreground.Color.B * .0722 > 128;
                 content.Children.Add(new Border
@@ -787,6 +836,7 @@ namespace MouseDock.Views
             if (string.IsNullOrEmpty(mode)) mode = "dock";
             ApplyTaskbarPositionControls(mode);
             IconOptionsPanel.Visibility = mode == "icon" ? Visibility.Visible : Visibility.Collapsed;
+            ReferenceAppearanceOptions.Visibility = mode is "icon" or "taskbar" or "edge" ? Visibility.Visible : Visibility.Collapsed;
             TaskbarStylePanel.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             EdgeOptionsPanel.Visibility = mode == "edge" ? Visibility.Visible : Visibility.Collapsed;
             BatteryNumberBox.Visibility = mode == "edge" || mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;

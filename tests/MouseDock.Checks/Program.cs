@@ -31,6 +31,13 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
+            ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
+            ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),
+            ("Reference styles load complete embedded character artwork", ReferenceStyleChecks.Portraits),
+            ("Reference styles match reference surfaces and grouped device rows", ReferenceStyleChecks.PaletteAndGrouping),
+            ("Reference styles retain live values colors and vertical geometry", ReferenceStyleChecks.Rendering),
+            ("Reference styles expose floating battery character and photo choices", ReferenceStyleChecks.Floating),
             ("Taskbar follow tracks growing and shrinking icon groups", TaskbarFollowChecks.Motion),
             ("Taskbar follow preserves signed icon offsets and a true zero", TaskbarFollowChecks.SignedOffset),
             ("Taskbar follow avoids tray and widget obstructions", TaskbarFollowChecks.Obstacles),

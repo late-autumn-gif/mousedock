@@ -16,7 +16,7 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         private DeviceInfo[] _renderedDevices = Array.Empty<DeviceInfo>();
-        private (string Style, bool Numbers, Color Foreground, int Low) _presentation;
+        private (string Style, bool Numbers, Color Foreground, int Low, string Appearance) _presentation;
 
         public ScreenEdgeWindow()
         {
@@ -67,7 +67,8 @@ namespace MouseDock.Views
             var devices = App.Battery.VisibleDevices.Take(5).ToArray();
             var style = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle);
             var color = ResolveGlyphColor(App.Settings.EdgeGlyphColor);
-            var presentation = (style, App.Settings.ShowBatteryNumber, color, App.Settings.LowBatteryWarn);
+            var presentation = (style, App.Settings.ShowBatteryNumber, color, App.Settings.LowBatteryWarn,
+                TaskbarBatteryStrip.AppearanceKey(App.Settings, App.Theme));
             if (presentation != _presentation || !_renderedDevices.SequenceEqual(devices))
             {
                 _devices.Children.Clear();
@@ -78,7 +79,8 @@ namespace MouseDock.Views
                             App.Settings.LowBatteryWarn) { Margin = new Thickness(0, 4, 0, 4) });
                 else if (devices.Length > 0)
                     _devices.Children.Add(new TaskbarBatteryStrip(devices, style, App.Settings.ShowBatteryNumber, true,
-                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor));
+                        foreground, App.Settings.LowBatteryWarn, "", App.Settings.EdgeGlyphColor,
+                        App.Settings.IconFollowTheme ? new SolidColorBrush(App.Theme.Accent) : null, App.Settings, App.Theme));
                 _renderedDevices = devices;
                 _presentation = presentation;
             }
