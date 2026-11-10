@@ -31,6 +31,12 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
+            ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
+            ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
+            ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
+            ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
+            ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),
@@ -38,11 +44,6 @@ internal static class Program
             ("Reference styles match reference surfaces and grouped device rows", ReferenceStyleChecks.PaletteAndGrouping),
             ("Reference styles retain live values colors and vertical geometry", ReferenceStyleChecks.Rendering),
             ("Reference styles expose floating battery character and photo choices", ReferenceStyleChecks.Floating),
-            ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
-            ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
-            ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
-            ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
-            ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
             ("Taskbar follow tracks growing and shrinking icon groups", TaskbarFollowChecks.Motion),
             ("Taskbar follow preserves signed icon offsets and a true zero", TaskbarFollowChecks.SignedOffset),
             ("Taskbar follow avoids tray and widget obstructions", TaskbarFollowChecks.Obstacles),

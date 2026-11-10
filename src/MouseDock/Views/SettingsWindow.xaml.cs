@@ -211,6 +211,25 @@ namespace MouseDock.Views
 
         // ── 交互 ───────────────────────────────────────────────────────────
 
+        private void OnEditColors(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button { Tag: string target }) return;
+            var settings = App.Settings;
+            var values = target == "theme" ? settings.ThemeColors : target == "icon" ? settings.IconColors : settings.TrayColors;
+            var palette = target == "theme" ? App.Theme : target == "icon"
+                ? AppearanceColors.IconPalette(settings, App.Theme, settings.IconFollowTheme)
+                : AppearanceColors.TrayPalette(settings, App.Theme);
+            var editor = new ColorEditorWindow(target == "theme" ? "主题配色" : target == "icon" ? "悬浮配色" : "托盘配色",
+                values, palette, target == "theme") { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            if (target == "theme") settings.ThemeColors = editor.Draft;
+            else if (target == "icon") settings.IconColors = editor.Draft;
+            else settings.TrayColors = editor.Draft;
+            App.RefreshTheme();
+            App.SaveSettings();
+            Reload();
+        }
+
         private void OnThemeSelected(object sender, SelectionChangedEventArgs e)
         {
             if (_loading) return;
@@ -552,7 +571,7 @@ namespace MouseDock.Views
                         Height=entry.Item1=="multi"?76:144,
                         Devices=new(){(DeviceKind.Mouse,76,false,false),(DeviceKind.Headset,-1,false,false)},
                         HideBackground=App.Settings.IconHideBackground };
-                    reference.ApplyPalette(App.Theme, App.Settings.IconFollowTheme);
+                    reference.ApplyPalette(App.Theme, App.Settings);
                     preview = reference;
                 }
                 var content=new StackPanel();

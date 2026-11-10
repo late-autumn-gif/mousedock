@@ -546,13 +546,12 @@ namespace MouseDock
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
                 g.Clear(System.Drawing.Color.Transparent);
 
-                System.Drawing.Color bg = charging
-                    ? System.Drawing.Color.FromArgb(0x7F, 0xE7, 0xC4)
-                    : level < 0
-                        ? System.Drawing.Color.FromArgb(0x8A, 0x8A, 0x8A)
-                        : level <= (Settings?.LowBatteryWarn ?? 20)
-                            ? System.Drawing.Color.FromArgb(0xFF, 0x6B, 0x6B)
-                            : System.Drawing.Color.FromArgb(0x7F, 0xE7, 0xC4);
+                var palette = AppearanceColors.TrayPalette(Settings ?? new AppSettings(), Theme);
+                var shade = charging ? palette.Accent : level < 0 ? palette.TextDim :
+                    level <= (Settings?.LowBatteryWarn ?? 20) ? palette.Low : palette.Accent;
+                System.Drawing.Color bg = System.Drawing.Color.FromArgb(shade.R, shade.G, shade.B);
+                var textColor = palette.Text;
+                var ink = System.Drawing.Color.FromArgb(textColor.R, textColor.G, textColor.B);
                 if (dim) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
 
                 using (var path = RoundedRect(new System.Drawing.Rectangle(1, 1, size - 2, size - 2), 7))
@@ -561,8 +560,8 @@ namespace MouseDock
 
                 if (charging)
                 {
-                    using var outline = new System.Drawing.Pen(System.Drawing.Color.FromArgb(0x12, 0x1A, 0x18), 1.8f);
-                    using var cell = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x12, 0x1A, 0x18));
+                    using var outline = new System.Drawing.Pen(ink, 1.8f);
+                    using var cell = new System.Drawing.SolidBrush(ink);
                     g.DrawRectangle(outline, 5, 9, 20, 13);
                     g.FillRectangle(cell, 26, 13, 2, 5);
                     int filled = _trayAnimationFrame / 2 + 1;
@@ -573,7 +572,7 @@ namespace MouseDock
                 string txt = level >= 0 ? level.ToString() : "—";
                 float px = txt.Length >= 3 ? 12f : 15f;
                 using var font = new System.Drawing.Font("Segoe UI", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
-                using var fg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x12, 0x1A, 0x18));
+                using var fg = new System.Drawing.SolidBrush(ink);
                 var sz = g.MeasureString(txt, font);
                 g.DrawString(txt, font, fg,
                     (size - sz.Width) / 2f,
@@ -856,6 +855,7 @@ namespace MouseDock
             ApplyAllBackgrounds();
             Taskbar?.UpdateDevices();
             Edge?.UpdateDevices();
+            UpdateTrayIcon();
         }
 
         public static void ApplyTheme(bool animate)
