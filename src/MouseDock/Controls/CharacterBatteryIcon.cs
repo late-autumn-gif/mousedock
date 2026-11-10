@@ -14,6 +14,7 @@ namespace MouseDock.Controls;
 public sealed class CharacterBatteryIcon : FrameworkElement
 {
     private static readonly Dictionary<string, BitmapSource> Artwork = new();
+    private static readonly Dictionary<string, Rect> VisibleArtwork = new();
     public static readonly DependencyProperty LevelProperty = DependencyProperty.Register(nameof(Level), typeof(int),
         typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(-1, FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty ChargingProperty = DependencyProperty.Register(nameof(Charging), typeof(bool),
@@ -53,6 +54,31 @@ public sealed class CharacterBatteryIcon : FrameworkElement
     private void OnDeviceChanged(object sender, PropertyChangedEventArgs args) => InvalidateVisual();
     private string _loadedPhoto;
     private BitmapSource _photo;
+    public Rect VisibleArtworkBounds
+    {
+        get
+        {
+            if (Character == "photo") return new Rect(0, 0, ActualWidth, ActualHeight);
+            var image = LoadArtwork(Character);
+            if (!VisibleArtwork.TryGetValue(Character, out var pixels))
+            {
+                var rgba = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+                var data = new byte[rgba.PixelWidth * rgba.PixelHeight * 4];
+                rgba.CopyPixels(data, rgba.PixelWidth * 4, 0);
+                int left = rgba.PixelWidth, top = rgba.PixelHeight, right = 0, bottom = 0;
+                for (int y = 0; y < rgba.PixelHeight; y++)
+                for (int x = 0; x < rgba.PixelWidth; x++)
+                    if (data[(y * rgba.PixelWidth + x) * 4 + 3] > 8)
+                    { left = Math.Min(left, x); top = Math.Min(top, y); right = Math.Max(right, x + 1); bottom = Math.Max(bottom, y + 1); }
+                pixels = right > left && bottom > top ? new Rect(left, top, right - left, bottom - top)
+                    : new Rect(0, 0, image.PixelWidth, image.PixelHeight);
+                VisibleArtwork[Character] = pixels;
+            }
+            double scale = Math.Min(ActualWidth / image.PixelWidth, ActualHeight / image.PixelHeight);
+            return new Rect((ActualWidth - image.PixelWidth * scale) / 2 + pixels.X * scale,
+                (ActualHeight - image.PixelHeight * scale) / 2 + pixels.Y * scale, pixels.Width * scale, pixels.Height * scale);
+        }
+    }
 
     public static BitmapSource LoadArtwork(string kind)
     {

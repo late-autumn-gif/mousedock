@@ -31,6 +31,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Multi-device icons remain square and preserve identity colors", IconCompositionChecks.Layout),
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
             ("Battery state colors update ordinary icons and character plates", BatteryColorChecks.LiveStatus),
