@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MouseDock.Models;
@@ -132,6 +133,7 @@ internal static class ReferenceThemeChecks
             ((RadioButton)window.FindName("ThemeLight")).IsChecked = true;
             Require(settings.ThemeMode == "light" && MouseDock.App.Theme.Accent == ThemePreset.C("#247783"),
                 "Changing mode did not apply the reference light palette.");
+            ThemeWheel(window, settings);
             settings.CustomBackground = Directory.GetFiles(Path.GetFullPath("artifacts/reference-theme-checks"), "*.png").First();
             window.Reload();
             Require(((Border)window.FindName("Root")).Background is DrawingBrush, "Global picture did not reach settings.");
@@ -155,6 +157,32 @@ internal static class ReferenceThemeChecks
             for (int i = 0; i < properties.Length; i++) properties[i].SetValue(null, previous[i]);
             directory.SetValue(null, oldDirectory);
         }
+    }
+
+    private static void ThemeWheel(MouseDock.Views.SettingsWindow window, AppSettings settings)
+    {
+        var list = (ListBox)window.FindName("ThemeList");
+        list.SelectedItem = list.Items.Cast<MouseDock.Views.SettingsWindow.ThemeRow>().Single(r => r.Id == "pine");
+        var root = (FrameworkElement)window.Content;
+        root.Measure(new Size(396, 740));
+        root.Arrange(new Rect(root.DesiredSize));
+        root.UpdateLayout();
+        var scroll = (ScrollViewer)window.FindName("RootScroll");
+        Require(scroll.ScrollableHeight > 0, "Theme wheel fixture has no scrollable settings.");
+        scroll.ScrollToTop();
+        root.UpdateLayout();
+        var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(list.SelectedItem);
+        Require(item != null, "Selected theme was not realized.");
+        item!.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
+            { RoutedEvent = Mouse.MouseWheelEvent });
+        root.UpdateLayout();
+        double down = scroll.VerticalOffset;
+        Require(down > 0, "Selecting a theme traps the wheel instead of scrolling the settings page.");
+        item.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, 120)
+            { RoutedEvent = Mouse.MouseWheelEvent });
+        root.UpdateLayout();
+        Require(scroll.VerticalOffset < down && settings.ThemeId == "pine",
+            "Scrolling over a selected theme does not return upward or changes the theme.");
     }
 
     private static Color Pixel(Brush brush)
