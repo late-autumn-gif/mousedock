@@ -337,7 +337,9 @@ namespace MouseDock.Views
                         Character = _activeStyle == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
                         PhotoPath = string.IsNullOrWhiteSpace(App.Settings.IconBackground) ? App.Settings.PhotoAsset : App.Settings.IconBackground,
                         PhotoZoom = App.Settings.PhotoZoom, PhotoOffsetX = App.Settings.PhotoOffsetX, PhotoOffsetY = App.Settings.PhotoOffsetY,
-                        Accent = new SolidColorBrush(App.Settings.IconFollowTheme ? _theme.Accent : ThemePreset.C("#A6F5BF")),
+                        Accent = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Accent),
+                        Ink = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Text),
+                        Surface = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Surface),
                         Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
                     };
                     if (item != null)
@@ -362,7 +364,7 @@ namespace MouseDock.Views
                 StyleName = _activeStyle, Width = width, Height = height,
                 HideBackground = App.Settings.IconHideBackground, DeviceModels = shown
             };
-            icon.ApplyPalette(_theme, App.Settings.IconFollowTheme);
+            icon.ApplyPalette(_theme, App.Settings);
             Attach(icon, null);
             RootGrid.Width = width;
             RootGrid.Height = height;

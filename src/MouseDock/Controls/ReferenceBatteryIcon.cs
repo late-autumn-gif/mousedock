@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
 using MouseDock.Models;
+using MouseDock.Services;
 
 namespace MouseDock.Controls;
 
@@ -50,6 +51,12 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         Surface = new SolidColorBrush(follow ? theme.Surface : ThemePreset.C(light ? "#FFFFFF" : "#1B1F21"));
         Outline = Ink.Clone();
         Outline.Opacity = .16;
+    }
+
+    public void ApplyPalette(ThemePreset theme, AppSettings settings)
+    {
+        var palette = AppearanceColors.IconPalette(settings, theme, settings.IconFollowTheme);
+        ApplyPalette(palette, true);
     }
 
     protected override void OnRender(DrawingContext drawing)
