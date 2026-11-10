@@ -550,7 +550,7 @@ namespace MouseDock
                 var shade = charging ? palette.Accent : level < 0 ? palette.TextDim :
                     level <= (Settings?.LowBatteryWarn ?? 20) ? palette.Low : palette.Accent;
                 System.Drawing.Color bg = System.Drawing.Color.FromArgb(shade.R, shade.G, shade.B);
-                var textColor = palette.Text;
+                var textColor = ColorContrast.Legible(palette.Text, new[] { shade });
                 var ink = System.Drawing.Color.FromArgb(textColor.R, textColor.G, textColor.B);
                 if (dim) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
 
