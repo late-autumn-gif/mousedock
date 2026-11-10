@@ -30,16 +30,28 @@ public static class ColorContrast
         if (surfaces.Length == 0) return color;
         double Score(Color candidate) => surfaces.Min(surface => Ratio(candidate, surface));
         if (Score(color) >= minimum) return color;
-        var target = Score(Colors.White) >= Score(Colors.Black) ? Colors.White : Colors.Black;
-        if (Score(target) < minimum) return target;
-        double lo = 0, hi = 1;
-        for (int i = 0; i < 18; i++)
+        var best = color;
+        double bestScore = Score(color);
+        var targets = new[] { Colors.Black, Colors.White };
+        // Mixed light/dark surfaces can require a middle tone, so endpoint contrast is not monotonic.
+        for (int i = 1; i <= 1024; i++)
         {
-            double middle = (lo + hi) / 2;
-            if (Score(Palette.Mix(color, target, middle)) >= minimum) hi = middle;
-            else lo = middle;
+            foreach (var target in targets)
+            {
+                var candidate = Palette.Mix(color, target, i / 1024d);
+                double score = Score(candidate);
+                if (score >= minimum) return candidate;
+                if (score > bestScore) { best = candidate; bestScore = score; }
+            }
         }
-        return Palette.Mix(color, target, hi);
+        for (int i = 0; i <= 255; i++)
+        {
+            var candidate = Color.FromRgb((byte)i, (byte)i, (byte)i);
+            double score = Score(candidate);
+            if (score >= minimum) return candidate;
+            if (score > bestScore) { best = candidate; bestScore = score; }
+        }
+        return best;
     }
 
     public static ThemePreset Readable(ThemePreset source)

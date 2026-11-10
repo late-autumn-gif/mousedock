@@ -56,6 +56,11 @@ internal static class AppearanceColorChecks
         }
         var readable = JsonSerializer.Deserialize<AppSettings>("""{"ThemeColors":{"background":"#000000","surface":"#000000","text":"#FFFFFF"}}""")!;
         Require(Palette.ResolveTheme(readable, out _).Text == Colors.White, "Already readable text changed.");
+        var mixed = new AppSettings { ThemeColors = new()
+            { ["background"] = "#000000", ["surface"] = "#FFFFFF", ["text"] = "#000000" } };
+        var mixedTheme = Palette.ResolveTheme(mixed, out _);
+        Require(Ratio(mixedTheme.Text, mixedTheme.BgTop) >= 4.5 && Ratio(mixedTheme.Text, mixedTheme.Surface) >= 4.5,
+            "Opposite light and dark surfaces incorrectly force white or black text.");
     }
 
     private static void Require(bool condition, string message)
