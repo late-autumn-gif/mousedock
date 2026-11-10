@@ -88,20 +88,8 @@ public sealed class PortraitEditorWindow : Window
         if (picker.ShowDialog(this) != true) return;
         try
         {
-            if (new FileInfo(picker.FileName).Length > 32L * 1024 * 1024)
-                throw new InvalidOperationException("请选择不超过 32 MB 的照片。");
-            using var input = File.OpenRead(picker.FileName);
-            var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnDemand);
-            var frame = decoder.Frames[0];
-            if ((long)frame.PixelWidth * frame.PixelHeight > 25_000_000)
-                throw new InvalidOperationException("照片像素不能超过 2500 万。");
-            input.Position = 0;
-            string hash = Convert.ToHexString(SHA256.HashData(input));
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "portraits");
-            Directory.CreateDirectory(directory);
-            string path = Path.Combine(directory, hash + Path.GetExtension(picker.FileName).ToLowerInvariant());
-            if (!File.Exists(path)) File.Copy(picker.FileName, path);
-            Draft.PhotoAsset = path;
+            Draft.PhotoAsset = ImageImport.Import(picker.FileName, directory, true);
             Draft.IconBackground = "";
             Draft.PhotoOffsetX = Draft.PhotoOffsetY = 0;
             Draft.PhotoZoom = _zoom.Value = 1;

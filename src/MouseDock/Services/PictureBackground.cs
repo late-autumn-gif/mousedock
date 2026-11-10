@@ -104,32 +104,8 @@ namespace MouseDock.Services
 
         public static string Import(string path, string directory = null)
         {
-            var info = new FileInfo(path);
-            if (!info.Exists || info.Length > 32L * 1024 * 1024)
-                throw new InvalidOperationException("请选择不超过 32 MB 的图片。");
-            using var input = File.OpenRead(path);
-            var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnDemand);
-            var frame = decoder.Frames[0];
-            if ((long)frame.PixelWidth * frame.PixelHeight > 25_000_000)
-                throw new InvalidOperationException("图片像素不能超过 2500 万。");
-            input.Position = 0;
-            string hash = Convert.ToHexString(SHA256.HashData(input));
             directory ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "backgrounds");
-            Directory.CreateDirectory(directory);
-            string destination = Path.Combine(directory, hash + ".png");
-            if (!File.Exists(destination))
-            {
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(frame);
-                string temporary = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
-                try
-                {
-                    using (var output = File.Create(temporary)) encoder.Save(output);
-                    File.Move(temporary, destination, true);
-                }
-                finally { if (File.Exists(temporary)) File.Delete(temporary); }
-            }
-            return destination;
+            return ImageImport.Import(path, directory, false, App.Theme?.BgTop);
         }
     }
 }

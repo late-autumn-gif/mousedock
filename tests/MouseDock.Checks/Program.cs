@@ -40,6 +40,8 @@ internal static class Program
             ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
             ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
+            ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
+            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),
