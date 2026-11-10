@@ -136,19 +136,24 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             fill.Width *= Math.Clamp(Level, 0, 100) / 100d;
             dc.DrawRoundedRectangle(StatusBrush(Level), null, fill, 2, 2);
         }
+        var numberBounds = plate;
+        if (ShowGlyph)
+        {
+            double side = Math.Min(plate.Height * .8, plate.Width * .23);
+            double inset = (plate.Height - side) / 2;
+            var badge = new Rect(plate.X + inset, plate.Y + inset, side, side);
+            dc.DrawRoundedRectangle(Brushes.Black, null, badge, 3, 3);
+            badge.Inflate(-side * .14, -side * .14);
+            DeviceGlyph.Draw(dc, Kind, badge, Brushes.WhiteSmoke, 1.6);
+
+            double textLeft = plate.X + side + 2 * inset;
+            numberBounds = new Rect(textLeft, plate.Y, Math.Max(1, plate.Right - textLeft), plate.Height);
+        }
         if (ShowNumber)
-            Text(dc, Level < 0 ? "\u2014" : Level + "%", plate, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
+            Text(dc, Level < 0 ? "\u2014" : Level + "%", numberBounds, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
         if (Charging && !Stale)
             Text(dc, "\u26A1", new Rect(plate.Right + 2, plate.Top, Math.Max(8, plate.Height), plate.Height),
                 Math.Max(8, plate.Height * .7), Accent);
-        if (ShowGlyph)
-        {
-            double side = Math.Min(22, ActualWidth * .19);
-            var badge = new Rect(ActualWidth * .03, ActualHeight * .79, side, side);
-            dc.DrawRoundedRectangle(Surface, null, badge, 5, 5);
-            badge.Inflate(-3, -3);
-            DeviceGlyph.Draw(dc, Kind, badge, Brushes.WhiteSmoke, 1.8);
-        }
         dc.Pop();
     }
 
