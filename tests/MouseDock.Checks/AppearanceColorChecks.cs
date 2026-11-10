@@ -33,6 +33,31 @@ internal static class AppearanceColorChecks
             "Resetting a draft modified the original settings or failed to restore the theme.");
     }
 
+    internal static void Contrast()
+    {
+        double Ratio(Color a, Color b)
+        {
+            double L(Color c)
+            {
+                double C(byte v) { double x = v / 255d; return x <= .04045 ? x / 12.92 : Math.Pow((x + .055) / 1.055, 2.4); }
+                return .2126 * C(c.R) + .7152 * C(c.G) + .0722 * C(c.B);
+            }
+            return (Math.Max(L(a), L(b)) + .05) / (Math.Min(L(a), L(b)) + .05);
+        }
+        foreach (string hex in new[] { "#000000", "#FFFFFF", "#808080" })
+        {
+            var settings = new AppSettings { ThemeColors = new()
+                { ["background"] = hex, ["surface"] = hex, ["text"] = hex, ["muted"] = hex, ["accent"] = hex } };
+            var theme = Palette.ResolveTheme(settings, out _);
+            Require(Ratio(theme.Text, theme.Surface) >= 4.5 && Ratio(theme.TextDim, theme.Surface) >= 3 &&
+                Ratio(theme.Accent, theme.Surface) >= 3, "Custom colors remain unreadable against their surface.");
+            var saved = JsonSerializer.Serialize(settings.ThemeColors);
+            Require(saved.Contains(hex), "Contrast correction overwrote the user's input.");
+        }
+        var readable = JsonSerializer.Deserialize<AppSettings>("""{"ThemeColors":{"background":"#000000","surface":"#000000","text":"#FFFFFF"}}""")!;
+        Require(Palette.ResolveTheme(readable, out _).Text == Colors.White, "Already readable text changed.");
+    }
+
     private static void Require(bool condition, string message)
     { if (!condition) throw new InvalidOperationException(message); }
 }

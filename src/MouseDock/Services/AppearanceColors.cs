@@ -28,7 +28,7 @@ public static class AppearanceColors
         result.Accent = Read(values, "accent", result.Accent);
         if (Has(values, "accent")) result.Accent2 = result.Accent;
         result.Low = Read(values, "low", result.Low.A == 0 ? ThemePreset.C("#FF687D") : result.Low);
-        return result;
+        return values?.Count > 0 ? ColorContrast.Readable(result) : result;
     }
 
     public static ThemePreset IconPalette(AppSettings settings, ThemePreset theme, bool follow)
