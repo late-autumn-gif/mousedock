@@ -671,6 +671,13 @@ namespace MouseDock
                 BringToFront(Surfaces.GetWindow(Settings.SurfaceMode));
         }
 
+        public static void ExpandDock()
+        {
+            SaveWindowPositions();
+            SetSurface("dock");
+            BringToFront(Dock);
+        }
+
         /// <summary>显示并压到最前（Topmost 短暂切换一下，绕过 Windows 的前台限制）。</summary>
         private static void BringToFront(Window window)
         {

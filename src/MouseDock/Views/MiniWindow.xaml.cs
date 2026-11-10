@@ -27,6 +27,12 @@ namespace MouseDock.Views
         public MiniWindow()
         {
             InitializeComponent();
+            PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (e.ClickCount != 2 || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
+                App.ExpandDock();
+                e.Handled = true;
+            };
             _themeBackground = Root.Background;
             CellList.ItemsSource = _visible;
             App.Battery.Refreshed += (_, __) => Rebuild();
