@@ -406,26 +406,29 @@ namespace MouseDock.Views
         private void UpdateReferenceIcons(System.Collections.Generic.List<DeviceInfo> devices)
         {
             ReferenceIcons.Children.Clear();
-            var shown = devices.Take(6).ToList();
+            var shown = devices.Take(CharacterBatteryIcon.MaximumPhotoDevices).ToList();
             ReferenceIcons.Columns = _activeStyle == "character" ? Math.Min(2, Math.Max(1, shown.Count)) : 1;
             if (_activeStyle is "character" or "portrait")
             {
+                var palette = AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme);
                 int count = _activeStyle == "portrait" ? 1 : Math.Max(1, shown.Count);
                 for (int i = 0; i < count; i++)
                 {
                     var item = i < shown.Count ? shown[i] : null;
                     var portrait = new CharacterBatteryIcon
                     {
-                        Width = _activeStyle == "portrait" ? 160 : 120,
-                        Height = _activeStyle == "portrait" ? Math.Max(192, 80 + shown.Count * 30) : 120,
+                        Width = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Width : 120,
+                        Height = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Height : 120,
                         Character = _activeStyle == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
                         PhotoPath = string.IsNullOrWhiteSpace(App.Settings.IconBackground) ? App.Settings.PhotoAsset : App.Settings.IconBackground,
                         PhotoZoom = App.Settings.PhotoZoom, PhotoOffsetX = App.Settings.PhotoOffsetX, PhotoOffsetY = App.Settings.PhotoOffsetY,
-                        Accent = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Accent),
-                        Ink = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Text),
-                        Surface = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Surface),
-                        Low = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Low),
-                        Muted = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).TextDim),
+                        Accent = new SolidColorBrush(palette.Accent),
+                        Ink = new SolidColorBrush(palette.Text),
+                        Surface = new SolidColorBrush(AppearanceColors.TryColor(App.Settings.CharacterBackgroundColor, out var background)
+                            ? background : palette.Surface),
+                        TransparentBackground = App.Settings.CharacterTransparentBackground,
+                        Low = new SolidColorBrush(palette.Low),
+                        Muted = new SolidColorBrush(palette.TextDim),
                         Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
                     };
                     if (item != null)
@@ -437,8 +440,8 @@ namespace MouseDock.Views
                     }
                     Attach(portrait, item);
                 }
-                RootGrid.Width = _activeStyle == "portrait" ? 160 : ReferenceIcons.Columns * 120;
-                RootGrid.Height = _activeStyle == "portrait" ? Math.Max(192, 80 + shown.Count * 30)
+                RootGrid.Width = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Width : ReferenceIcons.Columns * 120;
+                RootGrid.Height = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Height
                     : Math.Ceiling(count / (double)ReferenceIcons.Columns) * 120;
                 return;
             }
