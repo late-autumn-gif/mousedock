@@ -7,6 +7,9 @@ namespace MouseDock.Services;
 
 public static class AppearanceColors
 {
+    public static T Battery<T>(int level, T normal, T low, T unknown) =>
+        level < 0 ? unknown : level <= 20 ? low : normal;
+
     public static bool TryColor(string value, out Color color)
     {
         color = default;

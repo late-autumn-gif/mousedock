@@ -33,6 +33,7 @@ internal static class Program
         {
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
             ("Custom palettes correct contrast while retaining raw colors", AppearanceColorChecks.Contrast),
+            ("Battery state colors update ordinary icons and character plates", BatteryColorChecks.LiveStatus),
             ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
             ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
             ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),

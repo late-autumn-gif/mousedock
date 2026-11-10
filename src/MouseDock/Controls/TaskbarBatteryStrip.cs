@@ -25,7 +25,7 @@ public sealed class TaskbarBatteryStrip : Border
     public static string AppearanceKey(AppSettings settings, ThemePreset theme) =>
         $"{settings.ReferenceCharacter}|{settings.IconBackground}|{settings.PhotoAsset}|{settings.PhotoZoom}|" +
         $"{settings.PhotoOffsetX}|{settings.PhotoOffsetY}|{settings.IconHideBackground}|{settings.IconFollowTheme}|" +
-        $"{theme.Surface}|{theme.Text}|{theme.Accent}";
+        $"{theme.Surface}|{theme.Text}|{theme.Accent}|{theme.Low}|{theme.TextDim}";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
     internal static Size CardSize(bool vertical) => vertical ? new Size(40, 62) : new Size(58, 40);
@@ -246,7 +246,9 @@ public sealed class TaskbarBatteryStrip : Border
                 Width = 36, Height = 36, Character = style == "portrait" ? "photo" : appearance.ReferenceCharacter,
                 PhotoPath = string.IsNullOrWhiteSpace(appearance.IconBackground) ? appearance.PhotoAsset : appearance.IconBackground,
                 PhotoZoom = appearance.PhotoZoom, PhotoOffsetX = appearance.PhotoOffsetX, PhotoOffsetY = appearance.PhotoOffsetY,
-                ShowNumber = false, ShowGlyph = false, Accent = batteryBrush ?? foreground
+                ShowNumber = false, ShowGlyph = false, Accent = batteryBrush ?? foreground,
+                Low = theme?.Low.A > 0 ? new SolidColorBrush(theme.Low) : Brushes.IndianRed,
+                Muted = theme != null ? new SolidColorBrush(theme.TextDim) : Brushes.Gray
             };
             portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
             portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
