@@ -35,7 +35,18 @@ internal static class CharacterEditorChecks
         var renamed = Snapshot(icon);
         Require(!original.SequenceEqual(renamed), "Photo overlay does not display the device name.");
         device.Charging = true;
-        Require(!renamed.SequenceEqual(Snapshot(icon)), "Photo overlay does not display live device status.");
+        Require(!renamed.SequenceEqual(Snapshot(icon)), "Photo panel does not display live device status.");
+
+        byte[] PhotoWith(int count)
+        {
+            var size = CharacterBatteryIcon.PhotoSize(count);
+            var portrait = new CharacterBatteryIcon { Character = "photo", Width = size.Width, Height = size.Height,
+                Devices = Enumerable.Repeat(device, count).ToArray() };
+            return Snapshot(portrait);
+        }
+        const int avatarEnd = 156 * 160 * 4;
+        Require(PhotoWith(1).AsSpan(0, avatarEnd).SequenceEqual(PhotoWith(6).AsSpan(0, avatarEnd)),
+            "Adding device rows must leave the entire avatar region unchanged.");
     }
 
     internal static void Application()
@@ -67,7 +78,7 @@ internal static class CharacterEditorChecks
         try
         {
             var preview = (CharacterBatteryIcon)typeof(CharacterEditorWindow).GetField("_preview", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(editor)!;
-            Require(preview.Devices.Count == 6 && preview.Width == 160 && preview.Height == 420,
+            Require(preview.Devices.Count == 6 && preview.Width == 160 && preview.Height == CharacterBatteryIcon.PhotoSize(6).Height,
                 "Photo editing does not share the real six-device photo layout.");
             var root = (FrameworkElement)editor.Content;
             root.Measure(new Size(364, 680)); root.Arrange(new Rect(0, 0, 364, 680)); root.UpdateLayout();

@@ -14,7 +14,10 @@ namespace MouseDock.Controls;
 public sealed class CharacterBatteryIcon : FrameworkElement
 {
     public const int MaximumPhotoDevices = 6;
-    public static Size PhotoSize(int count) => new(160, Math.Max(208, 72 + Math.Clamp(count, 0, MaximumPhotoDevices) * 58));
+    private const double PhotoWidth = 160;
+    private const double PhotoRowHeight = 54;
+    public static Size PhotoSize(int count) => new(PhotoWidth,
+        PhotoWidth + 4 + Math.Clamp(count, 1, MaximumPhotoDevices) * PhotoRowHeight);
     private static readonly Dictionary<string, BitmapSource> Artwork = new();
     private static readonly Dictionary<string, Rect> VisibleArtwork = new();
     public static readonly DependencyProperty LevelProperty = DependencyProperty.Register(nameof(Level), typeof(int),
@@ -159,22 +162,25 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         var bounds = new Rect(3, 2, Math.Max(1, ActualWidth - 6), Math.Max(1, ActualHeight - 4));
         dc.PushClip(new RectangleGeometry(bounds, 8, 8));
         if (!TransparentBackground) dc.DrawRectangle(Surface, null, bounds);
+        int count = ShowNumber ? Math.Clamp(Devices?.Count ?? 1, 1, MaximumPhotoDevices) : 0;
+        double photoHeight = count == 0 ? bounds.Height :
+            Math.Min(bounds.Width, Math.Max(1, bounds.Height - count * PhotoRowHeight - 6));
+        var photoBounds = new Rect(bounds.X, bounds.Y, bounds.Width, photoHeight);
         var image = _photo ?? LoadArtwork("rei");
         double zoom = double.IsFinite(PhotoZoom) ? Math.Clamp(PhotoZoom, 1, 4) : 1;
-        double scale = Math.Max(bounds.Width / image.PixelWidth, bounds.Height / image.PixelHeight) * zoom;
-        double width = bounds.Width / (image.PixelWidth * scale), height = bounds.Height / (image.PixelHeight * scale);
+        double scale = Math.Max(photoBounds.Width / image.PixelWidth, photoBounds.Height / image.PixelHeight) * zoom;
+        double width = photoBounds.Width / (image.PixelWidth * scale), height = photoBounds.Height / (image.PixelHeight * scale);
         double x = double.IsFinite(PhotoOffsetX) ? Math.Clamp(.5 - PhotoOffsetX, 0, 1) : .5;
         double y = double.IsFinite(PhotoOffsetY) ? Math.Clamp(.5 - PhotoOffsetY, 0, 1) : .5;
         dc.DrawRectangle(new ImageBrush(image)
         {
             Viewbox = new Rect((1 - width) * x, (1 - height) * y, width, height),
             ViewboxUnits = BrushMappingMode.RelativeToBoundingBox, Stretch = Stretch.Fill
-        }, null, bounds);
-        if (ShowNumber)
+        }, null, photoBounds);
+        if (count > 0 && photoBounds.Bottom < bounds.Bottom)
         {
-            int count = Math.Max(1, Devices?.Count ?? 1);
-            double rowHeight = Math.Min(54, (bounds.Height - 12) / count);
-            double top = bounds.Bottom - count * rowHeight - 6;
+            double top = photoBounds.Bottom;
+            double rowHeight = Math.Min(PhotoRowHeight, (bounds.Bottom - top) / count);
             Brush PhotoInk(Brush brush, double minimum = 4.5) => new SolidColorBrush(ColorContrast.Legible(
                 (brush as SolidColorBrush)?.Color ?? Colors.White, new[] { Color.FromRgb(23, 23, 23) }, minimum));
             var ink = PhotoInk(Ink);
@@ -182,9 +188,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             var muted = PhotoInk(Muted);
             var accent = PhotoInk(Accent, 3);
             Brush Status(int level, bool text = false) => AppearanceColors.Battery(level, text ? ink : accent, low, muted);
-            dc.DrawRectangle(new LinearGradientBrush(Colors.Transparent, Color.FromArgb(220, 0, 0, 0),
-                new Point(0, 0), new Point(0, 1)), null,
-                new Rect(bounds.X, Math.Max(bounds.Y, top - rowHeight), bounds.Width, bounds.Bottom - Math.Max(bounds.Y, top - rowHeight)));
+
             dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(232, 0, 0, 0)), null,
                 new Rect(bounds.X, top, bounds.Width, bounds.Bottom - top));
             for (int i = 0; i < count; i++)
