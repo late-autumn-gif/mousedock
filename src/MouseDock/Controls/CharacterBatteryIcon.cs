@@ -62,6 +62,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         get
         {
             if (Character == "photo" || !TransparentBackground) return new Rect(0, 0, ActualWidth, ActualHeight);
+            if (Character == "photo") return new Rect(0, 0, ActualWidth, ActualHeight);
             var image = LoadArtwork(Character);
             if (!VisibleArtwork.TryGetValue(Character, out var pixels))
             {
@@ -207,12 +208,18 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                     level < 0 ? device.IsChargingActive ? "充电中 · 电量未知" : "电量未知" : device.StatusText;
                 Label(dc, status, new Rect(row.X, row.Y + lineHeight, row.Width, lineHeight),
                     Math.Min(11, row.Height * .23), level < 0 ? muted : ink);
+                    new Rect(row.X, row.Y, row.Height * .65, row.Height * .65), StatusBrush(level, true), 1.6);
+                var number = new Rect(row.X + row.Height, row.Y - 2, row.Width - row.Height, row.Height - 2);
+                string value = level < 0 ? "\u2014" : level + "%";
+                if ((device?.IsChargingActive ?? Charging) && !stale) value += " \u26A1";
+                Text(dc, value, number, row.Height * .7, StatusBrush(level, true), true);
                 var bar = new Rect(row.X, row.Bottom - 2, row.Width, 1.6);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar);
                 if (level > 0)
                 {
                     bar.Width *= Math.Clamp(level, 0, 100) / 100d;
                     dc.DrawRectangle(Status(level), null, bar);
+                    dc.DrawRectangle(StatusBrush(level), null, bar);
                 }
                 dc.Pop();
             }

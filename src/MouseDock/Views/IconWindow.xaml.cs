@@ -429,6 +429,11 @@ namespace MouseDock.Views
                         TransparentBackground = App.Settings.CharacterTransparentBackground,
                         Low = new SolidColorBrush(palette.Low),
                         Muted = new SolidColorBrush(palette.TextDim),
+                        Accent = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Accent),
+                        Ink = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Text),
+                        Surface = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Surface),
+                        Low = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).Low),
+                        Muted = new SolidColorBrush(AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme).TextDim),
                         Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
                     };
                     if (item != null)
@@ -445,9 +450,8 @@ namespace MouseDock.Views
                     : Math.Ceiling(count / (double)ReferenceIcons.Columns) * 120;
                 return;
             }
-            bool multi = _activeStyle == "multi";
-            double width = multi ? Math.Max(72, shown.Count * 58 + 16) : shown.Count > 1 ? 144 : 112;
-            double height = multi ? 80 : shown.Count > 1 ? shown.Count * 64 + 12 : 112;
+            var size = IconComposition.Measure(_activeStyle, shown.Count);
+            double width = size.Width, height = size.Height;
             var icon = new ReferenceBatteryIcon
             {
                 StyleName = _activeStyle, Width = width, Height = height,
