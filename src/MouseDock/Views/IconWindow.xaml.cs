@@ -358,9 +358,8 @@ namespace MouseDock.Views
                     : Math.Ceiling(count / (double)ReferenceIcons.Columns) * 120;
                 return;
             }
-            bool multi = _activeStyle == "multi";
-            double width = multi ? Math.Max(72, shown.Count * 58 + 16) : shown.Count > 1 ? 144 : 112;
-            double height = multi ? 80 : shown.Count > 1 ? shown.Count * 64 + 12 : 112;
+            var size = IconComposition.Measure(_activeStyle, shown.Count);
+            double width = size.Width, height = size.Height;
             var icon = new ReferenceBatteryIcon
             {
                 StyleName = _activeStyle, Width = width, Height = height,

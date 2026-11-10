@@ -161,19 +161,21 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     {
         dc.DrawRoundedRectangle(HideBackground ? Brushes.Transparent : Surface, null,
             new Rect(3, 3, ActualWidth - 6, ActualHeight - 6), 16, 16);
-        double cell = (ActualWidth - 16) / items.Length;
+        var cells = IconComposition.CompactCells(items.Length, RenderSize);
         for (int i = 0; i < items.Length; i++)
         {
             var item = items[i];
-            double center = 8 + cell * (i + .5);
-            if (i > 0) dc.DrawLine(new Pen(Outline, 1),
-                new Point(8 + i * cell, 12), new Point(8 + i * cell, ActualHeight - 12));
+            var cell = cells[i];
+            double center = cell.X + cell.Width / 2;
             dc.PushOpacity(item.Stale ? .45 : 1);
-            DeviceGlyph.Draw(dc, item.Kind, new Rect(center - 14, 12, 22, 22), Alpha(Ink, .85), 1.8);
-            dc.DrawEllipse(StatusBrush(item.Level), null, new Point(center + 14, 22), 2.5, 2.5);
+            var identity = _models != null && i < _models.Count
+                ? new SolidColorBrush(IconComposition.IdentityColor(_models[i].Id)) : Alpha(Ink, .85);
+            DeviceGlyph.Draw(dc, item.Kind, new Rect(center - 14, cell.Y + 3, 22, 22), identity, 1.8);
+            dc.DrawEllipse(item.Level < 0 ? Brush("#DFD783") : Brush("#7BC9E2"), null, new Point(center + 14, cell.Y + 13), 2.5, 2.5);
             Text(dc, item.Level < 0 ? "\u2014" : item.Level.ToString(CultureInfo.InvariantCulture),
-                Math.Min(31, cell * .58), new Point(center, ActualHeight * .68), StatusBrush(item.Level, true), cell - 8);
-            if (item.Charging && !item.Stale) Bolt(dc, new Point(center + 14, 35), 9);
+                Math.Min(31, cell.Width * .58), new Point(center, cell.Y + cell.Height * .73),
+                Ink, cell.Width - 4);
+            if (item.Charging && !item.Stale) Bolt(dc, new Point(center + 14, cell.Y + 27), 9);
             dc.Pop();
         }
     }
