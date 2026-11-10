@@ -34,6 +34,7 @@
     <Content Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md"
       CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Resource Include="Assets\Characters\Rikka.jpg;Assets\Characters\Roxy.jpg" />
+    <Resource Include="Assets\Characters\character-rei.png;Assets\Characters\character-asuka.png;Assets\Characters\character-peek.png" />
     <!-- 关于面板的两张码：嵌进 exe，绿色版解压单个文件也能显示。 -->
     <Resource Include="Assets\donate.png;Assets\qq-group.png" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />

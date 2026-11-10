@@ -139,10 +139,15 @@ namespace MouseDock.Controls
 
         protected override void OnRender(DrawingContext dc)
         {
-            double w = ActualWidth, h = ActualHeight;
+            Draw(dc, Kind, new Rect(RenderSize), GlyphBrush, Thickness);
+        }
+
+        internal static void Draw(DrawingContext dc, Models.DeviceKind kind, Rect bounds, Brush brush, double thickness)
+        {
+            double w = bounds.Width, h = bounds.Height;
             if (w <= 1 || h <= 1) return;
 
-            var geo = Kind switch
+            var geo = kind switch
             {
                 Models.DeviceKind.Mouse => MouseGeo,
                 Models.DeviceKind.Headset => HeadsetGeo,
@@ -151,7 +156,7 @@ namespace MouseDock.Controls
                 _ => OtherGeo
             };
 
-            var pen = new Pen(GlyphBrush, Thickness)
+            var pen = new Pen(brush, thickness)
             {
                 StartLineCap = PenLineCap.Round,
                 EndLineCap = PenLineCap.Round,
@@ -160,7 +165,7 @@ namespace MouseDock.Controls
             pen.Freeze();
 
             double scale = Math.Min(w, h) / 24.0;
-            dc.PushTransform(new TranslateTransform((w - 24 * scale) / 2, (h - 24 * scale) / 2));
+            dc.PushTransform(new TranslateTransform(bounds.X + (w - 24 * scale) / 2, bounds.Y + (h - 24 * scale) / 2));
             dc.PushTransform(new ScaleTransform(scale, scale));
             dc.DrawGeometry(null, pen, geo);
             dc.Pop();

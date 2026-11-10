@@ -865,6 +865,8 @@ namespace MouseDock
             Mini?.ApplyTheme(Theme, animate);
             Icon?.ApplyTheme(Theme, animate);
             SettingsView?.ApplyTheme(Theme, animate);
+            Taskbar?.UpdateDevices();
+            Edge?.UpdateDevices();
         }
 
         public static void ApplyOpacity()
@@ -959,6 +961,9 @@ namespace MouseDock
                 case "icon":
                     Settings.IconBackground = path;
                     Icon?.LoadPhoto();
+                    Icon?.UpdateValue();
+                    Taskbar?.UpdateDevices();
+                    Edge?.UpdateDevices();
                     break;
             }
             SaveSettings();

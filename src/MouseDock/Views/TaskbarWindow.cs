@@ -26,7 +26,7 @@ namespace MouseDock.Views
         private TaskbarLayoutReader _layout;
         private DeviceInfo[] _renderedDevices = Array.Empty<DeviceInfo>();
         private (string Style, bool Numbers, bool Vertical, Color Foreground, int Low,
-            string Text, string Battery, bool Follow, Color Accent) _presentation;
+            string Text, string Battery, bool Follow, Color Accent, string Appearance) _presentation;
         public event EventHandler HostLost;
         public event EventHandler OverflowChanged;
         public bool UsesScreenEdge { get; private set; }
@@ -124,13 +124,14 @@ namespace MouseDock.Views
             var foreground = light ? Colors.Black : Colors.WhiteSmoke;
             var presentation = (App.Settings.TaskbarStyle, App.Settings.ShowBatteryNumber, _vertical,
                 foreground, App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor,
-                App.Settings.TaskbarBatteryColor, App.Settings.IconFollowTheme, App.Theme.Accent);
+                App.Settings.TaskbarBatteryColor, App.Settings.IconFollowTheme, App.Theme.Accent,
+                TaskbarBatteryStrip.AppearanceKey(App.Settings, App.Theme));
             if (_strip == null || presentation != _presentation || !_renderedDevices.SequenceEqual(devices))
             {
                 _strip = new TaskbarBatteryStrip(devices, App.Settings.TaskbarStyle,
                     App.Settings.ShowBatteryNumber, _vertical, new SolidColorBrush(foreground),
                     App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor,
-                    App.Settings.IconFollowTheme ? new SolidColorBrush(App.Theme.Accent) : null);
+                    App.Settings.IconFollowTheme ? new SolidColorBrush(App.Theme.Accent) : null, App.Settings, App.Theme);
                 _viewport.Child = _strip;
                 _renderedDevices = devices;
                 _presentation = presentation;

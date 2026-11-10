@@ -32,6 +32,7 @@ namespace MouseDock.Models
         public string IconMode { get; set; } = "photo";
         public string CharacterAsset { get; set; } = "";
         public string AnimatedCharacter { get; set; } = "otter";
+        public string ReferenceCharacter { get; set; } = "rei";
         public bool AnimatedPhotoBackground { get; set; }
         public string PhotoAsset { get; set; } = "";
         public double PhotoZoom { get; set; } = 1.0;
@@ -85,6 +86,7 @@ namespace MouseDock.Models
         public string TaskbarBatteryColor { get; set; } = "";
         public bool ShowBatteryNumber { get; set; } = true;
         public string EdgeGlyphColor { get; set; } = "#F5F5F5";
+        public bool EdgeGlyphColorCustomized { get; set; }
         public string EdgeStyle { get; set; } = "ring";
         public double EdgeVerticalPosition { get; set; } = 0.5;
         public double EdgeInset { get; set; } = 12;
@@ -143,6 +145,7 @@ namespace MouseDock.Models
                 CharacterAsset = CharacterAsset,
                 PhotoAsset = PhotoAsset,
                 AnimatedCharacter = AnimatedCharacter,
+                ReferenceCharacter = ReferenceCharacter,
                 AnimatedPhotoBackground = AnimatedPhotoBackground,
                 PhotoZoom = PhotoZoom,
                 PhotoOffsetX = PhotoOffsetX,
@@ -169,6 +172,7 @@ namespace MouseDock.Models
             TaskbarBatteryColor = TaskbarBatteryColor,
                 ShowBatteryNumber = ShowBatteryNumber,
                 EdgeGlyphColor = EdgeGlyphColor,
+                EdgeGlyphColorCustomized = EdgeGlyphColorCustomized,
                 EdgeStyle = EdgeStyle,
                 EdgeVerticalPosition = EdgeVerticalPosition,
                 EdgeInset = EdgeInset,
