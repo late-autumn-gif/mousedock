@@ -31,6 +31,8 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
+            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),
