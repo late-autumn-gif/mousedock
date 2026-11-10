@@ -164,6 +164,9 @@ namespace MouseDock.Models
         public Color Surface { get; set; }
         public Color Text { get; set; }
         public Color TextDim { get; set; }
+        public Color Hover { get; set; }
+        public Color Border { get; set; }
+        public Color Low { get; set; }
         public bool IsLight { get; set; }
 
         public static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
@@ -198,7 +201,13 @@ namespace MouseDock.Models
                 BgTop = C("#212A3B"), BgBottom = C("#131A27"), Surface = C("#1A2130"),
                 Accent = C("#A8D8FF"), Accent2 = C("#8FE8DA"),
                 Text = C("#E8F1FA"), TextDim = C("#8E9CB0"), IsLight = false
-            }
+            },
+            Services.ReferenceThemes.Resolve("reference-mint", ""),
+            Services.ReferenceThemes.Resolve("pine", ""),
+            Services.ReferenceThemes.Resolve("ocean", ""),
+            Services.ReferenceThemes.Resolve("rose", ""),
+            Services.ReferenceThemes.Resolve("plum", ""),
+            Services.ReferenceThemes.Resolve("amber", "")
         };
 
         public static ThemePreset ById(string id)

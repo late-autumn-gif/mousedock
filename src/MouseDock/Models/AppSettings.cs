@@ -8,11 +8,16 @@ namespace MouseDock.Models
         public int Version { get; set; } = 6;
 
         public string ThemeId { get; set; } = "dusk";
+        public string ThemeMode { get; set; } = "";
 
         // 自定义背景（取主色）与手动覆盖
         public string CustomBackground { get; set; } = "";
         public string CustomAccent { get; set; } = "";
         public string CustomSurface { get; set; } = "";
+        public double BackgroundZoom { get; set; } = 1;
+        public double BackgroundPositionX { get; set; } = .5;
+        public double BackgroundPositionY { get; set; } = .5;
+        public double BackgroundDepth { get; set; } = .35;
 
         // 监视的设备 id（最多 4 台用于迷你视图，主卡片最多 6 行）
         public List<string> SelectedDeviceIds { get; set; } = new List<string>();
@@ -124,9 +129,14 @@ namespace MouseDock.Models
             return new AppSettings
             {
                 ThemeId = ThemeId,
+                ThemeMode = ThemeMode,
                 CustomBackground = CustomBackground,
                 CustomAccent = CustomAccent,
                 CustomSurface = CustomSurface,
+                BackgroundZoom = BackgroundZoom,
+                BackgroundPositionX = BackgroundPositionX,
+                BackgroundPositionY = BackgroundPositionY,
+                BackgroundDepth = BackgroundDepth,
                 SelectedDeviceIds = new List<string>(SelectedDeviceIds),
                 DeviceSelectionInitialized = DeviceSelectionInitialized,
                 HiddenDeviceIds = new List<string>(HiddenDeviceIds),
