@@ -10,12 +10,12 @@ internal static class RuntimeAuditChecks
     internal static void TrayResources()
     {
         var render = typeof(MouseDock.App).GetMethod("RenderTrayIcon", BindingFlags.Static | BindingFlags.NonPublic)!;
-        using (var warm = (Icon)render.Invoke(null, [50, false, false])!) { }
+        using (var warm = (Icon)render.Invoke(null, [50, false, false, false])!) { }
         using var process = Process.GetCurrentProcess();
         uint before = GetGuiResources(process.Handle, 1);
         for (int i = 0; i < 200; i++)
         {
-            using var icon = (Icon)render.Invoke(null, [10, false, i % 2 == 0])!;
+            using var icon = (Icon)render.Invoke(null, [10, false, i % 2 == 0, false])!;
         }
         GC.Collect();
         GC.WaitForPendingFinalizers();

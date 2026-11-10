@@ -19,6 +19,7 @@ namespace MouseDock.Services.Detection
         public string Transport { get; set; } = "";   // 蓝牙 / 蓝牙 LE / 2.4G / USB / 内置
         public int Level { get; set; } = -1;
         /// <summary>硬件 DPI；-1 表示这台设备没有读到或没有该能力。</summary>
+        public bool ChargeFull { get; set; }
         public int Dpi { get; set; } = -1;
         /// <summary>DPI 各档位，未使用的位置为 -1。</summary>
         public int[] DpiSlots { get; set; }

@@ -99,8 +99,10 @@ internal static class OriginalGpwProtocol
                 var second = Call(slot, voltage, 0);
                 if (second == null || !TryVoltage(second, out int level, out bool charging))
                     return Fail("第二次电压响应无效/充电平台不能唯一换算：" + issue, name, confirmed);
-                string source = (second[6] & 0x87) == 0x81 ? "设备明确满电状态" : "一代 GPW 官方电池模型估算（非设备直接百分比）";
-                return new(level, charging, true, charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
+                bool full = (second[6] & 0x87) == 0x81;
+                string source = full ? "设备明确满电状态" : "一代 GPW 官方电池模型估算（非设备直接百分比）";
+                return new(level, charging, true, full ? ReferenceBatteryProtocol.State.Full :
+                    charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
                     source + $"；slot={slot:X2} mV={(second[4] << 8) | second[5]} flags={second[6]:X2}；两次有效电压响应；回显={echoes} 无效={rejected}" + trace,
                     Model, name);
             }

@@ -43,6 +43,7 @@ internal static class ChargingVisualRegression
                     new DeviceInfo { Name = "设备断开", Level = 42, Charging = true, Connected = false }
                 };
                 var glyphs = new List<ChargingGlyph>();
+                var rings = new List<DeviceBatteryRing>();
                 foreach (var device in devices)
                 {
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5), DataContext = device };
@@ -53,6 +54,10 @@ internal static class ChargingVisualRegression
                     var glyph = new ChargingGlyph { Width = 30, Height = 24 };
                     glyph.SetBinding(ChargingGlyph.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
                     glyphs.Add(glyph); row.Children.Add(glyph);
+                    var ring = new DeviceBatteryRing();
+                    ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
+                    ring.SetBinding(DeviceBatteryRing.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+                    rings.Add(ring); row.Children.Add(ring);
                     var state = new TextBlock { Foreground = Brushes.LightGray, FontSize = 11, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                     state.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.StatusText)));
                     row.Children.Add(state); root.Children.Add(row);
@@ -68,31 +73,31 @@ internal static class ChargingVisualRegression
                 }
                 try
                 {
-                    Check(!glyphs[0].IsAnimating, "An unloaded glyph must not run an animation clock");
+                    Check(!rings[0].IsChargeSweepRunning, "An unloaded glyph must not run an animation clock");
                     window.Show(); Pump(120);
-                    Check(glyphs[0].IsAnimating && glyphs.Skip(1).All(g => !g.IsAnimating), "Only a fresh connected charging device animates");
+                    Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation && rings.Skip(1).All(g => !g.IsChargeSweepRunning), "Only a fresh connected charging device animates");
                     var first = Capture("充电动画-帧1.png"); Pump(500);
                     var second = Capture("充电动画-帧2.png");
-                    Check(!first.SequenceEqual(second), "Charging animation must visibly advance between frames");
+                    Check(first.SequenceEqual(second) != SystemParameters.ClientAreaAnimation, "Charging animation must visibly advance between frames");
                     devices[0].Charging = false; Pump(50);
-                    Check(!glyphs[0].IsAnimating && glyphs[0].Visibility == Visibility.Collapsed, "Stopping charge removes the glyph and animation clock");
+                    Check(!rings[0].IsChargeSweepRunning && glyphs[0].Visibility == Visibility.Collapsed, "Stopping charge removes the glyph and animation clock");
                     devices[0].Charging = true; Pump(50);
-                    Check(glyphs[0].IsAnimating, "Fresh charging can restart without reconstructing the view");
+                    Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation, "Fresh charging can restart without reconstructing the view");
                     window.Hide(); Pump(30);
-                    Check(glyphs.All(g => !g.IsAnimating), "Hidden views do not retain running charging clocks");
+                    Check(rings.All(g => !g.IsChargeSweepRunning), "Hidden views do not retain running charging clocks");
                 }
                 finally { window.Close(); Pump(30); }
-                Check(glyphs.All(g => !g.IsAnimating), "Unloaded views release charging clocks");
+                Check(rings.All(g => !g.IsChargeSweepRunning), "Unloaded views release charging clocks");
 
                 var renderer = typeof(MouseDock.App).GetMethod("RenderTrayIcon", BindingFlags.NonPublic | BindingFlags.Static)!;
-                var phase = typeof(MouseDock.App).GetField("_trayAnimationFrame", BindingFlags.NonPublic | BindingFlags.Static)!;
+
                 // Warm up System.Drawing before measuring native resources.
-                using (var icon = (System.Drawing.Icon)renderer.Invoke(null, new object[] { 42, true, false })!) { }
+                using (var icon = (System.Drawing.Icon)renderer.Invoke(null, new object[] { 42, true, false, false })!) { }
                 int before = GetGuiResources(Process.GetCurrentProcess().Handle, 1);
                 for (int i = 0; i < 300; i++)
                 {
-                    phase.SetValue(null, i % 6);
-                    using var icon = (System.Drawing.Icon)renderer.Invoke(null, new object[] { 42, true, false })!;
+
+                    using var icon = (System.Drawing.Icon)renderer.Invoke(null, new object[] { 42, true, false, false })!;
                     if (i < 6 && i % 2 == 0) { using var bitmap = icon.ToBitmap(); bitmap.Save(Path.Combine(directory, $"托盘充电-{i / 2 + 1}.png")); }
                 }
                 Check(GetGuiResources(Process.GetCurrentProcess().Handle, 1) <= before + 2, "Continuous tray animation must not leak native icon handles");

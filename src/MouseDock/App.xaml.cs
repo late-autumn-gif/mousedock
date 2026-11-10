@@ -465,6 +465,14 @@ namespace MouseDock
 
             // 电量一刷新就把托盘图标重画一遍
             Battery.Refreshed += (_, __) => UpdateTrayIcon();
+            Battery.ChargeCompleted += device =>
+            {
+                if (_tray == null) return;
+                _tray.BalloonTipTitle = $"{device.Name} 已充满";
+                _tray.BalloonTipText = "设备已确认充电完成。";
+                _tray.BalloonTipIcon = WinForms.ToolTipIcon.Info;
+                _tray.ShowBalloonTip(4000);
+            };
             UpdateTrayIcon();
         }
 
@@ -483,7 +491,7 @@ namespace MouseDock
 
         private static System.Windows.Forms.Timer _trayBlink;
         private static bool _trayBlinkOn;
-        private static int _trayAnimationFrame;
+
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
 
         /// <summary>托盘图标跟着电量走：正常绿、低电量红（还会闪）、充电绿、未知灰。</summary>
@@ -500,7 +508,7 @@ namespace MouseDock
 
             try
             {
-                var replacement = RenderTrayIcon(level, charging, low && _trayBlinkOn);
+                var replacement = RenderTrayIcon(level, charging, low && _trayBlinkOn, dev?.IsFullActive == true);
                 var previous = _tray.Icon;
                 try { _tray.Icon = replacement; }
                 catch { replacement.Dispose(); throw; }
@@ -512,7 +520,7 @@ namespace MouseDock
             }
             catch { }
 
-            if (low || charging)
+            if (low && SystemParameters.ClientAreaAnimation)
             {
                 if (_trayBlink == null)
                 {
@@ -520,23 +528,21 @@ namespace MouseDock
                     _trayBlink.Tick += (_, __) =>
                     {
                         _trayBlinkOn = !_trayBlinkOn;
-                        _trayAnimationFrame = (_trayAnimationFrame + 1) % 6;
                         UpdateTrayIcon();
                     };
                 }
-                _trayBlink.Interval = charging ? 300 : 600;
+
                 if (!_trayBlink.Enabled) _trayBlink.Start();
             }
             else
             {
                 if (_trayBlink != null) _trayBlink.Stop();
                 _trayBlinkOn = false;
-                _trayAnimationFrame = 0;
             }
         }
 
         /// <summary>画一个 32×32 的圆角方块图标，里面写电量数字。</summary>
-        private static System.Drawing.Icon RenderTrayIcon(int level, bool charging, bool dim)
+        private static System.Drawing.Icon RenderTrayIcon(int level, bool charging, bool dim, bool full)
         {
             const int size = 32;
             using var bmp = new System.Drawing.Bitmap(size, size);
@@ -558,26 +564,14 @@ namespace MouseDock
                 using (var fill = new System.Drawing.SolidBrush(bg))
                     g.FillPath(fill, path);
 
-                if (charging)
-                {
-                    using var outline = new System.Drawing.Pen(ink, 1.8f);
-                    using var cell = new System.Drawing.SolidBrush(ink);
-                    g.DrawRectangle(outline, 5, 9, 20, 13);
-                    g.FillRectangle(cell, 26, 13, 2, 5);
-                    int filled = _trayAnimationFrame / 2 + 1;
-                    for (int i = 0; i < filled; i++) g.FillRectangle(cell, 8 + i * 5, 12, 3, 7);
-                }
-                else
-                {
                 string txt = level >= 0 ? level.ToString() : "—";
-                float px = txt.Length >= 3 ? 12f : 15f;
-                using var font = new System.Drawing.Font("Segoe UI", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
+                string mark = full ? "✓" : charging ? "⚡" : "";
+                if (mark.Length > 0) txt += " " + mark;
+                float px = txt.Length >= 4 ? 9f : txt.Length >= 3 ? 12f : 15f;
+                using var font = new System.Drawing.Font("Segoe UI Symbol", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
                 using var fg = new System.Drawing.SolidBrush(ink);
                 var sz = g.MeasureString(txt, font);
-                g.DrawString(txt, font, fg,
-                    (size - sz.Width) / 2f,
-                    (size - sz.Height) / 2f + 1f);
-                }
+                g.DrawString(txt, font, fg, (size - sz.Width) / 2f, (size - sz.Height) / 2f + 1f);
             }
             return OwnBitmapIcon(bmp);
         }

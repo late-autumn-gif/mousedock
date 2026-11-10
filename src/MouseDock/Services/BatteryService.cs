@@ -317,6 +317,23 @@ namespace MouseDock.Services
         public event EventHandler PreferencesChanged;
 
         public event EventHandler Refreshed;
+        internal event Action<DeviceInfo> ChargeCompleted;
+        private readonly HashSet<(string Id, string Transport, string Detail)> _chargingSessions = new();
+
+        private void UpdateChargeSessions(IEnumerable<DeviceInfo> devices)
+        {
+            var active = devices.Where(d => d.Connected && d.RecognitionEnabled).ToArray();
+            var keys = active.Select(d => (d.Id, d.Transport, d.Detail)).ToHashSet();
+            _chargingSessions.IntersectWith(keys);
+            foreach (var device in active)
+            {
+                var key = (device.Id, device.Transport, device.Detail);
+                if (device.IsFullActive && _chargingSessions.Remove(key))
+                    ChargeCompleted?.Invoke(device);
+                else if (device.IsChargingActive)
+                    _chargingSessions.Add(key);
+            }
+        }
         public event EventHandler SourceChanged;
         public IBatterySource Source => _source;
 
@@ -407,7 +424,7 @@ namespace MouseDock.Services
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note,
-                        Connected = d.Connected, Level = d.Level, Charging = d.Charging,
+                        Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull,
                         Selected = d.Selected, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds?.ToArray()
                     }).ToList();
@@ -422,7 +439,7 @@ namespace MouseDock.Services
             foreach (var incoming in snapshot)
             {
                 _preferences.Apply(incoming);
-                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.Charging = false; incoming.IsStale = false; }
+                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; }
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
                 if (!incoming.Connected)
                 {
@@ -452,7 +469,7 @@ namespace MouseDock.Services
 
                 // 设备还在，只是这一次没读到（厂商通道忙/设备刚唤醒）：
                 // 保留上一次的有效读数，避免百分比闪成「—」；连续 6 次读不到再清零
-                if (incoming.RecognitionEnabled && existing != null && incoming.Level < 0 && existing.Level >= 0)
+                if (incoming.RecognitionEnabled && existing != null && incoming.Level < 0 && existing.Level >= 0 && !incoming.ChargeFull && !incoming.Charging)
                 {
                     // 设备休眠 / 通道忙：一直沿用上一次成功的读数，只标记为「旧值」，
                     // 这样鼠标静止十秒、几分钟都不会突然变成 —
@@ -478,7 +495,7 @@ namespace MouseDock.Services
                 if (existing == null)
                 {
                     // 短暂掉线后重新出现：如果几分钟内读过，先用旧值顶上，避免界面闪成 —
-                    if (incoming.RecognitionEnabled && incoming.Level < 0 && _lastKnown.TryGetValue(incoming.Id, out var last)
+                    if (incoming.RecognitionEnabled && incoming.Level < 0 && !incoming.Charging && !incoming.ChargeFull && _lastKnown.TryGetValue(incoming.Id, out var last)
                         && (DateTime.UtcNow - last.At).TotalMinutes < 10)
                     {
                         incoming.Level = last.Level;
@@ -495,6 +512,7 @@ namespace MouseDock.Services
                     existing.Kind = incoming.Kind;
                     existing.Level = incoming.Level;
                     existing.Charging = incoming.Charging;
+                    existing.ChargeFull = incoming.ChargeFull;
                     existing.Connected = incoming.Connected;
                     existing.Transport = incoming.Transport;
                     existing.Detail = incoming.Detail;
@@ -527,6 +545,7 @@ namespace MouseDock.Services
             var target = TimeSpan.FromSeconds(_refreshSeconds);
             if (_timer.Interval != target) _timer.Interval = target;
 
+            UpdateChargeSessions(Devices.Where(d => alive.Contains(d.Id)));
             RefreshVisible();
             if (migratedPreferences) PreferencesChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -590,6 +609,7 @@ namespace MouseDock.Services
             // Query again without deleting the last real percentage or confirmed
             // identity. An asleep device must not turn a rescan into permanent "—".
             device.Charging = false;
+            device.ChargeFull = false;
             device.IsStale = device.HasLevel;
             device.Note = device.HasLevel ? "正在重新识别；待刷新，保留上次有效电量。" : "正在重新识别；尚未取得有效电量。";
             _applyingPreferences = true;
@@ -605,6 +625,7 @@ namespace MouseDock.Services
             _misses.Remove(device.Id);
             device.Level = -1;
             device.Charging = false;
+            device.ChargeFull = false;
             device.IsStale = false;
         }
 

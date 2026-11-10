@@ -126,7 +126,7 @@ public sealed class TaskbarBatteryStrip : Border
                 continue;
             }
             stack.Children.Add(CreateBadge(items[i], StyleName, cell, showNumber, vertical, foreground,
-                lowThreshold, textBrush, batteryBrush, appearance, theme));
+                lowThreshold, textBrush, batteryBrush, appearance, theme, screenEdge));
         }
     }
 
@@ -204,12 +204,13 @@ public sealed class TaskbarBatteryStrip : Border
 
         var charging = new TextBlock
         {
-            Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI"),
             Foreground = batteryBrush ?? textBrush, FontSize = 8, Width = 9, Height = 10,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0), IsHitTestVisible = false
         };
-        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.IsChargingActive))
+        charging.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
+        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.HasChargeMark))
             { Converter = new BooleanToVisibilityConverter() });
         grid.Children.Add(charging);
 
@@ -226,7 +227,7 @@ public sealed class TaskbarBatteryStrip : Border
     }
 
     private static Grid CreateBadge(DeviceInfo device, string style, Size cell, bool showNumber, bool vertical,
-        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush, AppSettings appearance, ThemePreset theme)
+        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush, AppSettings appearance, ThemePreset theme, bool screenEdge)
     {
         bool panel = style == "panel";
         bool ringStyle = style == "ring";
@@ -288,7 +289,7 @@ public sealed class TaskbarBatteryStrip : Border
             var ring = new DeviceBatteryRing
             {
                 GlyphBrush = batteryBrush ?? foreground, BatteryBrush = batteryBrush, LowBatteryThreshold = lowThreshold,
-                ShowGlyph = false, ShowChargingMark = false
+                ShowGlyph = false, ShowChargingMark = false, AnimateCharge = screenEdge
             };
             ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
             ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
@@ -299,7 +300,7 @@ public sealed class TaskbarBatteryStrip : Border
         {
             var shape = new ReferenceBatteryIcon
             {
-                StyleName = style, Compact = true, Vertical = vertical, Ink = foreground,
+                StyleName = style, Compact = true, AnimateCompactCharge = screenEdge, Vertical = vertical, Ink = foreground,
                 Accent = batteryBrush ?? Brushes.MediumSeaGreen, UseStatusColors = batteryBrush == null,
                 LowBatteryThreshold = lowThreshold, IsHitTestVisible = false,
                 Surface = theme != null ? new SolidColorBrush(theme.Surface) : new SolidColorBrush(ThemePreset.C("#1B1F21")),
@@ -387,12 +388,13 @@ public sealed class TaskbarBatteryStrip : Border
     {
         var charging = new TextBlock
         {
-            Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI"),
             Foreground = textBrush, FontSize = 9, Width = 9, Height = 11,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 1, 1, 0), IsHitTestVisible = false
         };
-        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.IsChargingActive))
+        charging.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
+        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.HasChargeMark))
             { Converter = new BooleanToVisibilityConverter() });
         badge.Children.Add(charging);
     }

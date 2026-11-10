@@ -74,6 +74,34 @@ internal static class AuditChecks
 
     internal static void CachedReading()
     {
+        using (var service = EmptyService(out _))
+        {
+            var source = new SharedSource { Reading = 98, ReuseInstance = true };
+            SetSource(service, source);
+            int notices = 0;
+            service.ChargeCompleted += _ => notices++;
+            source.Device.Charging = true;
+            Wait(service.PollAsync());
+            source.Reading = 100;
+            Wait(service.PollAsync());
+            Require(notices == 0, "100% while charging must not complete the session.");
+            source.Device.Charging = false;
+            source.Device.ChargeFull = true;
+            Wait(service.PollAsync());
+            Wait(service.PollAsync());
+            Require(notices == 1 && service.Devices.Single().IsFullActive, "An explicit Full must notify only once.");
+            source.Device.ChargeFull = false;
+            source.Device.Charging = true;
+            source.Reading = 98;
+            Wait(service.PollAsync());
+            source.Device.Connected = false;
+            Wait(service.PollAsync());
+            source.Device.Connected = true;
+            source.Device.Charging = false;
+            source.Reading = -1;
+            Wait(service.PollAsync());
+            Require(notices == 1 && !service.Devices.Single().IsFullActive, "A reconnect with a cached level cannot notify.");
+        }
         foreach (bool reuse in new[] { true, false })
         {
         using var battery = EmptyService(out _);

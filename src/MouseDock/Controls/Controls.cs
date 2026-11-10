@@ -7,6 +7,13 @@ namespace MouseDock.Controls
     /// <summary>视频里的电量条：圆角细轨 + 渐变填充 + 末端圆点。</summary>
     public class MeterBar : FrameworkElement
     {
+        private readonly ChargeSweep _sweep;
+        public MeterBar() => _sweep = new ChargeSweep(this);
+        public static readonly DependencyProperty ChargingProperty = DependencyProperty.Register(
+            nameof(Charging), typeof(bool), typeof(MeterBar),
+            new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+        public bool Charging { get => (bool)GetValue(ChargingProperty); set => SetValue(ChargingProperty, value); }
+
         public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(
             nameof(Value), typeof(double), typeof(MeterBar),
             new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender, OnValueChanged));
@@ -19,7 +26,8 @@ namespace MouseDock.Controls
         {
             if (d is not MeterBar bar) return;
             double target = Math.Clamp((double)e.NewValue, 0, 1);
-            if (!bar.IsLoaded)
+            if (!bar.IsLoaded || !SystemParameters.ClientAreaAnimation)
+
             {
                 bar.SetValue(DisplayValueProperty, target);
                 return;
@@ -77,7 +85,8 @@ namespace MouseDock.Controls
             var track = new Rect(0, y, w, h);
             dc.DrawRoundedRectangle(TrackBrush ?? Brushes.Transparent, null, track, r, r);
 
-            double fraction = Math.Clamp(DisplayValue, 0, 1);
+            double phase = _sweep.Phase(Charging && Value > 0);
+            double fraction = Math.Clamp(Charging ? Value : DisplayValue, 0, 1);
             double fw = Math.Max(0, fraction * w);
             if (fw < 1) return;
 
@@ -93,6 +102,7 @@ namespace MouseDock.Controls
 
             var fillRect = new Rect(0, y, Math.Min(fw, w), h);
             dc.DrawRoundedRectangle(fill, null, fillRect, r, r);
+            ChargeSweep.Bar(dc, fillRect, r, phase);
 
             if (ShowDot && fw > h + 2)
             {

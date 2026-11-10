@@ -266,7 +266,7 @@
                                            GlyphBrush="#D9FFFFFF" VerticalAlignment="Center" />
                             <TextBlock Text="{Binding LevelText}" FontSize="10.5" FontWeight="Bold"
                                        Foreground="#FFFFFF" Margin="5,0,0,0" VerticalAlignment="Center" />
-                            <c:ChargingGlyph Active="{Binding IsChargingActive}" Width="15" Height="13" Margin="4,0,0,0" VerticalAlignment="Center" />
+                            <c:ChargingGlyph Active="{Binding IsChargingActive}" Full="{Binding IsFullActive}" Width="15" Height="13" Margin="4,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
                 </DataTemplate>

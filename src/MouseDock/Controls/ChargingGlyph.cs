@@ -1,64 +1,49 @@
 using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
 namespace MouseDock.Controls
 {
-    /// <summary>A three-cell charging cycle. Animation owns no timer and pauses while hidden/unloaded.</summary>
     public sealed class ChargingGlyph : FrameworkElement
     {
         public static readonly DependencyProperty ActiveProperty = DependencyProperty.Register(
-            nameof(Active), typeof(bool), typeof(ChargingGlyph), new PropertyMetadata(false, OnActiveChanged));
-        private static readonly DependencyProperty PhaseProperty = DependencyProperty.Register(
-            "Phase", typeof(double), typeof(ChargingGlyph), new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+            nameof(Active), typeof(bool), typeof(ChargingGlyph), new PropertyMetadata(false, UpdateMark));
+        public static readonly DependencyProperty FullProperty = DependencyProperty.Register(
+            nameof(Full), typeof(bool), typeof(ChargingGlyph), new PropertyMetadata(false, UpdateMark));
+
         public bool Active { get => (bool)GetValue(ActiveProperty); set => SetValue(ActiveProperty, value); }
-        private bool _animating;
-        internal bool IsAnimating => _animating;
+        public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
 
         public ChargingGlyph()
         {
             Visibility = Visibility.Collapsed;
-            ToolTip = "充电中";
-            Loaded += (_, __) => UpdateAnimation();
-            Unloaded += (_, __) => StopAnimation();
-            IsVisibleChanged += (_, __) => UpdateAnimation();
+            IsVisibleChanged += (_, _) => { if (!IsVisible) BeginAnimation(OpacityProperty, null); };
         }
-        private static void OnActiveChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
+
+        private static void UpdateMark(DependencyObject target, DependencyPropertyChangedEventArgs e)
         {
             var glyph = (ChargingGlyph)target;
-            glyph.Visibility = glyph.Active ? Visibility.Visible : Visibility.Collapsed;
-            glyph.UpdateAnimation();
+            glyph.Visibility = glyph.Full || glyph.Active ? Visibility.Visible : Visibility.Collapsed;
+            glyph.ToolTip = glyph.Full ? "已充满" : "充电中";
+            if (e.Property == FullProperty)
+            {
+                glyph.BeginAnimation(OpacityProperty, null);
+                if (glyph.Full && glyph.IsLoaded && glyph.IsVisible && SystemParameters.ClientAreaAnimation)
+                    glyph.BeginAnimation(OpacityProperty, new DoubleAnimation(.45, 1, TimeSpan.FromMilliseconds(450))
+                    { FillBehavior = FillBehavior.Stop });
+            }
+            glyph.InvalidateVisual();
         }
-        private void UpdateAnimation()
-        {
-            bool run = Active && IsLoaded && IsVisible;
-            if (!run) { StopAnimation(); return; }
-            if (_animating) return;
-            _animating = true;
-            BeginAnimation(PhaseProperty, new DoubleAnimation(0, 3, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever });
-        }
-        private void StopAnimation()
-        {
-            BeginAnimation(PhaseProperty, null);
-            _animating = false;
-        }
+
         protected override void OnRender(DrawingContext dc)
         {
-            if (!Active || ActualWidth <= 0 || ActualHeight <= 0) return;
-            double scale = Math.Min(ActualWidth / 24, ActualHeight / 20);
-            dc.PushTransform(new TranslateTransform((ActualWidth - 24 * scale) / 2, (ActualHeight - 20 * scale) / 2));
-            dc.PushTransform(new ScaleTransform(scale, scale));
-            var mint = new SolidColorBrush(Color.FromRgb(0x7F, 0xE7, 0xC4));
-            dc.DrawRoundedRectangle(null, new Pen(mint, 1.4), new Rect(1, 4, 19, 12), 2, 2);
-            dc.DrawRoundedRectangle(mint, null, new Rect(21, 8, 2, 4), 0.6, 0.6);
-            int filled = Math.Clamp((int)(double)GetValue(PhaseProperty) + 1, 1, 3);
-            for (int i = 0; i < 3; i++)
-            {
-                var cell = mint.Clone(); cell.Opacity = i < filled ? 1 : 0.16;
-                dc.DrawRoundedRectangle(cell, null, new Rect(4 + i * 5, 7, 3, 6), 0.6, 0.6);
-            }
-            dc.Pop(); dc.Pop();
+            if ((!Active && !Full) || ActualWidth <= 0 || ActualHeight <= 0) return;
+            var text = new FormattedText(Full ? "✓" : "\uE945", CultureInfo.CurrentUICulture,
+                FlowDirection.LeftToRight, new Typeface(Full ? "Segoe UI Symbol" : "Segoe MDL2 Assets"),
+                Math.Min(ActualWidth, ActualHeight) * .82, Brushes.Aquamarine, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(text, new Point((ActualWidth - text.Width) / 2, (ActualHeight - text.Height) / 2));
         }
     }
 }

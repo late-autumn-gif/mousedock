@@ -62,6 +62,7 @@ namespace MouseDock.Services.Detection
                     // 别让任何读取路径把「电量低」画成「充电中」。
                     device.Charging = merged.Charging && !VendorMap.IsReplaceableBattery(merged.Name);
                     device.IsStale = merged.IsStale;
+                    device.ChargeFull = merged.ChargeFull;
                     device.DetectionIds = group.SelectMany(d => new[] { d.Id, d.PhysicalKey })
                         .Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 }
@@ -82,7 +83,7 @@ namespace MouseDock.Services.Detection
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note,
-                        Connected = d.Connected, Level = d.Level, Charging = d.Charging, IsStale = d.IsStale,
+                        Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds.ToArray()
                     })
                     .ToList();
@@ -141,6 +142,7 @@ namespace MouseDock.Services.Detection
                 Transport = best.Transport,
                 Level = best.Level,
                 Charging = best.Charging,
+                ChargeFull = best.ChargeFull,
                 IsStale = best.IsStale,
                 Connected = best.Connected,
                 Detail = best.Detail,
@@ -153,6 +155,7 @@ namespace MouseDock.Services.Detection
                 {
                     merged.Level = item.Level;
                     merged.Charging = item.Charging;
+                    merged.ChargeFull = item.ChargeFull;
                     merged.IsStale = item.IsStale;
                     merged.Note = item.Note;                  // 有电量时用能读到的那条通道的说明
                 }

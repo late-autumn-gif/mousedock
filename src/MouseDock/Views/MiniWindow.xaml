@@ -41,7 +41,7 @@
                                         <DropShadowEffect x:Name="TextHalo" Color="Black" ShadowDepth="0" BlurRadius="5" Opacity="0.85" />
                                     </TextBlock.Effect>
                                 </TextBlock>
-                                <c:ChargingGlyph Active="{Binding IsChargingActive}" Width="18" Height="17" Margin="4,0,0,0" VerticalAlignment="Center" />
+                                <c:ChargingGlyph Active="{Binding IsChargingActive}" Full="{Binding IsFullActive}" Width="18" Height="17" Margin="4,0,0,0" VerticalAlignment="Center" />
                             </StackPanel>
                             <TextBlock Text="{Binding Name}" FontSize="9.5" FontWeight="SemiBold" Opacity="0.92"
                                        TextTrimming="CharacterEllipsis" Margin="0,1,0,0">

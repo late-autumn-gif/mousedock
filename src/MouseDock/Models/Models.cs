@@ -79,13 +79,13 @@ namespace MouseDock.Models
         public bool Charging
         {
             get => _charging;
-            set { if (_charging == value) return; _charging = value; Raise(nameof(Charging)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); }
+            set { if (_charging == value) return; _charging = value; Raise(nameof(Charging)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); Raise(nameof(ChargeMark)); Raise(nameof(HasChargeMark)); }
         }
 
         public bool Connected
         {
             get => _connected;
-            set { if (_connected == value) return; _connected = value; Raise(nameof(Connected)); Raise(nameof(LevelText)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); Raise(nameof(IsDisplayEligible)); Raise(nameof(MiniText)); }
+            set { if (_connected == value) return; _connected = value; Raise(nameof(Connected)); Raise(nameof(LevelText)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); Raise(nameof(IsFullActive)); Raise(nameof(ChargeMark)); Raise(nameof(HasChargeMark)); Raise(nameof(IsDisplayEligible)); Raise(nameof(MiniText)); }
         }
 
         public bool Selected
@@ -123,7 +123,7 @@ namespace MouseDock.Models
                 _stale = value;
                 Raise(nameof(IsStale));
                 Raise(nameof(ValueOpacity));
-                Raise(nameof(IsChargingActive));
+                Raise(nameof(IsChargingActive)); Raise(nameof(IsFullActive)); Raise(nameof(ChargeMark)); Raise(nameof(HasChargeMark));
                 Raise(nameof(StatusText));
             }
         }
@@ -142,8 +142,24 @@ namespace MouseDock.Models
             _ => "设备"
         };
 
-        public bool IsChargingActive => _connected && _charging && !_stale;
-        public string StatusText => !_connected ? "待机" : _stale ? "已连接 · 状态待刷新" : _charging ? "已连接 · 充电中" : "已连接";
+        private bool _chargeFull;
+        public bool ChargeFull
+        {
+            get => _chargeFull;
+            set
+            {
+                if (_chargeFull == value) return;
+                _chargeFull = value;
+                Raise(nameof(ChargeFull)); Raise(nameof(IsFullActive));
+                Raise(nameof(IsChargingActive)); Raise(nameof(ChargeMark)); Raise(nameof(HasChargeMark));
+                Raise(nameof(StatusText));
+            }
+        }
+        public bool IsFullActive => _connected && _chargeFull && !_stale;
+        public bool IsChargingActive => _connected && _charging && !_stale && !_chargeFull;
+        public bool HasChargeMark => IsFullActive || IsChargingActive;
+        public string ChargeMark => IsFullActive ? "✓" : IsChargingActive ? "\uE945" : "";
+        public string StatusText => !_connected ? "待机" : _stale ? "已连接 · 状态待刷新" : _chargeFull ? "已连接 · 已充满" : _charging ? "已连接 · 充电中" : "已连接";
 
         public string MetaLabel => KindLabel + (string.IsNullOrWhiteSpace(Transport) ? "" : " · " + Transport);
 

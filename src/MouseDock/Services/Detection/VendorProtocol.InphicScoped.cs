@@ -46,7 +46,7 @@ internal static partial class VendorProtocol
         {
             if(raw is not {Length:5} || raw[1]!=149 || raw[2] is not (0x40 or 0x41) || raw[3] is <1 or >3 || raw[4]>100)return false;
             int level=raw[3]==2?100:raw[4];bool charging=raw[3]==3;
-            reading=new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 Pro 精确5字节状态","英菲克 IN9 Pro","I149");return true;
+            reading=new(level,charging,true,raw[3]==2?ReferenceBatteryProtocol.State.Full:charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,"IN9 Pro 精确5字节状态","英菲克 IN9 Pro","I149");return true;
         }
         if(raw is not {Length:32 or 33} || (raw.Length==33 && raw[0]!=0) || raw[raw.Length==33?3:2]!=1 ||
             !TryParseInphicLegacy(raw,out int pct,out bool chg,out string model) || model=="M900")return false;

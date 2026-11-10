@@ -872,9 +872,10 @@ namespace MouseDock.Services.Detection
                 {
                     b.GpwModel = result.Model;
                     b.GpwLive = g603 || (b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity));
-                    if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                    if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging or ReferenceBatteryProtocol.State.Full)
                     {
                         b.Battery=result.Level; b.Charging=result.ChargingKnown && result.Charging; b.GpwLive=true;
+                        b.ChargeFull = result.Status == ReferenceBatteryProtocol.State.Full;
                         if (g603) b.Charging = false;
                         b.BatterySource=(g603 ? "G603：" : "GPW：")+result.Diagnostic;
                     }
@@ -1034,10 +1035,11 @@ namespace MouseDock.Services.Detection
                 catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name); }
                 if (result == null) result = ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
                 if (result.Level is >= 0 and <= 100 &&
-                    result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging)
+                    result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging or ReferenceBatteryProtocol.State.Full)
                 {
                     bucket.Battery = result.Level;
                     bucket.Charging = result.ChargingKnown && result.Charging;
+                    bucket.ChargeFull = result.Status == ReferenceBatteryProtocol.State.Full;
                     bucket.ReadStale = false;
                     bucket.BatterySource = $"{profile.Model} 电量：{result.Diagnostic}";
                     bucket.ReferenceIdentity = result.Identity;
@@ -1333,6 +1335,7 @@ namespace MouseDock.Services.Detection
             public DeviceKind Kind = DeviceKind.Other;
             public int Battery = -1;
             public bool Charging;
+            public bool ChargeFull;
             public bool ReadStale;
             public bool MchoseQueried;
             public bool HeadsetQueried;
@@ -1574,6 +1577,7 @@ namespace MouseDock.Services.Detection
                     DpiSlots = DpiSlots,
                     DpiText = DpiText ?? "",
                     Charging = charging,
+                    ChargeFull = ChargeFull,
                     IsStale = ReadStale,
                     Connected = true,
                     Detail = $"{Vid:X4}:{Pid:X4}",

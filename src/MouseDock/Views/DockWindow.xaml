@@ -88,7 +88,7 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <c:ChargingGlyph Active="{Binding IsChargingActive}" Width="18" Height="17" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                    <c:ChargingGlyph Active="{Binding IsChargingActive}" Full="{Binding IsFullActive}" Width="18" Height="17" Margin="0,0,4,0" VerticalAlignment="Center" />
                                     <TextBlock x:Name="Pct" Text="{Binding LevelText}" FontSize="17" FontWeight="Bold" Opacity="{Binding ValueOpacity}"
                                                Margin="0,0,7,0" VerticalAlignment="Center">
                                         <TextBlock.Foreground>
@@ -99,7 +99,7 @@
                                             </MultiBinding>
                                         </TextBlock.Foreground>
                                     </TextBlock>
-                                    <c:MeterBar Width="48" Height="9" Value="{Binding LevelFraction}" Opacity="{Binding ValueOpacity}"
+                                    <c:MeterBar Width="48" Height="9" Value="{Binding LevelFraction}" Charging="{Binding IsChargingActive}" Opacity="{Binding ValueOpacity}"
                                                 Accent="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 Accent2="{Binding Accent2Color, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 TrackBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"

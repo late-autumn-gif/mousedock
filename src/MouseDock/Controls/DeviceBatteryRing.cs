@@ -40,8 +40,12 @@ namespace MouseDock.Controls
         public bool ShowGlyph { get => (bool)GetValue(ShowGlyphProperty); set => SetValue(ShowGlyphProperty, value); }
         public bool ShowChargingMark { get => (bool)GetValue(ShowChargingMarkProperty); set => SetValue(ShowChargingMarkProperty, value); }
 
+        private readonly ChargeSweep _sweep;
+        internal bool IsChargeSweepRunning => _sweep.IsRunning;
+        public bool AnimateCharge { get; set; } = true;
         public DeviceBatteryRing()
         {
+            _sweep = new ChargeSweep(this);
             Width = Height = 40;
             Background = Brushes.Transparent;
             var glyph = new DeviceGlyph
@@ -93,6 +97,7 @@ namespace MouseDock.Controls
             var track = new Pen(trackBrush, 2.5);
             if (Level < 0) track.DashStyle = new DashStyle(new double[] { 1, 2 }, 0);
             dc.DrawEllipse(null, track, center, radius, radius);
+            double phase = _sweep.Phase(AnimateCharge && Charging && Level > 0);
             if (Level <= 0) return;
 
             var color = Charging ? Color.FromRgb(56, 189, 248)
@@ -105,6 +110,7 @@ namespace MouseDock.Controls
             if (Level >= 100)
             {
                 dc.DrawEllipse(null, pen, center, radius, radius);
+                ChargeSweep.Arc(dc, center, radius, Level, pen.Thickness, phase);
                 return;
             }
             double angle = Level * 3.6;
@@ -118,6 +124,7 @@ namespace MouseDock.Controls
                 new Point(center.X + radius * Math.Cos(radians), center.Y + radius * Math.Sin(radians)),
                 new Size(radius, radius), 0, angle > 180, SweepDirection.Clockwise, true));
             dc.DrawGeometry(null, pen, new PathGeometry(new[] { figure }));
+            ChargeSweep.Arc(dc, center, radius, Level, pen.Thickness, phase);
         }
     }
 }
