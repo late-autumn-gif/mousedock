@@ -18,6 +18,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     public Brush Ink = Brush("#EDF3EF");
     public Brush Surface = Brush("#1B1F21");
     public Brush Outline = Brush("#303936");
+    public Brush Low = Brush("#FF687D");
+    public Brush Muted = Brush("#BCC6C1");
     public bool HideBackground;
     public bool Compact, Vertical, UseStatusColors;
     public int LowBatteryThreshold = 20;
@@ -49,6 +51,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         Ink = new SolidColorBrush(follow ? theme.Text : ThemePreset.C(light ? "#202B29" : "#EDF3EF"));
         Accent = new SolidColorBrush(follow ? theme.Accent : ThemePreset.C(light ? "#53B89E" : "#A6F5BF"));
         Surface = new SolidColorBrush(follow ? theme.Surface : ThemePreset.C(light ? "#FFFFFF" : "#1B1F21"));
+        Low = new SolidColorBrush(theme.Low.A == 0 ? ThemePreset.C("#FF687D") : theme.Low);
+        Muted = new SolidColorBrush(theme.TextDim.A == 0 ? ThemePreset.C("#BCC6C1") : theme.TextDim);
         Outline = Ink.Clone();
         Outline.Opacity = .16;
     }
@@ -101,14 +105,14 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 break;
             case "pill":
                 dc.DrawRoundedRectangle(background, null, new Rect(3, 24, 90, 48), 24, 24);
-                dc.DrawRoundedRectangle(Accent, null, new Rect(14, 37, 14, 22), 4, 4);
+                dc.DrawRoundedRectangle(StatusBrush(item.Level), null, new Rect(14, 37, 14, 22), 4, 4);
                 Number(dc, item.Level, 24, new Point(58, 48), 55);
                 break;
             case "battery":
                 dc.DrawRoundedRectangle(background, track, new Rect(4, 25, 81, 48), 10, 10);
-                dc.DrawRoundedRectangle(Accent, null, new Rect(89, 42, 4, 14), 2, 2);
+                dc.DrawRoundedRectangle(StatusBrush(item.Level), null, new Rect(89, 42, 4, 14), 2, 2);
                 if (item.Level >= 0)
-                    dc.DrawRoundedRectangle(Alpha(Accent, .25), null, new Rect(9, 30, 71 * Math.Clamp(item.Level, 0, 100) / 100d, 38), 5, 5);
+                    dc.DrawRoundedRectangle(Alpha(StatusBrush(item.Level), .25), null, new Rect(9, 30, 71 * Math.Clamp(item.Level, 0, 100) / 100d, 38), 5, 5);
                 Number(dc, item.Level, 28, new Point(45, 49), 72);
                 break;
             default:
@@ -145,7 +149,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             double glyphSize = Math.Min(25, rowHeight * .42);
             if (style == "ring") DrawRing(dc, new Point(31, y), Math.Min(17, rowHeight * .3), item.Level, 2.8);
             DeviceGlyph.Draw(dc, item.Kind, new Rect(31 - glyphSize / 2, y - glyphSize / 2, glyphSize, glyphSize),
-                item.Level < 0 ? Alpha(Ink, .8) : Accent, 1.8);
+                StatusBrush(item.Level), 1.8);
             Number(dc, item.Level, Math.Min(32, rowHeight * .6), new Point((width + 46) / 2, y), width - 62);
             if (style is "battery" or "plain") Bar(dc, new Rect(59, y + rowHeight * .35, width - 76, 2), item.Level);
             if (item.Charging && !item.Stale) Bolt(dc, new Point(width - 13, y - rowHeight * .29), 9);
@@ -166,9 +170,9 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 new Point(8 + i * cell, 12), new Point(8 + i * cell, ActualHeight - 12));
             dc.PushOpacity(item.Stale ? .45 : 1);
             DeviceGlyph.Draw(dc, item.Kind, new Rect(center - 14, 12, 22, 22), Alpha(Ink, .85), 1.8);
-            dc.DrawEllipse(item.Level < 0 ? Brush("#DFD783") : Brush("#7BC9E2"), null, new Point(center + 14, 22), 2.5, 2.5);
+            dc.DrawEllipse(StatusBrush(item.Level), null, new Point(center + 14, 22), 2.5, 2.5);
             Text(dc, item.Level < 0 ? "\u2014" : item.Level.ToString(CultureInfo.InvariantCulture),
-                Math.Min(31, cell * .58), new Point(center, ActualHeight * .68), Ink, cell - 8);
+                Math.Min(31, cell * .58), new Point(center, ActualHeight * .68), StatusBrush(item.Level, true), cell - 8);
             if (item.Charging && !item.Stale) Bolt(dc, new Point(center + 14, 35), 9);
             dc.Pop();
         }
@@ -177,14 +181,15 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     private void Number(DrawingContext dc, int level, double size, Point center, double maxWidth)
     {
         string value = level < 0 ? "\u2014" : level.ToString(CultureInfo.InvariantCulture);
-        var digits = Format(value, size, Ink);
-        var suffix = Format(level < 0 ? "" : "%", size * .45, Ink);
+        var ink = StatusBrush(level, true);
+        var digits = Format(value, size, ink);
+        var suffix = Format(level < 0 ? "" : "%", size * .45, ink);
         double width = digits.Width + suffix.Width + 2;
         if (width > maxWidth)
         {
             size *= maxWidth / width;
-            digits = Format(value, size, Ink);
-            suffix = Format(level < 0 ? "" : "%", size * .45, Ink);
+            digits = Format(value, size, ink);
+            suffix = Format(level < 0 ? "" : "%", size * .45, ink);
             width = digits.Width + suffix.Width + 2;
         }
         double left = center.X - width / 2;
@@ -196,7 +201,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     {
         dc.DrawEllipse(null, new Pen(Outline, thickness), center, radius, radius);
         if (level <= 0) return;
-        if (level >= 100) { dc.DrawEllipse(null, new Pen(Accent, thickness), center, radius, radius); return; }
+        if (level >= 100) { dc.DrawEllipse(null, new Pen(StatusBrush(level), thickness), center, radius, radius); return; }
         double angle = level * 3.6 * Math.PI / 180;
         var geometry = new StreamGeometry();
         using (var context = geometry.Open())
@@ -205,7 +210,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             context.ArcTo(new Point(center.X + radius * Math.Sin(angle), center.Y - radius * Math.Cos(angle)),
                 new Size(radius, radius), 0, level > 50, SweepDirection.Clockwise, true, false);
         }
-        dc.DrawGeometry(null, new Pen(Accent, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geometry);
+        dc.DrawGeometry(null, new Pen(StatusBrush(level), thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geometry);
     }
 
     private void Bar(DrawingContext dc, Rect bounds, int level)
@@ -213,8 +218,9 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.DrawRoundedRectangle(Outline, null, bounds, bounds.Height / 2, bounds.Height / 2);
         if (level <= 0) return;
         bounds.Width *= Math.Clamp(level, 0, 100) / 100d;
-        dc.DrawRoundedRectangle(Accent, null, bounds, bounds.Height / 2, bounds.Height / 2);
+        dc.DrawRoundedRectangle(StatusBrush(level), null, bounds, bounds.Height / 2, bounds.Height / 2);
     }
+    private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
     private FormattedText Format(string text, double size, Brush brush) => new(text, CultureInfo.CurrentCulture,
         FlowDirection.LeftToRight, new Typeface("Segoe UI"), Math.Max(1, size), brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
     private void Text(DrawingContext dc, string text, double size, Point center, Brush brush, double maxWidth)

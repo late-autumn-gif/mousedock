@@ -246,7 +246,9 @@ public sealed class TaskbarBatteryStrip : Border
                 Width = 36, Height = 36, Character = style == "portrait" ? "photo" : appearance.ReferenceCharacter,
                 PhotoPath = string.IsNullOrWhiteSpace(appearance.IconBackground) ? appearance.PhotoAsset : appearance.IconBackground,
                 PhotoZoom = appearance.PhotoZoom, PhotoOffsetX = appearance.PhotoOffsetX, PhotoOffsetY = appearance.PhotoOffsetY,
-                ShowNumber = false, ShowGlyph = false, Accent = batteryBrush ?? foreground
+                ShowNumber = false, ShowGlyph = false, Accent = batteryBrush ?? foreground,
+                Low = theme?.Low.A > 0 ? new SolidColorBrush(theme.Low) : Brushes.IndianRed,
+                Muted = theme != null ? new SolidColorBrush(theme.TextDim) : Brushes.Gray
             };
             portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
             portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
