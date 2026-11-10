@@ -29,6 +29,14 @@ namespace MouseDock.Views
         public IconWindow()
         {
             InitializeComponent();
+            PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (e.ClickCount != 2 || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
+                _iconDrag = _dragging = false;
+                Mouse.Capture(null);
+                App.ExpandDock();
+                e.Handled = true;
+            };
             PreviewMouseWheel+=(_,e)=>{
                 if((Keyboard.Modifiers&ModifierKeys.Control)!=0 && _activeStyle is "photo" or "portrait")return;
                 SetSize(App.Settings.IconScale*(e.Delta>0?1.08:1/1.08),true);e.Handled=true;

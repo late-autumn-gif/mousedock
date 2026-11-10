@@ -31,6 +31,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Floating and mini surfaces expand exclusively into the full panel", FloatingExpansionChecks.Expansion),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),
