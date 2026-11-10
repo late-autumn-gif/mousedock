@@ -542,7 +542,8 @@ namespace MouseDock.Services
                 Devices.RemoveAt(i);
             }
 
-            var target = TimeSpan.FromSeconds(_refreshSeconds);
+            var target = TimeSpan.FromSeconds(Devices.Any(d => alive.Contains(d.Id) && d.IsChargingActive)
+                ? Math.Min(_refreshSeconds, 8) : _refreshSeconds);
             if (_timer.Interval != target) _timer.Interval = target;
 
             UpdateChargeSessions(Devices.Where(d => alive.Contains(d.Id)));

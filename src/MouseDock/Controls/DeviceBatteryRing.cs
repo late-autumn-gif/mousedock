@@ -28,6 +28,9 @@ namespace MouseDock.Controls
         public static readonly DependencyProperty BatteryBrushProperty = DependencyProperty.Register(
             nameof(BatteryBrush), typeof(Brush), typeof(DeviceBatteryRing),
             new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty FullProperty = DependencyProperty.Register(
+            nameof(Full), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(false));
+        public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
         public static readonly DependencyProperty ShowChargingMarkProperty = DependencyProperty.Register(
             nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
 
@@ -62,19 +65,26 @@ namespace MouseDock.Controls
             Children.Add(glyph);
             var bolt = new TextBlock
             {
-                Name = "ChargingMark", Text = "\uE945", FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                FontSize = 12, Width = 12, Height = 14, Margin = new Thickness(0, 0, 1, 0),
-                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+                Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI Symbol"),
+                FontSize = 12, Width = 12, Height = 14, Margin = new Thickness(0, 0, 1, 4),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
                 IsHitTestVisible = false,
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
                     Color = Colors.Black, BlurRadius = 2, ShadowDepth = 0, Opacity = 0.85
                 }
             };
+            var markStyle = new Style(typeof(TextBlock));
+            markStyle.Setters.Add(new Setter(TextBlock.TextProperty, "\uE945"));
+            var fullTrigger = new DataTrigger { Binding = new Binding(nameof(Full)) { Source = this }, Value = true };
+            fullTrigger.Setters.Add(new Setter(TextBlock.TextProperty, "✓"));
+            markStyle.Triggers.Add(fullTrigger);
+            bolt.Style = markStyle;
             bolt.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(GlyphBrush)) { Source = this });
             var chargingVisibility = new MultiBinding { Converter = new ChargingVisibilityConverter() };
             chargingVisibility.Bindings.Add(new Binding(nameof(Charging)) { Source = this });
             chargingVisibility.Bindings.Add(new Binding(nameof(ShowChargingMark)) { Source = this });
+            chargingVisibility.Bindings.Add(new Binding(nameof(Full)) { Source = this });
             bolt.SetBinding(VisibilityProperty, chargingVisibility);
             Children.Add(bolt);
         }
@@ -82,7 +92,7 @@ namespace MouseDock.Controls
         private sealed class ChargingVisibilityConverter : IMultiValueConverter
         {
             public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
-                values[0] is true && values[1] is true ? Visibility.Visible : Visibility.Collapsed;
+                (values[0] is true || values[2] is true) && values[1] is true ? Visibility.Visible : Visibility.Collapsed;
             public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) =>
                 throw new NotSupportedException();
         }
@@ -98,7 +108,8 @@ namespace MouseDock.Controls
             if (Level < 0) track.DashStyle = new DashStyle(new double[] { 1, 2 }, 0);
             dc.DrawEllipse(null, track, center, radius, radius);
             double phase = _sweep.Phase(AnimateCharge && Charging && Level > 0);
-            if (Level <= 0) return;
+            double drawnLevel = _sweep.Follow(0, Level, phase >= 0);
+            if (drawnLevel <= 0) return;
 
             var color = Charging ? Color.FromRgb(56, 189, 248)
                 : Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
@@ -107,13 +118,13 @@ namespace MouseDock.Controls
             {
                 StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round
             };
-            if (Level >= 100)
+            if (drawnLevel >= 100)
             {
                 dc.DrawEllipse(null, pen, center, radius, radius);
-                ChargeSweep.Arc(dc, center, radius, Level, pen.Thickness, phase);
+                ChargeSweep.Arc(dc, center, radius, drawnLevel, pen.Thickness, phase);
                 return;
             }
-            double angle = Level * 3.6;
+            double angle = drawnLevel * 3.6;
             double radians = (angle - 90) * Math.PI / 180;
             var figure = new PathFigure
             {
@@ -124,7 +135,7 @@ namespace MouseDock.Controls
                 new Point(center.X + radius * Math.Cos(radians), center.Y + radius * Math.Sin(radians)),
                 new Size(radius, radius), 0, angle > 180, SweepDirection.Clockwise, true));
             dc.DrawGeometry(null, pen, new PathGeometry(new[] { figure }));
-            ChargeSweep.Arc(dc, center, radius, Level, pen.Thickness, phase);
+            ChargeSweep.Arc(dc, center, radius, drawnLevel, pen.Thickness, phase);
         }
     }
 }

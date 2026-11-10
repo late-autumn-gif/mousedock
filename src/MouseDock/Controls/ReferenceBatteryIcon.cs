@@ -86,13 +86,15 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 : Devices.Take(6).ToArray();
             if (items.Length == 0) items = new[] { (DeviceKind.Mouse, -1, false, false) };
             _sweep ??= new ChargeSweep(this);
-            _phase = _sweep.Phase(style is "ring" or "battery" or "plain" && items.Any(item => item.Charging && !item.Stale && item.Level > 0));
+            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale && (item.Level > 0 || !ChargeSweep.Wave)));
             if (style == "multi") DrawMulti(drawing, items);
             else if (items.Length > 1) DrawRows(drawing, style, items);
             else DrawSingle(drawing, style, items[0]);
         }
         drawing.Pop();
     }
+
+    private double DrawnLevel(int slot, int target, bool charging) => _sweep.Follow(slot, target, charging && _phase >= 0);
 
     private void DrawSingle(DrawingContext dc, string style, (DeviceKind Kind, int Level, bool Stale, bool Charging) item)
     {
@@ -102,12 +104,13 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.PushOpacity(item.Stale ? .45 : 1);
         var background = HideBackground ? Brushes.Transparent : Surface;
         var track = new Pen(Outline, 1.2);
+        double drawn = DrawnLevel(0, item.Level, item.Charging && !item.Stale);
         switch (style)
         {
             case "ring":
                 dc.DrawEllipse(background, null, new Point(48, 48), 45, 45);
-                DrawRing(dc, new Point(48, 48), 37, item.Level, 3);
-                if (item.Charging && !item.Stale) ChargeSweep.Arc(dc, new Point(48, 48), 37, item.Level, 3, _phase);
+                DrawRing(dc, new Point(48, 48), 37, drawn, 3);
+                if (item.Charging && !item.Stale) ChargeSweep.Arc(dc, new Point(48, 48), 37, drawn, 3, _phase);
                 Number(dc, item.Level, 25, new Point(48, 48), 68);
                 break;
             case "tile":
@@ -125,21 +128,20 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 dc.DrawRoundedRectangle(StatusBrush(item.Level), null, new Rect(89, 42, 4, 14), 2, 2);
                 if (item.Level > 0)
                 {
-                    var fill = new Rect(9, 30, 71 * Math.Clamp(item.Level, 0, 100) / 100d, 38);
-                    dc.DrawRoundedRectangle(Alpha(StatusBrush(item.Level), .25), null, fill, 5, 5);
-                    if (item.Charging && !item.Stale) ChargeSweep.Bar(dc, fill, 5, _phase);
+                    ChargeSweep.Fill(dc, new Rect(9, 30, 71, 38), drawn / 100, 5,
+                        Alpha(StatusBrush(item.Level), .7), item.Charging && !item.Stale ? _phase : -1);
                 }
                 Number(dc, item.Level, 28, new Point(45, 49), 72);
                 break;
             default:
                 Number(dc, item.Level, 34, new Point(48, 44), 88);
-                Bar(dc, new Rect(18, 76, 60, 2.5), item.Level, item.Charging && !item.Stale ? _phase : -1);
+                Bar(dc, new Rect(18, 76, 60, 2.5), drawn, item.Charging && !item.Stale ? _phase : -1);
                 break;
         }
         // The source single-device styles signal charging through color, with a separate live bolt.
         if (_models?.FirstOrDefault()?.IsFullActive == true)
-            Text(dc, "✓", 11, new Point(83, 14), Accent, 15);
-        else if (item.Charging && !item.Stale) Bolt(dc, new Point(83, 14), 11);
+            Text(dc, "✓", 11, new Point(70, 62), Accent, 15);
+        else if (item.Charging && !item.Stale) Bolt(dc, new Point(70, 62), 11);
         dc.Pop();
         dc.Pop();
         dc.Pop();
@@ -158,6 +160,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         {
             var item = items[i];
             double y = 6 + rowHeight * (i + .5);
+            double drawn = DrawnLevel(i, item.Level, item.Charging && !item.Stale);
             if (style == "pill")
                 dc.DrawRoundedRectangle(HideBackground ? Brushes.Transparent : Surface, null,
                     new Rect(5, 7 + i * rowHeight, width - 10, Math.Max(1, rowHeight - 5)), rowHeight / 2, rowHeight / 2);
@@ -168,16 +171,16 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (style == "ring")
             {
                 double radius = Math.Min(17, rowHeight * .3);
-                DrawRing(dc, new Point(31, y), radius, item.Level, 2.8);
-                if (item.Charging && !item.Stale) ChargeSweep.Arc(dc, new Point(31, y), radius, item.Level, 2.8, _phase);
+                DrawRing(dc, new Point(31, y), radius, drawn, 2.8);
+                if (item.Charging && !item.Stale) ChargeSweep.Arc(dc, new Point(31, y), radius, drawn, 2.8, _phase);
             }
             DeviceGlyph.Draw(dc, item.Kind, new Rect(31 - glyphSize / 2, y - glyphSize / 2, glyphSize, glyphSize),
                 StatusBrush(item.Level), 1.8);
             Number(dc, item.Level, Math.Min(32, rowHeight * .6), new Point((width + 46) / 2, y), width - 62);
-            if (style is "battery" or "plain") Bar(dc, new Rect(59, y + rowHeight * .35, width - 76, 2), item.Level, item.Charging && !item.Stale ? _phase : -1);
+            if (style is "battery" or "plain") Bar(dc, new Rect(59, y + rowHeight * .35, width - 76, 2), drawn, item.Charging && !item.Stale ? _phase : -1);
             if (_models != null && i < _models.Count && _models[i].IsFullActive)
-                Text(dc, "✓", 9, new Point(width - 13, y - rowHeight * .29), Accent, 13);
-            else if (item.Charging && !item.Stale) Bolt(dc, new Point(width - 13, y - rowHeight * .29), 9);
+                Text(dc, "✓", 9, new Point(width - 20, y + rowHeight * .23), Accent, 13);
+            else if (item.Charging && !item.Stale) Bolt(dc, new Point(width - 20, y + rowHeight * .23), 9);
             dc.Pop();
         }
     }
@@ -224,11 +227,11 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.DrawText(suffix, new Point(left + digits.Width + 2, center.Y + digits.Height * .36 - suffix.Height));
     }
 
-    private void DrawRing(DrawingContext dc, Point center, double radius, int level, double thickness)
+    private void DrawRing(DrawingContext dc, Point center, double radius, double level, double thickness)
     {
         dc.DrawEllipse(null, new Pen(Outline, thickness), center, radius, radius);
         if (level <= 0) return;
-        if (level >= 100) { dc.DrawEllipse(null, new Pen(StatusBrush(level), thickness), center, radius, radius); return; }
+        if (level >= 100) { dc.DrawEllipse(null, new Pen(StatusBrush((int)Math.Round(level)), thickness), center, radius, radius); return; }
         double angle = level * 3.6 * Math.PI / 180;
         var geometry = new StreamGeometry();
         using (var context = geometry.Open())
@@ -237,16 +240,14 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             context.ArcTo(new Point(center.X + radius * Math.Sin(angle), center.Y - radius * Math.Cos(angle)),
                 new Size(radius, radius), 0, level > 50, SweepDirection.Clockwise, true, false);
         }
-        dc.DrawGeometry(null, new Pen(StatusBrush(level), thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geometry);
+        dc.DrawGeometry(null, new Pen(StatusBrush((int)Math.Round(level)), thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geometry);
     }
 
-    private void Bar(DrawingContext dc, Rect bounds, int level, double phase = -1)
+    private void Bar(DrawingContext dc, Rect bounds, double level, double phase = -1)
     {
         dc.DrawRoundedRectangle(Outline, null, bounds, bounds.Height / 2, bounds.Height / 2);
         if (level <= 0) return;
-        bounds.Width *= Math.Clamp(level, 0, 100) / 100d;
-        dc.DrawRoundedRectangle(StatusBrush(level), null, bounds, bounds.Height / 2, bounds.Height / 2);
-        ChargeSweep.Bar(dc, bounds, bounds.Height / 2, phase);
+        ChargeSweep.Fill(dc, bounds, level / 100, bounds.Height / 2, StatusBrush((int)Math.Round(level)), phase);
     }
     private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
     private FormattedText Format(string text, double size, Brush brush) => new(text, CultureInfo.CurrentCulture,
@@ -258,7 +259,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.DrawText(value, new Point(center.X - value.Width / 2, center.Y - value.Height / 2));
     }
     private void Bolt(DrawingContext dc, Point center, double size) =>
-        Text(dc, "\u26A1", size, center, Accent, size * 1.5);
+        Text(dc, "\u26A1", size, center, _phase >= 0 && !ChargeSweep.Wave ? Alpha(Accent, .76 + .24 * Math.Cos(_phase * 2 * Math.PI)) : Accent, size * 1.5);
     private static Brush Brush(string color) => new SolidColorBrush(ThemePreset.C(color));
     private static Brush Alpha(Brush source, double opacity) { var brush = source.Clone(); brush.Opacity *= opacity; return brush; }
 
@@ -271,7 +272,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         var track = new Pen(outline, 1);
         if (CompactLevel < 0) track.DashStyle = DashStyles.Dash;
         double width = ActualWidth, height = ActualHeight;
-        double fraction = Math.Clamp(CompactLevel, 0, 100) / 100d;
+        double fraction = Math.Clamp(DrawnLevel(0, CompactLevel, CompactCharging), 0, 100) / 100d;
         var body = new Rect(2, 2, Math.Max(0, width - 4), Math.Max(0, height - 4));
         if (StyleName is "tile" or "pill")
         {
@@ -288,11 +289,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             {
                 var inside = body;
                 inside.Inflate(-3, -3);
-                var charged = Vertical
-                    ? new Rect(inside.X, inside.Bottom - inside.Height * fraction, inside.Width, inside.Height * fraction)
-                    : new Rect(inside.X, inside.Y, inside.Width * fraction, inside.Height);
-                drawing.DrawRoundedRectangle(Alpha(accent, .25), null, charged, 2, 2);
-                ChargeSweep.Bar(drawing, charged, 2, _phase);
+                ChargeSweep.Fill(drawing, inside, fraction, 2, Alpha(accent, .65), _phase, Vertical);
             }
         }
         if (StyleName is "tile" or "plain")
@@ -302,9 +299,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             drawing.DrawLine(new Pen(outline, 2), from, to);
             if (CompactLevel > 0)
             {
-                double fillWidth = (to.X - from.X) * fraction;
-                drawing.DrawLine(new Pen(accent, 2), from, new Point(from.X + fillWidth, to.Y));
-                if (fillWidth > 0) ChargeSweep.Bar(drawing, new Rect(from.X, from.Y - 1, fillWidth, 2), 1, _phase);
+                ChargeSweep.Fill(drawing, new Rect(from.X, from.Y - 1, Math.Max(1, to.X - from.X), 2),
+                    fraction, 1, accent, _phase);
             }
         }
     }

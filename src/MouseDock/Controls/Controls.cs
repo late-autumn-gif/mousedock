@@ -86,7 +86,8 @@ namespace MouseDock.Controls
             dc.DrawRoundedRectangle(TrackBrush ?? Brushes.Transparent, null, track, r, r);
 
             double phase = _sweep.Phase(Charging && Value > 0);
-            double fraction = Math.Clamp(Charging ? Value : DisplayValue, 0, 1);
+            double drawn = _sweep.Follow(0, Value, phase >= 0);
+            double fraction = Math.Clamp(Charging ? drawn : DisplayValue, 0, 1);
             double fw = Math.Max(0, fraction * w);
             if (fw < 1) return;
 
@@ -101,8 +102,7 @@ namespace MouseDock.Controls
             fill.Freeze();
 
             var fillRect = new Rect(0, y, Math.Min(fw, w), h);
-            dc.DrawRoundedRectangle(fill, null, fillRect, r, r);
-            ChargeSweep.Bar(dc, fillRect, r, phase);
+            ChargeSweep.Fill(dc, track, fraction, r, fill, phase);
 
             if (ShowDot && fw > h + 2)
             {

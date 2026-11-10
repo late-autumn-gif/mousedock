@@ -79,6 +79,27 @@ internal static class ChargingVisualRegression
                     var first = Capture("充电动画-帧1.png"); Pump(500);
                     var second = Capture("充电动画-帧2.png");
                     Check(first.SequenceEqual(second) != SystemParameters.ClientAreaAnimation, "Charging animation must visibly advance between frames");
+                    Check(ChargeSweep.Interpolate(42, 42, 150) == 42 &&
+                        ChargeSweep.Interpolate(42, 43, 150) == 42.5 &&
+                        ChargeSweep.Interpolate(43, 44, 300) == 44,
+                        "Only a new target moves the fill, with a 300 ms transition");
+                    var settingsProperty = typeof(MouseDock.App).GetProperty(nameof(MouseDock.App.Settings))!;
+                    var previousSettings = settingsProperty.GetValue(null);
+                    try
+                    {
+                        settingsProperty.SetValue(null, new AppSettings { ChargeEffect = "wave" });
+                        devices[0].Level = 42; Pump(330);
+                        var wave = Capture("波浪充电-42.png");
+                        devices[0].Level = 43; Pump(330);
+                        Check(!wave.SequenceEqual(Capture("波浪充电-43.png")), "A new reading advances the wave");
+                        devices[0].IsStale = true; Pump(60);
+                        Check(!rings[0].IsChargeSweepRunning && devices[0].Level == 43, "Timeout stops the wave and preserves 43%");
+                        devices[0].Level = 44;
+                        devices[0].IsStale = false; Pump(330);
+                        Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation && rings[0].Level == 44,
+                            "A fresh 44% restores charging visuals");
+                    }
+                    finally { settingsProperty.SetValue(null, previousSettings); }
                     devices[0].Charging = false; Pump(50);
                     Check(!rings[0].IsChargeSweepRunning && glyphs[0].Visibility == Visibility.Collapsed, "Stopping charge removes the glyph and animation clock");
                     devices[0].Charging = true; Pump(50);

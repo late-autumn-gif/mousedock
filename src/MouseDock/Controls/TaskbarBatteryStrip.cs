@@ -126,7 +126,7 @@ public sealed class TaskbarBatteryStrip : Border
                 continue;
             }
             stack.Children.Add(CreateBadge(items[i], StyleName, cell, showNumber, vertical, foreground,
-                lowThreshold, textBrush, batteryBrush, appearance, theme, screenEdge));
+                lowThreshold, textBrush, batteryBrush, appearance, theme));
         }
     }
 
@@ -207,7 +207,7 @@ public sealed class TaskbarBatteryStrip : Border
             Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI"),
             Foreground = batteryBrush ?? textBrush, FontSize = 8, Width = 9, Height = 10,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0), IsHitTestVisible = false
+            Margin = new Thickness(0, 2, 2, 0), IsHitTestVisible = false
         };
         charging.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
         charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.HasChargeMark))
@@ -227,7 +227,7 @@ public sealed class TaskbarBatteryStrip : Border
     }
 
     private static Grid CreateBadge(DeviceInfo device, string style, Size cell, bool showNumber, bool vertical,
-        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush, AppSettings appearance, ThemePreset theme, bool screenEdge)
+        Brush foreground, int lowThreshold, Brush textBrush, Brush batteryBrush, AppSettings appearance, ThemePreset theme)
     {
         bool panel = style == "panel";
         bool ringStyle = style == "ring";
@@ -249,7 +249,7 @@ public sealed class TaskbarBatteryStrip : Border
                 Width = 36, Height = 36, Character = style == "portrait" ? "photo" : appearance.ReferenceCharacter,
                 PhotoPath = string.IsNullOrWhiteSpace(appearance.IconBackground) ? appearance.PhotoAsset : appearance.IconBackground,
                 PhotoZoom = appearance.PhotoZoom, PhotoOffsetX = appearance.PhotoOffsetX, PhotoOffsetY = appearance.PhotoOffsetY,
-                ShowNumber = false, ShowGlyph = false, Accent = batteryBrush ?? foreground,
+                ShowNumber = false, ShowGlyph = false, CompactPhotoBar = style == "portrait", Accent = batteryBrush ?? foreground,
                 TransparentBackground = appearance.CharacterTransparentBackground,
                 Surface = ResolveBrush(appearance.CharacterBackgroundColor, theme != null ? new SolidColorBrush(theme.Surface) : Brushes.Black),
                 Low = theme?.Low.A > 0 ? new SolidColorBrush(theme.Low) : Brushes.IndianRed,
@@ -289,7 +289,7 @@ public sealed class TaskbarBatteryStrip : Border
             var ring = new DeviceBatteryRing
             {
                 GlyphBrush = batteryBrush ?? foreground, BatteryBrush = batteryBrush, LowBatteryThreshold = lowThreshold,
-                ShowGlyph = false, ShowChargingMark = false, AnimateCharge = screenEdge
+                ShowGlyph = false, ShowChargingMark = false, AnimateCharge = true
             };
             ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
             ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
@@ -300,7 +300,7 @@ public sealed class TaskbarBatteryStrip : Border
         {
             var shape = new ReferenceBatteryIcon
             {
-                StyleName = style, Compact = true, AnimateCompactCharge = screenEdge, Vertical = vertical, Ink = foreground,
+                StyleName = style, Compact = true, AnimateCompactCharge = true, Vertical = vertical, Ink = foreground,
                 Accent = batteryBrush ?? Brushes.MediumSeaGreen, UseStatusColors = batteryBrush == null,
                 LowBatteryThreshold = lowThreshold, IsHitTestVisible = false,
                 Surface = theme != null ? new SolidColorBrush(theme.Surface) : new SolidColorBrush(ThemePreset.C("#1B1F21")),
@@ -391,7 +391,7 @@ public sealed class TaskbarBatteryStrip : Border
             Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI"),
             Foreground = textBrush, FontSize = 9, Width = 9, Height = 11,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 1, 1, 0), IsHitTestVisible = false
+            Margin = new Thickness(0, 4, 4, 0), IsHitTestVisible = false
         };
         charging.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
         charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.HasChargeMark))

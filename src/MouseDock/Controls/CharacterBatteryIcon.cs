@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -24,6 +25,11 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(-1, FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty ChargingProperty = DependencyProperty.Register(nameof(Charging), typeof(bool),
         typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty FullProperty = DependencyProperty.Register(nameof(Full), typeof(bool),
+        typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+    public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
+    public bool CompactPhotoBar { get; set; }
+
     public static readonly DependencyProperty StaleProperty = DependencyProperty.Register(nameof(Stale), typeof(bool),
         typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty KindProperty = DependencyProperty.Register(nameof(Kind), typeof(DeviceKind),
@@ -111,6 +117,9 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         dc.Pop();
     }
 
+    public bool AnimateCharge { get; set; } = true;
+    private ChargeSweep _chargeSweep;
+
     private void DrawCharacter(DrawingContext dc)
     {
         if (!TransparentBackground)
@@ -130,12 +139,10 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         };
         var plate = new Rect(bounds.X + original.X * scale, bounds.Y + original.Y * scale,
             original.Width * scale, original.Height * scale);
-        if (Level > 0)
-        {
-            var fill = plate;
-            fill.Width *= Math.Clamp(Level, 0, 100) / 100d;
-            dc.DrawRoundedRectangle(StatusBrush(Level), null, fill, 2, 2);
-        }
+        _chargeSweep ??= new ChargeSweep(this);
+        double phase = _chargeSweep.Phase(AnimateCharge && Charging && !Stale && Level > 0);
+        double drawn = _chargeSweep.Follow(0, Level, phase >= 0);
+        ChargeSweep.Fill(dc, plate, drawn / 100, 2, StatusBrush(Level), phase);
         var numberBounds = plate;
         if (ShowGlyph)
         {
@@ -150,10 +157,10 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             numberBounds = new Rect(textLeft, plate.Y, Math.Max(1, plate.Right - textLeft), plate.Height);
         }
         if (ShowNumber)
-            Text(dc, Level < 0 ? "\u2014" : Level + "%", numberBounds, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
-        if (Charging && !Stale)
-            Text(dc, "\u26A1", new Rect(plate.Right + 2, plate.Top, Math.Max(8, plate.Height), plate.Height),
-                Math.Max(8, plate.Height * .7), Accent);
+            Text(dc, (Level < 0 ? "\u2014" : Level + "%") + (Full && !Stale ? " ✓" : Charging && !Stale ? " ⚡" : ""),
+                numberBounds, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
+        else if (ShowGlyph && !Stale && (Full || Charging))
+            Text(dc, Full ? "✓" : "⚡", numberBounds, plate.Height * .7, Accent, true);
         dc.Pop();
     }
 
@@ -167,8 +174,11 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         var bounds = new Rect(3, 2, Math.Max(1, ActualWidth - 6), Math.Max(1, ActualHeight - 4));
         dc.PushClip(new RectangleGeometry(bounds, 8, 8));
         if (!TransparentBackground) dc.DrawRectangle(Surface, null, bounds);
+        _chargeSweep ??= new ChargeSweep(this);
+        double phase = _chargeSweep.Phase(AnimateCharge && (ShowNumber || CompactPhotoBar) &&
+            (Devices?.Any(d => d.IsChargingActive && d.Level > 0) ?? (Charging && !Stale && Level > 0)));
         int count = ShowNumber ? Math.Clamp(Devices?.Count ?? 1, 1, MaximumPhotoDevices) : 0;
-        double photoHeight = count == 0 ? bounds.Height :
+        double photoHeight = count == 0 ? Math.Max(1, bounds.Height - (CompactPhotoBar ? 5 : 0)) :
             Math.Min(bounds.Width, Math.Max(1, bounds.Height - count * PhotoRowHeight - 6));
         var photoBounds = new Rect(bounds.X, bounds.Y, bounds.Width, photoHeight);
         var image = _photo ?? LoadArtwork("rei");
@@ -182,6 +192,13 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             Viewbox = new Rect((1 - width) * x, (1 - height) * y, width, height),
             ViewboxUnits = BrushMappingMode.RelativeToBoundingBox, Stretch = Stretch.Fill
         }, null, photoBounds);
+        if (CompactPhotoBar && bounds.Bottom - photoBounds.Bottom >= 3)
+        {
+            var bar = new Rect(bounds.X + 2, bounds.Bottom - 3, Math.Max(1, bounds.Width - 4), 2);
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar, 1, 1);
+            double drawn = _chargeSweep.Follow(0, Level, phase >= 0);
+            ChargeSweep.Fill(dc, bar, drawn / 100, 1, StatusBrush(Level), phase);
+        }
         if (count > 0 && photoBounds.Bottom < bounds.Bottom)
         {
             double top = photoBounds.Bottom;
@@ -208,7 +225,9 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                     new Rect(row.X, row.Y + 3, 14, 14), Status(level, true), 1.6);
                 var number = new Rect(row.Right - 69, row.Y - 1, 69, lineHeight);
                 string value = level < 0 ? "\u2014" : level + "%";
-                if ((device?.IsChargingActive ?? Charging) && !stale) value += " \u26A1";
+                bool charging = (device?.IsChargingActive ?? Charging) && !stale;
+                if ((device?.IsFullActive ?? Full) && !stale) value += " ✓";
+                else if (charging) value += " \u26A1";
                 Text(dc, value, number, Math.Min(20, row.Height * .45), Status(level, true), true);
                 Label(dc, device?.Name ?? "", new Rect(row.X + 20, row.Y + 1, Math.Max(1, row.Width - 91), lineHeight),
                     Math.Min(12, row.Height * .24), ink);
@@ -219,11 +238,8 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                     Math.Min(11, row.Height * .23), level < 0 ? muted : ink);
                 var bar = new Rect(row.X, row.Bottom - 2, row.Width, 1.6);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar);
-                if (level > 0)
-                {
-                    bar.Width *= Math.Clamp(level, 0, 100) / 100d;
-                    dc.DrawRectangle(Status(level), null, bar);
-                }
+                double drawn = _chargeSweep.Follow(i, level, charging && phase >= 0);
+                ChargeSweep.Fill(dc, bar, drawn / 100, .8, Status(level), charging ? phase : -1);
                 dc.Pop();
             }
         }

@@ -357,6 +357,13 @@
                             </StackPanel>
                             <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
                                       Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="充电动效" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <ComboBox x:Name="ChargeEffectChoice" Width="110" SelectionChanged="OnChargeEffectChanged">
+                                    <ComboBoxItem Content="闪电款" />
+                                    <ComboBoxItem Content="波浪款" />
+                                </ComboBox>
+                            </StackPanel>
                             <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0"
                                       Checked="OnTaskbarFollowIconsChanged" Unchecked="OnTaskbarFollowIconsChanged" />
                             <Grid x:Name="TaskbarIconOffsetRow" Margin="0,10,0,0">

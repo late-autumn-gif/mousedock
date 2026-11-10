@@ -32,6 +32,7 @@ namespace MouseDock.Controls
             Ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)) { Source = device });
             // 只认「已连接且不是缓存值」的充电状态，断线时别让动画一直转。
             Ring.SetBinding(DeviceBatteryRing.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)) { Source = device });
+            Ring.SetBinding(DeviceBatteryRing.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)) { Source = device });
             Children.Add(new Viewbox
             {
                 Width = ringSize, Height = ringSize, Child = Ring,

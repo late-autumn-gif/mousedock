@@ -124,6 +124,7 @@ namespace MouseDock.Views
                 TaskbarIconOffsetInput.Text = TaskbarIconOffsetSlider.Value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
                 RebuildTaskbarStyles();
                 BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
+                ChargeEffectChoice.SelectedIndex = s.ChargeEffect == "wave" ? 1 : 0;
                 RebuildEdgeStyles();
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(s, App.Theme));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
@@ -710,6 +711,13 @@ namespace MouseDock.Views
             TaskbarFollowIconsBox.Visibility = taskbar ? Visibility.Visible : Visibility.Collapsed;
             TaskbarIconOffsetRow.Visibility = taskbar && App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
             TaskbarPositionRow.Visibility = taskbar && !App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void OnChargeEffectChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || App.Settings == null || ChargeEffectChoice == null) return;
+            App.Settings.ChargeEffect = ChargeEffectChoice.SelectedIndex == 1 ? "wave" : "lightning";
+            App.SaveSettings();
         }
 
         private void OnBatteryNumberChanged(object sender, RoutedEventArgs e)

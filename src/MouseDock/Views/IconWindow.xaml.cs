@@ -443,6 +443,7 @@ namespace MouseDock.Views
                     {
                         portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
                         portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+                        portrait.SetBinding(CharacterBatteryIcon.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
                         portrait.SetBinding(CharacterBatteryIcon.StaleProperty, new Binding(nameof(DeviceInfo.IsStale)));
                         portrait.SetBinding(CharacterBatteryIcon.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
                     }
