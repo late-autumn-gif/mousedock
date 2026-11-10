@@ -192,6 +192,14 @@
                 <StackPanel Margin="0,4,0,0">
 
                     <TextBlock Text="主题" Style="{StaticResource Section}" />
+                    <UniformGrid Columns="3" Margin="2,0,2,10">
+                        <RadioButton x:Name="ThemeDefault" Content="预设" Tag="" GroupName="ThemeMode"
+                                     Checked="OnThemeModeChanged" />
+                        <RadioButton x:Name="ThemeDark" Content="深色" Tag="dark" GroupName="ThemeMode"
+                                     Checked="OnThemeModeChanged" />
+                        <RadioButton x:Name="ThemeLight" Content="浅色" Tag="light" GroupName="ThemeMode"
+                                     Checked="OnThemeModeChanged" />
+                    </UniformGrid>
                     <ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0"
                              Foreground="{DynamicResource TextBrush}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -235,8 +243,19 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-
-                    
+                    <Grid Margin="0,3,0,8">
+                        <TextBlock Text="图片背景" Style="{StaticResource RowText}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="EditBackgroundButton" Style="{StaticResource GhostButton}" Click="OnPickBackground"
+                                    ToolTip="编辑图片背景" Padding="9,6">
+                                <TextBlock Text="&#xE790;" FontFamily="Segoe MDL2 Assets" />
+                            </Button>
+                            <Button Style="{StaticResource GhostButton}" Click="OnClearBackground"
+                                    ToolTip="清除图片背景" Padding="9,6" Margin="7,0,0,0">
+                                <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
 
                     <TextBlock Text="显示设备 · 全部视图同步（最多 6 台）" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">

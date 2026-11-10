@@ -179,7 +179,8 @@ namespace MouseDock.Services
                 if (TryExtractAccent(settings.CustomBackground, out var accent, out var luma))
                 {
                     extracted = accent;
-                    bool lightSurface = luma > 0.55;
+                    bool lightSurface = settings.ThemeMode == "light" ||
+                        (settings.ThemeMode != "dark" && luma > 0.55);
                     var theme = FromAccent(accent, lightSurface);
                     if (!string.IsNullOrWhiteSpace(settings.CustomAccent) &&
                         TryParseColor(settings.CustomAccent, out var manual))
@@ -190,7 +191,16 @@ namespace MouseDock.Services
                     return theme;
                 }
             }
-            return ThemePreset.ById(settings.ThemeId);
+            var reference = ReferenceThemes.Resolve(settings.ThemeId, settings.ThemeMode);
+            if (reference != null) return reference;
+            var preset = ThemePreset.ById(settings.ThemeId);
+            if (settings.ThemeMode != "light" && settings.ThemeMode != "dark") return preset;
+            bool light = settings.ThemeMode == "light";
+            if (light == preset.IsLight) return preset;
+            var adjusted = FromAccent(preset.Accent, light);
+            adjusted.Id = preset.Id;
+            adjusted.Name = preset.Name;
+            return adjusted;
         }
 
         public static bool TryParseColor(string hex, out Color color)

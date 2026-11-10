@@ -68,23 +68,19 @@ namespace MouseDock.Views
         public void ApplyBackground(string path)
         {
             _backgroundPath = path;
-            var bmp = Palette.Load(path, DecodeWidthForWindow());
-            if (bmp != null)
+            ApplyTheme(App.Theme, false);
+            var bmp = PictureBackground.Apply(Root, path, _themeBackground, App.Settings, App.Theme, DecodeWidthForWindow());
+            if (bmp != null && !string.IsNullOrWhiteSpace(path))
             {
-                RenderOptions.SetBitmapScalingMode(Root, BitmapScalingMode.HighQuality);
-                // 用 ImageBrush 直接铺在 Border.Background 上：Brush 不参与布局测量，
-                // 所以背景再大也不会把 SizeToContent 的窗口撑开。
-                Root.Background = new System.Windows.Media.ImageBrush(bmp)
-                {
-                    Stretch = Stretch.UniformToFill
-                };
-                // 背景图什么颜色都有，得按它的实际亮度决定文字深浅，
-                // 否则浅色背景配白字基本等于看不见。
                 ApplyContrastFor(AverageBrightness(bmp));
                 return;
             }
-            Root.Background = _themeBackground;
-            ApplyTheme(App.Theme, false);
+            if (Palette.TryExtractAccent(App.Settings.CustomBackground, out _, out double luma))
+            {
+                double depth = PictureBackground.Clamp(App.Settings.BackgroundDepth, 0, .8, .35);
+                double themeLuma = (.2126 * App.Theme.BgTop.R + .7152 * App.Theme.BgTop.G + .0722 * App.Theme.BgTop.B) / 255;
+                ApplyContrastFor(luma * (1 - depth) + themeLuma * depth);
+            }
         }
 
         /// <summary>按窗口实际像素宽解码，避免原图在解码阶段就被压掉细节。</summary>

@@ -853,6 +853,9 @@ namespace MouseDock
             ExtractedAccent = extracted;
             ApplyTheme(true);
             Mini?.Rebuild();
+            ApplyAllBackgrounds();
+            Taskbar?.UpdateDevices();
+            Edge?.UpdateDevices();
         }
 
         public static void ApplyTheme(bool animate)
