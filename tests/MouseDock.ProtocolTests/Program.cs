@@ -196,7 +196,7 @@ if (args.Length > 0 && args[0] == "--inspect-rog-omni")
         Console.WriteLine($"{rogDevice.Name} {rogDevice.Transport} battery={rogDevice.Level}");
     return;
 }
-int assertions = RogScopeRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run() + M137FeatureRegression.Run() + MchoseDpiRegression.Run() + RealTekRegression.Run() + VgnF1Regression.Run() + F75Regression.Run() + M9ProRegression.Run();
+int assertions = Zg4Regression.Run() + RogScopeRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run() + M137FeatureRegression.Run() + MchoseDpiRegression.Run() + RealTekRegression.Run() + VgnF1Regression.Run() + F75Regression.Run() + M9ProRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;

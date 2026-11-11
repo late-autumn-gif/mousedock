@@ -83,6 +83,15 @@ internal static class UiRegressionChecks
                     Require(boxes.Length >= 2, "Device checkboxes were not realized.");
                     Require(boxes.All(box => ColorOf(box.Foreground) == theme.Text),
                         "Device labels do not follow the theme.");
+                    var firstSurface = (Button)window.FindName("SurfaceDock");
+                    var modes = (Panel)firstSurface.Parent;
+                    var modeButtons = modes.Children.OfType<Button>().ToArray();
+                    Point Offset(Button button) => button.TranslatePoint(new Point(), modes);
+                    Require(modeButtons.Length == 6 && modeButtons.All(button => button.ActualHeight >= 36),
+                        "Display mode buttons need six visible, comfortably sized targets.");
+                    Require(Offset(modeButtons[1]).X - Offset(firstSurface).X - firstSurface.ActualWidth >= 7 &&
+                        Offset(modeButtons[3]).Y - Offset(firstSurface).Y - firstSurface.ActualHeight >= 7,
+                        "Display mode buttons need clear horizontal and vertical gaps.");
                     if (edge)
                     {
                         var options = (FrameworkElement)window.FindName("EdgeOptionsPanel");
@@ -112,6 +121,14 @@ internal static class UiRegressionChecks
                         .All(t => ColorOf(t.Foreground) == theme.Text), "Device name has the wrong color.");
                 }
                 Capture((FrameworkElement)window.Content, $"{surface}{(edge ? "-edge" : "")}-{theme.Id}");
+                if (surface == "settings")
+                {
+                    ((FrameworkElement)((Button)window.FindName("SurfaceDock")).Parent).BringIntoView();
+                    window.UpdateLayout();
+                    Capture((FrameworkElement)window.Content, $"settings-display-modes-{theme.Id}");
+                    ((ScrollViewer)window.FindName("RootScroll")).ScrollToTop();
+                    window.UpdateLayout();
+                }
             }
         }
         finally { window.Close(); }

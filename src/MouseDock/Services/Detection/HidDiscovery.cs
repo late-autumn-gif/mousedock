@@ -216,27 +216,6 @@ namespace MouseDock.Services.Detection
                 foreach (var bucket in buckets.Values)
                 {
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
-                    if (bucket.Vid == 0x3654 && bucket.Pid == 0x5055 && VendorMap.IsZhuAudioZg4(bucket.Product))
-                    {
-                        if ((preferences?.CanRead(bucket.InstanceId, null) ?? true) &&
-                            (preferences?.CanRead("hid-3654-5055", null) ?? true))
-                        {
-                            const string zg4Source = VendorProtocol.Zg4Protocol;
-                            var zg4Trace = new List<string>();
-                            bool zg4Charging = false;
-                            bucket.Battery = ReadBattery(zg4Source,
-                                () => VendorProtocol.TryReadZg4(bucket.InstanceId, out zg4Charging, zg4Trace), zg4Trace);
-                            if (bucket.Battery >= 0)
-                            {
-                                bucket.Identity = bucket.Product.Trim();
-                                bucket.Charging = zg4Charging;
-                                bucket.BatterySource = zg4Source;
-                            }
-                            else bucket.BatteryFailures.UnionWith(zg4Trace);
-                            LastDiagnostics.Add($"{bucket.InstanceId} {string.Join("；", zg4Trace)}");
-                        }
-                        continue;
-                    }
                     if (!DeviceRoutes.IsKnown(bucket.Vid, bucket.Pid, bucket.Product) ||
                         VendorProtocol.IsRogOmni(bucket.Vid, bucket.Pid)) continue;
                     if (ReferenceProfiles.Find(bucket.Vid, bucket.Pid) != null) continue;
@@ -311,6 +290,7 @@ namespace MouseDock.Services.Detection
             bool safeMode = false;
             try { safeMode = IsSafeMode; } catch { }
 
+            QueryZg4Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadZg4);
             QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReferenceBattery);
             QueryReportedX23SeCollections(buckets, vendorCollections, safeMode, preferences,
@@ -618,14 +598,16 @@ namespace MouseDock.Services.Detection
             if (BatteryReplay.Current is { } evidence)
             {
                 bool known = DeviceRoutes.IsKnown(vid, pid, product);
+                bool zg4 = VendorProtocol.IsZg4Channel(vid, pid, product, caps.UsagePage,
+                    caps.InputReportByteLength, caps.OutputReportByteLength);
                 bool enabled = preferences?.CanRead(key, $"hid-{vid:X4}-{pid:X4}",
                     VendorMap.PhysicalKeyFromName(product)) ?? true;
                 evidence.AddCollection(key, path, vid, pid, product, caps.UsagePage, caps.Usage,
                     caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength,
                     exclusion != null, revision, exclusion, reportIds: reportIds,
-                    route: DeviceRoutes.Find(vid, pid, product)?.Reader,
+                    route: zg4 ? "Zg4" : DeviceRoutes.Find(vid, pid, product)?.Reader,
                     queryPolicy: exclusion != null ? "excluded" : !enabled ? "recognition-disabled" :
-                        IsSafeMode ? "safe-mode" : known ? "known-route-only" : "unknown-no-vendor-probe");
+                        IsSafeMode ? "safe-mode" : known || zg4 ? "known-route-only" : "unknown-no-vendor-probe");
             }
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
                 $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
@@ -645,7 +627,9 @@ namespace MouseDock.Services.Detection
             if ((recognitionEnabled && (caps.UsagePage >= 0xFF00 ||
                     VendorProtocol.IsScopedInphicChannel(vid, pid, product, path, caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength))) ||
                 (string.IsNullOrWhiteSpace(product) && AulaBatteryProtocol.IsSc630Collection(caps.UsagePage, caps.Usage, caps.FeatureReportByteLength)) ||
-                VendorProtocol.IsInphicWakeCollection(vid, pid, product, caps.UsagePage, caps.Usage, caps.FeatureReportByteLength))
+                VendorProtocol.IsInphicWakeCollection(vid, pid, product, caps.UsagePage, caps.Usage, caps.FeatureReportByteLength) ||
+                VendorProtocol.IsZg4Channel(vid, pid, product, caps.UsagePage,
+                    caps.InputReportByteLength, caps.OutputReportByteLength))
                 vendorCollections.Add(new VendorCollectionInfo
                 {
                     Path = path,
