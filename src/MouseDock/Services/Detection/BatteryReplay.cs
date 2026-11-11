@@ -228,6 +228,13 @@ internal static class BatteryReplay
     {
         var channel = collections.FirstOrDefault(c => c.Interface == query.Interface &&
             c.Receiver == query.Receiver && !c.Excluded);
+        if (query.Protocol == VendorProtocol.Zg4Protocol)
+        {
+            bool matches = query.Interface == null ||
+                (channel is { Vid: 0x3654, Pid: 0x5055 } && VendorMap.IsZhuAudioZg4(channel.Product));
+            return new(query.Receiver, query.Interface, query.Protocol,
+                matches ? query.Status : "collection-mismatch", null, null, null, "unavailable");
+        }
         if (channel == null || !MatchesChannel(query.Protocol, channel, collections))
             return new(query.Receiver, query.Interface, query.Protocol,
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");

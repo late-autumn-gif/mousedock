@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace MouseDock.Services.Detection;
@@ -12,6 +13,7 @@ internal static partial class VendorProtocol
 
     private const ushort Zg4Mid = 4101;
     private const byte Zg4BatteryProperty = 7;
+    internal const string Zg4Protocol = "竹林鸟 ZG4 接收器电量";
 
     internal static byte[] BuildZg4DongleRequest(byte reportId, int length, byte command)
     {
@@ -104,43 +106,68 @@ internal static partial class VendorProtocol
         return (ushort)crc;
     }
 
-    private static bool ReadZg4DongleStage(IntPtr handle, IntPtr signal, byte[] request, byte reportId,
-        bool identity)
+    internal static int Zg4ChannelPriority(string interfaceLabel) =>
+        string.Equals(interfaceLabel, "MI_04/COL_03", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+
+    private static string ReadZg4Stage(IntPtr handle, IntPtr signal, byte[] request, int timeoutMs,
+        Func<byte[], bool> accepts)
     {
-        if (!Transfer(handle, signal, request, true, 300, out _)) return false;
-        long deadline = Environment.TickCount64 + 400;
+        if (!Transfer(handle, signal, request, true, 300, out _)) return "write-failed";
+        long deadline = Environment.TickCount64 + timeoutMs;
+        bool received = false;
         while (Environment.TickCount64 < deadline)
         {
             var reply = ReadReport(handle, signal, (int)Math.Max(1, deadline - Environment.TickCount64));
-            if (reply == null) return false;
-            if (identity ? IsZg4Identity(reply, reportId) : IsZg4Online(reply, reportId)) return true;
+            if (reply == null) break;
+            received = true;
+            if (accepts(reply)) return "accepted";
         }
-        return false;
+        return received ? "response-rejected" : "no-response";
     }
 
     internal static int TryReadZg4(string instance, out bool charging, System.Collections.Generic.List<string> trace)
     {
         charging = false;
-        foreach (string path in Paths(0x3654, 0x5055))
+        var paths = Paths(0x3654, 0x5055).OrderBy(path =>
+        {
+            HidInventory.ParsePath(path, out _, out _, out string label);
+            return Zg4ChannelPriority(label);
+        });
+        foreach (string path in paths)
         {
             if (InstanceScope.ForPath(path, "") != instance) continue;
+            HidInventory.ParsePath(path, out _, out _, out string label);
+            void Record(string status, int level = -1)
+            {
+                BatteryReplay.Current?.AddQuery(instance, path, Zg4Protocol, status,
+                    level >= 0 ? "ZhuAudio ZG4" : null, level);
+                trace.Add($"{label ?? "HID"}：{status}");
+            }
+
             IntPtr handle = OpenOverlapped(path, out IntPtr signal);
-            if (handle == IntPtr.Zero) continue;
+            if (handle == IntPtr.Zero)
+            {
+                Record("open-failed");
+                continue;
+            }
             try
             {
                 var caps = Caps(handle);
-                if (signal == IntPtr.Zero || caps.UsagePage < 0xFF00 ||
+                if (caps.UsagePage < 0xFF00 ||
                     caps.InputReportByteLength is < 64 or > 65 || caps.OutputReportByteLength is < 64 or > 65 ||
-                    !VendorMap.IsZhuAudioZg4(HidDiscovery.ReadHidProduct(handle, path)) ||
-                    !HidD_GetPreparsedData(handle, out IntPtr prep)) continue;
-                string channel = $"{caps.UsagePage:X4}/{caps.Usage:X4} {caps.InputReportByteLength}/{caps.OutputReportByteLength}";
+                    !VendorMap.IsZhuAudioZg4(HidDiscovery.ReadHidProduct(handle, path))) continue;
+                if (signal == IntPtr.Zero || !HidD_GetPreparsedData(handle, out IntPtr prep))
+                {
+                    Record("setup-failed");
+                    continue;
+                }
                 byte inputId, outputId;
                 try
                 {
                     if (!TryGetReportId(prep, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps, out inputId) ||
                         !TryGetReportId(prep, 1, caps.NumberOutputValueCaps, caps.NumberOutputButtonCaps, out outputId))
                     {
-                        trace.Add(channel + "：报告编号无法唯一确认");
+                        Record("report-id-unconfirmed");
                         continue;
                     }
                 }
@@ -149,35 +176,35 @@ internal static partial class VendorProtocol
                 int length = caps.OutputReportByteLength;
                 if (!HidD_FlushQueue(handle))
                 {
-                    trace.Add(channel + "：无法清空输入队列");
+                    Record("flush-failed");
                     continue;
                 }
-                if (!ReadZg4DongleStage(handle, signal, BuildZg4DongleRequest(outputId, length, 2), inputId, identity: false))
+                string status = ReadZg4Stage(handle, signal, BuildZg4DongleRequest(outputId, length, 2),
+                    1500, reply => IsZg4Online(reply, inputId));
+                if (status != "accepted")
                 {
-                    trace.Add(channel + "：未确认耳机在线");
+                    Record("online-" + status);
                     continue;
                 }
-                if (!ReadZg4DongleStage(handle, signal, BuildZg4DongleRequest(outputId, length, 6), inputId, identity: true))
+                status = ReadZg4Stage(handle, signal, BuildZg4DongleRequest(outputId, length, 6),
+                    400, reply => IsZg4Identity(reply, inputId));
+                if (status != "accepted")
                 {
-                    trace.Add(channel + "：在线，但未确认 ZG4 型号");
+                    Record("identity-" + status);
                     continue;
                 }
 
                 byte sequence = (byte)Environment.TickCount;
-                if (!Transfer(handle, signal, BuildZg4BatteryRequest(outputId, length, sequence), true, 300, out _))
+                int level = -1;
+                bool isCharging = false;
+                status = ReadZg4Stage(handle, signal, BuildZg4BatteryRequest(outputId, length, sequence),
+                    500, reply => (level = ParseZg4Battery(reply, inputId, sequence, out isCharging)) >= 0);
+                Record("battery-" + status, level);
+                if (level >= 0)
                 {
-                    trace.Add(channel + "：已确认 ZG4，电量查询发送失败");
-                    continue;
+                    charging = isCharging;
+                    return level;
                 }
-                int deadline = Environment.TickCount + 500;
-                while (deadline - Environment.TickCount > 0)
-                {
-                    var reply = ReadReport(handle, signal, Math.Max(1, deadline - Environment.TickCount));
-                    if (reply == null) break;
-                    int level = ParseZg4Battery(reply, inputId, sequence, out charging);
-                    if (level >= 0) return level;
-                }
-                trace.Add(channel + "：已确认 ZG4，未取得有效电量回包");
             }
             finally { CloseHandle(signal); CloseHandle(handle); }
         }

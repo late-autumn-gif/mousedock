@@ -221,7 +221,7 @@ namespace MouseDock.Services.Detection
                         if ((preferences?.CanRead(bucket.InstanceId, null) ?? true) &&
                             (preferences?.CanRead("hid-3654-5055", null) ?? true))
                         {
-                            const string zg4Source = "竹林鸟 ZG4 接收器电量";
+                            const string zg4Source = VendorProtocol.Zg4Protocol;
                             var zg4Trace = new List<string>();
                             bool zg4Charging = false;
                             bucket.Battery = ReadBattery(zg4Source,
