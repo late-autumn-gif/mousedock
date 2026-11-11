@@ -56,13 +56,15 @@ internal sealed class ChargeSweep
         return current;
     }
 
+    internal void Reset(int slot) => _levels.Remove(slot);
+
     internal static double Interpolate(double from, double target, long elapsed) =>
         from + (target - from) * Math.Clamp(elapsed / 300d, 0, 1);
 
     internal static bool Wave => string.Equals(App.Settings?.ChargeEffect, "wave", StringComparison.Ordinal);
 
     internal static void Fill(DrawingContext dc, Rect track, double fraction, double radius,
-        Brush brush, double phase, bool vertical = false)
+        Brush brush, double phase, bool vertical = false, bool wave = true)
     {
         if (fraction <= 0 || track.Width <= 0 || track.Height <= 0) return;
         fraction = Math.Min(1, fraction);
@@ -70,11 +72,22 @@ internal sealed class ChargeSweep
             ? new Rect(track.X, track.Bottom - track.Height * fraction, track.Width, track.Height * fraction)
             : new Rect(track.X, track.Y, track.Width * fraction, track.Height);
         double span = vertical ? track.Height : track.Width;
-        double amplitude = phase >= 0
+        double amplitude = phase >= 0 && wave
             ? Math.Min(3, span * Math.Min(fraction, 1 - fraction) * .45) : 0;
         if (amplitude <= 0)
         {
             dc.DrawRoundedRectangle(brush, null, fill, radius, radius);
+            if (phase >= 0 && !wave)
+            {
+                var shine = new LinearGradientBrush(Colors.Transparent, Colors.Transparent, vertical ? 90 : 0);
+                shine.GradientStops.Insert(1, new GradientStop(Color.FromArgb(155, 255, 255, 255), .5));
+                dc.PushClip(new RectangleGeometry(fill, radius, radius));
+                var highlight = vertical
+                    ? new Rect(fill.X, fill.Bottom - (fill.Height + 9) * phase, fill.Width, 9)
+                    : new Rect(fill.X + (fill.Width + 9) * phase - 9, fill.Y, 9, fill.Height);
+                dc.DrawRectangle(shine, null, highlight);
+                dc.Pop();
+            }
             return;
         }
         var geometry = new StreamGeometry();
@@ -113,10 +126,10 @@ internal sealed class ChargeSweep
             new Pen(App.Theme.IsLight ? Brushes.Black : Brushes.WhiteSmoke, .7), center, radius, radius);
     }
 
-    internal static void Arc(DrawingContext dc, Point center, double radius, double level, double thickness, double phase)
+    internal static void Arc(DrawingContext dc, Point center, double radius, double level, double thickness, double phase, bool? wave = null)
     {
         if (phase < 0 || radius <= 0) return;
-        if (Wave)
+        if (wave ?? Wave)
         {
             double pulse = .5 + .5 * Math.Sin(Environment.TickCount64 / 2400d * 2 * Math.PI);
             double outer = radius + thickness * 1.25;

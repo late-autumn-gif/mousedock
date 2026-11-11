@@ -23,6 +23,63 @@ internal static class AuditChecks
         return 0;
     }
 
+    internal static void DesktopPet()
+    {
+        using var battery = EmptyService(out var settings);
+        var source = new SharedSource { Reading = 62 };
+        SetSource(battery, source);
+        Wait(battery.PollAsync());
+        var pet = new DesktopPetWindow(battery, settings);
+        void Flush() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+        var image = (Image)typeof(DesktopPetWindow).GetField("_character", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+        var status = (TextBlock)typeof(DesktopPetWindow).GetField("_status", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+        long ActionUntil() => (long)typeof(DesktopPetWindow).GetField("_actionUntil", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+        try
+        {
+            pet.Show();
+            Flush();
+            Require(image.Source is System.Windows.Media.Imaging.BitmapSource { PixelWidth: 512, PixelHeight: 512 }, "The embedded atlas must load in the real window.");
+            source.Device.Charging = true;
+            Wait(battery.PollAsync());
+            Flush();
+            Require(status.Text is "⚡ 接电" or "充电中", "A confirmed charging transition must be visible.");
+            long firstAction = ActionUntil();
+            source.Reading = 63;
+            Wait(battery.PollAsync());
+            Flush();
+            Require(ActionUntil() == firstAction, "A percentage change must not replay the plug pose.");
+            source.Device.Charging = false;
+            source.Device.ChargeFull = true;
+            source.Reading = 100;
+            Wait(battery.PollAsync());
+            Flush();
+            long completion = ActionUntil();
+            Require(status.Text == "已充满", "Explicit Full must reach the pet.");
+            if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
+            {
+                var surface = (FrameworkElement)pet.Content;
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    (int)Math.Ceiling(surface.ActualWidth), (int)Math.Ceiling(surface.ActualHeight),
+                    96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(surface);
+                var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using var file = File.Create(preview);
+                png.Save(file);
+            }
+            Wait(battery.PollAsync());
+            Flush();
+            Require(ActionUntil() == completion, "Repeated full reports must not restart the celebration.");
+            source.Device.ChargeFull = false;
+            source.Reading = -1;
+            Wait(battery.PollAsync());
+            Flush();
+            Require(status.Text == "上次 100%", "The pet must label the retained historical value.");
+        }
+        finally { pet.Close(); }
+        Require(!pet.IsVisible, "Closing the desktop pet must release the window.");
+    }
+
     internal static void ChargingMerge()
     {
         var assembly = typeof(AppSettings).Assembly;

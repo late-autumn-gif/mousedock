@@ -95,6 +95,18 @@ namespace MouseDock.Models
         public bool EdgeGlyphColorCustomized { get; set; }
         public string EdgeStyle { get; set; } = "ring";
         public double EdgeVerticalPosition { get; set; } = 0.5;
+        public bool DesktopPetEnabled { get; set; }
+        public string DesktopPetDevice { get; set; } = "";
+        public string DesktopPetStyle { get; set; } = "ring";
+        public bool DesktopPetWave { get; set; } = true;
+        public bool DesktopPetReduceMotion { get; set; }
+        public bool DesktopPetLocked { get; set; }
+        public int DesktopPetSize { get; set; } = 100;
+        public string DesktopPetMonitor { get; set; } = "";
+        public double DesktopPetX { get; set; } = 1;
+        public double DesktopPetY { get; set; } = .75;
+        public bool NotifyChargeCompleted { get; set; } = true;
+
         public string ChargeEffect { get; set; } = "wave";
         public double EdgeSizePercent { get; set; } = 100;
         public double EdgeInset { get; set; } = 12;
@@ -189,6 +201,17 @@ namespace MouseDock.Models
                 EdgeGlyphColorCustomized = EdgeGlyphColorCustomized,
                 EdgeStyle = EdgeStyle,
                 EdgeVerticalPosition = EdgeVerticalPosition,
+                DesktopPetEnabled = DesktopPetEnabled,
+                DesktopPetDevice = DesktopPetDevice,
+                DesktopPetStyle = DesktopPetStyle,
+                DesktopPetWave = DesktopPetWave,
+                DesktopPetReduceMotion = DesktopPetReduceMotion,
+                DesktopPetLocked = DesktopPetLocked,
+                DesktopPetSize = DesktopPetSize,
+                DesktopPetMonitor = DesktopPetMonitor,
+                DesktopPetX = DesktopPetX,
+                DesktopPetY = DesktopPetY,
+                NotifyChargeCompleted = NotifyChargeCompleted,
                 ChargeEffect = ChargeEffect,
                 EdgeSizePercent = EdgeSizePercent,
                 EdgeInset = EdgeInset,

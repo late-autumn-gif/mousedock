@@ -32,6 +32,7 @@ namespace MouseDock
         public static DockWindow Dock { get; private set; }
         public static MiniWindow Mini { get; private set; }
         public static IconWindow Icon { get; private set; }
+        private static DesktopPetWindow _desktopPet;
         public static TaskbarWindow Taskbar { get; private set; }
         public static ScreenEdgeWindow Edge { get; private set; }
         public static SettingsWindow SettingsView { get; private set; }
@@ -328,6 +329,7 @@ namespace MouseDock
                 foreach (var window in new Window[] { Dock, Mini, Icon, Taskbar, Edge })
                     window.ShowActivated = false;
             ApplySurface();
+            if (Settings.DesktopPetEnabled) SetDesktopPetVisible(true);
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -421,6 +423,7 @@ namespace MouseDock
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
             menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("显示／隐藏小新桌宠", null, (_, __) => SetDesktopPetVisible(!Settings.DesktopPetEnabled));
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
             menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
@@ -467,7 +470,7 @@ namespace MouseDock
             Battery.Refreshed += (_, __) => UpdateTrayIcon();
             Battery.ChargeCompleted += device =>
             {
-                if (_tray == null) return;
+                if (_tray == null || !Settings.NotifyChargeCompleted) return;
                 _tray.BalloonTipTitle = $"{device.Name} 已充满";
                 _tray.BalloonTipText = "设备已确认充电完成。";
                 _tray.BalloonTipIcon = WinForms.ToolTipIcon.Info;
@@ -1006,6 +1009,7 @@ namespace MouseDock
 
         public static void ApplyWindowBehavior()
         {
+            if (_desktopPet != null) _desktopPet.Topmost = Settings.AlwaysOnTop;
             foreach (var w in new Window[] { Dock, Mini, Icon, Edge })
             {
                 if (w == null) continue;
@@ -1104,9 +1108,32 @@ namespace MouseDock
             return window;
         }
 
+        internal static void SetDesktopPetVisible(bool visible)
+        {
+            Settings.DesktopPetEnabled = visible;
+            if (visible)
+            {
+                if (_desktopPet == null)
+                {
+                    _desktopPet = new DesktopPetWindow(Battery, Settings);
+                    _desktopPet.Closed += (_, _) =>
+                    {
+                        _desktopPet = null;
+                        if (_exiting) return;
+                        Settings.DesktopPetEnabled = false;
+                        SaveSettings();
+                    };
+                }
+                _desktopPet.Show();
+            }
+            else _desktopPet?.Close();
+            SaveSettings();
+        }
+
         public static void ExitApp()
         {
             _exiting = true;
+            _desktopPet?.Close();
             SaveWindowPositions();
             SaveDeviceSelection();
             _trayClickTimer?.Stop();

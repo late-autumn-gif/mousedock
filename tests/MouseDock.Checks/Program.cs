@@ -31,6 +31,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
