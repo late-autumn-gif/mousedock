@@ -300,14 +300,10 @@
                             <Button Content="打开耳机控制" Style="{StaticResource GhostButton}" Click="OnHeadsetAudioClick" />
                         </StackPanel>
                     </Border>
-                    <TextBlock Text="桌宠" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
-                        <Button Content="显示／隐藏桌宠" Style="{StaticResource GhostButton}" Click="OnDesktopPetClick" />
-                    </Border>
                     <TextBlock Text="显示方式" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <UniformGrid Columns="5">
+                            <UniformGrid Columns="3">
                                 <Button x:Name="SurfaceDock" Content="主面板" Tag="dock" Style="{StaticResource GhostButton}"
                                         Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                                 <Button x:Name="SurfaceMini" Content="迷你" Tag="mini" Style="{StaticResource GhostButton}"
@@ -317,6 +313,8 @@
                                 <Button x:Name="SurfaceTaskbar" Content="任务栏" Tag="taskbar" Style="{StaticResource GhostButton}"
                                         Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                                 <Button x:Name="SurfaceEdge" Content="屏幕右侧" Tag="edge" Style="{StaticResource GhostButton}"
+                                        Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
+                                <Button x:Name="SurfacePet" Content="桌宠" Tag="pet" Style="{StaticResource GhostButton}"
                                         Padding="4,5" Margin="2,0" Click="OnSurfaceClick" />
                             </UniformGrid>
                             <StackPanel x:Name="IconOptionsPanel">

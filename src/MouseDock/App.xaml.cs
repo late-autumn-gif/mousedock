@@ -46,7 +46,7 @@ namespace MouseDock
         public static DeviceInfo PrimaryDevice =>
             Battery?.VisibleDevices.FirstOrDefault();
 
-        private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar, Edge);
+        private static SurfaceVisibility Surfaces => new SurfaceVisibility(Dock, Mini, Icon, Taskbar, Edge, _desktopPet);
         private static DispatcherTimer _trayClickTimer;
 
         /// <summary>
@@ -124,6 +124,12 @@ namespace MouseDock
             }
 
             Settings = SettingsStore.Load();
+            if (Settings.DesktopPetEnabled)
+            {
+                Settings.SurfaceMode = "pet";
+                Settings.DesktopPetEnabled = false;
+                SaveSettings();
+            }
 
             // 启动时校正自启动项：开关开着就把 Run 项指到当前 exe，关了就删掉。
             // 搬过目录、换过版本、或上次被别的测试改坏，都能在这一步自动纠回来。
@@ -329,7 +335,7 @@ namespace MouseDock
                 foreach (var window in new Window[] { Dock, Mini, Icon, Taskbar, Edge })
                     window.ShowActivated = false;
             ApplySurface();
-            if (Settings.DesktopPetEnabled) SetDesktopPetVisible(true);
+
 
             // 第一次启动弹「关于」通告
             Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -423,7 +429,7 @@ namespace MouseDock
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
             menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("显示／隐藏桌宠", null, (_, __) => SetDesktopPetVisible(!Settings.DesktopPetEnabled));
+            menu.Items.Add("切换到桌宠", null, (_, __) => SetSurface("pet"));
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
             menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
@@ -692,7 +698,7 @@ namespace MouseDock
         private static void SyncSurfaceFlags()
         {
             string mode = Settings.SurfaceMode;
-            if (mode != "dock" && mode != "mini" && mode != "icon" && mode != "taskbar" && mode != "edge")
+            if (mode != "dock" && mode != "mini" && mode != "icon" && mode != "taskbar" && mode != "edge" && mode != "pet")
             {
                 mode = Settings.ShowMini ? "mini" : Settings.ShowIcon ? "icon" : "dock";
                 Settings.SurfaceMode = mode;
@@ -705,6 +711,16 @@ namespace MouseDock
         public static void ApplySurface()
         {
             SyncSurfaceFlags();
+            if (Settings.SurfaceMode == "pet" && _desktopPet == null)
+            {
+                _desktopPet = new DesktopPetWindow(Battery, Settings);
+                _desktopPet.Closing += (_, args) =>
+                {
+                    if (_exiting) return;
+                    args.Cancel = true;
+                    _desktopPet.Hide();
+                };
+            }
             RefreshDeviceViews();
             Surfaces.Apply(Settings.SurfaceMode, true);
             if (Settings.ShowIcon) Icon?.ApplyStyle(Settings.IconStyle, false);
@@ -777,6 +793,7 @@ namespace MouseDock
             menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
             menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量", () => SetSurface("taskbar")));
             menu.Items.Add(Item((mode == "edge" ? "● " : "○ ") + "屏幕右侧电量", () => SetSurface("edge")));
+            menu.Items.Add(Item((mode == "pet" ? "● " : "○ ") + "桌宠", () => SetSurface("pet")));
             if (mode is "taskbar" or "edge")
             {
                 menu.Items.Add(new Separator());
@@ -1108,28 +1125,6 @@ namespace MouseDock
                 if (Settings.SurfaceMode == "taskbar") Taskbar.Show();
             };
             return window;
-        }
-
-        internal static void SetDesktopPetVisible(bool visible)
-        {
-            Settings.DesktopPetEnabled = visible;
-            if (visible)
-            {
-                if (_desktopPet == null)
-                {
-                    _desktopPet = new DesktopPetWindow(Battery, Settings);
-                    _desktopPet.Closed += (_, _) =>
-                    {
-                        _desktopPet = null;
-                        if (_exiting) return;
-                        Settings.DesktopPetEnabled = false;
-                        SaveSettings();
-                    };
-                }
-                _desktopPet.Show();
-            }
-            else _desktopPet?.Close();
-            SaveSettings();
         }
 
         public static void ExitApp()

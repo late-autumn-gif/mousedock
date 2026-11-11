@@ -35,15 +35,21 @@ internal static class AuditChecks
         settings.DesktopPetCharacter = character;
         Require(settings.Clone().DesktopPetCharacter == character, "The selected character must survive settings cloning.");
         var source = new SharedSource { Reading = 62 };
+        source.Device.Name = "狼蛛 SC580";
+        source.ExtraDevices = new[]
+        {
+            new DeviceInfo { Id = "pet-device-1", Name = "VGN Neon75 Air", Kind = DeviceKind.Keyboard, Level = 88 },
+            new DeviceInfo { Id = "pet-device-2", Name = "Air Plus Pro3", Kind = DeviceKind.Headset, Level = 80 }
+        };
         if (character == "shin-chan")
-            source.ExtraDevices = Enumerable.Range(1, 7).Select(i =>
-                new DeviceInfo { Id = $"pet-device-{i}", Name = $"Pet device {i}", Level = 40 + i }).ToArray();
+            source.ExtraDevices = source.ExtraDevices.Concat(Enumerable.Range(3, 5).Select(i =>
+                new DeviceInfo { Id = $"pet-device-{i}", Name = $"测试设备 {i}", Level = 40 + i })).ToArray();
         SetSource(battery, source);
         Wait(battery.PollAsync());
         var pet = new DesktopPetWindow(battery, settings);
         void Flush() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
         var image = (Image)typeof(DesktopPetWindow).GetField("_character", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-        var status = (TextBlock)typeof(DesktopPetWindow).GetField("_status", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+        DeviceInfo Followed() => (DeviceInfo)typeof(DesktopPetWindow).GetField("_device", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
         long ActionUntil() => (long)typeof(DesktopPetWindow).GetField("_actionUntil", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
         try
         {
@@ -53,17 +59,19 @@ internal static class AuditChecks
             if (character == "shin-chan")
             {
                 var list = (StackPanel)typeof(DesktopPetWindow).GetField("_deviceList", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-                Require(list.Children.Count == 8, "The desktop pet must display every selected device beyond the six-device surface limit.");
+                string[] Rows() => list.Children.OfType<Button>().Select(item => ((DeviceInfo)((Grid)item.Content).DataContext).Id).ToArray();
+                Require(Rows().Length == 6 && Rows().SequenceEqual(battery.VisibleDevices.Select(d => d.Id)),
+                    "The desktop pet must respect the same six-device cap and order as other surfaces.");
                 typeof(DesktopPetWindow).GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(pet, null);
                 var displayMenu = pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "显示设备"));
-                var last = (MenuItem)displayMenu.Items[7];
+                var last = (MenuItem)displayMenu.Items[5];
                 last.IsChecked = false;
                 last.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 Flush();
-                Require(!battery.Devices[7].Selected && list.Children.Count == 7, "The pet menu must update the shared device selection.");
-                battery.SetSelected(battery.Devices[7], true);
+                Require(!battery.Devices[5].Selected && Rows().Length == 6 && Rows().Contains(battery.Devices[6].Id), "The next selected device must replace a deselected row.");
+                battery.SetSelected(battery.Devices[5], true);
                 Flush();
-                Require(list.Children.Count == 8, "Settings-side selection must restore the pet row.");
+                Require(Rows().Length == 6 && Rows().Contains(battery.Devices[5].Id), "Settings-side selection must restore the pet row.");
             }
             var frames = (ImageSource[])typeof(DesktopPetWindow).GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
             if (character != "shin-chan")
@@ -71,14 +79,14 @@ internal static class AuditChecks
                 source.Reading = 15;
                 Wait(battery.PollAsync());
                 Flush();
-                Require(ReferenceEquals(image.Source, frames[2]), "The selected character must show its low battery art.");
+                Require(ReferenceEquals(image.Source, frames[1]), "The selected character must show its low battery art.");
             }
             source.Device.Charging = true;
             Wait(battery.PollAsync());
             Flush();
-            Require(status.Text is "接电" or "充电中", "A confirmed charging transition must be visible.");
+            Require(Followed().IsChargingActive, "A confirmed charging transition must reach the followed device.");
             if (character != "shin-chan")
-                Require(ReferenceEquals(image.Source, frames[4]), "Confirmed charging must select that character's charging art.");
+                Require(ReferenceEquals(image.Source, frames[1]), "Confirmed charging must select that character's charging art.");
             long firstAction = ActionUntil();
             source.Reading = 63;
             Wait(battery.PollAsync());
@@ -90,7 +98,7 @@ internal static class AuditChecks
             Wait(battery.PollAsync());
             Flush();
             long completion = ActionUntil();
-            Require(status.Text == "已充满", "Explicit Full must reach the pet.");
+            Require(Followed().IsFullActive, "Explicit Full must reach the pet.");
             if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
             {
                 Wait(Task.Delay(360));
@@ -112,7 +120,7 @@ internal static class AuditChecks
             source.Reading = -1;
             Wait(battery.PollAsync());
             Flush();
-            Require(status.Text == "上次 100%", "The pet must label the retained historical value.");
+            Require(Followed() is { IsStale: true, Level: 100 }, "The pet must retain the historical level as stale.");
         }
         finally { pet.Close(); }
         Require(!pet.IsVisible, "Closing the desktop pet must release the window.");

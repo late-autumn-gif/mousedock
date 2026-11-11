@@ -121,14 +121,14 @@ internal static class UiRegressionChecks
     {
         var type = typeof(AppSettings).Assembly.GetType("MouseDock.Services.SurfaceVisibility");
         Require(type != null, "Missing shared single-surface visibility policy.");
-        var windows = Enumerable.Range(0, 4).Select(_ => new Window
+        var windows = Enumerable.Range(0, 6).Select(_ => new Window
         {
             Width = 10, Height = 10, ShowInTaskbar = false, ShowActivated = false, Left = -1000, Top = -1000
         }).ToArray();
         try
         {
-            var names = new[] { "dock", "mini", "icon", "taskbar" };
-            var controller = Activator.CreateInstance(type!, [windows[0], windows[1], windows[2], windows[3]])!;
+            var names = new[] { "dock", "mini", "icon", "taskbar", "edge", "pet" };
+            var controller = Activator.CreateInstance(type!, windows.Cast<object>().ToArray())!;
             var apply = type!.GetMethod("Apply")!;
             for (int cycle = 0; cycle < 3; cycle++)
                 for (int i = 0; i < names.Length; i++)

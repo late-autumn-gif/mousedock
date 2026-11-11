@@ -9,6 +9,8 @@ namespace MouseDock.Controls
     {
         private readonly ChargeSweep _sweep;
         public MeterBar() => _sweep = new ChargeSweep(this);
+        internal bool MotionEnabled { get; set; } = true;
+        internal bool? Wave { get; set; }
         public static readonly DependencyProperty ChargingProperty = DependencyProperty.Register(
             nameof(Charging), typeof(bool), typeof(MeterBar),
             new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
@@ -26,7 +28,7 @@ namespace MouseDock.Controls
         {
             if (d is not MeterBar bar) return;
             double target = Math.Clamp((double)e.NewValue, 0, 1);
-            if (!bar.IsLoaded || !SystemParameters.ClientAreaAnimation)
+            if (!bar.IsLoaded || !bar.MotionEnabled || !SystemParameters.ClientAreaAnimation)
 
             {
                 bar.SetValue(DisplayValueProperty, target);
@@ -85,7 +87,7 @@ namespace MouseDock.Controls
             var track = new Rect(0, y, w, h);
             dc.DrawRoundedRectangle(TrackBrush ?? Brushes.Transparent, null, track, r, r);
 
-            double phase = _sweep.Phase(Charging && Value > 0);
+            double phase = _sweep.Phase(MotionEnabled && Charging && Value > 0);
             double drawn = _sweep.Follow(0, Value, phase >= 0);
             double fraction = Math.Clamp(Charging ? drawn : DisplayValue, 0, 1);
             double fw = Math.Max(0, fraction * w);
@@ -102,7 +104,7 @@ namespace MouseDock.Controls
             fill.Freeze();
 
             var fillRect = new Rect(0, y, Math.Min(fw, w), h);
-            ChargeSweep.Fill(dc, track, fraction, r, fill, phase);
+            ChargeSweep.Fill(dc, track, fraction, r, fill, phase, wave: Wave);
 
             if (ShowDot && fw > h + 2)
             {

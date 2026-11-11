@@ -21,17 +21,13 @@ internal sealed class DesktopPetWindow : Window
 {
     private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate }
 
-    private sealed record Character(string Id, string Name, string Atlas, Brush Surface, Brush Outline,
-        Brush Accent, Brush ChargingAccent, Color Halo, bool HasBlink);
+    private sealed record Character(string Id, string Name, int AtlasColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
 
     private static readonly Character[] Characters =
     {
-        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", Paint(26, 39, 56), Paint(82, 104, 128),
-            Brushes.LightSkyBlue, Brushes.Aquamarine, Color.FromRgb(100, 240, 220), false),
-        new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", Paint(47, 26, 39), Paint(184, 132, 83),
-            Paint(252, 218, 161), Paint(160, 235, 203), Color.FromRgb(249, 193, 112), true),
-        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", Paint(29, 28, 57), Paint(135, 113, 192),
-            Paint(151, 223, 252), Paint(81, 205, 248), Color.FromRgb(198, 133, 255), true)
+        new("shin-chan", "蜡笔小新", 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), false),
+        new("xin-yue-hu", "心月狐", 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
+        new("rikka", "小鸟游六花", 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true)
     };
 
     private static Brush Paint(byte r, byte g, byte b)
@@ -46,14 +42,11 @@ internal sealed class DesktopPetWindow : Window
     private ImageSource[] _frames;
     private Character _skin;
     private readonly Border _bubble;
-    private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
+    private readonly Image _character = new() { Width = 128, Height = 128, Stretch = Stretch.Uniform };
     private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
     private readonly ScaleTransform _breath = new(1, 1);
     private readonly ScaleTransform _size = new(1, 1);
-    private readonly PetBatteryGauge _gauge = new() { Width = 78, Height = 78 };
-    private readonly TextBlock _name = new() { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly TextBlock _status = new() { Foreground = Brushes.LightGray, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel _deviceList = new();
     private DeviceInfo[] _listedDevices = Array.Empty<DeviceInfo>();
     private readonly DispatcherTimer _timer;
@@ -102,27 +95,24 @@ internal sealed class DesktopPetWindow : Window
         };
         portrait.MouseLeftButtonUp += (_, _) => Play(Pose.Wave, 950);
 
-        var details = new StackPanel { Width = 106, VerticalAlignment = VerticalAlignment.Center };
-        details.Children.Add(_name);
-        details.Children.Add(_status);
-        var summary = new StackPanel { Orientation = Orientation.Horizontal };
-        summary.Children.Add(_gauge);
-        summary.Children.Add(details);
-        var batteryContent = new StackPanel { Width = 205 };
-        batteryContent.Children.Add(summary);
-        batteryContent.Children.Add(new ScrollViewer
-        {
-            Content = _deviceList, MaxHeight = 236, VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        });
+        var heading = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(9, 8, 0, 7) };
+        heading.Children.Add(new TextBlock { Text = "✦", FontSize = 17, Foreground = Brushes.Gold, Margin = new Thickness(0, 0, 8, 0) });
+        heading.Children.Add(new TextBlock { Text = "设备电量", FontSize = 19, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+        var batteryContent = new StackPanel { Width = 300 };
+        batteryContent.Children.Add(heading);
+        batteryContent.Children.Add(_deviceList);
         _bubble = new Border
         {
-            Child = batteryContent, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1),
-            Padding = new Thickness(5, 0, 7, 5), VerticalAlignment = VerticalAlignment.Center
+            Child = batteryContent, CornerRadius = new CornerRadius(23), BorderThickness = new Thickness(1.5),
+            Padding = new Thickness(9, 0, 9, 9), Margin = new Thickness(0, 80, 0, 0)
         };
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
-        var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
-        layout.Children.Add(portrait);
+        var layout = new Grid { LayoutTransform = _size };
         layout.Children.Add(_bubble);
+        portrait.HorizontalAlignment = HorizontalAlignment.Right;
+        portrait.VerticalAlignment = VerticalAlignment.Top;
+        portrait.Margin = new Thickness(0, 0, 13, 0);
+        layout.Children.Add(portrait);
         Content = layout;
 
         ContextMenu = new ContextMenu();
@@ -143,11 +133,11 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        var atlas = new BitmapImage(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{skin.Atlas}"));
+        var atlas = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/desktop-pet-headers.png"));
         int width = atlas.PixelWidth / 3, height = atlas.PixelHeight / 2;
-        _frames = Enumerable.Range(0, 6).Select(index =>
+        _frames = Enumerable.Range(0, 2).Select(index =>
         {
-            var frame = new CroppedBitmap(atlas, new Int32Rect(index % 3 * width, index / 3 * height, width, height));
+            var frame = new CroppedBitmap(atlas, new Int32Rect(skin.AtlasColumn * width, index * height, width, height));
             frame.Freeze();
             return (ImageSource)frame;
         }).ToArray();
@@ -178,9 +168,9 @@ internal sealed class DesktopPetWindow : Window
         }), DispatcherPriority.DataBind);
     }
 
-    private void Refresh()
+    private void Refresh(bool rebuild = false)
     {
-        var displayed = _battery.Devices.Where(d => d.IsDisplayEligible).ToArray();
+        var displayed = _battery.VisibleDevices.ToArray();
         var device = displayed.FirstOrDefault(d => d.Id == _settings.DesktopPetDevice) ?? displayed.FirstOrDefault();
         bool charging = device?.IsChargingActive == true;
         bool changed = device?.Id != _device?.Id;
@@ -189,13 +179,7 @@ internal sealed class DesktopPetWindow : Window
         _device = device;
         _charging = charging;
 
-        _name.Text = device?.Name ?? "未选择设备";
-        _name.ToolTip = device?.Name;
-        _status.Text = Status(device);
-        _bubble.BorderBrush = IsLow ? Brushes.Orange : device?.IsFullActive == true ? Brushes.Aquamarine : _skin.Outline;
-        _gauge.Update(device, _settings.DesktopPetStyle, _settings.DesktopPetWave, Motion,
-            _skin.Accent, _skin.ChargingAccent, _skin.Halo, _settings.LowBatteryWarn);
-        if (!_listedDevices.SequenceEqual(displayed))
+        if (rebuild || changed || _deviceList.Children.Count == 0 || !_listedDevices.SequenceEqual(displayed))
         {
             _listedDevices = displayed;
             RebuildList();
@@ -205,16 +189,6 @@ internal sealed class DesktopPetWindow : Window
         if (IsVisible && Motion) _timer.Start();
         else _timer.Stop();
         RenderPose();
-    }
-
-    private static string Status(DeviceInfo device)
-    {
-        if (device == null) return "右键选择显示设备";
-        if (device.IsFullActive) return "已充满";
-        if (device.IsChargingActive) return "充电中";
-        if ((device.IsStale || !device.Connected) && device.Level >= 0) return $"上次 {device.Level}%";
-        if (!device.Connected) return "离线";
-        return device.Level < 0 ? "电量未知" : device.KindLabel;
     }
 
     private void OnFull(DeviceInfo device)
@@ -242,7 +216,7 @@ internal sealed class DesktopPetWindow : Window
         Pose pose = inAction ? _action : _charging ? Pose.Charging :
             IsLow && (_skin.HasBlink || !Motion || now % 5500 < 1350) ? Pose.Low : Pose.Idle;
         if (pose == Pose.Idle && _skin.HasBlink && Motion && now % 5400 < 170) pose = Pose.Transition;
-        var image = _frames[(int)pose];
+        var image = _frames[pose == Pose.Idle ? 0 : 1];
         if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
         _breath.ScaleY = Motion ? 1 + (pose == Pose.Charging ? .024 : .012) *
             Math.Sin(now / (pose == Pose.Charging ? 230d : 580d)) : 1;
@@ -260,33 +234,66 @@ internal sealed class DesktopPetWindow : Window
                 Canvas.SetTop(star, 13 + i * 13 - progress * 10);
             }
         }
-        _status.Text = pose == Pose.Transition && !_skin.HasBlink ? "接电" : Status(_device);
+
     }
 
     private void RebuildList()
     {
         _deviceList.Children.Clear();
+        if (_listedDevices.Length == 0)
+        {
+            _deviceList.Children.Add(new TextBlock { Text = "未选择显示设备", Foreground = Brushes.LightGray, Margin = new Thickness(9, 8, 0, 8) });
+            return;
+        }
+
+        var accent = ((SolidColorBrush)_skin.Accent).Color;
         foreach (var device in _listedDevices)
         {
-            var row = new Grid { Width = 175, DataContext = device };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _deviceList.Children.Add(new Border { Height = 1, Background = _skin.Outline, Opacity = .46, Margin = new Thickness(4, 0, 4, 0) });
+            var row = new Grid { DataContext = device, Margin = new Thickness(9, 5, 9, 5), MinHeight = 38 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
             row.ColumnDefinitions.Add(new ColumnDefinition());
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var glyph = new DeviceGlyph { Width = 15, Height = 15, GlyphBrush = _skin.Accent, Margin = new Thickness(0, 0, 7, 0) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62) });
+            var glyph = new DeviceGlyph { Width = 22, Height = 22, GlyphBrush = _skin.Accent, HorizontalAlignment = HorizontalAlignment.Left };
             glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
             row.Children.Add(glyph);
 
-            var name = new TextBlock { Foreground = Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 6, 0) };
+            var details = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            var name = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
             name.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Name)));
-            Grid.SetColumn(name, 1);
-            row.Children.Add(name);
+            details.Children.Add(name);
+            var meter = new MeterBar
+            {
+                Height = 6, BarHeight = 5, Margin = new Thickness(0, 4, 0, 0), ShowDot = false,
+                Accent = accent, Accent2 = accent, MotionEnabled = Motion, Wave = _settings.DesktopPetWave
+            };
+            meter.SetBinding(MeterBar.ValueProperty, new Binding(nameof(DeviceInfo.LevelFraction)));
+            meter.SetBinding(MeterBar.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+            meter.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
+            details.Children.Add(meter);
+            Grid.SetColumn(details, 1);
+            row.Children.Add(details);
 
-            var reading = new TextBlock { Foreground = _skin.Accent };
+            var reading = new TextBlock
+            {
+                Foreground = _skin.Accent, FontSize = 17, FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
+            };
             reading.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)));
             reading.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
             Grid.SetColumn(reading, 2);
             row.Children.Add(reading);
-            var item = new Button { Content = row, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(4) };
+            var item = new Button
+            {
+                Content = row, Padding = new Thickness(0), BorderThickness = new Thickness(0),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch, Cursor = Cursors.Hand,
+                Background = device == _device ? new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) : Brushes.Transparent
+            };
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+            border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
+            border.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
+            item.Template = new ControlTemplate(typeof(Button)) { VisualTree = border };
             item.SetBinding(ToolTipProperty, new Binding(nameof(DeviceInfo.StatusText)) { Source = device });
             item.Click += (_, _) => Follow(device.Id);
             _deviceList.Children.Add(item);
@@ -329,10 +336,6 @@ internal sealed class DesktopPetWindow : Window
             Add(follow.Items, device.Name, () => Follow(device.Id), _settings.DesktopPetDevice == device.Id);
         ContextMenu.Items.Add(follow);
 
-        var shapes = new MenuItem { Header = "电量样式" };
-        foreach (var (id, label) in new[] { ("ring", "电量环"), ("vertical", "竖向电量线"), ("battery", "经典电池") })
-            Add(shapes.Items, label, () => { _settings.DesktopPetStyle = id; SaveAndRefresh(); }, _settings.DesktopPetStyle == id);
-        ContextMenu.Items.Add(shapes);
         var effects = new MenuItem { Header = "充电动效" };
         Add(effects.Items, "流光／波浪", () => { _settings.DesktopPetWave = true; SaveAndRefresh(); }, _settings.DesktopPetWave);
         Add(effects.Items, "扫光", () => { _settings.DesktopPetWave = false; SaveAndRefresh(); }, !_settings.DesktopPetWave);
@@ -350,7 +353,8 @@ internal sealed class DesktopPetWindow : Window
         Add(ContextMenu.Items, "锁定位置", () => { _settings.DesktopPetLocked = !_settings.DesktopPetLocked; App.SaveSettings(); }, _settings.DesktopPetLocked);
         Add(ContextMenu.Items, "减少动态效果", () => { _settings.DesktopPetReduceMotion = !_settings.DesktopPetReduceMotion; _actionUntil = 0; SaveAndRefresh(); }, _settings.DesktopPetReduceMotion);
         Add(ContextMenu.Items, "满电提醒（全局）", () => { _settings.NotifyChargeCompleted = !_settings.NotifyChargeCompleted; App.SaveSettings(); }, _settings.NotifyChargeCompleted);
-        Add(ContextMenu.Items, "隐藏桌宠", () => App.SetDesktopPetVisible(false));
+        Add(ContextMenu.Items, "设置…", () => App.ShowSettings(this));
+        Add(ContextMenu.Items, "隐藏桌宠", App.ToggleCurrentSurface);
     }
 
     private static void Add(ItemCollection items, string text, Action action, bool? selected = null)
@@ -362,7 +366,7 @@ internal sealed class DesktopPetWindow : Window
 
     private void SaveAndRefresh()
     {
-        Refresh();
+        Refresh(rebuild: true);
         App.SaveSettings();
     }
 

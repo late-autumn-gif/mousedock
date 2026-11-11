@@ -46,6 +46,8 @@ internal static class StartupChecks
             ["dock"] = App.Dock, ["mini"] = App.Mini, ["icon"] = App.Icon,
             ["taskbar"] = App.Taskbar, ["edge"] = App.Edge
         };
+        if (mode == "pet")
+            surfaces["pet"] = (Window)typeof(App).GetField("_desktopPet", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
         try
         {
             if (!surfaces[mode].IsVisible || surfaces.Count(pair => pair.Value.IsVisible) != 1)
@@ -70,6 +72,15 @@ internal static class StartupChecks
             poll.GetAwaiter().GetResult();
             if (!surfaces[mode].IsVisible || battery.VisibleDevices.Count != 1)
                 throw new InvalidOperationException($"Late discovery: visible={surfaces[mode].IsVisible}, devices={battery.Devices.Count}, displayed={battery.VisibleDevices.Count}.");
+            if (mode == "pet")
+            {
+                App.SetSurface("mini");
+                if (surfaces["pet"].IsVisible || !App.Mini.IsVisible)
+                    throw new InvalidOperationException("Switching to mini must hide the desktop pet.");
+                App.SetSurface("pet");
+                if (!surfaces["pet"].IsVisible || surfaces.Count(pair => pair.Value.IsVisible) != 1)
+                    throw new InvalidOperationException("Switching back to pet must hide every other display mode.");
+            }
             var pinnedSurface = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? App.Edge : surfaces[mode];
             if (mode == "taskbar" && App.Taskbar.UsesScreenEdge && !App.Edge.IsVisible)
                 throw new InvalidOperationException("Automatic taskbar overflow did not show the right-edge surface.");
