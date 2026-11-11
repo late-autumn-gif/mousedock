@@ -13,12 +13,16 @@ internal sealed class PetBatteryGauge : FrameworkElement
     private string _style;
     private bool _wave;
     private bool _motion;
+    private Brush _accent;
+    private Brush _chargingAccent;
+    private Color _halo;
+    private int _lowThreshold;
     private int _level = -1;
     private long _transitionUntil;
 
     internal PetBatteryGauge() => _sweep = new ChargeSweep(this);
 
-    internal void Update(DeviceInfo device, string style, bool wave, bool motion)
+    internal void Update(DeviceInfo device, string style, bool wave, bool motion, Brush accent, Brush chargingAccent, Color halo, int lowThreshold)
     {
         int level = device?.Level ?? -1;
         if (_device?.Id != device?.Id)
@@ -33,6 +37,10 @@ internal sealed class PetBatteryGauge : FrameworkElement
         _style = style;
         _wave = wave;
         _motion = motion;
+        _accent = accent;
+        _chargingAccent = chargingAccent;
+        _halo = halo;
+        _lowThreshold = lowThreshold;
         InvalidateVisual();
     }
 
@@ -43,8 +51,8 @@ internal sealed class PetBatteryGauge : FrameworkElement
         bool stale = _device?.IsStale == true || _device?.Connected == false;
         double phase = _sweep.Phase(_motion && !stale && (charging || Environment.TickCount64 < _transitionUntil));
         double level = _sweep.Follow(0, _level, phase >= 0);
-        var fill = full || charging ? Brushes.Aquamarine :
-            _level >= 0 && _level <= (App.Settings?.LowBatteryWarn ?? 20) ? Brushes.Orange : Brushes.LightSkyBlue;
+        var fill = full ? Brushes.Aquamarine : charging ? _chargingAccent :
+            _level >= 0 && _level <= _lowThreshold && !stale ? Brushes.Orange : _accent;
         var track = new SolidColorBrush(Color.FromRgb(54, 69, 88));
         var center = new Point(ActualWidth / 2, ActualHeight / 2);
         double chargingPhase = charging ? phase : -1;
@@ -78,7 +86,7 @@ internal sealed class PetBatteryGauge : FrameworkElement
                 }
                 dc.DrawGeometry(null, pen, arc);
             }
-            ChargeSweep.Arc(dc, center, radius, level, width, chargingPhase, _wave);
+            ChargeSweep.Arc(dc, center, radius, level, width, chargingPhase, _wave, _halo);
         }
 
         string label = _level >= 0 ? $"{_level}%" : "—";

@@ -25,7 +25,15 @@ internal static class AuditChecks
 
     internal static void DesktopPet()
     {
+        foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka" })
+            VerifyDesktopPet(character);
+    }
+
+    private static void VerifyDesktopPet(string character)
+    {
         using var battery = EmptyService(out var settings);
+        settings.DesktopPetCharacter = character;
+        Require(settings.Clone().DesktopPetCharacter == character, "The selected character must survive settings cloning.");
         var source = new SharedSource { Reading = 62 };
         SetSource(battery, source);
         Wait(battery.PollAsync());
@@ -39,10 +47,20 @@ internal static class AuditChecks
             pet.Show();
             Flush();
             Require(image.Source is System.Windows.Media.Imaging.BitmapSource { PixelWidth: 512, PixelHeight: 512 }, "The embedded atlas must load in the real window.");
+            var frames = (ImageSource[])typeof(DesktopPetWindow).GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            if (character != "shin-chan")
+            {
+                source.Reading = 15;
+                Wait(battery.PollAsync());
+                Flush();
+                Require(ReferenceEquals(image.Source, frames[2]), "The selected character must show its low battery art.");
+            }
             source.Device.Charging = true;
             Wait(battery.PollAsync());
             Flush();
             Require(status.Text is "⚡ 接电" or "充电中", "A confirmed charging transition must be visible.");
+            if (character != "shin-chan")
+                Require(ReferenceEquals(image.Source, frames[4]), "Confirmed charging must select that character's charging art.");
             long firstAction = ActionUntil();
             source.Reading = 63;
             Wait(battery.PollAsync());
@@ -57,6 +75,7 @@ internal static class AuditChecks
             Require(status.Text == "已充满", "Explicit Full must reach the pet.");
             if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
             {
+                Wait(Task.Delay(360));
                 var surface = (FrameworkElement)pet.Content;
                 var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
                     (int)Math.Ceiling(surface.ActualWidth), (int)Math.Ceiling(surface.ActualHeight),
@@ -64,7 +83,8 @@ internal static class AuditChecks
                 bitmap.Render(surface);
                 var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
                 png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-                using var file = File.Create(preview);
+                string output = Path.Combine(Path.GetDirectoryName(preview) ?? "", $"{Path.GetFileNameWithoutExtension(preview)}-{character}.png");
+                using var file = File.Create(output);
                 png.Save(file);
             }
             Wait(battery.PollAsync());

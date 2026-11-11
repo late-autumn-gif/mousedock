@@ -96,6 +96,7 @@ namespace MouseDock.Models
         public string EdgeStyle { get; set; } = "ring";
         public double EdgeVerticalPosition { get; set; } = 0.5;
         public bool DesktopPetEnabled { get; set; }
+        public string DesktopPetCharacter { get; set; } = "shin-chan";
         public string DesktopPetDevice { get; set; } = "";
         public string DesktopPetStyle { get; set; } = "ring";
         public bool DesktopPetWave { get; set; } = true;
@@ -202,6 +203,7 @@ namespace MouseDock.Models
                 EdgeStyle = EdgeStyle,
                 EdgeVerticalPosition = EdgeVerticalPosition,
                 DesktopPetEnabled = DesktopPetEnabled,
+                DesktopPetCharacter = DesktopPetCharacter,
                 DesktopPetDevice = DesktopPetDevice,
                 DesktopPetStyle = DesktopPetStyle,
                 DesktopPetWave = DesktopPetWave,

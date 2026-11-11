@@ -423,7 +423,7 @@ namespace MouseDock
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
             menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
             menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("显示／隐藏小新桌宠", null, (_, __) => SetDesktopPetVisible(!Settings.DesktopPetEnabled));
+            menu.Items.Add("显示／隐藏桌宠", null, (_, __) => SetDesktopPetVisible(!Settings.DesktopPetEnabled));
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
             menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));

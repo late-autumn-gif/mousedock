@@ -126,23 +126,27 @@ internal sealed class ChargeSweep
             new Pen(App.Theme.IsLight ? Brushes.Black : Brushes.WhiteSmoke, .7), center, radius, radius);
     }
 
-    internal static void Arc(DrawingContext dc, Point center, double radius, double level, double thickness, double phase, bool? wave = null)
+    internal static void Arc(DrawingContext dc, Point center, double radius, double level, double thickness, double phase, bool? wave = null, Color? haloColor = null)
     {
         if (phase < 0 || radius <= 0) return;
         if (wave ?? Wave)
         {
+            var halo = haloColor ?? Color.FromRgb(100, 240, 220);
+            var highlight = haloColor.HasValue ? Color.FromRgb(
+                (byte)((halo.R + 255) / 2), (byte)((halo.G + 255) / 2), (byte)((halo.B + 255) / 2))
+                : Color.FromRgb(170, 255, 238);
             double pulse = .5 + .5 * Math.Sin(Environment.TickCount64 / 2400d * 2 * Math.PI);
             double outer = radius + thickness * 1.25;
-            dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb((byte)(24 + 18 * pulse), 100, 240, 220)),
+            dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb((byte)(24 + 18 * pulse), halo.R, halo.G, halo.B)),
                 thickness * (1.5 + pulse)), center, outer, outer);
-            dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(70, 100, 240, 220)), .8),
+            dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(70, halo.R, halo.G, halo.B)), .8),
                 center, outer, outer);
             double orbitHead = Environment.TickCount64 / 2000d * 2 * Math.PI;
             for (int i = 18; i >= 0; i--)
             {
                 double angle = orbitHead - i * .045;
                 var point = new Point(center.X + outer * Math.Sin(angle), center.Y - outer * Math.Cos(angle));
-                dc.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(170 * (19 - i) / 19), 170, 255, 238)),
+                dc.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(170 * (19 - i) / 19), highlight.R, highlight.G, highlight.B)),
                     new Pen(new SolidColorBrush(Color.FromArgb((byte)(70 * (19 - i) / 19), 8, 28, 34)), .5), point, Math.Max(.6, thickness * .36), Math.Max(.6, thickness * .36));
             }
             return;
