@@ -197,7 +197,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             var bar = new Rect(bounds.X + 2, bounds.Bottom - 3, Math.Max(1, bounds.Width - 4), 2);
             dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar, 1, 1);
             double drawn = _chargeSweep.Follow(0, Level, phase >= 0);
-            ChargeSweep.Fill(dc, bar, drawn / 100, 1, StatusBrush(Level), phase);
+            ChargeSweep.HorizontalLine(dc, bar, drawn / 100, 1, StatusBrush(Level), phase);
         }
         if (count > 0 && photoBounds.Bottom < bounds.Bottom)
         {
@@ -239,7 +239,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                 var bar = new Rect(row.X, row.Bottom - 2, row.Width, 1.6);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar);
                 double drawn = _chargeSweep.Follow(i, level, charging && phase >= 0);
-                ChargeSweep.Fill(dc, bar, drawn / 100, .8, Status(level), charging ? phase : -1);
+                ChargeSweep.HorizontalLine(dc, bar, drawn / 100, .8, Status(level), charging ? phase : -1);
                 dc.Pop();
             }
         }

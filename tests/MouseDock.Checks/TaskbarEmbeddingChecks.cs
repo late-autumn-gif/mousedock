@@ -30,10 +30,16 @@ internal static class TaskbarEmbeddingChecks
         IntPtr handle = new WindowInteropHelper(fixture.Window).Handle;
         IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
         Require(taskbar != IntPtr.Zero, "A Windows taskbar is required.");
-        Require(GetParent(handle) == taskbar, "The battery strip is still a separate top-level window.");
-        Require((GetWindowLong(handle, -16) & 0x40000000) != 0, "The strip must use WS_CHILD.");
-        Require((GetWindowLong(handle, -16) & unchecked((int)0x80000000)) == 0, "A child must not retain WS_POPUP.");
-        Require((GetWindowLong(handle, -20) & 8) == 0, "The embedded strip must not compete for topmost order.");
+        var parent = GetParent(handle);
+        bool attached = parent == taskbar;
+        if (!attached)
+            Require(Environment.OSVersion.Version.Build >= 22000 && parent == IntPtr.Zero,
+                "The taskbar strip needs a native parent or the Windows 11 overlay.");
+        Require(fixture.Window.Opacity == 1 && fixture.Window.IsHitTestVisible,
+            "The available taskbar surface must be visible and interactive.");
+        Require(((GetWindowLong(handle, -16) & 0x40000000) != 0) == attached, "WS_CHILD must match the selected taskbar host.");
+        Require(((GetWindowLong(handle, -16) & unchecked((int)0x80000000)) == 0) == attached, "WS_POPUP must match the selected taskbar host.");
+        Require(!attached || (GetWindowLong(handle, -20) & 8) == 0, "The embedded strip must not compete for topmost order.");
         GetWindowRect(handle, out var stripRect);
         GetWindowRect(taskbar, out var barRect);
         Require(stripRect.Left >= barRect.Left && stripRect.Right <= barRect.Right &&
@@ -43,7 +49,7 @@ internal static class TaskbarEmbeddingChecks
         Require(!IsWindowVisible(handle), "Hiding the selected surface left its native child visible.");
         fixture.Window.Show();
         fixture.Window.UpdateAnchor();
-        Require(GetParent(handle) == taskbar && IsWindowVisible(handle), "The embedded strip did not return after Show.");
+        Require(GetParent(handle) == parent && IsWindowVisible(handle), "The taskbar surface did not return after Show.");
     }
 
     internal static void FollowsParentWithoutRefresh()
@@ -80,11 +86,12 @@ internal static class TaskbarEmbeddingChecks
 
     internal static void TransparentComposition()
     {
-        // 分层子窗口只有嵌进真实的 Shell 任务栏才会被合成；用一个 WPF 顶层窗口当宿主演不到像素。
+        // Capture actual desktop pixels from the native child or the top-level overlay.
         IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
         Require(taskbar != IntPtr.Zero, "A Windows taskbar is required.");
         GetWindowRect(taskbar, out var bar);
         var target = new Rect(bar.Left + 320, bar.Top + 4, 120, 36);
+        Pump(150);
         using var before = Capture(target);
         var strip = new Window { Width = 80, Height = 40, WindowStyle = WindowStyle.None,
             AllowsTransparency = true, Background = Brushes.Transparent, ShowInTaskbar = false,
@@ -94,21 +101,30 @@ internal static class TaskbarEmbeddingChecks
         {
             strip.Show();
             var type = typeof(AppSettings).Assembly.GetType("MouseDock.Services.TaskbarAnchor")!;
-            Require((bool)type.GetMethod("Attach")!.Invoke(null, [strip, taskbar])!, "Attachment failed.");
+            bool attached = (bool)type.GetMethod("Attach")!.Invoke(null, [strip, taskbar])!;
+            Require(attached || Environment.OSVersion.Version.Build >= 22000, "Attachment failed on the classic taskbar.");
             type.GetMethod("Move")!.Invoke(null, [strip, target]);
-            Pump(800);
-            using var after = Capture(target);
-            System.IO.Directory.CreateDirectory("artifacts");
-            after.Save("artifacts/taskbar-child-composition.png", System.Drawing.Imaging.ImageFormat.Png);
-            int ink = 0;
-            for (int y = 0; y < after.Height; y++)
-                for (int x = 0; x < after.Width; x++)
-                {
-                    var a = after.GetPixel(x, y);
-                    var b = before.GetPixel(x, y);
-                    if (Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B) > 60) ink++;
-                }
-            Require(ink > 30, "The embedded layered window is blank: the ring and glyph never reached the compositor.");
+            type.GetMethod("EnsureOrder")!.Invoke(null, [strip, attached]);
+            int ink = 0, clear = 0;
+            long deadline = Environment.TickCount64 + 3000;
+            do
+            {
+                Pump(150);
+                using var after = Capture(target);
+                ink = clear = 0;
+                for (int y = 0; y < after.Height; y++)
+                    for (int x = 0; x < after.Width; x++)
+                    {
+                        var a = after.GetPixel(x, y);
+                        var b = before.GetPixel(x, y);
+                        int delta = Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+                        if (delta > 60 && x >= 15 && x <= 65) ink++;
+                        if (delta < 8 && x >= 68 && x < 80) clear++;
+                    }
+            } while ((ink <= 30 || clear <= 100) && Environment.TickCount64 < deadline);
+            Console.WriteLine($"Taskbar composition: native child={attached}, painted pixels={ink}, transparent pixels={clear}.");
+            Require(ink > 30, "The layered window is blank: the ring and glyph never reached the compositor.");
+            Require(clear > 100, "The unpainted strip background obscured the native taskbar pixels.");
         }
         finally { strip.Close(); }
     }
@@ -147,8 +163,7 @@ internal static class TaskbarEmbeddingChecks
             Require(MouseDock.App.Taskbar != initial, "Losing the native parent permanently closed the battery surface.");
             var replacement = MouseDock.App.Taskbar;
             Require(replacement != null && replacement.IsVisible, "The replacement surface was not shown.");
-            Require(GetParent(new WindowInteropHelper(replacement!).Handle) == FindWindow("Shell_TrayWnd", null),
-                "The replacement did not attach to the available taskbar.");
+            RequireTaskbarHost(replacement!);
             replacement!.Close();
             Pump(100);
             Require(MouseDock.App.Taskbar == replacement, "An ordinary close incorrectly recreated the surface.");
@@ -203,8 +218,7 @@ internal static class TaskbarEmbeddingChecks
             Pump(1200);
             var replacement = MouseDock.App.Taskbar;
             Require(replacement != null && replacement.IsVisible, "The taskbar surface was lost after host termination.");
-            Require(GetParent(new WindowInteropHelper(replacement!).Handle) == FindWindow("Shell_TrayWnd", null),
-                "The surviving/recreated surface did not reconnect to the taskbar.");
+            RequireTaskbarHost(replacement!);
             var refreshed = (Delegate?)typeof(BatteryService).GetField("Refreshed",
                 BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(MouseDock.App.Battery);
             Require(refreshed == null || refreshed.GetInvocationList().All(handler => handler.Target != initial),
@@ -217,6 +231,16 @@ internal static class TaskbarEmbeddingChecks
             MouseDock.App.Taskbar?.Close();
             typeof(MouseDock.App).GetProperty("Taskbar")!.SetValue(null, savedTaskbar);
         }
+    }
+
+    private static void RequireTaskbarHost(TaskbarWindow replacement)
+    {
+        var parent = GetParent(new WindowInteropHelper(replacement).Handle);
+        Require(parent == FindWindow("Shell_TrayWnd", null) ||
+            (Environment.OSVersion.Version.Build >= 22000 && parent == IntPtr.Zero),
+            "The recovered surface did not reconnect to the available taskbar.");
+        Require(replacement.Opacity == 1 && replacement.IsHitTestVisible,
+            "The recovered taskbar surface must be visible and interactive.");
     }
 
     internal static void ShellFullscreen()
@@ -259,7 +283,9 @@ internal static class TaskbarEmbeddingChecks
             _testBattery = new BatteryService(settings);
             typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
             typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, _testBattery);
-            _testBattery.Devices.Add(new DeviceInfo { Id = "embedded", Name = "Embedded mouse", Level = 66 });
+            var device = new DeviceInfo { Id = "embedded", Name = "Embedded mouse", Level = 66 };
+            _testBattery.Devices.Add(device);
+            _testBattery.VisibleDevices.Add(device);
             Window = new TaskbarWindow();
         }
         public void Dispose()

@@ -20,6 +20,8 @@ internal static class Program
             return StartupChecks.Run(args[1]);
         if (args.Length == 2 && args[0] == "--taskbar-button-fixture")
             return TaskbarFollowChecks.RunButtonFixture(args[1]);
+        if (Environment.GetEnvironmentVariable(RuntimeAuditChecks.UpdateFixtureVariable) is { Length: > 0 } marker)
+            return RuntimeAuditChecks.RunUpdateFixture(marker, args.Contains("--wait-for-update"));
         if (args.Contains("--taskbar-host-fixture"))
             return TaskbarEmbeddingChecks.RunHostFixture();
         if (args.Contains("--audit"))
@@ -88,13 +90,13 @@ internal static class Program
             ("Bluetooth stage timeouts preserve one pending worker", BluetoothStageChecks.Timeout),
             ("Bluetooth late results preserve published snapshots and recover", BluetoothStageChecks.LateResults),
             ("Bluetooth late results respect changed recognition preferences", BluetoothStageChecks.PreferenceChanges),
-            ("Embedded taskbar uses a transparent native child", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.AttachedToTaskbar)),
+            ("Taskbar uses native attachment or the Windows 11 overlay", TaskbarEmbeddingChecks.AttachedToTaskbar),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
-            ("Embedded taskbar retains native alpha composition", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.TransparentComposition)),
-            ("Embedded taskbar recovers after its native host is destroyed", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.HostLossRecovery)),
-            ("Embedded taskbar recovers after a cross-process host exits", () => SkipOnXamlTaskbar(TaskbarEmbeddingChecks.CrossProcessHostLoss)),
+            ("Taskbar retains visible alpha composition", TaskbarEmbeddingChecks.TransparentComposition),
+            ("Taskbar recovers after its native host is destroyed", TaskbarEmbeddingChecks.HostLossRecovery),
+            ("Taskbar recovers after a cross-process host exits", TaskbarEmbeddingChecks.CrossProcessHostLoss),
             ("Tray redraws release native icon resources", RuntimeAuditChecks.TrayResources),
-            ("Update waits for the old process before replacement and restart", () => throw new SkippedException("fixture is a .cmd placeholder; the real installer requires a PE named MouseDock.exe (see KNOWN_ISSUES)")),
+            ("Update waits for the old process before replacement and restart", RuntimeAuditChecks.UpdateWaitsForExit),
             ("Corrupt card backgrounds recover without crashing", () => VisualAuditChecks.BackgroundRecovery("dock")),
             ("Corrupt mini backgrounds recover without crashing", () => VisualAuditChecks.BackgroundRecovery("mini")),
             ("Corrupt icon photos recover without crashing", VisualAuditChecks.PhotoRecovery),
@@ -172,14 +174,6 @@ internal static class Program
 
     /// <summary>A check that cannot run on this host/stage. Never counts as a pass.</summary>
     private sealed class SkippedException(string message) : Exception(message);
-
-    /// <summary>Windows 11 uses a XAML taskbar; native SetParent embedding is not available there.</summary>
-    private static void SkipOnXamlTaskbar(Action check)
-    {
-        if (Environment.OSVersion.Version.Build >= 22000)
-            throw new SkippedException("XAML taskbar host (Windows 11) cannot adopt a native child window");
-        check();
-    }
 
     private static Type ProductionType(string name)
     {

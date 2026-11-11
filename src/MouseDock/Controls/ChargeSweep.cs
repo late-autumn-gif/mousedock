@@ -88,6 +88,59 @@ internal sealed class ChargeSweep
 
     internal static bool Wave => string.Equals(App.Settings?.ChargeEffect, "wave", StringComparison.Ordinal);
 
+    private static readonly Pen LineGlow = ChargingLinePen(Color.FromArgb(108, 130, 240, 250), 2.2);
+    private static readonly Pen LineCrest = ChargingLinePen(Color.FromArgb(230, 228, 253, 255), .85);
+
+    private static Pen ChargingLinePen(Color color, double thickness)
+    {
+        var pen = new Pen(new SolidColorBrush(color), thickness);
+        pen.Freeze();
+        return pen;
+    }
+
+    internal static void HorizontalLine(DrawingContext dc, Rect track, double fraction, double radius,
+        Brush brush, double phase)
+    {
+        if (fraction <= 0 || track.Width <= 0 || track.Height <= 0) return;
+        double width = track.Width * Math.Min(1, fraction);
+        if (phase < 0)
+        {
+            dc.DrawRoundedRectangle(brush, null, new Rect(track.X, track.Y, width, track.Height), radius, radius);
+            return;
+        }
+
+        double amplitude = fraction >= 1 ? 0 : Math.Min(2, Math.Min(track.Height * .38 + .2, width * .15));
+        double wavelength = Math.Clamp(track.Width / 7, 10, 32);
+        int segments = Math.Max(2, (int)Math.Ceiling(width / wavelength * 14));
+        Point At(int i)
+        {
+            double x = width * i / segments;
+            return new Point(track.X + x, track.Top + amplitude * Math.Sin((x / wavelength - phase) * 2 * Math.PI));
+        }
+
+        var body = new StreamGeometry();
+        var edge = new StreamGeometry();
+        using (var fill = body.Open())
+        using (var crest = edge.Open())
+        {
+            fill.BeginFigure(At(0), true, true);
+            crest.BeginFigure(At(0), false, false);
+            for (int i = 1; i <= segments; i++)
+            {
+                Point point = At(i);
+                fill.LineTo(point, true, false);
+                crest.LineTo(point, true, false);
+            }
+            fill.LineTo(new Point(track.X + width, track.Bottom), true, false);
+            fill.LineTo(track.BottomLeft, true, false);
+        }
+        dc.PushClip(new RectangleGeometry(new Rect(track.X, track.Top - amplitude - 2, width, track.Height + amplitude + 2)));
+        dc.DrawGeometry(brush, null, body);
+        dc.DrawGeometry(null, LineGlow, edge);
+        dc.DrawGeometry(null, LineCrest, edge);
+        dc.Pop();
+    }
+
     internal static void Fill(DrawingContext dc, Rect track, double fraction, double radius,
         Brush brush, double phase, bool vertical = false, bool? wave = null)
     {

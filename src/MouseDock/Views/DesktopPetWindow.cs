@@ -19,15 +19,16 @@ namespace MouseDock.Views;
 
 internal sealed class DesktopPetWindow : Window
 {
-    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate }
+    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag }
+    private const int ClickDuration = 1200;
 
-    private sealed record Character(string Id, string Name, int AtlasColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
+    private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
 
     private static readonly Character[] Characters =
     {
-        new("shin-chan", "蜡笔小新", 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), false),
-        new("xin-yue-hu", "心月狐", 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
-        new("rikka", "小鸟游六花", 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true)
+        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), false),
+        new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
+        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true)
     };
 
     private static Brush Paint(byte r, byte g, byte b)
@@ -42,10 +43,18 @@ internal sealed class DesktopPetWindow : Window
     private ImageSource[] _frames;
     private Character _skin;
     private readonly Border _bubble;
-    private readonly Image _character = new() { Width = 128, Height = 128, Stretch = Stretch.Uniform };
+    private readonly Image _headerPortrait = new()
+    {
+        Width = 128, Height = 128, Stretch = Stretch.Uniform, IsHitTestVisible = false,
+        HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+        Margin = new Thickness(0, 0, 13, 0)
+    };
+    private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
     private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
     private readonly ScaleTransform _breath = new(1, 1);
+    private readonly RotateTransform _tilt = new();
+    private readonly TranslateTransform _lift = new();
     private readonly ScaleTransform _size = new(1, 1);
     private readonly StackPanel _deviceList = new();
     private DeviceInfo[] _listedDevices = Array.Empty<DeviceInfo>();
@@ -58,7 +67,11 @@ internal sealed class DesktopPetWindow : Window
     private bool _closed;
     private bool _restoringPosition;
     private bool _dragging;
-    private Point _dragStart;
+    private bool _hovering;
+    private System.Drawing.Point? _press;
+    private Point _dragOrigin;
+    private long _dragStartedAt;
+    private double _look;
 
     internal DesktopPetWindow(BatteryService battery, AppSettings settings)
     {
@@ -76,24 +89,61 @@ internal sealed class DesktopPetWindow : Window
         UseLayoutRounding = true;
 
         _character.RenderTransformOrigin = new Point(.5, .98);
-        _character.RenderTransform = _breath;
+        _character.RenderTransform = new TransformGroup { Children = { _breath, _tilt, _lift } };
         var artwork = new Grid();
         artwork.Children.Add(_character);
         artwork.Children.Add(_sparks);
         foreach (var star in _stars) _sparks.Children.Add(star);
         var portrait = new Border { Background = Brushes.Transparent, Child = artwork };
-        portrait.MouseLeftButtonDown += (_, e) => _dragStart = e.GetPosition(this);
+        portrait.MouseEnter += (_, _) => { _hovering = true; RenderPose(); };
+        portrait.MouseLeave += (_, _) => { _hovering = false; RenderPose(); };
+        portrait.MouseLeftButtonDown += (_, e) =>
+        {
+            _press = System.Windows.Forms.Cursor.Position;
+            _dragOrigin = PointToScreen(new Point());
+            _hovering = false;
+            portrait.CaptureMouse();
+            e.Handled = true;
+        };
         portrait.MouseMove += (_, e) =>
         {
-            if (_settings.DesktopPetLocked || e.LeftButton != MouseButtonState.Pressed ||
-                (e.GetPosition(this) - _dragStart).Length < SystemParameters.MinimumHorizontalDragDistance) return;
-            _dragging = true;
-            try { DragMove(); }
-            catch (InvalidOperationException) { return; }
-            finally { _dragging = false; }
-            PlaceOnScreen(remember: true);
+            var point = e.GetPosition(portrait);
+            _look = Math.Clamp((point.X - portrait.ActualWidth / 2) / (portrait.ActualWidth / 2), -1, 1);
+            if (_press is not System.Drawing.Point start || e.LeftButton != MouseButtonState.Pressed || _settings.DesktopPetLocked)
+                return;
+
+            var cursor = System.Windows.Forms.Cursor.Position;
+            int dx = cursor.X - start.X, dy = cursor.Y - start.Y;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            if (!_dragging)
+            {
+                if (Math.Abs(dx) < SystemParameters.MinimumHorizontalDragDistance * dpi.DpiScaleX &&
+                    Math.Abs(dy) < SystemParameters.MinimumVerticalDragDistance * dpi.DpiScaleY)
+                    return;
+                _dragging = true;
+                _dragStartedAt = Environment.TickCount64;
+                _actionUntil = 0;
+                RenderPose();
+            }
+            SetWindowPos(new WindowInteropHelper(this).Handle, IntPtr.Zero,
+                (int)_dragOrigin.X + dx, (int)_dragOrigin.Y + dy, 0, 0, 0x0015);
         };
-        portrait.MouseLeftButtonUp += (_, _) => Play(Pose.Wave, 950);
+        portrait.MouseLeftButtonUp += (_, e) =>
+        {
+            if (_press == null) return;
+            bool wasDragging = _dragging;
+            EndPointerGesture();
+            portrait.ReleaseMouseCapture();
+            if (!wasDragging && portrait.IsMouseOver) Play(Pose.Click, ClickDuration);
+            e.Handled = true;
+        };
+        portrait.LostMouseCapture += (_, _) => EndPointerGesture();
+        PreviewMouseWheel += (_, e) =>
+        {
+            if (e.Delta == 0 || _dragging) return;
+            ChangeSize(_settings.DesktopPetSize + Math.Sign(e.Delta) * 5);
+            e.Handled = true;
+        };
 
         var heading = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(9, 8, 0, 7) };
         heading.Children.Add(new TextBlock { Text = "✦", FontSize = 17, Foreground = Brushes.Gold, Margin = new Thickness(0, 0, 8, 0) });
@@ -107,12 +157,14 @@ internal sealed class DesktopPetWindow : Window
             Padding = new Thickness(9, 0, 9, 9), Margin = new Thickness(0, 80, 0, 0)
         };
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
-        var layout = new Grid { LayoutTransform = _size };
-        layout.Children.Add(_bubble);
-        portrait.HorizontalAlignment = HorizontalAlignment.Right;
-        portrait.VerticalAlignment = VerticalAlignment.Top;
-        portrait.Margin = new Thickness(0, 0, 13, 0);
+        var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
+        portrait.VerticalAlignment = VerticalAlignment.Center;
+        portrait.Margin = new Thickness(4, 9, 8, 4);
         layout.Children.Add(portrait);
+        var card = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        card.Children.Add(_bubble);
+        card.Children.Add(_headerPortrait);
+        layout.Children.Add(card);
         Content = layout;
 
         ContextMenu = new ContextMenu();
@@ -133,15 +185,28 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        var atlas = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/desktop-pet-headers.png"));
+        var atlas = new BitmapImage(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{skin.Atlas}"));
         int width = atlas.PixelWidth / 3, height = atlas.PixelHeight / 2;
-        _frames = Enumerable.Range(0, 2).Select(index =>
+        var interactions = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/desktop-pet-interactions.png"));
+        // The transparent gutters in the gesture atlas are not evenly spaced.
+        int[] columns = { 0, 399, 837, interactions.PixelWidth };
+        int[] rows = { 0, 388, 793, interactions.PixelHeight };
+        int gestureTop = rows[skin.InteractionRow];
+        int gestureHeight = rows[skin.InteractionRow + 1] - gestureTop;
+        _frames = Enumerable.Range(0, 9).Select(index =>
         {
-            var frame = new CroppedBitmap(atlas, new Int32Rect(skin.AtlasColumn * width, index * height, width, height));
+            int gesture = index - 6;
+            var frame = index < 6
+                ? new CroppedBitmap(atlas, new Int32Rect(index % 3 * width, index / 3 * height, width, height))
+                : new CroppedBitmap(interactions, new Int32Rect(columns[gesture], gestureTop, columns[gesture + 1] - columns[gesture], gestureHeight));
             frame.Freeze();
             return (ImageSource)frame;
         }).ToArray();
 
+        var headers = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/desktop-pet-headers.png"));
+        int headerWidth = headers.PixelWidth / 3;
+        _headerPortrait.Source = new CroppedBitmap(headers,
+            new Int32Rect(skin.HeaderColumn * headerWidth, 0, headerWidth, headers.PixelHeight / 2));
         _character.Source = _frames[0];
         _skin = skin;
         _actionUntil = 0;
@@ -199,7 +264,7 @@ internal sealed class DesktopPetWindow : Window
     private void Play(Pose pose, int duration)
     {
         if (!Motion) return;
-        if (_action == Pose.Celebrate && Environment.TickCount64 < _actionUntil) return;
+        if ((_action == Pose.Celebrate || _action == pose) && Environment.TickCount64 < _actionUntil) return;
         _action = pose;
         _actionUntil = Environment.TickCount64 + duration;
         RenderPose();
@@ -216,10 +281,23 @@ internal sealed class DesktopPetWindow : Window
         Pose pose = inAction ? _action : _charging ? Pose.Charging :
             IsLow && (_skin.HasBlink || !Motion || now % 5500 < 1350) ? Pose.Low : Pose.Idle;
         if (pose == Pose.Idle && _skin.HasBlink && Motion && now % 5400 < 170) pose = Pose.Transition;
-        var image = _frames[pose == Pose.Idle ? 0 : 1];
+        if (Motion && _dragging) pose = Pose.Drag;
+        else if (Motion && !inAction && _hovering) pose = Pose.Hover;
+        var image = _frames[(int)pose];
         if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
         _breath.ScaleY = Motion ? 1 + (pose == Pose.Charging ? .024 : .012) *
             Math.Sin(now / (pose == Pose.Charging ? 230d : 580d)) : 1;
+        double dragTime = Math.Min(700, now - _dragStartedAt);
+        double clickProgress = pose == Pose.Click ? 1 - Math.Clamp((_actionUntil - now) / (double)ClickDuration, 0, 1) : 0;
+        double clickMotion = Math.Sin(clickProgress * Math.PI);
+        _tilt.Angle = pose switch
+        {
+            Pose.Drag => Math.Sin(dragTime * Math.PI / 175) * 7,
+            Pose.Hover => _look * 5,
+            Pose.Click => (_skin.Id == "rikka" ? 5 : -3) * clickMotion,
+            _ => 0
+        };
+        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion;
         bool sparkling = _skin.Id == "rikka" && Motion && pose is Pose.Charging or Pose.Celebrate;
         _sparks.Visibility = sparkling ? Visibility.Visible : Visibility.Collapsed;
         if (sparkling)
@@ -265,7 +343,7 @@ internal sealed class DesktopPetWindow : Window
             var meter = new MeterBar
             {
                 Height = 6, BarHeight = 5, Margin = new Thickness(0, 4, 0, 0), ShowDot = false,
-                Accent = accent, Accent2 = accent, MotionEnabled = Motion, Wave = _settings.DesktopPetWave
+                Accent = accent, Accent2 = accent, MotionEnabled = Motion
             };
             meter.SetBinding(MeterBar.ValueProperty, new Binding(nameof(DeviceInfo.LevelFraction)));
             meter.SetBinding(MeterBar.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
@@ -336,19 +414,9 @@ internal sealed class DesktopPetWindow : Window
             Add(follow.Items, device.Name, () => Follow(device.Id), _settings.DesktopPetDevice == device.Id);
         ContextMenu.Items.Add(follow);
 
-        var effects = new MenuItem { Header = "充电动效" };
-        Add(effects.Items, "流光／波浪", () => { _settings.DesktopPetWave = true; SaveAndRefresh(); }, _settings.DesktopPetWave);
-        Add(effects.Items, "扫光", () => { _settings.DesktopPetWave = false; SaveAndRefresh(); }, !_settings.DesktopPetWave);
-        ContextMenu.Items.Add(effects);
         var sizes = new MenuItem { Header = "桌宠大小" };
-        foreach (int size in new[] { 75, 100, 125, 150 })
-            Add(sizes.Items, $"{size}%", () =>
-            {
-                _settings.DesktopPetSize = size;
-                ApplySize();
-                Dispatcher.BeginInvoke(new Action(() => PlaceOnScreen(remember: true)), DispatcherPriority.Loaded);
-                App.SaveSettings();
-            }, _settings.DesktopPetSize == size);
+        foreach (int size in new[] { 50, 75, 100, 125, 150 })
+            Add(sizes.Items, $"{size}%", () => ChangeSize(size), _settings.DesktopPetSize == size);
         ContextMenu.Items.Add(sizes);
         Add(ContextMenu.Items, "锁定位置", () => { _settings.DesktopPetLocked = !_settings.DesktopPetLocked; App.SaveSettings(); }, _settings.DesktopPetLocked);
         Add(ContextMenu.Items, "减少动态效果", () => { _settings.DesktopPetReduceMotion = !_settings.DesktopPetReduceMotion; _actionUntil = 0; SaveAndRefresh(); }, _settings.DesktopPetReduceMotion);
@@ -370,7 +438,27 @@ internal sealed class DesktopPetWindow : Window
         App.SaveSettings();
     }
 
-    private void ApplySize() => _size.ScaleX = _size.ScaleY = Math.Clamp(_settings.DesktopPetSize, 75, 150) / 100d;
+    private void EndPointerGesture()
+    {
+        _press = null;
+        if (!_dragging) return;
+        _dragging = false;
+        _hovering = false;
+        PlaceOnScreen(remember: true);
+        RenderPose();
+    }
+
+    private void ChangeSize(int requested)
+    {
+        int size = Math.Clamp(requested, 50, 150);
+        if (_settings.DesktopPetSize == size) return;
+        _settings.DesktopPetSize = size;
+        ApplySize();
+        Dispatcher.BeginInvoke(new Action(() => PlaceOnScreen(remember: false)), DispatcherPriority.Loaded);
+        App.SaveSettings();
+    }
+
+    private void ApplySize() => _size.ScaleX = _size.ScaleY = Math.Clamp(_settings.DesktopPetSize, 50, 150) / 100d;
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);

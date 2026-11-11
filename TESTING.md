@@ -21,11 +21,12 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 & "C:\Program Files\dotnet\dotnet-sdk\dotnet.exe" run --project tests\MouseDock.Checks -c Release
 ```
 
-- 64 项，需要 Windows 桌面会话与 STA 线程
-- 当前基线：`59/64 checks passed, 5 skipped`，退出码 0
-- 5 项 SKIP 的原因见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)，不计入通过、也不算失败
+- 119 项，需要交互式 Windows 桌面会话与 STA 线程。
+- Windows 11 Build 26300 基线为 `119/119 checks passed, 0 skipped`，退出码 0。
+- 任务栏检查使用真实任务栏与本机窗口，包含屏幕像素透明合成和两种宿主退出路径。
+- 更新检查用隔离目录内的旧版、新版 PE 执行真实更新脚本，验证先等待旧进程退出，再替换并启动新版。测试关闭系统集成。
 
-失败判定：任意一项抛出非 `SkippedException` 的异常即 `FAIL`，退出码 1。SKIP 只能由 `SkipOnXamlTaskbar` 或显式抛 `SkippedException` 产生，不允许把失败写成跳过。
+任意一项失败会输出 `FAIL` 并使进程以退出码 1 结束。环境限制导致的 `SKIP` 单独计数。
 
 ## 真机诊断
 

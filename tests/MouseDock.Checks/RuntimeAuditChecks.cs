@@ -23,72 +23,93 @@ internal static class RuntimeAuditChecks
         Require(after <= before + 3, $"Tray rendering leaked {after - before} USER handles over 200 redraws.");
     }
 
+    internal const string UpdateFixtureVariable = "MOUSEDOCK_TEST_UPDATE_MARKER";
+
+    internal static int RunUpdateFixture(string marker, bool wait)
+    {
+        File.WriteAllText(marker, File.ReadAllText(Path.ChangeExtension(Environment.ProcessPath!, ".build")));
+        if (wait)
+            SpinWait.SpinUntil(() => File.Exists(marker + ".exit"), 30000);
+        return 0;
+    }
+
     internal static void UpdateWaitsForExit()
     {
-        var type = typeof(AppSettings).Assembly.GetType("MouseDock.Services.UpdateService")!;
-        var prepare = type.GetMethod("CreateApplyStartInfo", BindingFlags.Static | BindingFlags.NonPublic);
-        Require(prepare != null, "Update replacement has no process-exit-aware installer.");
-        string root = Path.Combine(Path.GetTempPath(), "MouseDock-update-test-" + Guid.NewGuid().ToString("N"));
-        string work = Path.Combine(root, "work");
-        string destination = Path.Combine(root, "user's [app] 中文");
-        Directory.CreateDirectory(work);
-        Directory.CreateDirectory(destination);
-        string current = Path.Combine(destination, "fixture.cmd");
-        string incoming = Path.Combine(work, "new.cmd");
+        string id = Guid.NewGuid().ToString("N");
+        string work = Path.Combine(Path.GetTempPath(), "MouseDock-update-" + id);
+        string source = Path.Combine(work, "package");
+        string installRoot = Path.Combine(Path.GetTempPath(), "MouseDock-install-test-" + id);
+        string destination = Path.Combine(installRoot, "user's [app] 中文");
+        string current = Path.Combine(destination, "MouseDock.exe");
+        string incoming = Path.Combine(source, "MouseDock.exe");
         string marker = Path.Combine(destination, "restarted.txt");
-        File.WriteAllText(current, "@echo old\r\n");
-        File.WriteAllText(incoming, "@echo off\r\necho updated>\"%~dp0restarted.txt\"\r\n");
-        string expected = File.ReadAllText(incoming);
-        Process? parent = null, installer = null;
+        string entry = Assembly.GetExecutingAssembly().Location;
+        string appHost = Path.ChangeExtension(entry, ".exe");
         try
         {
-            var parentStart = new ProcessStartInfo
+            foreach (string directory in new[] { source, destination })
             {
-                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-                    @"WindowsPowerShell\v1.0\powershell.exe"),
-                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
-            };
-            parentStart.ArgumentList.Add("-NoProfile");
-            parentStart.ArgumentList.Add("-NonInteractive");
-            parentStart.ArgumentList.Add("-Command");
-            parentStart.ArgumentList.Add("Start-Sleep -Seconds 30");
-            parent = Process.Start(parentStart)!;
-            var start = (ProcessStartInfo)prepare!.Invoke(null, [work, incoming, current, parent.Id, true])!;
-            installer = Process.Start(start)!;
-            // Longer than the previous fixed three-second delay: the old app still owns its file.
-            using (var heldExe = File.Open(current, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                Require(!installer.WaitForExit(4200), "Installer stopped while the old app was still running.");
-                Require(File.ReadAllText(current) == "@echo old\r\n", "Installer replaced a running application's file.");
+                Directory.CreateDirectory(directory);
+                foreach (string file in Directory.EnumerateFiles(Path.GetDirectoryName(entry)!))
+                {
+                    if (Path.GetExtension(file) is ".dll" or ".json")
+                        File.Copy(file, Path.Combine(directory, Path.GetFileName(file)));
+                }
+                File.Copy(appHost, Path.Combine(directory, "MouseDock.exe"));
             }
-            parent.Kill();
-            Require(parent.WaitForExit(5000), "Fixture process failed to exit.");
-            Require(installer.WaitForExit(15000), "Installer did not finish after the old process exited.");
-            string log = Path.Combine(work, "apply.log");
-            Require(installer.ExitCode == 0, "Installer failed after the old process exited: " +
-                (File.Exists(log) ? File.ReadAllText(log) : "no diagnostic log"));
-            Require(File.ReadAllText(current) == expected, "Installer did not copy the new build.");
-            Require(SpinWait.SpinUntil(() => File.Exists(marker), 5000), "Installer did not restart the replacement.");
-            Require(File.ReadAllText(marker).Trim() == "updated", "Installer restarted the wrong file.");
+            // An overlay byte differentiates the two PE files without modifying the executable image.
+            using (var exe = File.Open(incoming, FileMode.Append))
+                exe.WriteByte(0x42);
+            long oldLength = new FileInfo(current).Length;
+            File.WriteAllText(Path.ChangeExtension(current, ".build"), "old");
+            File.WriteAllText(Path.ChangeExtension(incoming, ".build"), "new");
+
+            var oldStart = new ProcessStartInfo(current) { UseShellExecute = false, CreateNoWindow = true };
+            oldStart.ArgumentList.Add("--wait-for-update");
+            oldStart.Environment[UpdateFixtureVariable] = marker;
+            using var old = Process.Start(oldStart)!;
+            try
+            {
+                Require(SpinWait.SpinUntil(() => File.Exists(marker) && File.ReadAllText(marker) == "old", 7000),
+                    "The old PE did not start.");
+                File.Delete(marker);
+                var start = MouseDock.Services.UpdateService.CreateApplyStartInfo(
+                    work, incoming, current, old.Id, restart: true, shellIntegration: false);
+                start.Environment[UpdateFixtureVariable] = marker;
+                using var installer = Process.Start(start)!;
+                try
+                {
+                    Require(!installer.WaitForExit(4200) && !old.HasExited, "The installer stopped waiting for the running app.");
+                    Require(new FileInfo(current).Length == oldLength &&
+                        !File.Exists(Path.Combine(work, "backup", "MouseDock.build")) && !File.Exists(marker),
+                        "The installer modified the installation before the old process exited.");
+
+                    File.WriteAllText(marker + ".exit", "");
+                    Require(old.WaitForExit(5000), "The old app did not exit.");
+                    Require(installer.WaitForExit(20000), "The installer did not finish after the old app exited.");
+                    string log = Path.Combine(work, "apply.log");
+                    Require(installer.ExitCode == 0, "Update failed: " + (File.Exists(log) ? File.ReadAllText(log) : "no log"));
+                    Require(new FileInfo(current).Length == oldLength + 1, "The installer did not replace the PE.");
+                    Require(SpinWait.SpinUntil(() => File.Exists(marker) && File.ReadAllText(marker) == "new", 7000),
+                        "The replacement PE did not start.");
+                }
+                finally { if (!installer.HasExited) { installer.Kill(); installer.WaitForExit(5000); } }
+            }
+            finally { if (!old.HasExited) { old.Kill(); old.WaitForExit(5000); } }
         }
         finally
         {
-            foreach (var process in new[] { installer, parent })
-            {
-                if (process == null) continue;
-                if (!process.HasExited) { process.Kill(); process.WaitForExit(5000); }
-                process.Dispose();
-            }
-            // The restarted command can briefly retain its working directory after writing the marker.
             Require(SpinWait.SpinUntil(() =>
             {
                 try
                 {
-                    if (Directory.Exists(root)) Directory.Delete(root, true);
+                    if (Directory.Exists(installRoot)) Directory.Delete(installRoot, true);
+                    if (Directory.Exists(work)) Directory.Delete(work, true);
                     return true;
                 }
                 catch (IOException) { return false; }
-            }, 5000), "The restarted fixture did not release its temporary directory.");
+                catch (UnauthorizedAccessException) { return false; }
+            }, 5000), "The update fixture did not release its temporary directories.");
         }
     }
 

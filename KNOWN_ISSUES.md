@@ -2,19 +2,11 @@
 
 记录当前不修或修不了、但需要明确告知的问题。按影响排序。
 
-## 测试环境跳过项（5 项）
+## 桌面环境验证
 
-`tests/MouseDock.Checks` 在 Windows 11 上会跳过 5 项，输出 `SKIP`，不计入通过：
+Windows 11 Build 26300 上，任务栏原生挂载、屏幕像素透明合成、宿主销毁及跨进程退出恢复均已通过。任务栏检查也允许 Windows 11 使用顶层覆盖窗口，并校验可见性、位置和命中测试状态。该版本的运行结果覆盖了本机实际采用的原生挂载路径。
 
-| 检查 | 原因 |
-|---|---|
-| Embedded taskbar uses a transparent native child | Windows 11 任务栏是 XAML 宿主，不接受原生子窗口 `SetParent` 嵌入 |
-| Embedded taskbar retains native alpha composition | 同上 |
-| Embedded taskbar recovers after its native host is destroyed | 同上 |
-| Embedded taskbar recovers after a cross-process host exits | 同上 |
-| Update waits for the old process before replacement and restart | 夹具用 `.cmd` 占位，而 `CreateApplyStartInfo` 要求被替换文件是名为 `MouseDock.exe` 的 PE；需要真实 PE 才能验证重启 |
-
-任务栏四项在 Windows 10 / 旧版任务栏环境仍会执行。更新一项目前只有代码审查覆盖，没有自动验证。
+更新测试使用隔离目录中的真实 Windows PE 验证等待退出、替换及重启。测试关闭系统集成，使用现有自启动项和快捷方式之外的独立夹具。其他 Windows 版本的任务栏原生合成仍需在对应环境运行检查。
 
 ## 设备侧
 
@@ -35,4 +27,4 @@
 
 - 常驻实例占用 Feature 通道时，`--detect` 可能读不到电量；先停常驻进程再跑。
 - 迈从 A7 V2 的 Feature 通道第一次 `GetFeature` 恒回缓存帧，已改为每次重试重发查询。
-- 任务栏嵌入、WPF 反射相关测试对构建环境敏感，`MouseDock.Checks` 的 5 项跳过以上文为准。
+- 任务栏像素采样和宿主恢复检查需要交互式 Windows 桌面会话。

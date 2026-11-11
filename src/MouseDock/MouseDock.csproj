@@ -36,7 +36,7 @@
     <Resource Include="Assets\Characters\Rikka.jpg;Assets\Characters\Roxy.jpg" />
     <Resource Include="Assets\Characters\character-rei.png;Assets\Characters\character-asuka.png;Assets\Characters\character-peek.png" />
     <!-- 关于面板的两张码：嵌进 exe，绿色版解压单个文件也能显示。 -->
-    <Resource Include="Assets\Characters\desktop-pet-headers.png" />
+    <Resource Include="Assets\Characters\shin-chan-pet.png;Assets\Characters\xin-yue-hu-pet.png;Assets\Characters\rikka-takanashi-pet.png;Assets\Characters\desktop-pet-interactions.png;Assets\Characters\desktop-pet-headers.png" />
     <Resource Include="Assets\donate.png;Assets\qq-group.png" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
     <InternalsVisibleTo Include="MouseDock.Checks" />

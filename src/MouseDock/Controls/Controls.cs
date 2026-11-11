@@ -10,7 +10,6 @@ namespace MouseDock.Controls
         private readonly ChargeSweep _sweep;
         public MeterBar() => _sweep = new ChargeSweep(this);
         internal bool MotionEnabled { get; set; } = true;
-        internal bool? Wave { get; set; }
         public static readonly DependencyProperty ChargingProperty = DependencyProperty.Register(
             nameof(Charging), typeof(bool), typeof(MeterBar),
             new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
@@ -104,9 +103,9 @@ namespace MouseDock.Controls
             fill.Freeze();
 
             var fillRect = new Rect(0, y, Math.Min(fw, w), h);
-            ChargeSweep.Fill(dc, track, fraction, r, fill, phase, wave: Wave);
+            ChargeSweep.HorizontalLine(dc, track, fraction, r, fill, phase);
 
-            if (ShowDot && fw > h + 2)
+            if (ShowDot && phase < 0 && fw > h + 2)
             {
                 var glow = new SolidColorBrush(Accent2) { Opacity = 0.9 };
                 glow.Freeze();

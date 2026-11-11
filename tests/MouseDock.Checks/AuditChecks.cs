@@ -2,6 +2,8 @@ using System.Reflection;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using MouseDock.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MouseDock.Models;
@@ -27,6 +29,56 @@ internal static class AuditChecks
     {
         foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka" })
             VerifyDesktopPet(character);
+        DesktopPetSizing();
+        ChargingLineGeometry();
+    }
+
+    private static void DesktopPetSizing()
+    {
+        using var fixture = new AppearanceFixture();
+        var pet = new DesktopPetWindow(fixture.Battery, fixture.Settings);
+        try
+        {
+            pet.Show();
+            var transform = (ScaleTransform)((FrameworkElement)pet.Content).LayoutTransform;
+            Require(transform.ScaleX == 1 && transform.ScaleY == 1, "The desktop pet must default to 100%.");
+            void Scroll(int delta) => pet.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
+            {
+                RoutedEvent = Mouse.PreviewMouseWheelEvent
+            });
+            Scroll(120);
+            Require(transform.ScaleX == 1.05 && transform.ScaleY == 1.05, "One wheel step must scale the whole pet by five points.");
+            for (int i = 0; i < 12; i++) Scroll(120);
+            Require(transform.ScaleX == 1.5, "The desktop pet wheel must stop at 150%.");
+            for (int i = 0; i < 22; i++) Scroll(-120);
+            Require(transform.ScaleX == .5 && SettingsStore.Load().DesktopPetSize == 50,
+                "The desktop pet wheel must stop at 50% and save the selected scale.");
+        }
+        finally { pet.Close(); }
+    }
+
+    private static void ChargingLineGeometry()
+    {
+        var track = new Rect(0, 4, 200, 5);
+        DrawingGroup Render(double level, double phase)
+        {
+            var drawing = new DrawingGroup();
+            using (var dc = drawing.Open())
+                ChargeSweep.HorizontalLine(dc, track, level, 2.5, Brushes.Aquamarine, phase);
+            return drawing;
+        }
+
+        var first = Render(.42, 0);
+        var next = Render(.42, .25);
+        var higher = Render(.68, .25);
+        Require(Math.Abs(first.Bounds.Right - 84) < .01 && first.Bounds.Right == next.Bounds.Right,
+            "Charging waves must keep the fill boundary fixed while the reading is unchanged.");
+        var firstFill = (GeometryDrawing)((DrawingGroup)first.Children[0]).Children[0];
+        var nextFill = (GeometryDrawing)((DrawingGroup)next.Children[0]).Children[0];
+        Require(firstFill.Geometry.ToString() != nextFill.Geometry.ToString(),
+            "A new animation phase must move the surface across the same filled region.");
+        Require(Math.Abs(higher.Bounds.Right - 136) < .01 && Render(0, .25).Children.Count == 0,
+            "The wave must extend with the new reading and leave unknown or empty readings unfilled.");
     }
 
     private static void VerifyDesktopPet(string character)
@@ -74,19 +126,37 @@ internal static class AuditChecks
                 Require(Rows().Length == 6 && Rows().Contains(battery.Devices[5].Id), "Settings-side selection must restore the pet row.");
             }
             var frames = (ImageSource[])typeof(DesktopPetWindow).GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Require(frames.Length == 9 && frames.Skip(6).All(frame => frame.Width > 0 && frame.Height > 0),
+                "Every character must load three separate interaction poses.");
+            var header = (Image)typeof(DesktopPetWindow).GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Require(header.Source != null && header.IsVisible, "The original card portrait must remain visible next to the full-body pet.");
             if (character != "shin-chan")
             {
                 source.Reading = 15;
                 Wait(battery.PollAsync());
                 Flush();
-                Require(ReferenceEquals(image.Source, frames[1]), "The selected character must show its low battery art.");
+                Require(ReferenceEquals(image.Source, frames[2]), "The selected character must show its low battery art.");
             }
             source.Device.Charging = true;
             Wait(battery.PollAsync());
             Flush();
             Require(Followed().IsChargingActive, "A confirmed charging transition must reach the followed device.");
             if (character != "shin-chan")
-                Require(ReferenceEquals(image.Source, frames[1]), "Confirmed charging must select that character's charging art.");
+                Require(ReferenceEquals(image.Source, frames[4]), "Confirmed charging must select that character's charging art.");
+            if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
+            {
+                Wait(Task.Delay(100));
+                var surface = (FrameworkElement)pet.Content;
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    (int)Math.Ceiling(surface.ActualWidth), (int)Math.Ceiling(surface.ActualHeight),
+                    96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(surface);
+                var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                string output = Path.Combine(Path.GetDirectoryName(preview) ?? "", $"{Path.GetFileNameWithoutExtension(preview)}-{character}.png");
+                using var file = File.Create(output);
+                png.Save(file);
+            }
             long firstAction = ActionUntil();
             source.Reading = 63;
             Wait(battery.PollAsync());
@@ -99,20 +169,6 @@ internal static class AuditChecks
             Flush();
             long completion = ActionUntil();
             Require(Followed().IsFullActive, "Explicit Full must reach the pet.");
-            if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
-            {
-                Wait(Task.Delay(360));
-                var surface = (FrameworkElement)pet.Content;
-                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
-                    (int)Math.Ceiling(surface.ActualWidth), (int)Math.Ceiling(surface.ActualHeight),
-                    96, 96, PixelFormats.Pbgra32);
-                bitmap.Render(surface);
-                var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-                string output = Path.Combine(Path.GetDirectoryName(preview) ?? "", $"{Path.GetFileNameWithoutExtension(preview)}-{character}.png");
-                using var file = File.Create(output);
-                png.Save(file);
-            }
             Wait(battery.PollAsync());
             Flush();
             Require(ActionUntil() == completion, "Repeated full reports must not restart the celebration.");
