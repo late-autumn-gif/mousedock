@@ -360,8 +360,8 @@
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <TextBlock Text="电量环充电动效" VerticalAlignment="Center" Margin="0,0,8,0" />
                                 <ComboBox x:Name="ChargeEffectChoice" Width="110" SelectionChanged="OnChargeEffectChanged">
-                                    <ComboBoxItem Content="闪电款" />
-                                    <ComboBoxItem Content="波浪款" />
+                                    <ComboBoxItem Content="弧段扫光" />
+                                    <ComboBoxItem Content="流光脉动" />
                                 </ComboBox>
                             </StackPanel>
                             <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0"

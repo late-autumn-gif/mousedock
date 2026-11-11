@@ -202,16 +202,14 @@ public sealed class TaskbarBatteryStrip : Border
         if (vertical) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         grid.Children.Add(number);
 
-        var charging = new TextBlock
+        var charging = new ChargingGlyph
         {
-            Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI"),
-            Foreground = batteryBrush ?? textBrush, FontSize = 8, Width = 9, Height = 10,
-            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 2, 2, 0), IsHitTestVisible = false
+            Name = "ChargingMark", Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 3, 2), IsHitTestVisible = false
         };
-        charging.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
-        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.HasChargeMark))
-            { Converter = new BooleanToVisibilityConverter() });
+        charging.SetBinding(ChargingGlyph.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+        charging.SetBinding(ChargingGlyph.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
         grid.Children.Add(charging);
 
         foreach (var property in new[] { ToolTipProperty, AutomationProperties.NameProperty })
@@ -386,16 +384,14 @@ public sealed class TaskbarBatteryStrip : Border
     /// <summary>充电标记叠在右上角，不占图标和数字的位置。</summary>
     private static void AttachCharging(Grid badge, DeviceInfo device, Brush textBrush)
     {
-        var charging = new TextBlock
+        var charging = new ChargingGlyph
         {
-            Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI"),
-            Foreground = textBrush, FontSize = 9, Width = 9, Height = 11,
-            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 4, 4, 0), IsHitTestVisible = false
+            Name = "ChargingMark", Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 3, 2), IsHitTestVisible = false
         };
-        charging.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
-        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.HasChargeMark))
-            { Converter = new BooleanToVisibilityConverter() });
+        charging.SetBinding(ChargingGlyph.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+        charging.SetBinding(ChargingGlyph.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
         badge.Children.Add(charging);
     }
 

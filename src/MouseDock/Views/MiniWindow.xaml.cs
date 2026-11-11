@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -55,7 +56,13 @@ namespace MouseDock.Views
             foreach (var d in selected) _visible.Add(d);
 
             CellList.ItemsSource = null;
-            CellList.ItemsSource = _visible;
+            bool pairedColumns = _visible.Count > 1 && _visible.Count % 2 == 0;
+            var panel = new FrameworkElementFactory(typeof(UniformGrid));
+            panel.SetValue(UniformGrid.ColumnsProperty, pairedColumns ? _visible.Count / 2 : 1);
+            CellList.ItemsPanel = new ItemsPanelTemplate(panel);
+            CellList.ItemsSource = pairedColumns
+                ? _visible.Where((_, i) => i % 2 == 0).Concat(_visible.Where((_, i) => i % 2 == 1)).ToArray()
+                : _visible.ToArray();
 
             if (IsVisible) Pulse();
         }

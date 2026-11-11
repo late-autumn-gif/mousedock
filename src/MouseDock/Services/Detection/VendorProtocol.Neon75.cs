@@ -88,8 +88,18 @@ namespace MouseDock.Services.Detection
                                 nativeError: error);
                         }
                         if (!valid) continue;
-                        if (!allowQuery) { stale = true; Record("Cached"); return level; }
+                        if (!allowQuery) { stale = true; Record("Cached"); return level == 100 ? -1 : level; }
                         if (++validReplies < 2) continue;
+                        // This receiver reports 100 immediately after cable insertion even when
+                        // it reported a lower value before insertion. Keep that raw value in evidence,
+                        // but wait for an independently verified full/charging percentage path.
+                        if (level == 100)
+                        {
+                            Record("Reported100Unverified", level);
+                            if (_lastGood.TryGetValue(key, out int priorLevel) && priorLevel is >= 0 and < 100)
+                            { stale = true; return priorLevel; }
+                            return -1;
+                        }
                         charging = charge;
                         _lastGood[key] = level;
                         SaveBatteryCache();
@@ -101,7 +111,7 @@ namespace MouseDock.Services.Detection
                 finally { CloseHandle(h); }
             }
             Record(channel == null ? "NoMatchingChannel" : "NoValidatedReply");
-            if (_lastGood.TryGetValue(key, out int previous) && previous >= 0 && previous <= 100)
+            if (_lastGood.TryGetValue(key, out int previous) && previous >= 0 && previous < 100)
             {
                 stale = true;
                 return previous;

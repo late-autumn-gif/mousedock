@@ -565,7 +565,7 @@ namespace MouseDock
                     g.FillPath(fill, path);
 
                 string txt = level >= 0 ? level.ToString() : "—";
-                string mark = full ? "✓" : charging ? "⚡" : "";
+                string mark = full ? "✓" : "";
                 if (mark.Length > 0) txt += " " + mark;
                 float px = txt.Length >= 4 ? 9f : txt.Length >= 3 ? 12f : 15f;
                 using var font = new System.Drawing.Font("Segoe UI Symbol", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);

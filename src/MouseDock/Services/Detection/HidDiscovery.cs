@@ -207,7 +207,7 @@ namespace MouseDock.Services.Detection
                 bucket.Charging = charging;
                 bucket.ReadStale = stale;
                 if (bucket.Battery >= 0) bucket.BatterySource = stale ? "VGN F7 上次状态" : "VGN F7 状态查询";
-                else bucket.BatteryFailures.Add("VGN F7 未取得两次有效响应");
+                else bucket.BatteryFailures.Add("VGN F7 未取得可靠电量，100%需独立满电证据");
             }
 
             // 专用电量接口不会参与输入类型归并。按归并后的设备读取一次。

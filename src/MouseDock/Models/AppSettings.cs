@@ -95,7 +95,7 @@ namespace MouseDock.Models
         public bool EdgeGlyphColorCustomized { get; set; }
         public string EdgeStyle { get; set; } = "ring";
         public double EdgeVerticalPosition { get; set; } = 0.5;
-        public string ChargeEffect { get; set; } = "lightning";
+        public string ChargeEffect { get; set; } = "wave";
         public double EdgeSizePercent { get; set; } = 100;
         public double EdgeInset { get; set; } = 12;
 

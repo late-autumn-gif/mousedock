@@ -67,7 +67,7 @@ namespace MouseDock.Controls
             {
                 Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI Symbol"),
                 FontSize = 12, Width = 12, Height = 14, Margin = new Thickness(0, 0, 1, 4),
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
@@ -75,7 +75,7 @@ namespace MouseDock.Controls
                 }
             };
             var markStyle = new Style(typeof(TextBlock));
-            markStyle.Setters.Add(new Setter(TextBlock.TextProperty, "\uE945"));
+            markStyle.Setters.Add(new Setter(TextBlock.TextProperty, ""));
             var fullTrigger = new DataTrigger { Binding = new Binding(nameof(Full)) { Source = this }, Value = true };
             fullTrigger.Setters.Add(new Setter(TextBlock.TextProperty, "✓"));
             markStyle.Triggers.Add(fullTrigger);
@@ -101,15 +101,19 @@ namespace MouseDock.Controls
         {
             base.OnRender(dc);
             var center = new Point(ActualWidth / 2, ActualHeight / 2);
-            double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - 4);
+            double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - 6);
             var trackBrush = GlyphBrush.Clone();
             trackBrush.Opacity = 0.28;
             var track = new Pen(trackBrush, 2.5);
             if (Level < 0) track.DashStyle = new DashStyle(new double[] { 1, 2 }, 0);
             dc.DrawEllipse(null, track, center, radius, radius);
-            double phase = _sweep.Phase(AnimateCharge && Charging && Level > 0);
+            double phase = _sweep.Phase(AnimateCharge && Charging);
             double drawnLevel = _sweep.Follow(0, Level, phase >= 0);
-            if (drawnLevel <= 0) return;
+            if (drawnLevel <= 0)
+            {
+                ChargeSweep.Arc(dc, center, radius, drawnLevel, track.Thickness, phase);
+                return;
+            }
 
             var color = Charging ? Color.FromRgb(56, 189, 248)
                 : Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
