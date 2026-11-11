@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -29,7 +30,7 @@ namespace MouseDock.Controls
             nameof(BatteryBrush), typeof(Brush), typeof(DeviceBatteryRing),
             new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
         public static readonly DependencyProperty FullProperty = DependencyProperty.Register(
-            nameof(Full), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(false));
+            nameof(Full), typeof(bool), typeof(DeviceBatteryRing), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
         public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
         public static readonly DependencyProperty ShowChargingMarkProperty = DependencyProperty.Register(
             nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
@@ -43,6 +44,10 @@ namespace MouseDock.Controls
         public bool ShowGlyph { get => (bool)GetValue(ShowGlyphProperty); set => SetValue(ShowGlyphProperty, value); }
         public bool ShowChargingMark { get => (bool)GetValue(ShowChargingMarkProperty); set => SetValue(ShowChargingMarkProperty, value); }
 
+        private static readonly DependencyPropertyKey CompletionVisiblePropertyKey = DependencyProperty.RegisterReadOnly(
+            nameof(CompletionVisible), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(false));
+        public static readonly DependencyProperty CompletionVisibleProperty = CompletionVisiblePropertyKey.DependencyProperty;
+        public bool CompletionVisible => (bool)GetValue(CompletionVisibleProperty);
         private readonly ChargeSweep _sweep;
         internal bool IsChargeSweepRunning => _sweep.IsRunning;
         public bool AnimateCharge { get; set; } = true;
@@ -63,56 +68,44 @@ namespace MouseDock.Controls
             glyph.SetBinding(VisibilityProperty, new Binding(nameof(ShowGlyph))
                 { Source = this, Converter = new BooleanToVisibilityConverter() });
             Children.Add(glyph);
-            var bolt = new TextBlock
-            {
-                Name = "ChargingMark", FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI Symbol"),
-                FontSize = 12, Width = 12, Height = 14, Margin = new Thickness(0, 0, 1, 4),
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
-                IsHitTestVisible = false,
-                Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    Color = Colors.Black, BlurRadius = 2, ShadowDepth = 0, Opacity = 0.85
-                }
-            };
-            var markStyle = new Style(typeof(TextBlock));
-            markStyle.Setters.Add(new Setter(TextBlock.TextProperty, "\uE945"));
-            var fullTrigger = new DataTrigger { Binding = new Binding(nameof(Full)) { Source = this }, Value = true };
-            fullTrigger.Setters.Add(new Setter(TextBlock.TextProperty, "✓"));
-            markStyle.Triggers.Add(fullTrigger);
-            bolt.Style = markStyle;
-            bolt.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(GlyphBrush)) { Source = this });
-            var chargingVisibility = new MultiBinding { Converter = new ChargingVisibilityConverter() };
-            chargingVisibility.Bindings.Add(new Binding(nameof(Charging)) { Source = this });
-            chargingVisibility.Bindings.Add(new Binding(nameof(ShowChargingMark)) { Source = this });
-            chargingVisibility.Bindings.Add(new Binding(nameof(Full)) { Source = this });
-            bolt.SetBinding(VisibilityProperty, chargingVisibility);
-            Children.Add(bolt);
-        }
-
-        private sealed class ChargingVisibilityConverter : IMultiValueConverter
-        {
-            public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
-                (values[0] is true || values[2] is true) && values[1] is true ? Visibility.Visible : Visibility.Collapsed;
-            public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture) =>
-                throw new NotSupportedException();
+            var glyphStyle = new Style(typeof(DeviceGlyph));
+            var completing = new DataTrigger { Binding = new Binding(nameof(CompletionVisible)) { Source = this }, Value = true };
+            completing.Setters.Add(new Setter(OpacityProperty, 0d));
+            glyphStyle.Triggers.Add(completing);
+            glyph.Style = glyphStyle;
         }
 
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
             var center = new Point(ActualWidth / 2, ActualHeight / 2);
-            double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - 4);
+            double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - 7);
             var trackBrush = GlyphBrush.Clone();
             trackBrush.Opacity = 0.28;
             var track = new Pen(trackBrush, 2.5);
             if (Level < 0) track.DashStyle = new DashStyle(new double[] { 1, 2 }, 0);
             dc.DrawEllipse(null, track, center, radius, radius);
-            double phase = _sweep.Phase(AnimateCharge && Charging && Level > 0);
-            double drawnLevel = _sweep.Follow(0, Level, phase >= 0);
-            if (drawnLevel <= 0) return;
+            long completed = _sweep.Completion(0, Charging, Full);
+            bool showCheck = ShowChargingMark && completed < ChargeSweep.CompletionDuration;
+            if (CompletionVisible != showCheck) SetValue(CompletionVisiblePropertyKey, showCheck);
+            bool animateCharge = AnimateCharge && (Charging || completed < ChargeSweep.FadeDuration);
+            double drawnLevel = _sweep.Follow(0, Full ? 100 : Level, AnimateCharge);
+            double phase = _sweep.Phase(animateCharge || _sweep.IsFollowing(0), showCheck);
+            if (drawnLevel > 0) DrawProgress(dc, center, radius, drawnLevel);
+            if (animateCharge)
+                ChargeSweep.RingEffect(dc, center, radius, drawnLevel, 2.5, phase, completed);
+            if (showCheck)
+            {
+                var check = new FormattedText("✓", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                    new Typeface("Segoe UI Symbol"), 16, GlyphBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                dc.DrawText(check, new Point(center.X - check.Width / 2, center.Y - check.Height / 2));
+            }
+        }
 
+        private void DrawProgress(DrawingContext dc, Point center, double radius, double drawnLevel)
+        {
             var color = Charging ? Color.FromRgb(56, 189, 248)
-                : Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
+                : !Full && Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
                 : Color.FromRgb(52, 211, 153);
             var pen = new Pen(BatteryBrush ?? new SolidColorBrush(color), 2.5)
             {
@@ -121,7 +114,6 @@ namespace MouseDock.Controls
             if (drawnLevel >= 100)
             {
                 dc.DrawEllipse(null, pen, center, radius, radius);
-                ChargeSweep.Arc(dc, center, radius, drawnLevel, pen.Thickness, phase);
                 return;
             }
             double angle = drawnLevel * 3.6;
@@ -135,7 +127,6 @@ namespace MouseDock.Controls
                 new Point(center.X + radius * Math.Cos(radians), center.Y + radius * Math.Sin(radians)),
                 new Size(radius, radius), 0, angle > 180, SweepDirection.Clockwise, true));
             dc.DrawGeometry(null, pen, new PathGeometry(new[] { figure }));
-            ChargeSweep.Arc(dc, center, radius, drawnLevel, pen.Thickness, phase);
         }
     }
 }

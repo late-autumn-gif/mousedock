@@ -78,11 +78,9 @@ internal static class EdgeDisplayChecks
         ring.Measure(new Size(40, 40));
         ring.Arrange(new Rect(0, 0, 40, 40));
         ring.UpdateLayout();
-        var bolt = Children<TextBlock>(ring).FirstOrDefault(t => t.Name == "ChargingMark");
-        Require(bolt != null && bolt.Visibility == Visibility.Visible,
-            "Charging needs a visible bolt even when level is unknown.");
-        ring.Charging = false;
-        Require(bolt!.Visibility == Visibility.Collapsed, "Bolt must disappear when not charging.");
+        Require(!ring.CompletionVisible, "An unknown charging level must not show a completion mark.");
+        Require(!Children<TextBlock>(ring).Any(t => t.Name == "ChargingMark"),
+            "The ring must show charging through animation without a lightning glyph.");
     }
 
     public static void SettingsRoundTrip()

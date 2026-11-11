@@ -22,22 +22,26 @@ internal sealed class ChargeSweep
         _owner.Unloaded += (_, _) => _timer.Stop();
         _owner.IsVisibleChanged += (_, _) =>
         {
-            if (!_owner.IsVisible) _timer.Stop();
+            if (!_owner.IsVisible)
+            {
+                _timer.Stop();
+                _completion.Clear();
+            }
             else _owner.InvalidateVisual();
         };
     }
 
     internal bool IsRunning => _timer.IsEnabled;
 
-    internal double Phase(bool active)
+    internal double Phase(bool active, bool repaint = false)
     {
-        if (!active || !_owner.IsLoaded || !_owner.IsVisible || !SystemParameters.ClientAreaAnimation)
+        if ((!repaint && (!active || !SystemParameters.ClientAreaAnimation)) || !_owner.IsLoaded || !_owner.IsVisible)
         {
             _timer.Stop();
             return -1;
         }
         if (!_timer.IsEnabled) _timer.Start();
-        return (Environment.TickCount64 % 1800) / 1800d;
+        return active && SystemParameters.ClientAreaAnimation ? (Environment.TickCount64 % 1800) / 1800d : -1;
     }
 
     private readonly System.Collections.Generic.Dictionary<int, (double From, double Target, long At)> _levels = new();
@@ -56,7 +60,28 @@ internal sealed class ChargeSweep
         return current;
     }
 
-    internal void Reset(int slot) => _levels.Remove(slot);
+    private readonly System.Collections.Generic.Dictionary<int, (bool Charging, long CompletedAt)> _completion = new();
+
+    internal long Completion(int slot, bool charging, bool full)
+    {
+        long now = Environment.TickCount64;
+        _completion.TryGetValue(slot, out var previous);
+        long completedAt = full ? previous.Charging ? now : previous.CompletedAt : 0;
+        _completion[slot] = (charging && !full, completedAt);
+        return completedAt == 0 ? long.MaxValue : now - completedAt;
+    }
+
+    internal const int CompletionDuration = 1200;
+    internal const int FadeDuration = 450;
+
+    internal bool IsFollowing(int slot) => _levels.TryGetValue(slot, out var value) &&
+        value.From != value.Target && Environment.TickCount64 - value.At < 300;
+
+    internal void Reset(int slot)
+    {
+        _levels.Remove(slot);
+        _completion.Remove(slot);
+    }
 
     internal static double Interpolate(double from, double target, long elapsed) =>
         from + (target - from) * Math.Clamp(elapsed / 300d, 0, 1);
@@ -64,20 +89,21 @@ internal sealed class ChargeSweep
     internal static bool Wave => string.Equals(App.Settings?.ChargeEffect, "wave", StringComparison.Ordinal);
 
     internal static void Fill(DrawingContext dc, Rect track, double fraction, double radius,
-        Brush brush, double phase, bool vertical = false, bool wave = true)
+        Brush brush, double phase, bool vertical = false, bool? wave = null)
     {
         if (fraction <= 0 || track.Width <= 0 || track.Height <= 0) return;
         fraction = Math.Min(1, fraction);
         var fill = vertical
             ? new Rect(track.X, track.Bottom - track.Height * fraction, track.Width, track.Height * fraction)
             : new Rect(track.X, track.Y, track.Width * fraction, track.Height);
+        bool useWave = wave ?? Wave;
         double span = vertical ? track.Height : track.Width;
-        double amplitude = phase >= 0 && wave
+        double amplitude = phase >= 0 && useWave
             ? Math.Min(3, span * Math.Min(fraction, 1 - fraction) * .45) : 0;
         if (amplitude <= 0)
         {
             dc.DrawRoundedRectangle(brush, null, fill, radius, radius);
-            if (phase >= 0 && !wave)
+            if (phase >= 0 && !useWave)
             {
                 var shine = new LinearGradientBrush(Colors.Transparent, Colors.Transparent, vertical ? 90 : 0);
                 shine.GradientStops.Insert(1, new GradientStop(Color.FromArgb(155, 255, 255, 255), .5));
@@ -118,12 +144,29 @@ internal sealed class ChargeSweep
         dc.Pop();
     }
 
+    internal static void Pulse(DrawingContext dc, Point center, double radius, double phase)
+    {
+        double brightness = phase < 0 ? .65 : .65 + .3 * Math.Sin(Environment.TickCount64 / 2400d * 2 * Math.PI);
+        dc.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(255 * brightness), 88, 230, 210)),
+            new Pen(App.Theme.IsLight ? Brushes.Black : Brushes.WhiteSmoke, .7), center, radius, radius);
+    }
+
+    internal static void RingEffect(DrawingContext dc, Point center, double radius, double level, double thickness,
+        double phase, long completion, bool? wave = null, Color? halo = null)
+    {
+        bool fading = completion < FadeDuration;
+        if (fading) dc.PushOpacity(1 - completion / (double)FadeDuration);
+        Arc(dc, center, radius, level, thickness, phase, wave, halo);
+        if (fading) dc.Pop();
+    }
+
     internal static void Arc(DrawingContext dc, Point center, double radius, double level, double thickness, double phase, bool? wave = null, Color? haloColor = null)
     {
         if (phase < 0 || radius <= 0) return;
         bool useWave = wave ?? Wave;
-        if (useWave && haloColor is Color halo)
+        if (useWave)
         {
+            var halo = haloColor ?? Color.FromRgb(100, 240, 220);
             var highlight = Color.FromRgb(
                 (byte)((halo.R + 255) / 2), (byte)((halo.G + 255) / 2), (byte)((halo.B + 255) / 2));
             double pulse = .5 + .5 * Math.Sin(Environment.TickCount64 / 2400d * 2 * Math.PI);
@@ -142,12 +185,11 @@ internal sealed class ChargeSweep
             }
             return;
         }
-        if (level <= 0 || (useWave && level >= 100)) return;
+        if (level <= 0) return;
         double extent = Math.Clamp(level, 0, 100) / 100d * 2 * Math.PI;
         double length = Math.Min(extent, .48);
 
-        double head = useWave ? extent : (extent + length) * phase;
-        if (useWave) length *= .65 + .35 * Math.Sin(phase * 2 * Math.PI);
+        double head = (extent + length) * phase;
         double start = Math.Max(0, head - length), end = Math.Min(extent, head);
         if (end <= start) return;
         Point At(double angle) => new(center.X + radius * Math.Sin(angle), center.Y - radius * Math.Cos(angle));
@@ -157,7 +199,6 @@ internal sealed class ChargeSweep
             context.BeginFigure(At(start), false, false);
             context.ArcTo(At(end), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, false);
         }
-        if (useWave) dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(100, 102, 248, 222)), thickness * 1.8), path);
         dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(155, 255, 255, 255)), thickness), path);
     }
 }

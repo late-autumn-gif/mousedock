@@ -511,7 +511,7 @@ namespace MouseDock
 
             try
             {
-                var replacement = RenderTrayIcon(level, charging, low && _trayBlinkOn, dev?.IsFullActive == true);
+                var replacement = RenderTrayIcon(level, charging, (low || charging) && _trayBlinkOn, dev?.IsFullActive == true);
                 var previous = _tray.Icon;
                 try { _tray.Icon = replacement; }
                 catch { replacement.Dispose(); throw; }
@@ -523,7 +523,7 @@ namespace MouseDock
             }
             catch { }
 
-            if (low && SystemParameters.ClientAreaAnimation)
+            if ((low || charging) && SystemParameters.ClientAreaAnimation)
             {
                 if (_trayBlink == null)
                 {
@@ -561,14 +561,16 @@ namespace MouseDock
                 System.Drawing.Color bg = System.Drawing.Color.FromArgb(shade.R, shade.G, shade.B);
                 var textColor = ColorContrast.Legible(palette.Text, new[] { shade });
                 var ink = System.Drawing.Color.FromArgb(textColor.R, textColor.G, textColor.B);
-                if (dim) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
+                if (dim && !charging) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
+                if (charging && dim) bg = System.Drawing.Color.FromArgb(
+                    (bg.R * 3 + 255) / 4, (bg.G * 3 + 255) / 4, (bg.B * 3 + 255) / 4);
 
                 using (var path = RoundedRect(new System.Drawing.Rectangle(1, 1, size - 2, size - 2), 7))
                 using (var fill = new System.Drawing.SolidBrush(bg))
                     g.FillPath(fill, path);
 
                 string txt = level >= 0 ? level.ToString() : "—";
-                string mark = full ? "✓" : charging ? "⚡" : "";
+                string mark = full ? "✓" : "";
                 if (mark.Length > 0) txt += " " + mark;
                 float px = txt.Length >= 4 ? 9f : txt.Length >= 3 ? 12f : 15f;
                 using var font = new System.Drawing.Font("Segoe UI Symbol", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);

@@ -49,8 +49,11 @@ internal sealed class PetBatteryGauge : FrameworkElement
         bool charging = _device?.IsChargingActive == true;
         bool full = _device?.IsFullActive == true;
         bool stale = _device?.IsStale == true || _device?.Connected == false;
-        double phase = _sweep.Phase(_motion && !stale && (charging || Environment.TickCount64 < _transitionUntil));
-        double level = _sweep.Follow(0, _level, phase >= 0);
+        long completed = _sweep.Completion(0, charging, full);
+        bool showCheck = completed < ChargeSweep.CompletionDuration;
+        bool halo = _motion && (charging || completed < ChargeSweep.FadeDuration);
+        double phase = _sweep.Phase(_motion && !stale && (halo || Environment.TickCount64 < _transitionUntil), showCheck);
+        double level = _sweep.Follow(0, full ? 100 : _level, phase >= 0);
         var fill = full ? Brushes.Aquamarine : charging ? _chargingAccent :
             _level >= 0 && _level <= _lowThreshold && !stale ? Brushes.Orange : _accent;
         var track = new SolidColorBrush(Color.FromRgb(54, 69, 88));
@@ -86,11 +89,10 @@ internal sealed class PetBatteryGauge : FrameworkElement
                 }
                 dc.DrawGeometry(null, pen, arc);
             }
-            ChargeSweep.Arc(dc, center, radius, level, width, chargingPhase, _wave, _halo);
+            if (halo) ChargeSweep.RingEffect(dc, center, radius, level, width, phase, completed, _wave, _halo);
         }
 
-        string label = _level >= 0 ? $"{_level}%" : "—";
-        if (full) label += " ✓";
+        string label = showCheck ? "✓" : full ? "100%" : _level >= 0 ? $"{_level}%" : "—";
         var text = new FormattedText(label, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             new Typeface("Segoe UI Semibold"), 14, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
         dc.DrawText(text, new Point(center.X - text.Width / 2, center.Y - text.Height / 2));

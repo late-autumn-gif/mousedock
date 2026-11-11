@@ -57,6 +57,7 @@ internal static class ChargingVisualRegression
                     var ring = new DeviceBatteryRing();
                     ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
                     ring.SetBinding(DeviceBatteryRing.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
+                    ring.SetBinding(DeviceBatteryRing.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
                     rings.Add(ring); row.Children.Add(ring);
                     var state = new TextBlock { Foreground = Brushes.LightGray, FontSize = 11, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                     state.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.StatusText)));
@@ -92,7 +93,7 @@ internal static class ChargingVisualRegression
                         {
                             var drawing = new DrawingGroup();
                             using (var dc = drawing.Open())
-                                ChargeSweep.Fill(dc, new Rect(0, 0, 40, 40), level, 2, Brushes.Green, phase, vertical);
+                                ChargeSweep.Fill(dc, new Rect(0, 0, 40, 40), level, 2, Brushes.Green, phase, vertical, wave: true);
                             return drawing.Children[0] as DrawingGroup ?? drawing;
                         }
 
@@ -123,6 +124,14 @@ internal static class ChargingVisualRegression
                     Check(!rings[0].IsChargeSweepRunning && glyphs[0].Visibility == Visibility.Collapsed, "Stopping charge removes the glyph and animation clock");
                     devices[0].Charging = true; Pump(50);
                     Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation, "Fresh charging can restart without reconstructing the view");
+                    devices[0].Level = 100; Pump(380);
+                    Check(!rings[0].CompletionVisible, "A 100 percent reading during charging must not show a check.");
+                    devices[0].ChargeFull = true; Pump(80);
+                    Check(rings[0].CompletionVisible, "Explicit full must show a temporary center check.");
+                    Capture("明确满电-勾号.png");
+                    Pump(ChargeSweep.CompletionDuration + 100);
+                    Check(!rings[0].CompletionVisible && !rings[0].IsChargeSweepRunning,
+                        "A persistent full report must settle and stop its timer.");
                     window.Hide(); Pump(30);
                     Check(rings.All(g => !g.IsChargeSweepRunning), "Hidden views do not retain running charging clocks");
                 }

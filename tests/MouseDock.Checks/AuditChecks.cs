@@ -76,7 +76,7 @@ internal static class AuditChecks
             source.Device.Charging = true;
             Wait(battery.PollAsync());
             Flush();
-            Require(status.Text is "⚡ 接电" or "充电中", "A confirmed charging transition must be visible.");
+            Require(status.Text is "接电" or "充电中", "A confirmed charging transition must be visible.");
             if (character != "shin-chan")
                 Require(ReferenceEquals(image.Source, frames[4]), "Confirmed charging must select that character's charging art.");
             long firstAction = ActionUntil();

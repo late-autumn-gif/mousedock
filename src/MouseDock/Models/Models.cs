@@ -157,8 +157,8 @@ namespace MouseDock.Models
         }
         public bool IsFullActive => _connected && _chargeFull && !_stale;
         public bool IsChargingActive => _connected && _charging && !_stale && !_chargeFull;
-        public bool HasChargeMark => IsFullActive || IsChargingActive;
-        public string ChargeMark => IsFullActive ? "✓" : IsChargingActive ? "\uE945" : "";
+        public bool HasChargeMark => IsFullActive;
+        public string ChargeMark => IsFullActive ? "✓" : "";
         public string StatusText => !_connected ? "待机" : _stale ? "已连接 · 状态待刷新" : _chargeFull ? "已连接 · 已充满" : _charging ? "已连接 · 充电中" : "已连接";
 
         public string MetaLabel => KindLabel + (string.IsNullOrWhiteSpace(Transport) ? "" : " · " + Transport);

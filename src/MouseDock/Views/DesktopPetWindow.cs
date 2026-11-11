@@ -260,7 +260,7 @@ internal sealed class DesktopPetWindow : Window
                 Canvas.SetTop(star, 13 + i * 13 - progress * 10);
             }
         }
-        _status.Text = pose == Pose.Transition && !_skin.HasBlink ? "⚡ 接电" : Status(_device);
+        _status.Text = pose == Pose.Transition && !_skin.HasBlink ? "接电" : Status(_device);
     }
 
     private void RebuildList()

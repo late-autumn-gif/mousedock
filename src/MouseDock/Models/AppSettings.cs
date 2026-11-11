@@ -108,7 +108,7 @@ namespace MouseDock.Models
         public double DesktopPetY { get; set; } = .75;
         public bool NotifyChargeCompleted { get; set; } = true;
 
-        public string ChargeEffect { get; set; } = "lightning";
+        public string ChargeEffect { get; set; } = "wave";
         public double EdgeSizePercent { get; set; } = 100;
         public double EdgeInset { get; set; } = 12;
 
