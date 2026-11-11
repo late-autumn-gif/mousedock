@@ -157,10 +157,10 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             numberBounds = new Rect(textLeft, plate.Y, Math.Max(1, plate.Right - textLeft), plate.Height);
         }
         if (ShowNumber)
-            Text(dc, (Level < 0 ? "\u2014" : Level + "%") + (Full && !Stale ? " ✓" : ""),
+            Text(dc, (Level < 0 ? "\u2014" : Level + "%") + (Full && !Stale ? " ✓" : Charging && !Stale ? " ⚡" : ""),
                 numberBounds, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
-        else if (ShowGlyph && !Stale && Full)
-            Text(dc, "✓", numberBounds, plate.Height * .7, Accent, true);
+        else if (ShowGlyph && !Stale && (Full || Charging))
+            Text(dc, Full ? "✓" : "⚡", numberBounds, plate.Height * .7, Accent, true);
         dc.Pop();
     }
 
@@ -227,7 +227,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                 string value = level < 0 ? "\u2014" : level + "%";
                 bool charging = (device?.IsChargingActive ?? Charging) && !stale;
                 if ((device?.IsFullActive ?? Full) && !stale) value += " ✓";
-
+                else if (charging) value += " \u26A1";
                 Text(dc, value, number, Math.Min(20, row.Height * .45), Status(level, true), true);
                 Label(dc, device?.Name ?? "", new Rect(row.X + 20, row.Y + 1, Math.Max(1, row.Width - 91), lineHeight),
                     Math.Min(12, row.Height * .24), ink);

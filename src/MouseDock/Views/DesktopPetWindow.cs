@@ -3,10 +3,9 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -47,7 +46,6 @@ internal sealed class DesktopPetWindow : Window
     private ImageSource[] _frames;
     private Character _skin;
     private readonly Border _bubble;
-    private readonly Border _listBackground;
     private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
     private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
@@ -57,7 +55,7 @@ internal sealed class DesktopPetWindow : Window
     private readonly TextBlock _name = new() { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _status = new() { Foreground = Brushes.LightGray, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel _deviceList = new();
-    private readonly Popup _popup;
+    private DeviceInfo[] _listedDevices = Array.Empty<DeviceInfo>();
     private readonly DispatcherTimer _timer;
     private DeviceInfo _device;
     private Pose _action;
@@ -96,7 +94,6 @@ internal sealed class DesktopPetWindow : Window
         {
             if (_settings.DesktopPetLocked || e.LeftButton != MouseButtonState.Pressed ||
                 (e.GetPosition(this) - _dragStart).Length < SystemParameters.MinimumHorizontalDragDistance) return;
-            _popup.IsOpen = false;
             _dragging = true;
             try { DragMove(); }
             catch (InvalidOperationException) { return; }
@@ -111,42 +108,21 @@ internal sealed class DesktopPetWindow : Window
         var summary = new StackPanel { Orientation = Orientation.Horizontal };
         summary.Children.Add(_gauge);
         summary.Children.Add(details);
+        var batteryContent = new StackPanel { Width = 205 };
+        batteryContent.Children.Add(summary);
+        batteryContent.Children.Add(new ScrollViewer
+        {
+            Content = _deviceList, MaxHeight = 236, VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        });
         _bubble = new Border
         {
-            Child = summary, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1),
-            Padding = new Thickness(3, 0, 8, 0)
-        };
-        var bubble = new Button
-        {
-            Content = _bubble,
-            Template = new ControlTemplate(typeof(Button))
-            {
-                VisualTree = new FrameworkElementFactory(typeof(ContentPresenter))
-            },
-            Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand
-        };
-        AutomationProperties.SetName(bubble, "展开外设电量列表");
-
-        _listBackground = new Border
-        {
-            CornerRadius = new CornerRadius(13), Padding = new Thickness(8), MinWidth = 210,
-            BorderThickness = new Thickness(1),
-            Child = new ScrollViewer { Content = _deviceList, MaxHeight = 310, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }
-        };
-        _popup = new Popup
-        {
-            PlacementTarget = bubble, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true,
-            Child = _listBackground
+            Child = batteryContent, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1),
+            Padding = new Thickness(5, 0, 7, 5), VerticalAlignment = VerticalAlignment.Center
         };
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
-        bubble.Click += (_, _) =>
-        {
-            _popup.IsOpen = !_popup.IsOpen;
-            if (_popup.IsOpen) RebuildList();
-        };
         var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
         layout.Children.Add(portrait);
-        layout.Children.Add(bubble);
+        layout.Children.Add(_bubble);
         Content = layout;
 
         ContextMenu = new ContextMenu();
@@ -156,7 +132,7 @@ internal sealed class DesktopPetWindow : Window
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) Refresh();
-            else { _timer.Stop(); _popup.IsOpen = false; }
+            else _timer.Stop();
         };
         Loaded += (_, _) => PlaceOnScreen(remember: false);
         _battery.Refreshed += OnRefresh;
@@ -180,8 +156,10 @@ internal sealed class DesktopPetWindow : Window
         _skin = skin;
         _actionUntil = 0;
         Title = $"MouseDock · {skin.Name}桌宠";
-        _bubble.Background = _listBackground.Background = skin.Surface;
-        _bubble.BorderBrush = _listBackground.BorderBrush = skin.Outline;
+        _bubble.Background = skin.Surface;
+        _bubble.BorderBrush = skin.Outline;
+        _listedDevices = Array.Empty<DeviceInfo>();
+        _deviceList.Children.Clear();
     }
 
     private bool Motion => !_settings.DesktopPetReduceMotion && SystemParameters.ClientAreaAnimation;
@@ -202,10 +180,8 @@ internal sealed class DesktopPetWindow : Window
 
     private void Refresh()
     {
-        bool automatic = string.IsNullOrEmpty(_settings.DesktopPetDevice);
-        var device = automatic ? _battery.VisibleDevices.FirstOrDefault() :
-            _battery.Devices.FirstOrDefault(d => d.Id == _settings.DesktopPetDevice &&
-                d.Selected && d.RecognitionEnabled && !d.Hidden);
+        var displayed = _battery.Devices.Where(d => d.IsDisplayEligible).ToArray();
+        var device = displayed.FirstOrDefault(d => d.Id == _settings.DesktopPetDevice) ?? displayed.FirstOrDefault();
         bool charging = device?.IsChargingActive == true;
         bool changed = device?.Id != _device?.Id;
         if (changed) _actionUntil = 0;
@@ -213,13 +189,19 @@ internal sealed class DesktopPetWindow : Window
         _device = device;
         _charging = charging;
 
-        _name.Text = device?.Name ?? (automatic ? "未选择设备" : "所选设备不可用");
+        _name.Text = device?.Name ?? "未选择设备";
         _name.ToolTip = device?.Name;
         _status.Text = Status(device);
         _bubble.BorderBrush = IsLow ? Brushes.Orange : device?.IsFullActive == true ? Brushes.Aquamarine : _skin.Outline;
         _gauge.Update(device, _settings.DesktopPetStyle, _settings.DesktopPetWave, Motion,
             _skin.Accent, _skin.ChargingAccent, _skin.Halo, _settings.LowBatteryWarn);
-        if (_popup.IsOpen) RebuildList();
+        if (!_listedDevices.SequenceEqual(displayed))
+        {
+            _listedDevices = displayed;
+            RebuildList();
+            if (IsLoaded)
+                Dispatcher.BeginInvoke(new Action(() => PlaceOnScreen(remember: false)), DispatcherPriority.Loaded);
+        }
         if (IsVisible && Motion) _timer.Start();
         else _timer.Stop();
         RenderPose();
@@ -227,7 +209,7 @@ internal sealed class DesktopPetWindow : Window
 
     private static string Status(DeviceInfo device)
     {
-        if (device == null) return "点击查看设备";
+        if (device == null) return "右键选择显示设备";
         if (device.IsFullActive) return "已充满";
         if (device.IsChargingActive) return "充电中";
         if ((device.IsStale || !device.Connected) && device.Level >= 0) return $"上次 {device.Level}%";
@@ -284,22 +266,31 @@ internal sealed class DesktopPetWindow : Window
     private void RebuildList()
     {
         _deviceList.Children.Clear();
-        foreach (var device in _battery.VisibleDevices)
+        foreach (var device in _listedDevices)
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(new DeviceGlyph { Kind = device.Kind, Width = 18, Height = 18, GlyphBrush = _skin.Accent, Margin = new Thickness(0, 0, 8, 0) });
-            string value = device.Level >= 0 ? $"{device.Level}%" : "—";
-            row.Children.Add(new TextBlock
-            {
-                Text = $"{device.Name}   {value}   {Status(device)}", Foreground = Brushes.White,
-                MaxWidth = 370, TextTrimming = TextTrimming.CharacterEllipsis
-            });
-            var item = new Button { Content = row, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(7), ToolTip = device.Name };
-            item.Click += (_, _) => { _popup.IsOpen = false; Follow(device.Id); };
+            var row = new Grid { Width = 175, DataContext = device };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var glyph = new DeviceGlyph { Width = 15, Height = 15, GlyphBrush = _skin.Accent, Margin = new Thickness(0, 0, 7, 0) };
+            glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
+            row.Children.Add(glyph);
+
+            var name = new TextBlock { Foreground = Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 6, 0) };
+            name.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Name)));
+            Grid.SetColumn(name, 1);
+            row.Children.Add(name);
+
+            var reading = new TextBlock { Foreground = _skin.Accent };
+            reading.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)));
+            reading.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
+            Grid.SetColumn(reading, 2);
+            row.Children.Add(reading);
+            var item = new Button { Content = row, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(4) };
+            item.SetBinding(ToolTipProperty, new Binding(nameof(DeviceInfo.StatusText)) { Source = device });
+            item.Click += (_, _) => Follow(device.Id);
             _deviceList.Children.Add(item);
         }
-        if (_deviceList.Children.Count == 0)
-            _deviceList.Children.Add(new TextBlock { Text = "暂无可显示的设备", Foreground = Brushes.White, Margin = new Thickness(8) });
     }
 
     private void Follow(string id)
@@ -323,9 +314,18 @@ internal sealed class DesktopPetWindow : Window
             }, ReferenceEquals(_skin, skin));
         ContextMenu.Items.Add(characters);
 
+        var display = new MenuItem { Header = "显示设备", IsEnabled = _battery.Devices.Any(d => d.Connected && d.RecognitionEnabled && !d.Hidden) };
+        foreach (var device in _battery.Devices.Where(d => d.Connected && d.RecognitionEnabled && !d.Hidden))
+        {
+            var item = new MenuItem { Header = device.Name, IsCheckable = true, IsChecked = device.Selected, StaysOpenOnClick = true };
+            item.Click += (_, _) => _battery.SetSelected(device, item.IsChecked);
+            display.Items.Add(item);
+        }
+        ContextMenu.Items.Add(display);
+
         var follow = new MenuItem { Header = "跟随设备" };
         Add(follow.Items, "自动选择", () => Follow(""), _settings.DesktopPetDevice == "");
-        foreach (var device in _battery.VisibleDevices)
+        foreach (var device in _listedDevices)
             Add(follow.Items, device.Name, () => Follow(device.Id), _settings.DesktopPetDevice == device.Id);
         ContextMenu.Items.Add(follow);
 
@@ -419,7 +419,6 @@ internal sealed class DesktopPetWindow : Window
     {
         _closed = true;
         _timer.Stop();
-        _popup.IsOpen = false;
         _battery.Refreshed -= OnRefresh;
         _battery.VisibleDevices.CollectionChanged -= OnDevicesChanged;
         _battery.ChargeCompleted -= OnFull;

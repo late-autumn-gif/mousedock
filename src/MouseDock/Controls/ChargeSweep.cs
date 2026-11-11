@@ -118,23 +118,14 @@ internal sealed class ChargeSweep
         dc.Pop();
     }
 
-    internal static void Pulse(DrawingContext dc, Point center, double radius, double phase)
-    {
-        if (phase < 0) return;
-        double pulse = .5 + .5 * Math.Sin(Environment.TickCount64 / 2400d * 2 * Math.PI);
-        dc.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(100 + 90 * pulse), 88, 230, 210)),
-            new Pen(App.Theme.IsLight ? Brushes.Black : Brushes.WhiteSmoke, .7), center, radius, radius);
-    }
-
     internal static void Arc(DrawingContext dc, Point center, double radius, double level, double thickness, double phase, bool? wave = null, Color? haloColor = null)
     {
         if (phase < 0 || radius <= 0) return;
-        if (wave ?? Wave)
+        bool useWave = wave ?? Wave;
+        if (useWave && haloColor is Color halo)
         {
-            var halo = haloColor ?? Color.FromRgb(100, 240, 220);
-            var highlight = haloColor.HasValue ? Color.FromRgb(
-                (byte)((halo.R + 255) / 2), (byte)((halo.G + 255) / 2), (byte)((halo.B + 255) / 2))
-                : Color.FromRgb(170, 255, 238);
+            var highlight = Color.FromRgb(
+                (byte)((halo.R + 255) / 2), (byte)((halo.G + 255) / 2), (byte)((halo.B + 255) / 2));
             double pulse = .5 + .5 * Math.Sin(Environment.TickCount64 / 2400d * 2 * Math.PI);
             double outer = radius + thickness * 1.25;
             dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb((byte)(24 + 18 * pulse), halo.R, halo.G, halo.B)),
@@ -151,11 +142,12 @@ internal sealed class ChargeSweep
             }
             return;
         }
-        if (level <= 0) return;
+        if (level <= 0 || (useWave && level >= 100)) return;
         double extent = Math.Clamp(level, 0, 100) / 100d * 2 * Math.PI;
         double length = Math.Min(extent, .48);
 
-        double head = (extent + length) * phase;
+        double head = useWave ? extent : (extent + length) * phase;
+        if (useWave) length *= .65 + .35 * Math.Sin(phase * 2 * Math.PI);
         double start = Math.Max(0, head - length), end = Math.Min(extent, head);
         if (end <= start) return;
         Point At(double angle) => new(center.X + radius * Math.Sin(angle), center.Y - radius * Math.Cos(angle));
@@ -165,6 +157,7 @@ internal sealed class ChargeSweep
             context.BeginFigure(At(start), false, false);
             context.ArcTo(At(end), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, false);
         }
+        if (useWave) dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(100, 102, 248, 222)), thickness * 1.8), path);
         dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(155, 255, 255, 255)), thickness), path);
     }
 }

@@ -17,8 +17,8 @@ internal static class IconCompositionChecks
             Require(size.Width == size.Height, $"{style} with {count} devices does not stay square.");
         }
         var cells = (Rect[])type.GetMethod("CompactCells")!.Invoke(null, [4, new Size(144, 144)])!;
-        Require(cells.Length == 4 && cells[0].Left == cells[1].Left && cells[1].Left == cells[2].Left &&
-            cells[1].Top > cells[0].Bottom && cells[3].Left > cells[0].Right, "Compact devices must fill up to three rows before moving right.");
+        Require(cells.Length == 4 && cells[0].Top == cells[1].Top && cells[2].Top == cells[3].Top &&
+            cells[2].Top > cells[0].Bottom && cells[1].Left > cells[0].Right, "Four compact devices do not form two separate rows and columns.");
         var identity = type.GetMethod("IdentityColor")!;
         var first = (Color)identity.Invoke(null, ["rk-r98-instance"])!;
         var second = (Color)identity.Invoke(null, ["g603-instance"])!;

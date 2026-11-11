@@ -16,11 +16,8 @@ namespace MouseDock.Controls
         public bool Active { get => (bool)GetValue(ActiveProperty); set => SetValue(ActiveProperty, value); }
         public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
 
-        private readonly ChargeSweep sweep;
-
         public ChargingGlyph()
         {
-            sweep = new ChargeSweep(this);
             Visibility = Visibility.Collapsed;
             IsVisibleChanged += (_, _) => { if (!IsVisible) BeginAnimation(OpacityProperty, null); };
         }
@@ -43,14 +40,7 @@ namespace MouseDock.Controls
         protected override void OnRender(DrawingContext dc)
         {
             if ((!Active && !Full) || ActualWidth <= 0 || ActualHeight <= 0) return;
-            if (!Full)
-            {
-                ChargeSweep.Pulse(dc, new Point(ActualWidth / 2, ActualHeight / 2),
-                    Math.Min(ActualWidth, ActualHeight) * .22, sweep.Phase(Active));
-                return;
-            }
-            sweep.Phase(false);
-            var text = new FormattedText("✓", CultureInfo.CurrentUICulture,
+            var text = new FormattedText(Full ? "✓" : "\uE945", CultureInfo.CurrentUICulture,
                 FlowDirection.LeftToRight, new Typeface(Full ? "Segoe UI Symbol" : "Segoe MDL2 Assets"),
                 Math.Min(ActualWidth, ActualHeight) * .82, Brushes.Aquamarine, VisualTreeHelper.GetDpi(this).PixelsPerDip);
             dc.DrawText(text, new Point((ActualWidth - text.Width) / 2, (ActualHeight - text.Height) / 2));

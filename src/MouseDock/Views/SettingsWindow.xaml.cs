@@ -68,6 +68,9 @@ namespace MouseDock.Views
 
         private void OnHeadsetAudioClick(object sender, RoutedEventArgs e) => App.ShowHeadsets();
 
+        private void OnDesktopPetClick(object sender, RoutedEventArgs e) =>
+            App.SetDesktopPetVisible(!App.Settings.DesktopPetEnabled);
+
         public void Reload()
         {
             VersionText.Text = "  v" + typeof(App).Assembly.GetName().Version?.ToString(3);
@@ -154,7 +157,7 @@ namespace MouseDock.Views
         {
             int selected = App.Battery.Devices.Count(d => d.Selected);
             DeviceHint.Text = selected > BatteryService.DisplayDeviceLimit
-                ? $"已勾选 {selected} 台，各视图只显示前 {BatteryService.DisplayDeviceLimit} 台；右键可管理设备"
+                ? $"已勾选 {selected} 台，主面板等视图最多显示 {BatteryService.DisplayDeviceLimit} 台，桌宠显示全部勾选设备；右键可管理设备"
                 : "勾选同步到所有视图；隐藏或取消识别后，仍可在这里恢复";
         }
 

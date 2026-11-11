@@ -86,7 +86,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 : Devices.Take(6).ToArray();
             if (items.Length == 0) items = new[] { (DeviceKind.Mouse, -1, false, false) };
             _sweep ??= new ChargeSweep(this);
-            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale));
+            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale && (item.Level > 0 || (style == "ring" && !ChargeSweep.Wave))));
             if (style == "multi") DrawMulti(drawing, items);
             else if (items.Length > 1) DrawRows(drawing, style, items);
             else DrawSingle(drawing, style, items[0]);
@@ -96,7 +96,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
 
     private double DrawnLevel(int slot, int target, bool charging) => _sweep.Follow(slot, target, charging && _phase >= 0);
 
-    private void DrawSingle(DrawingContext dc, string style, (DeviceKind Kind, int Level, bool Stale, bool Charging) item, int slot = 0)
+    private void DrawSingle(DrawingContext dc, string style, (DeviceKind Kind, int Level, bool Stale, bool Charging) item)
     {
         double scale = Math.Min(ActualWidth, ActualHeight) / 96;
         dc.PushTransform(new TranslateTransform((ActualWidth - 96 * scale) / 2, (ActualHeight - 96 * scale) / 2));
@@ -104,7 +104,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.PushOpacity(item.Stale ? .45 : 1);
         var background = HideBackground ? Brushes.Transparent : Surface;
         var track = new Pen(Outline, 1.2);
-        double drawn = DrawnLevel(slot, item.Level, item.Charging && !item.Stale);
+        double drawn = DrawnLevel(0, item.Level, item.Charging && !item.Stale);
         switch (style)
         {
             case "ring":
@@ -139,7 +139,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 break;
         }
         // The source single-device styles signal charging through color, with a separate live bolt.
-        if (_models != null && slot < _models.Count && _models[slot].IsFullActive)
+        if (_models?.FirstOrDefault()?.IsFullActive == true)
             Text(dc, "✓", 11, new Point(70, 62), Accent, 15);
         else if (item.Charging && !item.Stale) Bolt(dc, new Point(70, 62), 11);
         dc.Pop();
@@ -259,7 +259,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.DrawText(value, new Point(center.X - value.Width / 2, center.Y - value.Height / 2));
     }
     private void Bolt(DrawingContext dc, Point center, double size) =>
-        ChargeSweep.Pulse(dc, center, Math.Max(2, size * .28), _phase);
+        Text(dc, "\u26A1", size, center, _phase >= 0 && StyleName == "ring" && !ChargeSweep.Wave ? Alpha(Accent, .76 + .24 * Math.Cos(_phase * 2 * Math.PI)) : Accent, size * 1.5);
     private static Brush Brush(string color) => new SolidColorBrush(ThemePreset.C(color));
     private static Brush Alpha(Brush source, double opacity) { var brush = source.Clone(); brush.Opacity *= opacity; return brush; }
 

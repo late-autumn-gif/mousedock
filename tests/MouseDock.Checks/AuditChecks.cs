@@ -35,6 +35,9 @@ internal static class AuditChecks
         settings.DesktopPetCharacter = character;
         Require(settings.Clone().DesktopPetCharacter == character, "The selected character must survive settings cloning.");
         var source = new SharedSource { Reading = 62 };
+        if (character == "shin-chan")
+            source.ExtraDevices = Enumerable.Range(1, 7).Select(i =>
+                new DeviceInfo { Id = $"pet-device-{i}", Name = $"Pet device {i}", Level = 40 + i }).ToArray();
         SetSource(battery, source);
         Wait(battery.PollAsync());
         var pet = new DesktopPetWindow(battery, settings);
@@ -47,6 +50,21 @@ internal static class AuditChecks
             pet.Show();
             Flush();
             Require(image.Source is System.Windows.Media.Imaging.BitmapSource { PixelWidth: 512, PixelHeight: 512 }, "The embedded atlas must load in the real window.");
+            if (character == "shin-chan")
+            {
+                var list = (StackPanel)typeof(DesktopPetWindow).GetField("_deviceList", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                Require(list.Children.Count == 8, "The desktop pet must display every selected device beyond the six-device surface limit.");
+                typeof(DesktopPetWindow).GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(pet, null);
+                var displayMenu = pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "显示设备"));
+                var last = (MenuItem)displayMenu.Items[7];
+                last.IsChecked = false;
+                last.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Flush();
+                Require(!battery.Devices[7].Selected && list.Children.Count == 7, "The pet menu must update the shared device selection.");
+                battery.SetSelected(battery.Devices[7], true);
+                Flush();
+                Require(list.Children.Count == 8, "Settings-side selection must restore the pet row.");
+            }
             var frames = (ImageSource[])typeof(DesktopPetWindow).GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
             if (character != "shin-chan")
             {
@@ -236,6 +254,7 @@ internal static class AuditChecks
         public string Label => "audit";
         public DeviceInfo Device { get; } = new DeviceInfo { Id = "shared", Name = "Audit device" };
         public int Reading { get; set; } = -1;
+        public DeviceInfo[] ExtraDevices { get; set; } = Array.Empty<DeviceInfo>();
         public bool ReuseInstance { get; set; } = true;
         public IEnumerable<DeviceInfo> Read()
         {
@@ -243,7 +262,7 @@ internal static class AuditChecks
             return new[] { ReuseInstance ? Device : new DeviceInfo
             {
                 Id = Device.Id, Name = Device.Name, Level = Reading, Selected = Device.Selected
-            } };
+            } }.Concat(ExtraDevices);
         }
     }
 
