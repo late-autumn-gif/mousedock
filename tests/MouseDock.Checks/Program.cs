@@ -33,6 +33,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Low battery reminders can be disabled and restored from settings", LowBatteryWarningChecks.DisabledOption),
             ("Character devices retain distinct artwork through reorder and restart", CharacterIdentityChecks.Assignments),
             ("Character device captions stay below artwork with live independent values", CharacterIdentityChecks.Captions),
             ("Character devices share stable identities across floating and compact surfaces", CharacterIdentityChecks.Floating),

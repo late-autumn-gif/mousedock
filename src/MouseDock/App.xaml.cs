@@ -1058,7 +1058,7 @@ namespace MouseDock
             SetWindowLong(handle, GWL_EXSTYLE, ex);
         }
 
-        // ── 低电量提醒：阈值 10/20/30/40，默认 20；同一台设备只提醒一次，回升后重新武装 ──
+        // ── 低电量提醒：0 关闭，默认 20；同一台设备只提醒一次，回升后重新武装 ──
         private static readonly HashSet<string> _lowWarned = new HashSet<string>();
         private static DispatcherTimer _lowWarnTimer;
 
