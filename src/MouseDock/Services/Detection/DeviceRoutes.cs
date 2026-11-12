@@ -17,6 +17,7 @@ internal enum HandledBy
     Aula,
     Inphic,
     RogScope,
+    RogOmniMouse,
     MchoseModern,
     MchoseG7,
     ZeroRainy,
@@ -27,6 +28,7 @@ internal enum HandledBy
     AulaF75,
     /// <summary>凌豹 M9 Pro（093A:522C，产品串 LB-M9PRO），见 M9ProProtocol。</summary>
     M9Pro,
+    RazerBlackShark,
     MchoseA7Ultra,
     MonsGeekBatteryEvent,
     MonsGeekDongleStatus
@@ -58,6 +60,7 @@ internal static class DeviceRoutes
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
         M9ProProtocol.IsCandidate(vid, pid, product) ||
+        RazerBlackSharkProtocol.IsCandidate(vid, pid) ||
         RkKeyboardProtocol.IsCandidate(vid, pid) ||
         VendorProtocol.IsRogOmni(vid, pid) ||
         VendorProtocol.IsScopedModernMouse(vid, pid, product) ||
@@ -97,6 +100,9 @@ internal static class DeviceRoutes
         string reported = VendorProtocol.ReportedReceiverRoute(vid, pid, product);
         if (reported != null)
             return new Route { Reader = reported, Kind = reported == VendorProtocol.A7UltraRoute ? DeviceKind.Mouse : DeviceKind.Keyboard, Transport = "2.4G" };
+        if (RazerBlackSharkProtocol.IsCandidate(vid, pid))
+            return new Route { Reader = "RazerBlackShark", Kind = DeviceKind.Headset,
+                Transport = pid == RazerBlackSharkProtocol.WirelessPid ? "2.4G" : "USB" };
         // 3554:F503 / 3554:FA09 有精确产品串与精确集合要求，必须排在通用 33 字节旁路之前，
         // 否则会被公版接收器协议抢先认领。
         if (VgnF1Protocol.IsCandidate(vid, pid, product))
@@ -107,7 +113,7 @@ internal static class DeviceRoutes
         if (M9ProProtocol.IsCandidate(vid, pid, product))
             return new Route { Reader = "M9Pro", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsRogOmni(vid, pid))
-            return new Route { Reader = "RogScope", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
+            return new Route { Reader = "RogOmni", Kind = DeviceKind.Other, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseA7V2(vid, pid))
             return new Route { Reader = "MchoseA7V2", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseModern(vid, pid))

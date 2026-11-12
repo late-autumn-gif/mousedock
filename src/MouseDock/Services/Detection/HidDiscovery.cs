@@ -302,6 +302,7 @@ namespace MouseDock.Services.Detection
             QueryVgnF1(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadVgnF1);
             QueryF75(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
             QueryM9Pro(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
+            QueryRazerBlackShark(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadRazerBlackShark);
             QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
             QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
@@ -451,6 +452,8 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if (RazerBlackSharkProtocol.IsCandidate(vid, pid) && usagePage == 0xFF14 && usage == 1)
+            { kind = DeviceKind.Headset; return true; }
             if(ZeroRainyProtocol.Candidate(vid,pid,product) && ((usagePage==0xFF05&&usage==1)||(usagePage==0xFF1C&&usage==0x92))){kind=vid==0x373B?DeviceKind.Mouse:DeviceKind.Keyboard;return true;}
             // 凌豹 M9 Pro：FF05/0001 33/33 是鼠标的专用集合。
             if (M9ProProtocol.IsCandidate(vid, pid, product) && usagePage == 0xFF05 && usage == 1)
@@ -682,6 +685,7 @@ namespace MouseDock.Services.Detection
                 }
 
                 if (headset.Battery < 0 && !VendorProtocol.IsHyperXHeadset(vid, pid) &&
+                    !RazerBlackSharkProtocol.IsCandidate(vid, pid) &&
                     !(vid == 0x3654 && pid == 0x5055 && VendorMap.IsZhuAudioZg4(product)))
                     headset.BatteryFailures.Add("已识别 USB 耳机；电量协议尚未适配，当前电量未知");
 
@@ -1618,6 +1622,19 @@ namespace MouseDock.Services.Detection
                 if(HandledBy == HandledBy.VgnF1){name=VgnF1Model ?? Product ?? "未确认型号的接收器";kind=DeviceKind.Mouse;transport="2.4G";charging=Battery>=0 && Charging;}
                 if(HandledBy == HandledBy.AulaF75){name=F75Model ?? Product ?? "未确认型号的接收器";kind=DeviceKind.Keyboard;transport="2.4G";charging=Battery>=0 && Charging;}
                 if(HandledBy == HandledBy.M9Pro){name=M9ProModel ?? Product ?? "未确认型号的设备";kind=DeviceKind.Mouse;transport="2.4G";charging=Battery>=0 && Charging;}
+                if (HandledBy == HandledBy.RogOmniMouse)
+                {
+                    name = RogOmniMouseProtocol.Model;
+                    kind = DeviceKind.Mouse;
+                    transport = "2.4G";
+                    charging = Battery >= 0 && Charging;
+                }
+                if (HandledBy == HandledBy.RazerBlackShark)
+                {
+                    name = RazerBlackSharkProtocol.Model;
+                    kind = DeviceKind.Headset;
+                    charging = Battery >= 0 && Charging;
+                }
                 bool unresolved=kind==DeviceKind.Other && IsUnresolved8KReceiver();
                 if(unresolved)name=Product.Trim();
                 if (HandledBy == HandledBy.RogScope || RogScopeModel != null)
@@ -1630,10 +1647,10 @@ namespace MouseDock.Services.Detection
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = HandledBy == HandledBy.MchoseA7Ultra ? (Battery >= 0 ? VendorProtocol.A7UltraName : "") : HandledBy == HandledBy.M137 ? M137Model ?? "" : HandledBy == HandledBy.RealTek ? Product?.Trim() ?? "" : HandledBy == HandledBy.VgnF1 ? VgnF1Model ?? "" : HandledBy == HandledBy.AulaF75 ? F75Model ?? "" : HandledBy == HandledBy.M9Pro ? M9ProModel ?? "" : RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = HandledBy == HandledBy.MchoseA7Ultra ? (Battery >= 0 ? VendorProtocol.A7UltraName : "") : HandledBy == HandledBy.RazerBlackShark ? RazerBlackSharkProtocol.Model : HandledBy == HandledBy.RogOmniMouse ? RogOmniMouseProtocol.Model : HandledBy == HandledBy.M137 ? M137Model ?? "" : HandledBy == HandledBy.RealTek ? Product?.Trim() ?? "" : HandledBy == HandledBy.VgnF1 ? VgnF1Model ?? "" : HandledBy == HandledBy.AulaF75 ? F75Model ?? "" : HandledBy == HandledBy.M9Pro ? M9ProModel ?? "" : RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = HandledBy is HandledBy.MchoseA7Ultra or HandledBy.MonsGeekBatteryEvent or HandledBy.MonsGeekDongleStatus || zg4Receiver || HandledBy == HandledBy.RogScope || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
+                    ReceiverDiscovered = HandledBy is HandledBy.MchoseA7Ultra or HandledBy.MonsGeekBatteryEvent or HandledBy.MonsGeekDongleStatus || zg4Receiver || (HandledBy == HandledBy.RazerBlackShark && Pid == RazerBlackSharkProtocol.WirelessPid) || HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
                     PeripheralConfirmed = HandledBy == HandledBy.M9Pro ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.M137 ? false : HandledBy == HandledBy.RealTek ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.MchoseModern ? false : unresolved ? false : HandledBy == HandledBy.ZeroRainy ? false : HandledBy == HandledBy.MchoseG7 ? false : HandledBy == HandledBy.OriginalGpw ? GpwLive : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
@@ -1649,7 +1666,7 @@ namespace MouseDock.Services.Detection
                     Detail = $"{Vid:X4}:{Pid:X4}",
                     PhysicalKey = InstanceId,
                     HandledBy = HandledBy,
-                    Note = HandledBy == HandledBy.RogScope ? BatterySource :
+                    Note = HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse ? BatterySource :
                         RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 &&
                         !(Vid == 0x3654 && Pid == 0x5055 && VendorMap.IsZhuAudioZg4(Product)) &&
                         !DeviceRoutes.IsKnown(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0

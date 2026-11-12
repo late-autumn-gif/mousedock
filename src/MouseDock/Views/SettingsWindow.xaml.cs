@@ -131,6 +131,7 @@ namespace MouseDock.Views
                 EdgePositionValue.Text = $"{EdgePositionSlider.Value:0}";
                 EdgeInsetSlider.Value = double.IsFinite(s.EdgeInset) ? Math.Clamp(s.EdgeInset, 0, 160) : 12;
                 EdgeInsetValue.Text = $"{EdgeInsetSlider.Value:0}";
+                SyncTaskbarSize();
                 SyncEdgeSize();
                 if (TopmostBox != null) TopmostBox.IsChecked = s.AlwaysOnTop;
                 if (ClickThroughBox != null) ClickThroughBox.IsChecked = s.ClickThrough;
@@ -637,10 +638,8 @@ namespace MouseDock.Views
         private void ApplyCharacterEdit(CharacterEditorWindow editor)
         {
             editor.ApplyTo(App.Settings);
-            App.Icon?.ApplyStyle(App.Settings.IconStyle, false);
-            if (editor.ShowAfterApply) App.SetSurface("icon");
-            else if (App.Settings.SurfaceMode == "taskbar") App.Settings.TaskbarStyle = editor.Draft.IconStyle;
-            else if (App.Settings.SurfaceMode == "edge") App.Settings.EdgeStyle = editor.Draft.IconStyle;
+            if (editor.SurfaceMode == "icon") App.Icon?.ApplyStyle(App.Settings.IconStyle, false);
+            if (editor.ShowAfterApply) App.SetSurface(editor.SurfaceMode);
             App.RefreshDeviceViews();
             App.SaveSettings();
             Reload();
@@ -743,7 +742,33 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
+        private bool _syncingTaskbarSize;
         private bool _syncingEdgeSize;
+
+        internal void SyncTaskbarSize()
+        {
+            double value = TaskbarPlacement.NormalizeSizePercent(App.Settings.TaskbarSizePercent);
+            _syncingTaskbarSize = true;
+            try { TaskbarSizeSlider.Value = value; }
+            finally { _syncingTaskbarSize = false; }
+            TaskbarSizeValue.Text = $"{value:0}%";
+        }
+
+        private void OnTaskbarSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_loading || _syncingTaskbarSize || TaskbarSizeValue == null) return;
+            ApplyTaskbarSize(e.NewValue);
+        }
+
+        private void ApplyTaskbarSize(double value)
+        {
+            App.Settings.TaskbarSizePercent = TaskbarPlacement.NormalizeSizePercent(value);
+            SyncTaskbarSize();
+            App.Taskbar?.UpdateAnchor();
+            App.SaveSettings();
+        }
+
+        private void OnResetTaskbarSize(object sender, RoutedEventArgs e) => ApplyTaskbarSize(100);
 
         internal void SyncEdgeSize()
         {
@@ -757,11 +782,18 @@ namespace MouseDock.Views
         private void OnEdgeSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_loading || _syncingEdgeSize || EdgeSizeValue == null) return;
-            App.Settings.EdgeSizePercent = ScreenEdgePlacement.NormalizeSizePercent(e.NewValue);
-            EdgeSizeValue.Text = $"{App.Settings.EdgeSizePercent:0}%";
+            ApplyEdgeSize(e.NewValue);
+        }
+
+        private void ApplyEdgeSize(double value)
+        {
+            App.Settings.EdgeSizePercent = ScreenEdgePlacement.NormalizeSizePercent(value);
+            SyncEdgeSize();
             App.Edge?.UpdateAnchor();
             App.SaveSettings();
         }
+
+        private void OnResetEdgeSize(object sender, RoutedEventArgs e) => ApplyEdgeSize(100);
 
         private void OnEdgeInsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {

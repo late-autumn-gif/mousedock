@@ -15,6 +15,7 @@ namespace MouseDock.Views;
 public sealed class CharacterEditorWindow : Window
 {
     public AppSettings Draft { get; }
+    public string SurfaceMode { get; }
     public bool ShowAfterApply { get; private set; }
     private readonly CharacterBatteryIcon _preview;
     private readonly Slider _zoom;
@@ -32,10 +33,16 @@ public sealed class CharacterEditorWindow : Window
 
     public CharacterEditorWindow(AppSettings settings, string mode)
     {
+        SurfaceMode = settings.SurfaceMode is "taskbar" or "edge" ? settings.SurfaceMode : "icon";
         Draft = settings.Clone();
-        if (mode == "portrait") Draft.IconStyle = "portrait";
-        else if (Draft.IconStyle is not ("character" or "portrait")) Draft.IconStyle = "character";
-        Title = "角色与照片";
+        string style = SurfaceMode switch
+        {
+            "taskbar" => settings.TaskbarStyle,
+            "edge" => settings.EdgeStyle,
+            _ => settings.IconStyle
+        };
+        Draft.IconStyle = mode == "portrait" ? "portrait" : style is "character" or "portrait" ? style : "character";
+        Title = SurfaceMode switch { "taskbar" => "任务栏角色与照片", "edge" => "屏幕右侧角色与照片", _ => "角色与照片" };
         Width = 380;
         SizeToContent = SizeToContent.Height;
         MaxHeight = Math.Max(320, SystemParameters.WorkArea.Height - 48);
@@ -159,7 +166,9 @@ public sealed class CharacterEditorWindow : Window
 
     public void ApplyTo(AppSettings settings)
     {
-        settings.IconStyle = Draft.IconStyle;
+        if (SurfaceMode == "taskbar") settings.TaskbarStyle = Draft.IconStyle;
+        else if (SurfaceMode == "edge") settings.EdgeStyle = Draft.IconStyle;
+        else settings.IconStyle = Draft.IconStyle;
         settings.ReferenceCharacter = Draft.ReferenceCharacter;
         settings.DeviceCharacters = new(Draft.DeviceCharacters ?? new(), StringComparer.OrdinalIgnoreCase);
         settings.DevicePhotos = new(Draft.DevicePhotos ?? new(), StringComparer.OrdinalIgnoreCase);

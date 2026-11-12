@@ -66,6 +66,11 @@ namespace MouseDock.Services.Detection
         internal static bool TryUsbHeadset(ushort vid, ushort pid, out string name, string product = null)
         {
             name = null;
+            if (RazerBlackSharkProtocol.IsCandidate(vid, pid))
+            {
+                name = RazerBlackSharkProtocol.Model;
+                return true;
+            }
 
             // The WebHID filter is shared across models; also require the device's own product string.
             if (vid == 0x3654 && pid == 0x5055 && IsZhuAudioZg4(product))
