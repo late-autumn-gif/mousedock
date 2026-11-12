@@ -33,6 +33,12 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Compact sizes persist independently with legacy defaults", DisplaySizeChecks.Preferences),
+            ("Taskbar resizing preserves fit DPI signed offsets and overflow", DisplaySizeChecks.Placement),
+            ("Compact size settings and resets target their own surface", DisplaySizeChecks.Settings),
+            ("Compact size wheels clamp independently and synchronize settings", DisplaySizeChecks.Wheel),
+            ("Compact windows resize every style through native placement", DisplaySizeChecks.Windows),
+            ("Compact sizes keep all styles and device labels visible", DisplaySizeChecks.Rendering),
             ("Character devices retain distinct artwork through reorder and restart", CharacterIdentityChecks.Assignments),
             ("Character device captions stay below artwork with live independent values", CharacterIdentityChecks.Captions),
             ("Character devices share stable identities across floating and compact surfaces", CharacterIdentityChecks.Floating),
