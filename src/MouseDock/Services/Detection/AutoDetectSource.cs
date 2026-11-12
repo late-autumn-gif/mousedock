@@ -56,6 +56,8 @@ namespace MouseDock.Services.Detection
                     device.Transport = merged.Transport;
                     device.Detail = merged.Detail;
                     device.Note = merged.Note;
+                    device.Dpi = merged.Dpi;
+                    device.DpiSettings = merged.ModernDpi;
                     device.Connected = merged.Connected;
                     device.Level = merged.Level >= 0 ? merged.Level : -1;
                     // 换电池的型号（G304/G305、G602/G603、办公 Nano 鼠）没有充电状态，
@@ -82,7 +84,7 @@ namespace MouseDock.Services.Detection
                     {
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
-                        Transport = d.Transport, Detail = d.Detail, Note = d.Note,
+                        Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
                         Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds.ToArray()
                     })
@@ -141,6 +143,8 @@ namespace MouseDock.Services.Detection
                 Kind = best.Kind,
                 Transport = best.Transport,
                 Level = best.Level,
+                Dpi = best.ModernDpi == null ? -1 : best.Dpi,
+                ModernDpi = best.ModernDpi,
                 Charging = best.Charging,
                 ChargeFull = best.ChargeFull,
                 IsStale = best.IsStale,

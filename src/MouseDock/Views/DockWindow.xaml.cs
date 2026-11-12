@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -10,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using MouseDock.Models;
 using MouseDock.Services;
+using MouseDock.Services.Detection;
 
 namespace MouseDock.Views
 {
@@ -48,6 +50,53 @@ namespace MouseDock.Views
             RefreshDevices();
             Loaded += OnLoaded;
             UpdateLayout();
+        }
+
+        private void OnDpiClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.DataContext is not DeviceInfo device ||
+                !device.CanChangeDpi || device.DpiSettings is not { } state) return;
+
+            var menu = new ContextMenu { PlacementTarget = button };
+            for (int index = 0; index < state.Count; index++)
+            {
+                int target = index;
+                var item = new MenuItem
+                {
+                    Header = $"档位 {index + 1} · {state.Values[index]} DPI",
+                    IsCheckable = true,
+                    IsChecked = index == state.Index
+                };
+                item.Click += async (_, _) =>
+                {
+                    if (!device.CanChangeDpi || target == state.Index) return;
+                    button.IsEnabled = false;
+                    button.ToolTip = "正在确认 DPI";
+                    try
+                    {
+                        var preferences = App.Battery.Preferences;
+                        string id = device.Id;
+                        var result = await Task.Run(() => HidDiscovery.ReadOrChangeMouseDpi(preferences, id, new(state, target)));
+                        if (result != null)
+                        {
+                            device.Dpi = result.Dpi;
+                            device.DpiSettings = result.ModernDpi;
+                        }
+                        button.ToolTip = result == null ? "未能确认更改，请刷新后重试" : "切换 DPI 档位";
+                    }
+                    catch (Exception)
+                    {
+                        button.ToolTip = "未能确认更改，请刷新后重试";
+                    }
+                    finally
+                    {
+                        button.IsEnabled = true;
+                        App.Battery.Poll();
+                    }
+                };
+                menu.Items.Add(item);
+            }
+            menu.IsOpen = true;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)

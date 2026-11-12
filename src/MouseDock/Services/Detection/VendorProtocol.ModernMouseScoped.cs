@@ -79,7 +79,11 @@ internal static partial class VendorProtocol
         inputIds.SetEquals(new byte[] { 0x11, 0x13, 0x4D }) &&
         outputIds.SetEquals(new byte[] { 0x13, 0x4D });
 
-    internal static ReferenceBatteryProtocol.Reading ReadScopedModernMouse(string path,ushort vid,ushort pid)
+    internal static ReferenceBatteryProtocol.Reading ReadScopedModernMouse(string path,ushort vid,ushort pid) =>
+        ReadScopedModernMouse(path, vid, pid, null, false);
+
+    internal static ReferenceBatteryProtocol.Reading ReadScopedModernMouse(string path,ushort vid,ushort pid,
+        ModernMouseDpi.Change dpiChange, bool readDpi = true)
     {
         if(InstanceScope.Current==null||!InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("MHUB物理实例不符");
         return ReferenceQueryGate.Run(path,()=>{
@@ -91,10 +95,12 @@ internal static partial class VendorProtocol
                 if(!HidD_GetAttributes(h,ref a)||a.VendorID!=vid||a.ProductID!=pid||!IsScopedModernChannel(vid,pid,product,c.UsagePage,c.Usage,c.InputReportByteLength,c.OutputReportByteLength,c.FeatureReportByteLength))throw new IOException("MHUB打开后身份/集合不符");
                 if(!HidD_GetPreparsedData(h,out var prep))throw new IOException("MHUB报告描述符不可读");
                 byte? a7V3ProLink = null;
+                bool dpiReports;
                 try{
                     bool k5 = string.Equals(product?.Trim(), "MCHOSE K5 Ultra", StringComparison.OrdinalIgnoreCase);
                     var inputIds = ReadDescriptorReportIds(prep, 0, c.NumberInputValueCaps, c.NumberInputButtonCaps);
                     var outputIds = ReadDescriptorReportIds(prep, 1, c.NumberOutputValueCaps, c.NumberOutputButtonCaps);
+                    dpiReports = inputIds.Contains(0x4D) && outputIds.Contains(0x4D);
                     HidInventory.ParsePath(path, out _, out _, out string label);
                     bool a7V3ProReports = AllowsA7V3ProReports(vid, pid, product, label, inputIds, outputIds);
                     if (a7V3ProReports) a7V3ProLink = pid == 0x4031 ? (byte)1 : (byte)2;
@@ -104,8 +110,14 @@ internal static partial class VendorProtocol
                         throw new IOException($"MHUB 报告编号不匹配（输入 {string.Join(",", inputIds.Select(id => id.ToString("X2")))}；输出 {string.Join(",", outputIds.Select(id => id.ToString("X2"))) }）");
                 }finally{HidD_FreePreparsedData(prep);}
                 signal=CreateEvent(IntPtr.Zero,true,false,IntPtr.Zero);if(signal==IntPtr.Zero)throw new IOException("MHUB事件创建失败");
-                return ReadModernMouseExchange(new G7Link(h,signal,64),product,a7V3ProLink);
+                var link = new G7Link(h, signal, 64);
+                var reading = ReadModernMouseExchange(link, product, a7V3ProLink);
+                // The vendor driver uses these commands for its modern mouse profiles.
+                // The battery identity exchange first confirms the exact product on this handle.
+                if (readDpi && dpiReports && reading.Level >= 0)
+                    reading = reading with { Dpi = ModernMouseDpi.ReadSettings(link, dpiChange) };
+                return reading;
             }finally{if(signal!=IntPtr.Zero)CloseHandle(signal);CloseHandle(h);}
-        },4000);
+        },readDpi ? 5500 : 4000);
     }
 }

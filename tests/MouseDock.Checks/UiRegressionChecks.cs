@@ -6,10 +6,35 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MouseDock.Models;
 using MouseDock.Services;
+using MouseDock.Services.Detection;
 using MouseDock.Views;
 
 internal static class UiRegressionChecks
 {
+    internal static void DockDpi()
+    {
+        using var battery = Fixtures();
+        var mouse = battery.Devices.Single(d => d.Id == "mouse");
+        mouse.DpiSettings = new ModernMouseDpi.State(0, 1, 2, false, [800, 1600, 0, 0, 0, 0]);
+        mouse.Dpi = 1600;
+        var window = new DockWindow { Left = -2000, ShowActivated = false };
+        try
+        {
+            window.Show();
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            var list = (ItemsControl)window.FindName("DeviceList");
+            var buttons = Descendants<Button>(list).Where(b => b.IsVisible).ToArray();
+            Require(buttons.Length == 1 && Equals(buttons[0].Content, "1600 DPI"),
+                "Only the mouse with verified DPI settings should show the DPI selector.");
+            mouse.Dpi = -1;
+            mouse.DpiSettings = null;
+            window.UpdateLayout();
+            Require(!buttons[0].IsVisible && Descendants<TextBlock>(list).Count(t => t.IsVisible && t.Text == "DPI —") == 1,
+                "An unreadable mouse DPI should show a single unknown label and hide the selector.");
+        }
+        finally { window.Close(); }
+    }
+
     internal static void SelectedDevicesOnly(string surface, bool empty)
     {
         using var battery = Fixtures();

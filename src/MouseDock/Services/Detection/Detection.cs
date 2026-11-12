@@ -21,6 +21,7 @@ namespace MouseDock.Services.Detection
         /// <summary>硬件 DPI；-1 表示这台设备没有读到或没有该能力。</summary>
         public bool ChargeFull { get; set; }
         public int Dpi { get; set; } = -1;
+        internal ModernMouseDpi.State ModernDpi { get; set; }
         /// <summary>DPI 各档位，未使用的位置为 -1。</summary>
         public int[] DpiSlots { get; set; }
         public string DpiText { get; set; } = "";

@@ -7,7 +7,8 @@ internal static class ModernMouseRegression
     {
         public long Now{get;private set;}public int Writes;public Queue<byte[]> Input=new();public Func<int,byte[][]> Reply=_=>Array.Empty<byte[]>();
         public byte[]? Read(int timeout){Now+=Math.Max(1,timeout);return Input.Count>0?Input.Dequeue():null;}
-        public bool Write(byte[] tx,int timeout){Writes++;foreach(var frame in Reply(Writes))Input.Enqueue(frame);return true;}
+        public Func<byte[],byte[][]>? ReplyTo;
+        public bool Write(byte[] tx,int timeout){Writes++;foreach(var frame in ReplyTo?.Invoke(tx) ?? Reply(Writes))Input.Enqueue(frame);return true;}
         public bool SetFeature(byte[] b)=>throw new Exception();public byte[] GetFeature(byte id,int n)=>throw new Exception();public void Delay(int ms)=>throw new Exception();
     }
     private static byte[] Frame(ushort pid,int level,int ch)
@@ -15,6 +16,33 @@ internal static class ModernMouseRegression
         var r=new byte[64];r[0]=0x4D;r[1]=1;r[2]=1;r[3]=14;r[5]=9;r[8]=0x37;r[9]=0x38;r[10]=(byte)pid;r[11]=(byte)(pid>>8);r[19]=(byte)ch;r[20]=(byte)level;CheckSum(r);return r;
     }
     private static void CheckSum(byte[] r){byte c=0;for(int i=2;i<8+r[3];i++)c^=r[i];r[8+r[3]]=c;}
+
+    private static Link DpiLink(ushort pid, bool separateAxes = false, bool ignoreSelection = false)
+    {
+        byte[] data = [0, 0, 6, 2, separateAxes ? (byte)1 : (byte)0, 0x90, 1, 0x20, 3,
+            0x40, 6, 0x80, 12, 0, 25, 0x10, 0xA4];
+        return new Link
+        {
+            ReplyTo = request => (request[4] | request[5] << 8) switch
+            {
+                0x0900 => [Frame(pid, 76, 0)],
+                0x0002 => [ModernMouseDpi.BuildRequest(2, new byte[9])],
+                0x0003 => [ModernMouseDpi.BuildRequest(3, data)],
+                0x0103 => Select(request),
+                _ => throw new InvalidOperationException("Unexpected DPI request")
+            }
+        };
+
+        byte[][] Select(byte[] request)
+        {
+            if (!ModernMouseDpi.TryPayload(request, 0x0103, 17, out var payload) ||
+                payload[0] != 0 || payload[1] != 0 || payload[2] != 0 || payload[3] != 6 ||
+                !payload[5..17].SequenceEqual(data.AsSpan(5)))
+                throw new InvalidOperationException("Selecting a slot must preserve the DPI table");
+            if (!ignoreSelection) data[3] = payload[4];
+            return [ModernMouseDpi.BuildRequest(0x0103, [0])];
+        }
+    }
     internal static int Run()
     {
         int count=0;void Check(bool ok,string why){count++;if(!ok)throw new Exception(why);}
@@ -38,7 +66,39 @@ internal static class ModernMouseRegression
             Check(VendorProtocol.ReadModernMouseExchange(link,name).Level==76&&link.Writes==2,"Two fresh model-specific transactions");
             link=new Link{Reply=n=>n==1?new[]{Frame(p.Wired,76,0)}:Array.Empty<byte[]>()};
             Check(VendorProtocol.ReadModernMouseExchange(link,name).Level<0,"Missing second reply not promoted");
+            var dpiLink = DpiLink(p.Wired);
+            Check(VendorProtocol.ReadModernMouseExchange(dpiLink, name).Model == name,
+                $"DPI fixture confirms exact model for {name}");
+            var dpi = ModernMouseDpi.ReadSettings(dpiLink, null);
+            Check(dpi is { Index: 2 } && dpi.Values[dpi.Index] == 1600, $"DPI read for {name}");
+            var changed = ModernMouseDpi.ReadSettings(dpiLink, new(dpi!, 3));
+            Check(changed is { Index: 3 } && changed.Values[3] == 3200, $"DPI write and readback for {name}");
         }
+        var split = DpiLink(0x4031, separateAxes: true);
+        var splitState = ModernMouseDpi.ReadSettings(split, null);
+        Check(splitState is { SeparateAxes: true } &&
+            ModernMouseDpi.ReadSettings(split, new(splitState, 3)) == null && split.Writes == 4,
+            "Separate axes are readable but do not write");
+        var unconfirmed = DpiLink(0x4031, ignoreSelection: true);
+        var before = ModernMouseDpi.ReadSettings(unconfirmed, null);
+        Check(ModernMouseDpi.ReadSettings(unconfirmed, new(before!, 3)) == null,
+            "Acknowledgement without changed readback does not confirm selection");
+        var changedProfile = before! with { Profile = 1 };
+        var fresh = DpiLink(0x4031);
+        Check(ModernMouseDpi.ReadSettings(fresh, new(changedProfile, 3)) == null && fresh.Writes == 2,
+            "Profile change prevents write");
+        var wrongTable = before with { Values = [800, 800, 1600, 3200, 6400, 42000] };
+        fresh = DpiLink(0x4031);
+        Check(ModernMouseDpi.ReadSettings(fresh, new(wrongTable, 3)) == null && fresh.Writes == 2,
+            "DPI table change prevents write");
+        var invalid = ModernMouseDpi.BuildRequest(3, [0, 0, 1, 0, 0, 0x20, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        invalid[13] ^= 1;
+        Check(ModernMouseDpi.ParseSettings(invalid, 0) == null, "DPI bad XOR");
+        var display = new AutoDetectSource().UpdateFromDetection([new()
+        {
+            Id = "dpi", Name = "Mouse", Kind = DeviceKind.Mouse, Dpi = 1600, ModernDpi = before
+        }]).Single();
+        Check(display.DpiLabel == "1600 DPI" && display.CanChangeDpi, "DPI reaches bound device model");
         Check(!DeviceRoutes.IsKnown(0x3837,0x1018,"USB Receiver"),"Generic receiver not sufficient");
         Check(VendorProtocol.IsScopedModernChannel(0x3837,0x1018,"MCHOSE K5 Ultra",0xFF01,1,64,64,0),
             "K5 Ultra Output/Input collection does not require Feature");

@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Windows.Media;
+using MouseDock.Services.Detection;
 
 namespace MouseDock.Models
 {
@@ -49,7 +50,22 @@ namespace MouseDock.Models
             get => _dpi;
             set { if (_dpi == value) return; _dpi = value; Raise(nameof(Dpi)); Raise(nameof(DpiLabel)); }
         }
-        public string DpiLabel => _dpi > 0 ? _dpi + " DPI" : "—";
+        public string DpiLabel => _dpi <= 0 ? "DPI —" :
+            _dpiSettings?.SeparateAxes == true ? $"X {_dpi} DPI" : $"{_dpi} DPI";
+
+        private ModernMouseDpi.State _dpiSettings;
+        internal ModernMouseDpi.State DpiSettings
+        {
+            get => _dpiSettings;
+            set
+            {
+                _dpiSettings = value;
+                Raise(nameof(DpiLabel));
+                Raise(nameof(CanChangeDpi));
+            }
+        }
+        public bool CanChangeDpi => _connected && _recognitionEnabled &&
+            _dpiSettings is { SeparateAxes: false, Count: > 1 };
 
         private string _note = "";
         public string Note
@@ -85,7 +101,7 @@ namespace MouseDock.Models
         public bool Connected
         {
             get => _connected;
-            set { if (_connected == value) return; _connected = value; Raise(nameof(Connected)); Raise(nameof(LevelText)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); Raise(nameof(IsFullActive)); Raise(nameof(ChargeMark)); Raise(nameof(HasChargeMark)); Raise(nameof(IsDisplayEligible)); Raise(nameof(MiniText)); }
+            set { if (_connected == value) return; _connected = value; Raise(nameof(Connected)); Raise(nameof(CanChangeDpi)); Raise(nameof(LevelText)); Raise(nameof(StatusText)); Raise(nameof(IsChargingActive)); Raise(nameof(IsFullActive)); Raise(nameof(ChargeMark)); Raise(nameof(HasChargeMark)); Raise(nameof(IsDisplayEligible)); Raise(nameof(MiniText)); }
         }
 
         public bool Selected
@@ -102,7 +118,7 @@ namespace MouseDock.Models
         public bool RecognitionEnabled
         {
             get => _recognitionEnabled;
-            set { if (_recognitionEnabled == value) return; _recognitionEnabled = value; Raise(nameof(RecognitionEnabled)); Raise(nameof(IsDisplayEligible)); Raise(nameof(ManagementStatus)); }
+            set { if (_recognitionEnabled == value) return; _recognitionEnabled = value; Raise(nameof(RecognitionEnabled)); Raise(nameof(CanChangeDpi)); Raise(nameof(IsDisplayEligible)); Raise(nameof(ManagementStatus)); }
         }
         public bool IsDisplayEligible => Connected && Selected && !Hidden && RecognitionEnabled;
         public string ManagementStatus => !RecognitionEnabled ? "已取消识别 · 右键可重新识别" : Hidden ? "已隐藏 · 勾选可恢复" : Selected ? "已显示" : "未显示";

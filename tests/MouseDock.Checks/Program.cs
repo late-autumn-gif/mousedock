@@ -18,6 +18,12 @@ internal static class Program
     {
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
+        if (args.Length == 1 && args[0] == "--dock-dpi")
+        {
+            UiRegressionChecks.DockDpi();
+            Console.WriteLine("PASS dock DPI selector and unknown state.");
+            return 0;
+        }
         if (args.Length == 2 && args[0] == "--taskbar-button-fixture")
             return TaskbarFollowChecks.RunButtonFixture(args[1]);
         if (Environment.GetEnvironmentVariable(RuntimeAuditChecks.UpdateFixtureVariable) is { Length: > 0 } marker)
@@ -33,6 +39,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Dock DPI shows the selector only for a verified mouse", UiRegressionChecks.DockDpi),
             ("Low battery reminders can be disabled and restored from settings", LowBatteryWarningChecks.DisabledOption),
             ("Compact sizes persist independently with legacy defaults", DisplaySizeChecks.Preferences),
             ("Taskbar resizing preserves fit DPI signed offsets and overflow", DisplaySizeChecks.Placement),

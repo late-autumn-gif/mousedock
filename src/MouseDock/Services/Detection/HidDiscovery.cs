@@ -123,7 +123,18 @@ namespace MouseDock.Services.Detection
 
         private static bool IsSafeMode => BatteryReplay.Current?.SafeMode ?? App.Settings?.SafeMode ?? false;
 
-        private static List<DetectedDevice> ScanDevices(DevicePreferences preferences, HashSet<string> scope = null)
+        internal static DetectedDevice ReadOrChangeMouseDpi(DevicePreferences preferences, string instanceId,
+            ModernMouseDpi.Change change = null)
+        {
+            if (string.IsNullOrEmpty(instanceId)) return null;
+            lock (ScanGate)
+                return ScanDevices(preferences, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { instanceId }, change)
+                    .FirstOrDefault(d => string.Equals(d.Id, instanceId, StringComparison.OrdinalIgnoreCase) &&
+                        d.ModernDpi != null && (change == null || d.ModernDpi.Index == change.Index));
+        }
+
+        private static List<DetectedDevice> ScanDevices(DevicePreferences preferences, HashSet<string> scope = null,
+            ModernMouseDpi.Change dpiChange = null)
         {
             LastDiagnostics.Clear();
             InstanceScope.BeginScan();
@@ -308,7 +319,11 @@ namespace MouseDock.Services.Detection
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
             QueryGenericReceiver33(buckets, safeMode, preferences);
             QueryRogScope(buckets, vendorCollections, safeMode, preferences);
-            QueryScopedModernMouse(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedModernMouse);
+            if (BatteryReplay.Current == null)
+                QueryScopedModernMouse(buckets, vendorCollections, safeMode, preferences,
+                    (path, vid, pid) => VendorProtocol.ReadScopedModernMouse(path, vid, pid, dpiChange));
+            else
+                QueryScopedModernMouse(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadScopedModernMouse);
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
             if (BatteryReplay.Current == null) QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
             QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
@@ -1382,6 +1397,7 @@ namespace MouseDock.Services.Detection
             public string M137Model;
             /// <summary>MCHOSE 官方 0x12 0x67 读到的 DPI；-1 表示未知。</summary>
             public int Dpi = -1;
+            public ModernMouseDpi.State ModernDpi;
             public int[] DpiSlots;
             public string DpiText;
             public string RogScopeModel;
@@ -1657,6 +1673,7 @@ namespace MouseDock.Services.Detection
                     Transport = transport,
                     Level = Battery,
                     Dpi = Dpi,
+                    ModernDpi = ModernDpi,
                     DpiSlots = DpiSlots,
                     DpiText = DpiText ?? "",
                     Charging = charging,

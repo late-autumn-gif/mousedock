@@ -423,7 +423,7 @@ namespace MouseDock.Services
                     {
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
-                        Transport = d.Transport, Detail = d.Detail, Note = d.Note,
+                        Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
                         Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull,
                         Selected = d.Selected, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds?.ToArray()
@@ -439,7 +439,7 @@ namespace MouseDock.Services
             foreach (var incoming in snapshot)
             {
                 _preferences.Apply(incoming);
-                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; }
+                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; incoming.Dpi = -1; incoming.DpiSettings = null; }
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
                 if (!incoming.Connected)
                 {
@@ -511,6 +511,8 @@ namespace MouseDock.Services
                     existing.Name = incoming.Name;
                     existing.Kind = incoming.Kind;
                     existing.Level = incoming.Level;
+                    existing.Dpi = incoming.Dpi;
+                    existing.DpiSettings = incoming.DpiSettings;
                     existing.Charging = incoming.Charging;
                     existing.ChargeFull = incoming.ChargeFull;
                     existing.Connected = incoming.Connected;

@@ -22,6 +22,11 @@ public static partial class HidDiscovery
             r??=ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
             if(r.Level is >=0 and <=100 && (r.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging) && string.Equals(r.Model,b.Product?.Trim(),StringComparison.OrdinalIgnoreCase)){b.Battery=r.Level;b.Charging=r.ChargingKnown&&r.Charging;b.BatterySource=r.Diagnostic;b.ModernModel=r.Model;}
             else b.BatteryFailures.Add(r.Diagnostic);
+            if (r.Dpi is { } dpi)
+            {
+                b.ModernDpi = dpi;
+                b.Dpi = dpi.Values[dpi.Index];
+            }
             LastDiagnostics.Add($"{b.InstanceId} MHUB专用 型号={b.ModernModel} 电量={r.Level} {r.Diagnostic}");
         }
     }
