@@ -6,7 +6,7 @@ namespace MouseDock.Services.Detection;
 /// See THIRD-PARTY-NOTICES.md and docs/REFERENCE-1.0.2-PORT.md.</summary>
 internal static class ReferenceBatteryProtocol
 {
-    internal enum State { Invalid, Failed, Online, Charging, Sleep, Full }
+    internal enum State { Invalid, Failed, Online, Charging, Sleep, Full, Cached }
     internal sealed record Reading(int Level, bool Charging, bool ChargingKnown, State Status,
         string Diagnostic, string Model = null, string Identity = null)
     {

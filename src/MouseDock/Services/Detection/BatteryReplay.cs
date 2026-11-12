@@ -167,7 +167,7 @@ internal static class BatteryReplay
 
     private static bool MatchesChannel(string protocol, Collection channel, Collection[] collections)
     {
-        if (protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute)
+        if (protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute or VendorProtocol.MonsGeekStatusRoute)
             return VendorProtocol.MatchesReportedReceiverChannel(protocol, channel.Vid, channel.Pid, channel.Product,
                 channel.InterfaceLabel, channel.Page, channel.Usage, channel.Input, channel.Output, channel.Feature);
         if (protocol == "Zg4")
@@ -246,6 +246,8 @@ internal static class BatteryReplay
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
         if (query.Protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute)
             return ReplayReportedReceiver(query);
+        if (query.Protocol == VendorProtocol.MonsGeekStatusRoute)
+            return ReplayMonsGeekStatus(query);
         if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
         if (query.Protocol == "Zg4") return ReplayZg4(query);
         if (query.Protocol == "Neon75Feature")
@@ -322,6 +324,45 @@ internal static class BatteryReplay
         return new(query.Receiver, query.Interface, query.Protocol, query.Status, model,
             verified ? last.Level : null, verified && last.ChargingKnown ? last.Charging : null,
             verified ? "captured" : "unavailable");
+    }
+
+    private static Result ReplayMonsGeekStatus(Query query)
+    {
+        bool opened = false, pending = false;
+        int previous = -1, verified = -1;
+        string request = Convert.ToHexString(VendorProtocol.BuildMonsGeekStatusRequest());
+        foreach (var sample in query.Samples ?? Array.Empty<Sample>())
+        {
+            if (sample.Stage == "open")
+            {
+                opened = sample.Ok;
+                pending = false;
+                previous = -1;
+                continue;
+            }
+            if (!opened) continue;
+            if (sample.Stage == "status-set-feature")
+            {
+                if (pending || !sample.Ok) previous = -1;
+                pending = sample.Ok && sample.Length == 65 && sample.Hex == request;
+                continue;
+            }
+            if (sample.Stage != "status-get-feature") continue;
+
+            bool expected = pending && sample.Ok && sample.Length == 10 && sample.Hex?.Length == 20;
+            pending = false;
+            int level = -1;
+            if (expected)
+            {
+                try { VendorProtocol.TryParseMonsGeekStatus(Convert.FromHexString(sample.Hex), out level, out _); }
+                catch (FormatException) { }
+            }
+            if (level >= 0 && level == previous) { verified = level; break; }
+            previous = level;
+        }
+        bool valid = verified >= 0 && query.Status == "Cached" && query.ObservedPercent == verified;
+        return new(query.Receiver, query.Interface, query.Protocol, query.Status, null,
+            valid ? verified : null, null, valid ? "captured-cache" : "unavailable");
     }
 
     private static Result ReplayReportedReceiver(Query query)

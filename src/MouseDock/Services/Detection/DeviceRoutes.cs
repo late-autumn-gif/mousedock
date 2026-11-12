@@ -28,7 +28,8 @@ internal enum HandledBy
     /// <summary>凌豹 M9 Pro（093A:522C，产品串 LB-M9PRO），见 M9ProProtocol。</summary>
     M9Pro,
     MchoseA7Ultra,
-    MonsGeekBatteryEvent
+    MonsGeekBatteryEvent,
+    MonsGeekDongleStatus
 }
 
 /// <summary>

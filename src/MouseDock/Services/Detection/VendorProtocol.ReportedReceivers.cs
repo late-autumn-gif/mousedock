@@ -8,6 +8,7 @@ internal static partial class VendorProtocol
 {
     internal const string A7UltraRoute = "MchoseA7Ultra";
     internal const string MonsGeekRoute = "MonsGeekBatteryEvent";
+    internal const string MonsGeekStatusRoute = "MonsGeekDongleStatus";
     internal const string A7UltraName = "MCHOSE A7 Ultra";
 
     internal static string ReportedReceiverRoute(ushort vid, ushort pid, string product) =>
@@ -20,10 +21,14 @@ internal static partial class VendorProtocol
 
     internal static bool MatchesReportedReceiverChannel(string route, ushort vid, ushort pid, string product,
         string label, ushort page, ushort usage, int input, int output, int feature) =>
-        route != null && route == ReportedReceiverRoute(vid, pid, product) &&
-        (route == A7UltraRoute
-            ? label == "MI_02/COL_02" && page == 0xFF01 && usage == 1 && input == 65 && output == 65 && feature == 65
-            : label == "MI_01/COL_05" && page == 0xFFFF && usage == 1 && input == 32 && output == 0 && feature == 0);
+        route != null && (route == MonsGeekStatusRoute ? MonsGeekRoute : route) == ReportedReceiverRoute(vid, pid, product) &&
+        (route switch
+        {
+            A7UltraRoute => label == "MI_02/COL_02" && page == 0xFF01 && usage == 1 && input == 65 && output == 65 && feature == 65,
+            MonsGeekRoute => label == "MI_01/COL_05" && page == 0xFFFF && usage == 1 && input == 32 && output == 0 && feature == 0,
+            MonsGeekStatusRoute => label == "MI_02" && page == 0xFFFF && usage == 2 && input == 0 && output == 0 && feature == 65,
+            _ => false
+        });
 
     internal static bool TryParseA7UltraBattery(ReadOnlySpan<byte> frame, out int level, out bool charging)
     {
@@ -64,12 +69,12 @@ internal static partial class VendorProtocol
                 label, channel.UsagePage, channel.Usage, channel.Input, channel.Output, channel.Feature))
             return ReferenceBatteryProtocol.Reading.Failed("HID 集合不符");
 
-        bool mouse = route == A7UltraRoute;
+        bool passive = route == MonsGeekRoute;
         return ReferenceQueryGate.Run(channel.Path, () =>
         {
-            IntPtr handle = CreateFile(channel.Path, mouse ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ,
+            IntPtr handle = CreateFile(channel.Path, passive ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING,
-                mouse ? 0 : FILE_FLAG_OVERLAPPED, IntPtr.Zero);
+                passive ? FILE_FLAG_OVERLAPPED : 0, IntPtr.Zero);
             if (handle == IntPtr.Zero || handle == new IntPtr(-1))
             {
                 trace?.Add("open", false, nativeError: Marshal.GetLastWin32Error());
@@ -88,15 +93,26 @@ internal static partial class VendorProtocol
                     return ReferenceBatteryProtocol.Reading.Failed("无法读取 HID 报告编号");
                 try
                 {
-                    bool valid = mouse
-                        ? ReadDescriptorReportIds(prep, 2, caps.NumberFeatureValueCaps, caps.NumberFeatureButtonCaps).Contains(0x11)
-                        : TryGetReportId(prep, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps, out byte id) && id == 0x05;
+                    bool valid = route switch
+                    {
+                        A7UltraRoute => ReadDescriptorReportIds(prep, 2, caps.NumberFeatureValueCaps,
+                            caps.NumberFeatureButtonCaps).Contains(0x11),
+                        MonsGeekStatusRoute => TryGetReportId(prep, 2, caps.NumberFeatureValueCaps,
+                            caps.NumberFeatureButtonCaps, out byte featureId) && featureId == 0,
+                        _ => TryGetReportId(prep, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps,
+                            out byte inputId) && inputId == 0x05
+                    };
                     if (!valid) return ReferenceBatteryProtocol.Reading.Failed("HID 报告编号不符");
                 }
                 finally { HidD_FreePreparsedData(prep); }
 
                 trace?.Add("open", true);
-                return mouse ? ReadA7UltraFeature(handle, trace) : ReadMonsGeekEvent(handle, trace);
+                return route switch
+                {
+                    A7UltraRoute => ReadA7UltraFeature(handle, trace),
+                    MonsGeekStatusRoute => ReadMonsGeekStatus(handle, trace),
+                    _ => ReadMonsGeekEvent(handle, trace)
+                };
             }
             finally { CloseHandle(handle); }
         }, 1800);
@@ -132,6 +148,87 @@ internal static partial class VendorProtocol
                     ReferenceBatteryProtocol.State.Online, "MCHOSE A7 Ultra 2.4G Feature 11/F9", A7UltraName);
         }
         return ReferenceBatteryProtocol.Reading.Failed("A7 Ultra 未取得匹配型号的在线电量应答");
+    }
+
+    internal static byte[] BuildMonsGeekStatusRequest()
+    {
+        // MonsGeek V4 sends the direct F7 status request with zero padding.
+        var request = new byte[65];
+        request[1] = 0xF7;
+        return request;
+    }
+
+    internal static bool TryParseMonsGeekStatus(ReadOnlySpan<byte> frame, out int level, out string reason)
+    {
+        level = -1;
+        reason = "unexpected-status-layout";
+        // Windows includes the report ID. The vendor driver's payload starts at index 1 here.
+        if (frame.Length is not (10 or 65) || frame[0] != 0 || frame[1] > 1 || frame[7] is not (1 or 3))
+            return false;
+        if (frame[4] != 0 || frame[6] != 1 || frame[9] != 0)
+        {
+            reason = "keyboard-offline-busy-or-boot";
+            return false;
+        }
+        // The receiver initializes its cached percentage to 0. The reply carries no update age.
+        if (frame[2] is 0 or > 100)
+        {
+            reason = "battery-unavailable";
+            return false;
+        }
+        level = frame[2];
+        reason = "receiver-cache";
+        return true;
+    }
+
+    internal static ReferenceBatteryProtocol.Reading ReadMonsGeekStatus(Func<byte[], bool> send,
+        Func<byte[]> receive, Action<int> delay, BatteryReplay.Trace trace)
+    {
+        var request = BuildMonsGeekStatusRequest();
+        int previousLevel = -1;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            bool sent = send(request);
+            trace?.Add("status-set-feature", sent, raw: request, keep: true);
+            if (!sent) return ReferenceBatteryProtocol.Reading.Failed("MonsGeek F7 查询发送失败");
+
+            delay(35);
+            var response = receive();
+            if (!TryParseMonsGeekStatus(response, out int level, out string reason) || response.Length != 65)
+            {
+                trace?.Add("status-get-feature", false, raw: response,
+                    result: response == null ? "no-response" : response.Length != 65 ? "unexpected-length" : reason);
+                previousLevel = -1;
+                continue;
+            }
+
+            var replay = response.AsSpan(0, 10).ToArray();
+            replay[3] = replay[5] = replay[8] = 0; // Preserve keyboard status only.
+            trace?.Add("status-get-feature", true, raw: replay, keep: true, result: "receiver-cache");
+            if (level == previousLevel)
+                return new(level, false, false, ReferenceBatteryProtocol.State.Cached,
+                    "MonsGeek F7 接收器缓存，采样时间与充电状态未知");
+            previousLevel = level;
+        }
+        return ReferenceBatteryProtocol.Reading.Failed("MonsGeek F7 未取得一致的在线键盘缓存读数");
+    }
+
+    private static ReferenceBatteryProtocol.Reading ReadMonsGeekStatus(IntPtr handle, BatteryReplay.Trace trace)
+    {
+        bool Send(byte[] request)
+        {
+            bool sent = HidD_SetFeature(handle, request, request.Length);
+            if (!sent) trace?.Add("status-native-set", false, nativeError: Marshal.GetLastWin32Error());
+            return sent;
+        }
+        byte[] Receive()
+        {
+            var response = new byte[65];
+            if (HidD_GetFeature(handle, response, response.Length)) return response;
+            trace?.Add("status-native-get", false, nativeError: Marshal.GetLastWin32Error());
+            return null;
+        }
+        return ReadMonsGeekStatus(Send, Receive, Thread.Sleep, trace);
     }
 
     private static ReferenceBatteryProtocol.Reading ReadMonsGeekEvent(IntPtr handle, BatteryReplay.Trace trace)

@@ -135,6 +135,87 @@ internal static class ReportedReceiversRegression
             "cross-instance replay rejected");
         Check(BatteryReplay.Replay(mouseRead with { Samples = [new("open", true), Sample("get-feature", mouse)] },
             [mouseChannel]).Percent == null, "response without request rejected");
+        var statusRequest = VendorProtocol.BuildMonsGeekStatusRequest();
+        Check(statusRequest.Length == 65 && statusRequest[1] == 0xF7 &&
+              statusRequest.Where((_, index) => index != 1).All(value => value == 0), "official F7 framing");
+        var status = new byte[65];
+        status[2] = 68;
+        status[6] = status[7] = 1;
+        Check(VendorProtocol.TryParseMonsGeekStatus(status, out level, out _) && level == 68,
+            "online ready keyboard cache without an unrelated command response");
+        foreach ((int index, byte value) in new (int, byte)[]
+                 { (0, 5), (1, 0xF7), (2, 0), (2, 101), (4, 1), (6, 0), (7, 2), (9, 1) })
+        {
+            var bad = (byte[])status.Clone();
+            bad[index] = value;
+            Check(!VendorProtocol.TryParseMonsGeekStatus(bad, out level, out _) && level == -1,
+                "invalid F7 status index " + index);
+        }
+
+        int sends = 0;
+        bool Send(byte[] request) { sends++; return request.SequenceEqual(statusRequest); }
+        var trace = new BatteryReplay.Trace();
+        trace.Add("open", true);
+        var reading = VendorProtocol.ReadMonsGeekStatus(Send, () => status, _ => { }, trace);
+        Check(sends == 2 && reading is { Level: 68, Status: ReferenceBatteryProtocol.State.Cached, ChargingKnown: false },
+            "two F7 transactions produce cached percentage only");
+        sends = 0;
+        Check(VendorProtocol.ReadMonsGeekStatus(Send, () => null!, _ => { }, null).Level == -1 && sends == 3,
+            "no response retries are bounded");
+        sends = 0;
+        Check(VendorProtocol.ReadMonsGeekStatus(Send, () => sends == 2 ? null! : status, _ => { }, null).Level == -1,
+            "interrupted responses cannot confirm a cache value");
+        Check(VendorProtocol.ReadMonsGeekStatus(_ => false, () => throw new InvalidOperationException(),
+            _ => throw new InvalidOperationException(), null).Level == -1, "failed send skips receive");
+
+        const string statusPath = @"\\?\hid#vid_3151&pid_5038&mi_02#keyboard";
+        const string otherStatusPath = @"\\?\hid#vid_3151&pid_5038&mi_02#other";
+        InstanceScope.Register(statusPath, [(@"USB\VID_3151&PID_5038\keyboard", "")]);
+        InstanceScope.Register(otherStatusPath, [(@"USB\VID_3151&PID_5038\other", "")]);
+        HidDiscovery.VendorCollectionInfo StatusChannel(string id) => new()
+        {
+            Path = id, Vid = 0x3151, Pid = 0x5038, Product = Keyboard, UsagePage = 0xFFFF, Usage = 2, Feature = 65
+        };
+        keyboardBucket.Battery = -1;
+        int fallback = 0;
+        ReferenceBatteryProtocol.Reading ReadKeyboard(string route, HidDiscovery.VendorCollectionInfo channel,
+            BatteryReplay.Trace _)
+        {
+            if (route == VendorProtocol.MonsGeekRoute) return ReferenceBatteryProtocol.Reading.Failed("no event");
+            fallback++;
+            Check(route == VendorProtocol.MonsGeekStatusRoute && channel.Path == statusPath &&
+                  InstanceScope.Allows(statusPath) && !InstanceScope.Allows(otherStatusPath), "F7 stays on the same receiver");
+            return reading;
+        }
+        HidDiscovery.QueryReportedReceivers(keyboardBuckets, [keyboardHid, StatusChannel(statusPath)], true, null, ReadKeyboard);
+        HidDiscovery.QueryReportedReceivers(keyboardBuckets, [keyboardHid, StatusChannel(otherStatusPath)], false, null, ReadKeyboard);
+        Check(fallback == 0 && keyboardBucket.Battery == -1, "safe mode and wrong receiver skip F7");
+        HidDiscovery.QueryReportedReceivers(keyboardBuckets,
+            [keyboardHid, StatusChannel(statusPath), StatusChannel(otherStatusPath)], false, null, ReadKeyboard);
+        var cached = keyboardBucket.ToDevice();
+        Check(fallback == 1 && cached is { Level: 68, IsStale: true, Charging: false,
+            PeripheralConfirmed: false, ReceiverDiscovered: true }, "cache reaches display flagged stale");
+        var model = new DeviceInfo { Connected = cached.Connected, Level = cached.Level,
+            IsStale = cached.IsStale, Charging = cached.Charging };
+        Check(model.LevelText == "68%" && model.StatusText.Contains("待刷新") && !model.IsChargingActive,
+            "cached display and no charging animation");
+        keyboardBucket.Battery = -1;
+        HidDiscovery.QueryReportedReceivers(keyboardBuckets, [keyboardHid, StatusChannel(statusPath)], false, null,
+            (route, _, eventTrace) => route == VendorProtocol.MonsGeekRoute
+                ? VendorProtocol.ReadMonsGeekEvent(new FakeInput(keyboard), eventTrace)
+                : throw new InvalidOperationException("fresh event must bypass F7"));
+        Check(keyboardBucket.ToDevice() is { Level: 62, Charging: true, IsStale: false }, "fresh event takes precedence");
+
+        var statusChannel = new BatteryReplay.Collection("receiver-1", 2, 0x3151, 0x5038, Keyboard,
+            0xFFFF, 2, 0, 0, 65, false, true, InterfaceLabel: "MI_02");
+        var statusRead = new BatteryReplay.Query("receiver-1", 2, VendorProtocol.MonsGeekStatusRoute,
+            "Cached", null, 68, trace.Snapshot());
+        Check(BatteryReplay.Replay(statusRead, [statusChannel]) is { Percent: 68, ValueKind: "captured-cache", Charging: null },
+            "F7 replay retains cache provenance");
+        Check(BatteryReplay.Replay(statusRead with { Samples = trace.Snapshot()[..3] }, [statusChannel]).Percent == null,
+            "one transaction cannot replay as a verified cache sample");
+        Check(BatteryReplay.Replay(statusRead, [statusChannel with { Usage = 1 }]).Percent == null,
+            "F7 replay rejects wrong usage");
         return count;
     }
 
