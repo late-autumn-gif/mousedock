@@ -21,6 +21,7 @@ namespace MouseDock
     {
         private static Mutex _mutex;
         private static WinForms.NotifyIcon _tray;
+        private static TrayIconGroup _deviceTrays;
         private static EventWaitHandle _showSignal;
         private static bool _exiting;
 
@@ -418,9 +419,14 @@ namespace MouseDock
             }
         }
 
-        private void BuildTray()
+        private static WinForms.ContextMenuStrip CreateTrayMenu(DeviceInfo device = null)
         {
             var menu = new WinForms.ContextMenuStrip();
+            if (device != null)
+            {
+                menu.Items.Add(new WinForms.ToolStripMenuItem(device.Name) { Enabled = false });
+                menu.Items.Add(new WinForms.ToolStripSeparator());
+            }
             menu.Items.Add("显示当前面板", null, (_, __) => ShowCurrentSurface());
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("切换到卡片窗", null, (_, __) => SetSurface("dock"));
@@ -431,11 +437,19 @@ namespace MouseDock
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("切换到桌宠", null, (_, __) => SetSurface("pet"));
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
-            menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
+            menu.Items.Add("检查更新…", null, (_, __) =>
+            {
+                if (Current is App app) _ = app.CheckUpdateOnStartupAsync(manual: true);
+            });
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("退出 MouseDock", null, (_, __) => ExitApp());
+            return menu;
+        }
 
+        private void BuildTray()
+        {
+            var menu = CreateTrayMenu();
             _tray = new WinForms.NotifyIcon
             {
                 Icon = BuildTrayIcon(),
@@ -471,6 +485,12 @@ namespace MouseDock
                 ShowCurrentSurface();
             };
             _tray.BalloonTipClicked += (_, __) => ShowCurrentSurface();
+            _deviceTrays = new TrayIconGroup(RenderDeviceTrayIcon, d => CreateTrayMenu(d),
+                (_, doubleClick) =>
+                {
+                    if (doubleClick) ShowCurrentSurface();
+                    else ToggleCurrentSurface();
+                });
 
             // 电量一刷新就把托盘图标重画一遍
             Battery.Refreshed += (_, __) => UpdateTrayIcon();
@@ -494,6 +514,7 @@ namespace MouseDock
                 if (_tray == null) return;
                 _tray.Visible = false;
                 _tray.Visible = true;
+                _deviceTrays?.Restore();
             }
             catch { }
         }
@@ -507,6 +528,10 @@ namespace MouseDock
         private static void UpdateTrayIcon()
         {
             if (_tray == null) return;
+            var trayTargets = TrayDeviceSelection.Resolve(Settings, Battery?.Devices);
+            _deviceTrays?.Sync(trayTargets,
+                $"{Theme.Name}/{Theme.Accent}/{Theme.Text}/{Theme.TextDim}/{Settings.LowBatteryWarn}/" +
+                $"{_trayBlinkOn}/{string.Join(",", (Settings.TrayColors ?? new()).OrderBy(p => p.Key))}");
 
             var dev = Battery.VisibleDevices
                 .OrderByDescending(d => d.IsChargingActive).ThenByDescending(d => d.HasLevel).FirstOrDefault();
@@ -517,7 +542,8 @@ namespace MouseDock
 
             try
             {
-                var replacement = RenderTrayIcon(level, charging, (low || charging) && _trayBlinkOn, dev?.IsFullActive == true);
+                var replacement = Settings.MultiTray ? BuildTrayIcon() :
+                    RenderTrayIcon(level, charging, (low || charging) && _trayBlinkOn, dev?.IsFullActive == true);
                 var previous = _tray.Icon;
                 try { _tray.Icon = replacement; }
                 catch { replacement.Dispose(); throw; }
@@ -525,11 +551,14 @@ namespace MouseDock
                 string trayText = level >= 0
                     ? $"MouseDock · {dev.Name} {level}%" + (charging ? "（充电中）" : "")
                     : charging ? $"MouseDock · {dev.Name}（充电中，电量未知）" : "MouseDock · 电量，一起看见（双击唤起）";
-                _tray.Text = trayText.Length <= 63 ? trayText : trayText.Substring(0, 60) + "…";
+                _tray.Text = Settings.MultiTray ? "MouseDock · 设置与设备" :
+                    trayText.Length <= 63 ? trayText : trayText.Substring(0, 60) + "…";
             }
             catch { }
 
-            if ((low || charging) && SystemParameters.ClientAreaAnimation)
+            bool animate = Settings.MultiTray
+                ? TrayDeviceSelection.NeedsAnimation(trayTargets, Settings.LowBatteryWarn) : low || charging;
+            if (animate && SystemParameters.ClientAreaAnimation)
             {
                 if (_trayBlink == null)
                 {
@@ -550,8 +579,21 @@ namespace MouseDock
             }
         }
 
+        public static void RefreshTray() => UpdateTrayIcon();
+
+        private static System.Drawing.Icon RenderDeviceTrayIcon(DeviceInfo device)
+        {
+            var color = IconComposition.IdentityColor(device.Id);
+            return RenderTrayIconCore(device.Level, device.IsChargingActive,
+                (device.IsChargingActive || device.Level >= 0 && device.Level <= Settings.LowBatteryWarn) && _trayBlinkOn,
+                device.IsFullActive, color);
+        }
+
         /// <summary>画一个 32×32 的圆角方块图标，里面写电量数字。</summary>
-        private static System.Drawing.Icon RenderTrayIcon(int level, bool charging, bool dim, bool full)
+        private static System.Drawing.Icon RenderTrayIcon(int level, bool charging, bool dim, bool full) =>
+            RenderTrayIconCore(level, charging, dim, full, null);
+
+        private static System.Drawing.Icon RenderTrayIconCore(int level, bool charging, bool dim, bool full, Color? identity)
         {
             const int size = 32;
             using var bmp = new System.Drawing.Bitmap(size, size);
@@ -583,6 +625,11 @@ namespace MouseDock
                 using var fg = new System.Drawing.SolidBrush(ink);
                 var sz = g.MeasureString(txt, font);
                 g.DrawString(txt, font, fg, (size - sz.Width) / 2f, (size - sz.Height) / 2f + 1f);
+                if (identity is Color id)
+                {
+                    using var marker = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(id.R, id.G, id.B));
+                    g.FillRectangle(marker, 8, 28, 16, 3);
+                }
             }
             return OwnBitmapIcon(bmp);
         }
@@ -1136,6 +1183,8 @@ namespace MouseDock
             _trayClickTimer?.Stop();
             _trayBlink?.Stop();
             _trayBlink?.Dispose();
+            _deviceTrays?.Dispose();
+            _deviceTrays = null;
             if (_tray != null)
             {
                 var icon = _tray.Icon;

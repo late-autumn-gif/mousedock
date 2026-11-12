@@ -40,6 +40,9 @@ internal static class Program
         var checks = new (string Name, Action Check)[]
         {
             ("Dock DPI shows the selector only for a verified mouse", UiRegressionChecks.DockDpi),
+            ("Independent tray targets survive selection reorder disconnect and ambiguity", MultiTrayChecks.Selection),
+            ("Independent tray settings preserve legacy defaults and clone drafts", MultiTrayChecks.Preferences),
+            ("Independent tray icons retain resources rename and recover after disconnect", MultiTrayChecks.Lifecycle),
             ("Low battery reminders can be disabled and restored from settings", LowBatteryWarningChecks.DisabledOption),
             ("Compact sizes persist independently with legacy defaults", DisplaySizeChecks.Preferences),
             ("Taskbar resizing preserves fit DPI signed offsets and overflow", DisplaySizeChecks.Placement),
