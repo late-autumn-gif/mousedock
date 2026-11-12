@@ -29,13 +29,24 @@ MouseDock 在同一物理实例上完成现有的型号确认后，核对输入�
 
 本机没有这些型号，三款均待实机。离线用例覆盖读数、改值、回读、错误软件 ID、型号变化、异常 DPI 列表及板载模式。其它 Logitech 通用接收器仍需单独验证身份和能力。
 
+## ATK ZERO BITMOUSE
+
+官方 ATK HUB 为 ZERO 使用报告 `08`。`0x09` 读取当前配置，`0x17` 分七段读取 DPI 档位，`0x02` 激活已有档位。MouseDock 校验应答的状态、命令、长度和分段地址。修改前重读配置和档位表，保留原有 X/Y 数值与档位颜色，随后回读配置和整张表确认切换。X/Y 数值不同或颜色包含额外数据时，只显示 X 轴读数。安全模式跳过厂商查询。[ATK V HUB 指南](https://www.atk.store/blogs/news/atk-v-hub-instructions) · [atkctl BITMOUSE 协议记录](https://github.com/cobanov/atkctl/blob/main/docs/PROTOCOL.md)
+
+| 连接 | DPI 路由及验证 |
+| --- | --- |
+| 有线 `373B:1154` | 精确匹配 `ATK ZERO` 产品名。 |
+| 2.4G `373B:1155`、`373B:124F` | 限定同一接收器实例，写入前后核对实时配对型号。 |
+
+三个路由通过合成报文的读档、切档和回读测试，共新增 23 项断言。用例包含身份变化、错址、异常报文、无应答和改档回读不符。公开协议记录的硬件样本来自 A9 Plus NK。当前没有 ATK ZERO 的 DPI 实机回包，有线与 2.4G 均待实机验证。
+
 ## 其他电量适配路线
 
 | 当前已有电量支持的鼠标 | DPI 检查与缺口 |
 | --- | --- |
 | 迈从 A7 Ultra、A7 V2 Pro、A7 V2 Ultra+、G7、G7 Pro | 历史 Feature 与 AA30 通道单独处理。旧版 `12/67` DPI 读取代码已存在，仍缺本轮可核对的实机回包及改档证据。 |
 | 罗技 HID++ 通用接收器路线 | 待验证实时型号、传感器和板载配置模式，避免将其它槽位的 DPI 归给当前鼠标。 |
-| ATK ZERO、ATK F1 V3 Ultimate+、前行者 Z7、蜻蜓 F1 MOBA | 当前含不同描述符和报文格式的 COMPX／BITMOUSE 路径。已有参考实现的 ATK DPI 帧线索，仍须分别核对读当前档、写入回包和型号边界。 |
+| ATK ZERO COMPX `373B:11D8`、ATK F1 V3 Ultimate+、前行者 Z7、蜻蜓 F1 MOBA | 需分别核对各型号的 DPI 报文和接口能力。 |
 | Scyrox V12M、Ninjutso Sora V2、雷柏 VT7、雷柏 VT9S V2 | 现有参考移植只覆盖电量。分别缺少对应硬件或可核对的 DPI 读写回包。 |
 | 狼蛛 SC580／SC630 Pro、英菲克 IN9／IN9 Pro、前行者 X23 SE、凌豹 M9 Pro、ROG 月刃2 ACE、黑爵 AJ 系及其他通用电量路线 | 已有识别或电量证据。需要核对每个型号的官方 DPI 请求、应答和改档回读，无法从电量协议推断。 |
 | BLE / 通用 HID 鼠标 | 标准电量路径不提供硬件 DPI 设置。需要按厂商确认专用通道。 |

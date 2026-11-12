@@ -326,7 +326,9 @@ namespace MouseDock.Services.Detection
                 QueryScopedModernMouse(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadScopedModernMouse);
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
             if (BatteryReplay.Current == null) QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
-            QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
+            bool readAtkDpi = BatteryReplay.Current == null;
+            QueryZeroRainy(buckets, vendorCollections, safeMode, preferences,
+                (path, vid, pid) => VendorProtocol.ReadZeroRainy(path, vid, pid, readAtkDpi, dpiChange));
             bool readLogitechDpi = BatteryReplay.Current == null;
             QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences,
                 (path, vid, pid) => VendorProtocol.ReadOriginalGpw(path, vid, pid, readLogitechDpi, dpiChange));

@@ -4,9 +4,11 @@ using System.Runtime.InteropServices;
 namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
-    internal static ReferenceBatteryProtocol.Reading ReadZeroRainy(string path,ushort vid,ushort pid)
+    internal static ReferenceBatteryProtocol.Reading ReadZeroRainy(string path,ushort vid,ushort pid,
+        bool readDpi = false, MouseDpiChange dpiChange = null)
     {
         if(InstanceScope.Current==null || !InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("缺少精确设备实例");
+        readDpi = readDpi && IsAtkZeroBitMouse(vid, pid);
         return ReferenceQueryGate.Run(path,()=>
         {
             IntPtr h=CreateFile(path,GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,IntPtr.Zero,OPEN_EXISTING,FILE_FLAG_OVERLAPPED,IntPtr.Zero);
@@ -17,19 +19,22 @@ internal static partial class VendorProtocol
                 var a=new HIDD_ATTRIBUTES{Size=Marshal.SizeOf<HIDD_ATTRIBUTES>()};var c=Caps(h);string product=HidDiscovery.ReadHidProduct(h,path);
                 if(!HidD_GetAttributes(h,ref a) || a.VendorID!=vid || a.ProductID!=pid || !ZeroRainyProtocol.Channel(vid,pid,product,c.UsagePage,c.Usage,c.InputReportByteLength,c.OutputReportByteLength,c.FeatureReportByteLength))throw new IOException("ZERO/Rainy实际属性/集合不符");
                 if(!HidD_GetPreparsedData(h,out var prep))throw new IOException("无法核对报告能力");
+                bool dpiReports = false;
                 try
                 {
                     byte expected=IsAtkZeroBitMouse(vid,pid)?(byte)8:(byte)4;
                     bool Check(int type,ushort values,ushort buttons)=>values+buttons==0 ||
                         (TryGetReportId(prep,type,values,buttons,out byte id)&&id==expected);
                     if(!Check(0,c.NumberInputValueCaps,c.NumberInputButtonCaps)||!Check(1,c.NumberOutputValueCaps,c.NumberOutputButtonCaps))throw new IOException("报告编号与协议不符或不唯一");
+                    dpiReports = c.NumberInputValueCaps + c.NumberInputButtonCaps > 0 &&
+                        c.NumberOutputValueCaps + c.NumberOutputButtonCaps > 0;
                 }
                 finally{HidD_FreePreparsedData(prep);}
                 ev=CreateEvent(IntPtr.Zero,true,false,IntPtr.Zero);if(ev==IntPtr.Zero)throw new IOException("事件创建失败");
-                return ZeroRainyProtocol.Read(new ZeroRainyLink(h,ev),vid,pid,product);
+                return ZeroRainyProtocol.Read(new ZeroRainyLink(h,ev),vid,pid,product,readDpi && dpiReports,dpiChange);
             }
             finally{if(ev!=IntPtr.Zero)CloseHandle(ev);CloseHandle(h);}
-        },5500);
+        },readDpi ? 8000 : 5500);
     }
     private sealed class ZeroRainyLink(IntPtr h,IntPtr ev):ReferenceBatteryProtocol.ILink
     {

@@ -17,13 +17,14 @@ internal static class ZeroRainyProtocol
         Candidate(vid,pid,product) && feature==0 && (VendorProtocol.IsAtkZeroBitMouse(vid,pid)?
             VendorProtocol.IsAtkZeroBatteryCollection(page,usage,(ushort)input,(ushort)output):
             page==0xFF1C && usage==0x92 && input==64 && output==64);
-    internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link,ushort vid,ushort pid,string product)
+    internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link,ushort vid,ushort pid,string product,
+        bool readDpi = false, MouseDpiChange dpiChange = null)
     {
         bool atk=VendorProtocol.IsAtkZeroBitMouse(vid,pid),receiver=pid!=0x1154;
         string model=atk?"ATK ZERO":RainyName(product)?"WOBKEY Rainy 75":null;
         bool identified=atk && !receiver;
         string trace="";long deadline=link.Now+4500;
-        byte[] Query(byte[] tx,byte command)
+        byte[] Query(byte[] tx,byte command, Func<byte[], bool> matches = null)
         {
             if(link.Now>=deadline){trace=" 总时长超限";return null;}
             bool drained=false;
@@ -42,6 +43,7 @@ internal static class ZeroRainyProtocol
                 // Rainy bytes1/2 are a checksum, not ATK's request nonce.
                 // Native transport correlates command3; do not require checksum echo.
                 if(!atk && raw.Length!=64)continue;
+                if(matches != null && !matches(raw)) continue;
                 if(atk?VendorProtocol.AtkReplyOffset(raw,command)>=0:
                     VendorProtocol.TryParseRainy75OfficialBattery(raw,out _,out _))return raw;
             }
@@ -69,8 +71,14 @@ internal static class ZeroRainyProtocol
         }
         // 型号可以由接收器产品串推定，但充电语义只有产品串明确是 Rainy 时才算已知。
         else {known=model!=null;if(!known)charging=false;}
-        return new(level,charging,known,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
+        var reading = new ReferenceBatteryProtocol.Reading(level,charging,known,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
             (atk?"ZERO两次电量响应":"Evision两次有效电量响应；型号按接收器产品串推定，待实机确认")+
             (known?"；充电字段已知":"；充电状态未知")+"；不推断独立RF在线位"+trace,model);
+        if (!readDpi || !atk || !identified ||
+            (!receiver && !string.Equals(product?.Trim(), AtkZeroDpi.Model, StringComparison.OrdinalIgnoreCase)) ||
+            (dpiChange != null && dpiChange.Expected.Protocol != MouseDpiProtocol.AtkZero)) return reading;
+
+        deadline = link.Now + 2700;
+        return reading with { Dpi = AtkZeroDpi.ReadOrChange(receiver, dpiChange, Query) };
     }
 }

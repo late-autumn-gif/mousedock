@@ -24,6 +24,11 @@ public static partial class HidDiscovery
             if(r.Model!=null)b.ZeroRainyModel=r.Model;
             if(r.Level is >=0 and <=100 && r.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging){b.Battery=r.Level;b.Charging=r.ChargingKnown&&r.Charging;b.BatterySource=r.Diagnostic;}
             else b.BatteryFailures.Add(r.Diagnostic);
+            if (r.Dpi is { } dpi)
+            {
+                b.DpiSettings = dpi;
+                b.Dpi = dpi.Values[dpi.Index];
+            }
             LastDiagnostics.Add($"{b.InstanceId} ZERO/Rainy专用 型号={b.ZeroRainyModel} 电量={r.Level} {r.Diagnostic}");
         }
     }
