@@ -51,18 +51,35 @@ internal static class ModernMouseRegression
         const string a7V3Pro = "MCHOSE A7 V3 Pro";
         HashSet<byte> proInput = [0x11, 0x13, 0x4D];
         HashSet<byte> proOutput = [0x13, 0x4D];
-        Check(VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, a7V3Pro,
+        Check(VendorProtocol.AllowsA7V3ProReports(0x3837, 0x1018, a7V3Pro,
             "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro admits the observed receiver report IDs");
-        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, "MCHOSE A7 V3 Pro+",
+        Check(VendorProtocol.AllowsA7V3ProReports(0x3837, 0x4031, a7V3Pro,
+            "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro admits the observed direct USB report IDs");
+        Check(!VendorProtocol.AllowsA7V3ProReports(0x3837, 0x1018, "MCHOSE A7 V3 Pro+",
             "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro receiver rule does not match Pro+");
-        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1014, a7V3Pro,
+        Check(!VendorProtocol.AllowsA7V3ProReports(0x3837, 0x1014, a7V3Pro,
             "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro receiver rule requires the measured receiver PID");
-        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, a7V3Pro,
+        Check(!VendorProtocol.AllowsA7V3ProReports(0x3837, 0x1018, a7V3Pro,
             "MI_02/COL_01", proInput, proOutput), "A7 V3 Pro receiver rule rejects the auxiliary collection");
-        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, a7V3Pro,
+        Check(!VendorProtocol.AllowsA7V3ProReports(0x3837, 0x1018, a7V3Pro,
             "MI_02/COL_02", proInput, [0x13]), "A7 V3 Pro receiver rule still requires 4D in both directions");
-        Check(!VendorProtocol.TryModernScopedFrame(Frame(0x4026, 83, 0), a7V3Pro, out _, out _),
-            "A5 V3 Ultra+ response identity does not become A7 V3 Pro battery");
+        var proWireless = Frame(0x4026, 83, 0);
+        proWireless[18] = 2;
+        CheckSum(proWireless);
+        Check(VendorProtocol.TryModernScopedFrame(proWireless, a7V3Pro, out int proLevel, out bool proCharging, 2) &&
+            proLevel == 83 && !proCharging, "A7 V3 Pro accepts observed wireless firmware identity in scope");
+        Check(!VendorProtocol.TryModernScopedFrame(proWireless, a7V3Pro, out _, out _) &&
+            !VendorProtocol.TryModernScopedFrame(proWireless, a7V3Pro, out _, out _, 1) &&
+            !VendorProtocol.TryModernScopedFrame(proWireless, "MCHOSE A7 V3 Pro+", out _, out _, 2),
+            "Firmware identity requires matching descriptor scope, transport and model");
+        var proWired = Frame(0x4026, 96, 1);
+        proWired[18] = 1;
+        CheckSum(proWired);
+        Check(VendorProtocol.TryModernScopedFrame(proWired, a7V3Pro, out proLevel, out proCharging, 1) &&
+            proLevel == 96 && proCharging, "A7 V3 Pro accepts observed wired firmware identity and charging flag");
+        proWired[20] ^= 1;
+        Check(!VendorProtocol.TryModernScopedFrame(proWired, a7V3Pro, out _, out _, 1),
+            "Firmware identity does not bypass XOR validation");
         const string nameA="MCHOSE K5 Ultra";InstanceScope.BeginScan();
         string a=InstanceScope.Register("fake#mhub#a",new[]{(@"USB\VID_3837&PID_1018\A","usbccgp")});
         string b=InstanceScope.Register("fake#mhub#b",new[]{(@"USB\VID_3837&PID_1018\B","usbccgp")});
