@@ -524,10 +524,10 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        /// <summary>四个档位里高亮选中的那个，其余压暗。</summary>
+        /// <summary>高亮选中的提醒档位，包括 0%（不提醒）。</summary>
         private void ApplyWarnButtons(int selected)
         {
-            var buttons = new[] { (Warn10, 10), (Warn20, 20), (Warn30, 30), (Warn40, 40) };
+            var buttons = new[] { (Warn0, 0), (Warn10, 10), (Warn20, 20), (Warn30, 30), (Warn40, 40) };
             foreach (var (btn, pct) in buttons)
             {
                 if (btn == null) continue;
