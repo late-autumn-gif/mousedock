@@ -354,6 +354,7 @@ assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += ZeroRainyRegression.Run();
 assertions += AtkZeroDpiRegression.Run();
+assertions += ScyroxV12DpiRegression.Run();
 assertions += SupportAuditRegression.Run();
 assertions += SuperlightRegression.Run();
 assertions += LogitechDpiRegression.Run();

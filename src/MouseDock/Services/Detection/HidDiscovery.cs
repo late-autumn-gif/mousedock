@@ -304,7 +304,8 @@ namespace MouseDock.Services.Detection
             QueryReportedReceivers(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadReportedReceiver);
             QueryZg4Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadZg4);
             QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
-                VendorProtocol.ReadReferenceBattery);
+                VendorProtocol.ReadReferenceBattery, BatteryReplay.Current == null
+                    ? (profile, path) => VendorProtocol.ReadReferenceBattery(profile, path, true, dpiChange) : null);
             QueryReportedX23SeCollections(buckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReportedX23Se);
             QueryM137Feature(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
@@ -1087,7 +1088,8 @@ namespace MouseDock.Services.Detection
         /// <summary>厂商集合上的电量读取：设备本体归并完之后，每台最多读一次。</summary>
         internal static void QueryReferenceCollections(Dictionary<string, Bucket> buckets,
             List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
-            Func<ReferenceProfiles.Profile, string, ReferenceBatteryProtocol.Reading> query)
+            Func<ReferenceProfiles.Profile, string, ReferenceBatteryProtocol.Reading> query,
+            Func<ReferenceProfiles.Profile, string, ReferenceBatteryProtocol.Reading> queryWithDpi = null)
         {
             foreach (var bucket in buckets.Values)
             {
@@ -1103,10 +1105,12 @@ namespace MouseDock.Services.Detection
                     bucket.BatteryFailures.Add(safeMode ? "安全模式已跳过参考协议查询" : "此实例的识别已停用");
                     continue;
                 }
-                var channel = collections.Where(c => c.Vid == bucket.Vid && c.Pid == bucket.Pid &&
+                var matchingChannels = collections.Where(c => c.Vid == bucket.Vid && c.Pid == bucket.Pid &&
                     InstanceScope.ForPath(c.Path, legacyId) == instance &&
                     ReferenceProfiles.AcceptsChannel(profile, c.UsagePage, c.Usage, c.Input, c.Output, c.Feature))
-                    .OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                    .GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First())
+                    .OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
+                var channel = matchingChannels.FirstOrDefault();
                 if (channel == null)
                 {
                     bucket.BatteryFailures.Add($"{profile.Model}：没有满足精确用法与报告长度的电量集合，未发送命令");
@@ -1114,7 +1118,9 @@ namespace MouseDock.Services.Detection
                 }
                 using var scope = InstanceScope.Enter(bucket.InstanceId);
                 ReferenceBatteryProtocol.Reading result;
-                try { result = query(profile, channel.Path); }
+                var reader = matchingChannels.Length == 1 && ScyroxV12Dpi.Supports(profile) && queryWithDpi != null
+                    ? queryWithDpi : query;
+                try { result = reader(profile, channel.Path); }
                 catch (Exception ex) { result = ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name); }
                 if (result == null) result = ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
                 if (result.Level is >= 0 and <= 100 &&
@@ -1129,6 +1135,11 @@ namespace MouseDock.Services.Detection
                     bucket.ReferenceIdentityModel = result.Model;
                 }
                 else bucket.BatteryFailures.Add($"{profile.Model}：{result.Diagnostic}");
+                if (result.Dpi is { } dpi)
+                {
+                    bucket.DpiSettings = dpi;
+                    bucket.Dpi = dpi.Values[dpi.Index];
+                }
                 LastDiagnostics.Add($"{instance} 参考配置={profile.Model} 协议={profile.Battery} " +
                     $"状态={result.Status} 电量={result.Level} 充电已知={result.ChargingKnown} {result.Diagnostic}");
             }

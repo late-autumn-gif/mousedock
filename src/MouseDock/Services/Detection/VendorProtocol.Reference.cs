@@ -11,10 +11,15 @@ internal static partial class VendorProtocol
     /// <summary>Only an exact, already-selected instance path is passed to this worker.
     /// The worker owns the handle until the native operation has actually returned.</summary>
     internal static ReferenceBatteryProtocol.Reading ReadReferenceBattery(
-        ReferenceProfiles.Profile profile, string path)
+        ReferenceProfiles.Profile profile, string path) => ReadReferenceBattery(profile, path, false, null);
+
+    internal static ReferenceBatteryProtocol.Reading ReadReferenceBattery(
+        ReferenceProfiles.Profile profile, string path, bool readDpi, MouseDpiChange change)
     {
         if (profile == null || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("未匹配设备实例，未发送命令");
+        readDpi = readDpi && ScyroxV12Dpi.Supports(profile) &&
+            (change == null || change.Expected.Protocol == MouseDpiProtocol.ScyroxV12);
         int budget = profile.Battery switch
         {
             ReferenceProfiles.Protocol.SoraV2 => 1000,
@@ -24,8 +29,9 @@ internal static partial class VendorProtocol
         return ReferenceQueryGate.Run(path, () =>
         {
             using var link = new NativeReferenceLink(profile, path);
-            return ReferenceBatteryProtocol.Read(profile, link);
-        }, budget);
+            MouseDpiState dpi = readDpi && link.HasReport8 ? ScyroxV12Dpi.ReadOrChange(link, change) : null;
+            return ReferenceBatteryProtocol.Read(profile, link) with { Dpi = dpi };
+        }, budget + (readDpi ? 5600 : 0));
     }
 
     private sealed class NativeReferenceLink : ReferenceBatteryProtocol.ILink, IDisposable
@@ -34,6 +40,21 @@ internal static partial class VendorProtocol
         private IntPtr signal;
         private readonly int inputLength;
         private readonly ReferenceProfiles.Protocol protocol;
+
+        internal bool HasReport8
+        {
+            get
+            {
+                var caps = Caps(handle);
+                if (!HidD_GetPreparsedData(handle, out var data)) return false;
+                try
+                {
+                    return TryGetReportId(data, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps, out byte input) && input == 8 &&
+                        TryGetReportId(data, 1, caps.NumberOutputValueCaps, caps.NumberOutputButtonCaps, out byte output) && output == 8;
+                }
+                finally { HidD_FreePreparsedData(data); }
+            }
+        }
 
         internal NativeReferenceLink(ReferenceProfiles.Profile profile, string path)
         {
