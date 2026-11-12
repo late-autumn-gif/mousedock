@@ -43,7 +43,8 @@ internal static partial class VendorProtocol
     internal static bool IsRogOmni(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1ACE;
 
     internal static bool IsRogOmniReport(ushort page, ushort usage, int input, int output, int reportId) =>
-        (reportId == 1 && page == 0xFF02 || reportId == 2 && page == 0xFF00) &&
+        (reportId == 1 && page == 0xFF02 || reportId == 2 && page == 0xFF00 ||
+            reportId == 3 && page == 0xFF01) &&
         usage == 1 && input == 64 && output == 64;
 
     internal static bool IsRogOmniChannel(string path, string product, ushort page, ushort usage, int input, int output, int feature, int reportId)
@@ -53,7 +54,8 @@ internal static partial class VendorProtocol
         int start = path.IndexOf('#') + 1;
         int end = path.IndexOf('#', start);
         return start > 0 && end > start && path.AsSpan(start, end - start).Equals(
-            reportId == 1 ? "vid_0b05&pid_1ace&mi_02&col01" : "vid_0b05&pid_1ace&mi_02&col02",
+            reportId == 1 ? "vid_0b05&pid_1ace&mi_02&col01" :
+                reportId == 2 ? "vid_0b05&pid_1ace&mi_02&col02" : "vid_0b05&pid_1ace&mi_02&col03",
             StringComparison.OrdinalIgnoreCase);
     }
 
@@ -143,9 +145,12 @@ internal static partial class VendorProtocol
         return evidence;
     }
 
-    internal static ReferenceBatteryProtocol.Reading ReadRogScope(string pairingPath, string batteryPath, BatteryReplay.Trace trace = null)
+    internal static ReferenceBatteryProtocol.Reading ReadRogScope(string pairingPath, string batteryPath,
+        BatteryReplay.Trace trace = null, string mousePath = null)
     {
-        if (InstanceScope.Current == null || !InstanceScope.Allows(pairingPath) || !InstanceScope.Allows(batteryPath))
+        if (InstanceScope.Current == null || !InstanceScope.Allows(pairingPath) ||
+            batteryPath != null && !InstanceScope.Allows(batteryPath) ||
+            mousePath != null && !InstanceScope.Allows(mousePath))
             return ReferenceBatteryProtocol.Reading.Failed("Omni 接收器实例不匹配");
 
         return ReferenceQueryGate.Run(pairingPath, () =>
@@ -157,9 +162,21 @@ internal static partial class VendorProtocol
             if (!TryReadRogOmniPairing(paired, out var pids))
                 return ReferenceBatteryProtocol.Reading.Failed("Omni 配对列表格式不符（期望 01 A0 00 帧）");
             string model = RogPairedModel(paired, out _);
+            if (model == null && RogOmniMouseProtocol.IsPaired(paired))
+            {
+                if (mousePath == null)
+                    return new(-1, false, false, ReferenceBatteryProtocol.State.Failed,
+                        "Omni 月刃2 ACE 鼠标电量集合缺失或不唯一", RogOmniMouseProtocol.Model);
+                return RogOmniMouseProtocol.Read(paired, (report, subcommand, index) =>
+                    ReadRogOmniReply(report == 1 ? pairingPath : mousePath, report,
+                        report == 1 ? (byte)0xA0 : (byte)0x12, subcommand, index), trace);
+            }
             if (model == null)
                 return ReferenceBatteryProtocol.Reading.Failed(
-                    "Omni 已配对，但没有唯一的已确认 ROG 键盘型号：" + RogPairedModelText(pids));
+                    "Omni 已配对，但没有唯一的已确认 ROG 外设型号：" + RogPairedModelText(pids));
+            if (batteryPath == null)
+                return new(-1, false, false, ReferenceBatteryProtocol.State.Failed,
+                    "Omni 键盘电量集合缺失或不唯一", model);
             byte[] battery;
             try { battery = ReadRogOmniReply(batteryPath, 2, 0x12, 1); }
             catch (IOException ex)
@@ -195,7 +212,7 @@ internal static partial class VendorProtocol
         }, 3500);
     }
 
-    private static byte[] ReadRogOmniReply(string path, byte reportId, byte command, byte subcommand)
+    private static byte[] ReadRogOmniReply(string path, byte reportId, byte command, byte subcommand, ushort index = 0)
     {
         IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
             IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
@@ -220,6 +237,8 @@ internal static partial class VendorProtocol
             request[0] = reportId;
             request[1] = command;
             request[2] = subcommand;
+            request[3] = (byte)index;
+            request[4] = (byte)(index >> 8);
             if (!Transfer(handle, signal, request, true, 300, out int written) || written != request.Length)
                 throw new IOException("Omni 查询写入失败");
             long deadline = Environment.TickCount64 + 700;
@@ -230,7 +249,10 @@ internal static partial class VendorProtocol
                 if (received != 64 || response[0] != reportId) continue;
                 if (response[1] == 0xFF && response[2] == 0xAA) return null;
                 if (response[1] == command && response[2] == subcommand && !response.AsSpan().SequenceEqual(request) &&
-                    (reportId == 1 || TryParseRogScopeBattery(response, out _, out _)))
+                    (reportId == 1 || reportId == 2 && TryParseRogScopeBattery(response, out _, out _) ||
+                        reportId == 3 && (subcommand == 0 && index == 2 &&
+                            RogOmniMouseProtocol.TryParsePresence(response, out _) ||
+                            subcommand == 7 && index == 0 && RogOmniMouseProtocol.TryParseBattery(response, out _, out _))))
                     return response;
             }
             return null;
