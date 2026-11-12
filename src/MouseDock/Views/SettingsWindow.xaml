@@ -581,8 +581,11 @@
                             <Grid Margin="0,10,0,0">
                                 <TextBlock Text="低电量提醒" Style="{StaticResource RowText}" />
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button x:Name="Warn0" Content="0%" Tag="0" Style="{StaticResource GhostButton}"
+                                            Padding="8,3" FontSize="10.5" ToolTip="不提醒"
+                                            AutomationProperties.Name="0%（不提醒）" Click="OnWarnClick" />
                                     <Button x:Name="Warn10" Content="10%" Tag="10" Style="{StaticResource GhostButton}"
-                                            Padding="8,3" FontSize="10.5" Click="OnWarnClick" />
+                                            Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick" />
                                     <Button x:Name="Warn20" Content="20%" Tag="20" Style="{StaticResource GhostButton}"
                                             Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick" />
                                     <Button x:Name="Warn30" Content="30%" Tag="30" Style="{StaticResource GhostButton}"

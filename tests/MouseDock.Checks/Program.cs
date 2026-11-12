@@ -33,6 +33,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Low battery reminders can be disabled and restored from settings", LowBatteryWarningChecks.DisabledOption),
             ("Compact sizes persist independently with legacy defaults", DisplaySizeChecks.Preferences),
             ("Taskbar resizing preserves fit DPI signed offsets and overflow", DisplaySizeChecks.Placement),
             ("Compact size settings and resets target their own surface", DisplaySizeChecks.Settings),
