@@ -60,7 +60,11 @@ internal static partial class VendorProtocol
     }
 
     internal static ReferenceBatteryProtocol.Reading ReadReportedReceiver(string route,
-        HidDiscovery.VendorCollectionInfo channel, BatteryReplay.Trace trace)
+        HidDiscovery.VendorCollectionInfo channel, BatteryReplay.Trace trace) =>
+        ReadReportedReceiver(route, channel, trace, false, null);
+
+    internal static ReferenceBatteryProtocol.Reading ReadReportedReceiver(string route,
+        HidDiscovery.VendorCollectionInfo channel, BatteryReplay.Trace trace, bool readDpi, MouseDpiChange change)
     {
         if (string.IsNullOrWhiteSpace(InstanceScope.Current) || !InstanceScope.Allows(channel.Path))
             return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的物理实例");
@@ -70,6 +74,8 @@ internal static partial class VendorProtocol
             return ReferenceBatteryProtocol.Reading.Failed("HID 集合不符");
 
         bool passive = route == MonsGeekRoute;
+        readDpi = readDpi && route == A7UltraRoute && trace == null &&
+            (change == null || change.Expected.Protocol == MouseDpiProtocol.MchoseA7Ultra);
         return ReferenceQueryGate.Run(channel.Path, () =>
         {
             IntPtr handle = CreateFile(channel.Path, passive ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
@@ -91,12 +97,15 @@ internal static partial class VendorProtocol
                     return ReferenceBatteryProtocol.Reading.Failed("打开后的设备身份或集合能力不符");
                 if (!HidD_GetPreparsedData(handle, out IntPtr prep))
                     return ReferenceBatteryProtocol.Reading.Failed("无法读取 HID 报告编号");
+                bool dpiReport = false;
                 try
                 {
+                    var a7Features = route == A7UltraRoute
+                        ? ReadDescriptorReportIds(prep, 2, caps.NumberFeatureValueCaps, caps.NumberFeatureButtonCaps) : null;
+                    dpiReport = a7Features?.Contains(MchoseA7UltraDpi.ReportId) == true;
                     bool valid = route switch
                     {
-                        A7UltraRoute => ReadDescriptorReportIds(prep, 2, caps.NumberFeatureValueCaps,
-                            caps.NumberFeatureButtonCaps).Contains(0x11),
+                        A7UltraRoute => a7Features.Contains(0x11),
                         MonsGeekStatusRoute => TryGetReportId(prep, 2, caps.NumberFeatureValueCaps,
                             caps.NumberFeatureButtonCaps, out byte featureId) && featureId == 0,
                         _ => TryGetReportId(prep, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps,
@@ -109,13 +118,40 @@ internal static partial class VendorProtocol
                 trace?.Add("open", true);
                 return route switch
                 {
-                    A7UltraRoute => ReadA7UltraFeature(handle, trace),
+                    A7UltraRoute => ReadA7UltraWithDpi(handle, trace, readDpi && dpiReport, change),
                     MonsGeekStatusRoute => ReadMonsGeekStatus(handle, trace),
                     _ => ReadMonsGeekEvent(handle, trace)
                 };
             }
             finally { CloseHandle(handle); }
-        }, 1800);
+        }, readDpi ? 3500 : 1800);
+    }
+
+    private static ReferenceBatteryProtocol.Reading ReadA7UltraWithDpi(IntPtr handle, BatteryReplay.Trace trace,
+        bool readDpi, MouseDpiChange change)
+    {
+        var battery = ReadA7UltraFeature(handle, trace);
+        if (!readDpi || battery.Model != A7UltraName) return battery;
+
+        bool Write(byte[] frame) => HidD_SetFeature(handle, frame, frame.Length);
+        byte[] Exchange(byte[] request)
+        {
+            if (!Write(request)) return null;
+            Thread.Sleep(100);
+            var response = new byte[MchoseA7UltraDpi.ReportLength];
+            response[0] = MchoseA7UltraDpi.ReportId;
+            return HidD_GetFeature(handle, response, response.Length) ? response : null;
+        }
+
+        bool Select(byte[] request)
+        {
+            if (!Write(request)) return false;
+            Thread.Sleep(100);
+            return true;
+        }
+
+        return battery with { Dpi = MchoseA7UltraDpi.ReadOrChange(change, Exchange, Select,
+            () => ReadA7UltraFeature(handle, null).Model == A7UltraName) };
     }
 
     private static ReferenceBatteryProtocol.Reading ReadA7UltraFeature(IntPtr handle, BatteryReplay.Trace trace)

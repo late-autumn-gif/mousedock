@@ -8,20 +8,25 @@ namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
     internal static ReferenceBatteryProtocol.Reading ReadAulaBattery(AulaBatteryProtocol.Route route, string path,
-        ushort vid, ushort pid, string instanceProduct = null)
+        ushort vid, ushort pid, string instanceProduct = null) => ReadAulaBattery(route, path, vid, pid, instanceProduct, false);
+
+    internal static ReferenceBatteryProtocol.Reading ReadAulaBattery(AulaBatteryProtocol.Route route, string path,
+        ushort vid, ushort pid, string instanceProduct, bool readDpi)
     {
         if (InstanceScope.Current == null || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的设备实例，未发送查询");
         var trace = BatteryReplay.Current?.Active;
+        readDpi = readDpi && trace == null && route == AulaBatteryProtocol.Route.Sc580Receiver;
         return ReferenceQueryGate.Run(path, () =>
         {
-            using var link = new AulaLink(route, path, vid, pid, instanceProduct);
+            using var link = new AulaLink(route, path, vid, pid, instanceProduct, readDpi);
             trace?.Add("open-and-validate", true);
             var reading = route == AulaBatteryProtocol.Route.Sc580Receiver
                 ? AulaBatteryProtocol.ReadIdentify(link, trace)
                 : AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence, trace);
-            return reading with { Diagnostic = link.ReportMetadata + "；" + reading.Diagnostic };
-        }, route == AulaBatteryProtocol.Route.Sc580Receiver ? 6000 : 4000);
+            var dpi = readDpi ? AulaSc580Dpi.Read(link, reading) : null;
+            return reading with { Diagnostic = link.ReportMetadata + "；" + reading.Diagnostic, Dpi = dpi };
+        }, route == AulaBatteryProtocol.Route.Sc580Receiver ? (readDpi ? 7300 : 6000) : 4000);
     }
 
     private static byte NextSc630Sequence()
@@ -35,10 +40,12 @@ internal static partial class VendorProtocol
     {
         private IntPtr handle, signal;
         private readonly AulaBatteryProtocol.Route route;
+        private readonly bool readDpi;
         internal string ReportMetadata { get; private set; }
-        internal AulaLink(AulaBatteryProtocol.Route route, string path, ushort vid, ushort pid, string instanceProduct)
+        internal AulaLink(AulaBatteryProtocol.Route route, string path, ushort vid, ushort pid, string instanceProduct, bool readDpi)
         {
             this.route = route;
+            this.readDpi = readDpi;
             handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                 IntPtr.Zero, OPEN_EXISTING, route == AulaBatteryProtocol.Route.Sc580Receiver ? FILE_FLAG_OVERLAPPED : 0, IntPtr.Zero);
             if (handle == IntPtr.Zero || handle == new IntPtr(-1))
@@ -90,7 +97,8 @@ internal static partial class VendorProtocol
             return Transfer(handle, signal, b, false, timeoutMs, out int count) && count > 0 ? b.AsSpan(0, count).ToArray() : null;
         }
         public bool Write(byte[] request, int timeoutMs) => route == AulaBatteryProtocol.Route.Sc580Receiver &&
-            request.AsSpan().SequenceEqual(AulaBatteryProtocol.IdentifyRequest()) &&
+            (request.AsSpan().SequenceEqual(AulaBatteryProtocol.IdentifyRequest()) ||
+             readDpi && request.AsSpan().SequenceEqual(AulaSc580Dpi.Request())) &&
             Transfer(handle, signal, request, true, timeoutMs, out int count) && count == request.Length;
         public bool SetFeature(byte[] request) => route == AulaBatteryProtocol.Route.Sc630Pro && request.Length == 41 &&
             request.AsSpan().SequenceEqual(BuildAulaSc630BatteryRequest(request[4])) && HidD_SetFeature(handle, request, request.Length);

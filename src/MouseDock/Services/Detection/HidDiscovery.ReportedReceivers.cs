@@ -73,6 +73,11 @@ public static partial class HidDiscovery
                 bucket.Charging = !cached && reading.ChargingKnown && reading.Charging;
                 bucket.ReadStale = cached;
                 bucket.BatterySource = reading.Diagnostic;
+                if (mouse && reading.Dpi is { } dpi)
+                {
+                    bucket.DpiSettings = dpi;
+                    bucket.Dpi = dpi.Values[dpi.Index];
+                }
                 if (cached) bucket.HandledBy = HandledBy.MonsGeekDongleStatus;
                 break;
             }

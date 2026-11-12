@@ -301,7 +301,9 @@ namespace MouseDock.Services.Detection
             bool safeMode = false;
             try { safeMode = IsSafeMode; } catch { }
 
-            QueryReportedReceivers(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadReportedReceiver);
+            bool readA7UltraDpi = BatteryReplay.Current == null;
+            QueryReportedReceivers(buckets, vendorCollections, safeMode, preferences,
+                (route, channel, trace) => VendorProtocol.ReadReportedReceiver(route, channel, trace, readA7UltraDpi, dpiChange));
             QueryZg4Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadZg4);
             QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReferenceBattery, BatteryReplay.Current == null
@@ -316,10 +318,12 @@ namespace MouseDock.Services.Detection
             QueryM9Pro(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
             QueryRazerBlackShark(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadRazerBlackShark);
             QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
-            QueryAulaCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadAulaBattery);
+            bool readAulaDpi = BatteryReplay.Current == null && dpiChange == null;
+            QueryAulaCollections(buckets, vendorCollections, safeMode, preferences,
+                (route, path, vid, pid, product) => VendorProtocol.ReadAulaBattery(route, path, vid, pid, product, readAulaDpi));
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
             QueryGenericReceiver33(buckets, safeMode, preferences);
-            QueryRogScope(buckets, vendorCollections, safeMode, preferences);
+            QueryRogScope(buckets, vendorCollections, safeMode, preferences, readDpi: true, dpiChange: dpiChange);
             if (BatteryReplay.Current == null)
                 QueryScopedModernMouse(buckets, vendorCollections, safeMode, preferences,
                     (path, vid, pid) => VendorProtocol.ReadScopedModernMouse(path, vid, pid, dpiChange));
@@ -1039,6 +1043,11 @@ namespace MouseDock.Services.Detection
                     b.BatterySource = "狼蛛专用：" + result.Diagnostic;
                 }
                 else b.BatteryFailures.Add("狼蛛专用：" + result.Diagnostic);
+                if (result.Dpi is { } dpi)
+                {
+                    b.DpiSettings = dpi;
+                    b.Dpi = dpi.Values[dpi.Index];
+                }
                 scan?.AddQuery(b.InstanceId, channel.Path, b.AulaDescriptorRoute.ToString(),
                     result.Status.ToString(), b.AulaModel, b.Battery, trace);
                 LastDiagnostics.Add($"{b.InstanceId} 狼蛛路线={b.AulaDescriptorRoute} 状态={result.Status} 电量={result.Level} 型号={result.Model} {result.Diagnostic}");

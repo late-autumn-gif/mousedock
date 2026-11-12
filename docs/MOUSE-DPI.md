@@ -50,15 +50,31 @@ MouseDock 在同一物理实例上完成现有的型号确认后，核对输入�
 
 本轮新增 24 项离线断言，总计 16,705 项通过。主面板 DPI 控件检查通过。用于核对配对状态解析的 `index-Dc7rvk5H.js` SHA-256 为 `449DAEC84D4CB3E4841C180E75F80A7F48534C670E5D4E0A5D21FBEB89B9990D`，用于核对配置流及写入格式的 `next-kzItA4cS.js` SHA-256 为 `78CF0D1BA04E1F86095B749DC4168755186F11523DFC7045B3B4F099B7BD4F20`。
 
+## A7 Ultra、SC580 与月刃2 ACE
+
+| 型号及连接 | DPI 实现与限制 |
+| --- | --- |
+| 迈从 A7 Ultra，`5253:1020` 2.4G | 用户实机报告的 `MI_02/COL_02` 声明 Feature `0x11` 和 `0x12`。同一实例通过 `11/F9` 确认在线型号 `0x0011` 后，用 M HUB 的 `12/67` 读表、`12/40` 切档，负载逐字节 XOR `FF`。按官方界面行为同步有线与无线索引，保留现有档位数值并回读。独立轴只显示 X 轴。 [MCHOSE M HUB](https://www.mchose.store/pages/mchose-hub) |
+| 狼蛛 SC580，`089D:062F` 2.4G | 两次 `M137` 在线 Identify 后才读 `0x13`，并在同一实例复核在线身份。25 字节负载首字节高半字节为当前档位，低半字节为档位数。采用两种已知传感器共用的编码范围，编码 1–200 每级 50 DPI，201–220 从 10,100 DPI 起每级 100 DPI。当前只读，写入的独立轴和保留字段仍需核对。 [狼蛛官方驱动](https://www.aulacn.com/index/index/driverdownload.html) |
+| ROG 月刃2 ACE，`0B05:1ACE` Omni 2.4G | 仅限现有单一在线配对 `1B18`、同实例报告 3。`12/00/0000` 获取配置、当前档与档位数，`12/04/0002` 获取 X/Y 表，`51/31/0009` 只切档。切档前后核对在线配对、当前配置和 X/Y 表。独立轴只显示 X 轴。 [官方 Gear Link 月刃2 ACE 清单](https://gearlink.asus.com/view/6936/manifest.json) |
+
+A7 Ultra 的官方 `main-DCRwBIvm.js` 解析器已用离线样本交叉检查，验证有线、无线索引和小端档位数值。SC580 的 `CBMouse.exe` 在 `0x00458600` 读取当前档位高半字节，`MS.ini` 的 `DPIRANGE` 核对了历史抓包中的分段换算。月刃2 ACE 的协议来自 Gear Link `1.00.04` 设备包 `6936-1781677222-d9d1be`。三款的本轮 DPI 功能均待实机验证。
+
+新增 38 项离线断言，总计 16,743 项通过，覆盖范围、异常长度、身份变化、超时、独立轴、档位变化和写入回读。主面板 DPI 控件检查通过。
+
 ## 其他电量适配路线
 
 | 当前已有电量支持的鼠标 | DPI 检查与缺口 |
 | --- | --- |
-| 迈从 A7 Ultra、A7 V2 Pro、A7 V2 Ultra+、G7、G7 Pro | 历史 Feature 与 AA30 通道单独处理。旧版 `12/67` DPI 读取代码已存在，仍缺本轮可核对的实机回包及改档证据。 |
+| 迈从 A7 V2 Pro、A7 V2 Ultra+、G7、G7 Pro | 历史 Feature 与 AA30 通道单独处理。旧版 `12/67` DPI 读取代码已存在，仍缺本轮可核对的实机回包及改档证据。 |
 | 罗技 HID++ 通用接收器路线 | 待验证实时型号、传感器和板载配置模式，避免将其它槽位的 DPI 归给当前鼠标。 |
-| ATK ZERO COMPX `373B:11D8`、ATK F1 V3 Ultimate+、前行者 Z7、蜻蜓 F1 MOBA | 需分别核对各型号的 DPI 报文和接口能力。 |
+| ATK ZERO COMPX `373B:11D8`、ATK F1 V3 Ultimate+、前行者 Z7 | 需分别核对各型号的 DPI 报文和接口能力。 |
 | Ninjutso Sora V2、雷柏 VT7、雷柏 VT9S V2 | 现有参考移植覆盖电量。分别缺少对应硬件或可核对的 DPI 读写回包。 |
-| 狼蛛 SC580／SC630 Pro、英菲克 IN9／IN9 Pro、前行者 X23 SE、凌豹 M9 Pro、ROG 月刃2 ACE、黑爵 AJ 系及其他通用电量路线 | 已有识别或电量证据。需要核对每个型号的官方 DPI 请求、应答和改档回读，无法从电量协议推断。 |
+| 狼蛛 SC630 Pro | 官方 1.0.5 驱动 `0x004839AD` 的 Feature 6 查询命令 `0x86` 取回档位，原生帧 `[9]` 为启用位图、`[10]` 为从 1 起算的当前档位，`[11..26]` 为八个小端编码。写入路径 `0x00482B7E` 使用 `0x06`。驱动按 `DeviceFeature.ini` 的不同 `Chip` 表换算，尚缺本机型的传感器选择字段与回包对照。 |
+| VGN 蜻蜓 F1 MOBA | [VGN F1 公开实现](https://github.com/skey4ik/vgn-f1-linux/blob/main/mouse3.py) 给出另一条 Feature 写配置路径。现有 MOBA 电量集合为 Input/Output 17 字节、Feature 长度为零，仍需核对这个 MOBA 接收器的当前档、切档与回读事务。 |
+| 凌豹 M9 Pro | 当前 `093A:522C` 的 Input9 证据覆盖电量。官方页面另列 M9 Pro Max，仍缺原版 LB-M9PRO 的 DPI 配置应答。 [凌豹驱动页](https://www.lingbaoes.com/hub) |
+| 英菲克 IN9／IN9 Pro | 已核对 IN9 官方驱动的 `M909`、`M910`、`IN90` 变体和各自默认档位配置。默认值不能确定当前硬件 DPI。仍需按具体变体核对读档和切档应答。 [英菲克驱动页](https://www.inphic.cn/download) |
+| 前行者 X23 SE、黑爵 AJ 系及其他通用电量路线 | 已有识别或电量证据，需分别核对 DPI 协议。 |
 | BLE / 通用 HID 鼠标 | 标准电量路径不提供硬件 DPI 设置。需要按厂商确认专用通道。 |
 
 本机可用的目标硬件为 A7 V3 Pro 2.4G。离线用例覆盖已接入的 19 个 MHUB 型号，以及配置变更、错误校验、独立轴和 ACK 无回读等边界。

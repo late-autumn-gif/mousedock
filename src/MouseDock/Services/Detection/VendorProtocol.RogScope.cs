@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace MouseDock.Services.Detection;
 
@@ -146,13 +147,15 @@ internal static partial class VendorProtocol
     }
 
     internal static ReferenceBatteryProtocol.Reading ReadRogScope(string pairingPath, string batteryPath,
-        BatteryReplay.Trace trace = null, string mousePath = null)
+        BatteryReplay.Trace trace = null, string mousePath = null, bool readDpi = false, MouseDpiChange dpiChange = null)
     {
         if (InstanceScope.Current == null || !InstanceScope.Allows(pairingPath) ||
             batteryPath != null && !InstanceScope.Allows(batteryPath) ||
             mousePath != null && !InstanceScope.Allows(mousePath))
             return ReferenceBatteryProtocol.Reading.Failed("Omni 接收器实例不匹配");
 
+        readDpi = readDpi && trace == null && mousePath != null &&
+            (dpiChange == null || dpiChange.Expected.Protocol == MouseDpiProtocol.RogKerisIIOmni);
         return ReferenceQueryGate.Run(pairingPath, () =>
         {
             var paired = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
@@ -167,9 +170,30 @@ internal static partial class VendorProtocol
                 if (mousePath == null)
                     return new(-1, false, false, ReferenceBatteryProtocol.State.Failed,
                         "Omni 月刃2 ACE 鼠标电量集合缺失或不唯一", RogOmniMouseProtocol.Model);
-                return RogOmniMouseProtocol.Read(paired, (report, subcommand, index) =>
+                var reading = RogOmniMouseProtocol.Read(paired, (report, subcommand, index) =>
                     ReadRogOmniReply(report == 1 ? pairingPath : mousePath, report,
                         report == 1 ? (byte)0xA0 : (byte)0x12, subcommand, index), trace);
+                if (!readDpi || reading.Level < 0) return reading;
+                try
+                {
+                    var dpi = RogOmniMouseDpi.ReadOrChange(dpiChange,
+                        (subcommand, index) => ReadRogOmniReply(mousePath, 3, 0x12, subcommand, index, dpi: true),
+                        stage =>
+                        {
+                            bool written = ReadRogOmniReply(mousePath, 3, 0x51, 0x31, 9, stage: stage) != null;
+                            if (written) Thread.Sleep(100);
+                            return written;
+                        },
+                        () =>
+                        {
+                            var confirmation = ReadRogOmniReply(pairingPath, 1, 0xA0, 0);
+                            return RogOmniMouseProtocol.IsPaired(confirmation) &&
+                                paired.AsSpan(5, 4).SequenceEqual(confirmation.AsSpan(5, 4)) &&
+                                RogOmniMouseProtocol.TryParsePresence(ReadRogOmniReply(mousePath, 3, 0x12, 0, 2), out bool present) && present;
+                        });
+                    return reading with { Dpi = dpi };
+                }
+                catch (IOException) { return reading; }
             }
             if (model == null)
                 return ReferenceBatteryProtocol.Reading.Failed(
@@ -209,11 +233,14 @@ internal static partial class VendorProtocol
                 ReferenceBatteryProtocol.State.Online,
                 "Omni 键盘电量 02/12/01 配对=" + RogPairedModelText(pids) +
                 " PID=" + string.Join("/", pids.ConvertAll(p => "0x" + p.ToString("X4"))), model);
-        }, 3500);
+        }, readDpi ? 14500 : 3500);
     }
 
-    private static byte[] ReadRogOmniReply(string path, byte reportId, byte command, byte subcommand, ushort index = 0)
+    private static byte[] ReadRogOmniReply(string path, byte reportId, byte command, byte subcommand, ushort index = 0,
+        bool dpi = false, byte? stage = null)
     {
+        if (stage.HasValue && (reportId != 3 || command != 0x51 || subcommand != 0x31 || index != 9 || stage is < 1 or > 4))
+            throw new IOException("Omni DPI 切档参数无效");
         IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
             IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
         if (handle == IntPtr.Zero || handle == new IntPtr(-1))
@@ -239,8 +266,10 @@ internal static partial class VendorProtocol
             request[2] = subcommand;
             request[3] = (byte)index;
             request[4] = (byte)(index >> 8);
+            if (stage.HasValue) request[5] = stage.Value;
             if (!Transfer(handle, signal, request, true, 300, out int written) || written != request.Length)
                 throw new IOException("Omni 查询写入失败");
+            if (stage.HasValue) return request;
             long deadline = Environment.TickCount64 + 700;
             while (Environment.TickCount64 < deadline)
             {
@@ -252,7 +281,8 @@ internal static partial class VendorProtocol
                     (reportId == 1 || reportId == 2 && TryParseRogScopeBattery(response, out _, out _) ||
                         reportId == 3 && (subcommand == 0 && index == 2 &&
                             RogOmniMouseProtocol.TryParsePresence(response, out _) ||
-                            subcommand == 7 && index == 0 && RogOmniMouseProtocol.TryParseBattery(response, out _, out _))))
+                            subcommand == 7 && index == 0 && RogOmniMouseProtocol.TryParseBattery(response, out _, out _) ||
+                            dpi && RogOmniMouseDpi.Matches(response, subcommand, index))))
                     return response;
             }
             return null;

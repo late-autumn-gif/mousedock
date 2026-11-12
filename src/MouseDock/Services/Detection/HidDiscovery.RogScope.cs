@@ -9,7 +9,8 @@ public static partial class HidDiscovery
 {
     internal static void QueryRogScope(Dictionary<string, Bucket> buckets, List<VendorCollectionInfo> collections,
         bool safeMode, DevicePreferences preferences,
-        Func<string, string, string, BatteryReplay.Trace, ReferenceBatteryProtocol.Reading> query = null)
+        Func<string, string, string, BatteryReplay.Trace, ReferenceBatteryProtocol.Reading> query = null,
+        bool readDpi = false, MouseDpiChange dpiChange = null)
     {
         foreach (var b in buckets.Values)
         {
@@ -47,7 +48,7 @@ public static partial class HidDiscovery
             string batteryPath = battery.Length == 1 ? battery[0] : null;
             string mousePath = mouse.Length == 1 ? mouse[0] : null;
             var result = query != null ? query(pairing[0], batteryPath, mousePath, trace) :
-                VendorProtocol.ReadRogScope(pairing[0], batteryPath, trace, mousePath);
+                VendorProtocol.ReadRogScope(pairing[0], batteryPath, trace, mousePath, readDpi && scan == null, dpiChange);
             bool isMouse = result.Model == RogOmniMouseProtocol.Model;
             scan?.AddQuery(b.InstanceId, isMouse ? mousePath : batteryPath,
                 isMouse ? RogOmniMouseProtocol.Protocol : "RogScopeRxOmni",
@@ -60,6 +61,11 @@ public static partial class HidDiscovery
             b.Charging = result.Charging;
             b.ReadStale = false;
             b.BatterySource = result.Diagnostic;
+            if (isMouse && result.Dpi is { } dpi)
+            {
+                b.DpiSettings = dpi;
+                b.Dpi = dpi.Values[dpi.Index];
+            }
             if (result.Level < 0) b.BatteryFailures.Add(result.Diagnostic);
         }
     }
