@@ -100,7 +100,7 @@ internal static class BatteryReplay
                         device.Level is >= 0 and <= 100 ? device.Level : null, device.IsStale,
                         device.Connected, device.IsStale || (!device.Charging &&
                             !queries.Any(q => q.Receiver == receivers[device.Id] &&
-                                (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4") && q.ObservedPercent.HasValue))
+                                (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
                             ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
                         device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
                         SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") : "unknown")).ToArray());
@@ -167,6 +167,9 @@ internal static class BatteryReplay
 
     private static bool MatchesChannel(string protocol, Collection channel, Collection[] collections)
     {
+        if (protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute)
+            return VendorProtocol.MatchesReportedReceiverChannel(protocol, channel.Vid, channel.Pid, channel.Product,
+                channel.InterfaceLabel, channel.Page, channel.Usage, channel.Input, channel.Output, channel.Feature);
         if (protocol == "Zg4")
             return VendorProtocol.IsZg4Channel(channel.Vid, channel.Pid, channel.Product,
                 channel.Page, channel.Input, channel.Output);
@@ -241,6 +244,8 @@ internal static class BatteryReplay
         if (channel == null || !MatchesChannel(query.Protocol, channel, collections))
             return new(query.Receiver, query.Interface, query.Protocol,
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
+        if (query.Protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute)
+            return ReplayReportedReceiver(query);
         if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
         if (query.Protocol == "Zg4") return ReplayZg4(query);
         if (query.Protocol == "Neon75Feature")
@@ -317,6 +322,39 @@ internal static class BatteryReplay
         return new(query.Receiver, query.Interface, query.Protocol, query.Status, model,
             verified ? last.Level : null, verified && last.ChargingKnown ? last.Charging : null,
             verified ? "captured" : "unavailable");
+    }
+
+    private static Result ReplayReportedReceiver(Query query)
+    {
+        bool mouse = query.Protocol == VendorProtocol.A7UltraRoute;
+        bool opened = false, pending = false;
+        int level = -1;
+        bool charging = false;
+        foreach (var sample in query.Samples ?? Array.Empty<Sample>())
+        {
+            if (sample.Stage == "open") { opened = sample.Ok; pending = false; continue; }
+            if (!opened) continue;
+            if (mouse && sample.Stage == "set-feature")
+            {
+                pending = sample.Ok && sample.Length == 21 &&
+                    sample.Hex == Convert.ToHexString(VendorProtocol.BuildMchoseA7V2Request());
+                continue;
+            }
+            if (mouse ? !pending || sample.Stage != "get-feature" : sample.Stage != "battery-event") continue;
+            pending = false;
+            int length = mouse ? 21 : 6;
+            if (!sample.Ok || sample.Length != length || sample.Hex?.Length != length * 2) continue;
+            byte[] frame;
+            try { frame = Convert.FromHexString(sample.Hex); }
+            catch (FormatException) { continue; }
+            bool parsed = mouse ? VendorProtocol.TryParseA7UltraBattery(frame, out level, out charging)
+                : VendorProtocol.TryParseMonsGeekBatteryEvent(frame, out level, out charging);
+            if (parsed) break;
+        }
+        bool valid = level >= 0 && query.Status == (charging ? "Charging" : "Online") && query.ObservedPercent == level;
+        return new(query.Receiver, query.Interface, query.Protocol, query.Status,
+            valid && mouse ? VendorProtocol.A7UltraName : null, valid ? level : null,
+            valid ? charging : null, valid ? "captured" : "unavailable");
     }
 
     private static Result ReplayZg4(Query query)

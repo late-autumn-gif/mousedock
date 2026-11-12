@@ -84,7 +84,7 @@ namespace MouseDock.Services.Detection
                 return ReceiverIdentityProtocol.Capture(identityInstance, safeMode, identityNodes);
             }
 
-            if (IsRogOmni(vid, pid) || IsMchoseA7V2(vid, pid) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
+            if (ReportedReceiverRoute(vid, pid, requestedName) != null || IsRogOmni(vid, pid) || IsMchoseA7V2(vid, pid) || IsAtkZeroBitMouse(vid,pid) || IsRainy75Candidate(vid,pid) || (IsScopedModernMouse(vid,pid,requestedName)||IsScopedG7(vid,pid,requestedName)) || IsMchoseV9Pro(vid,pid,requestedName) || IsScopedInphic(vid,pid,requestedName) || scanOnly || (vid == 0xA8A5 && pid == 0x2255) || AulaBatteryProtocol.IsCandidate(vid, pid, requestedName) || OriginalGpwProtocol.IsCandidate(vid,pid))
             {
                 text.AppendLine("此设备命中专用读取器，不运行跨实例通用探针。");
                 text.AppendLine("下面先给接口全景（打不开的也保留），再给这条专用通道的只读查询结果。");

@@ -26,7 +26,9 @@ internal enum HandledBy
     /// <summary>狼蛛 AULA F75（3554:FA09），见 F75Protocol。</summary>
     AulaF75,
     /// <summary>凌豹 M9 Pro（093A:522C，产品串 LB-M9PRO），见 M9ProProtocol。</summary>
-    M9Pro
+    M9Pro,
+    MchoseA7Ultra,
+    MonsGeekBatteryEvent
 }
 
 /// <summary>
@@ -51,6 +53,7 @@ internal static class DeviceRoutes
 
     /// <summary>允许对这台设备发厂商查询。等同于旧 RecognitionPolicy.CanQuery。</summary>
     internal static bool IsKnown(ushort vid, ushort pid, string product) =>
+        VendorProtocol.ReportedReceiverRoute(vid, pid, product) != null ||
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
         M9ProProtocol.IsCandidate(vid, pid, product) ||
@@ -90,6 +93,9 @@ internal static class DeviceRoutes
     /// </summary>
     internal static Route Find(ushort vid, ushort pid, string product)
     {
+        string reported = VendorProtocol.ReportedReceiverRoute(vid, pid, product);
+        if (reported != null)
+            return new Route { Reader = reported, Kind = reported == VendorProtocol.A7UltraRoute ? DeviceKind.Mouse : DeviceKind.Keyboard, Transport = "2.4G" };
         // 3554:F503 / 3554:FA09 有精确产品串与精确集合要求，必须排在通用 33 字节旁路之前，
         // 否则会被公版接收器协议抢先认领。
         if (VgnF1Protocol.IsCandidate(vid, pid, product))
