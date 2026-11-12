@@ -342,7 +342,7 @@ internal sealed class DesktopPetWindow : Window
             details.Children.Add(name);
             var meter = new MeterBar
             {
-                Height = 6, BarHeight = 5, Margin = new Thickness(0, 4, 0, 0), ShowDot = false,
+                Height = 6, BarHeight = 5, Margin = new Thickness(0, 4, 28, 0), ShowDot = false,
                 Accent = accent, Accent2 = accent, MotionEnabled = Motion
             };
             meter.SetBinding(MeterBar.ValueProperty, new Binding(nameof(DeviceInfo.LevelFraction)));

@@ -99,7 +99,7 @@
                                             </MultiBinding>
                                         </TextBlock.Foreground>
                                     </TextBlock>
-                                    <c:MeterBar Width="48" Height="9" Value="{Binding LevelFraction}" Charging="{Binding IsChargingActive}" Opacity="{Binding ValueOpacity}"
+                                    <c:MeterBar Width="40" Height="9" Value="{Binding LevelFraction}" Charging="{Binding IsChargingActive}" Opacity="{Binding ValueOpacity}"
                                                 Accent="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 Accent2="{Binding Accent2Color, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 TrackBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"
