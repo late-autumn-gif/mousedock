@@ -28,6 +28,14 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 
 任意一项失败会输出 `FAIL` 并使进程以退出码 1 结束。环境限制导致的 `SKIP` 单独计数。
 
+### 桌宠回归
+
+```powershell
+& "$env:DOTNET_ROOT\dotnet.exe" run --project tests\MouseDock.Checks -c Release -- --filter "Desktop pet"
+```
+
+检查原有三个角色和刻晴的图集、电量跟随和满电状态。刻晴用菜单触发战技和爆发，验证首尾帧、结束后恢复充电姿势及减少动态效果。测试使用模拟电量设备。
+
 ## 真机诊断
 
 ```powershell

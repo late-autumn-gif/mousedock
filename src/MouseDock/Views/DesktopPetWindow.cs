@@ -19,8 +19,12 @@ namespace MouseDock.Views;
 
 internal sealed class DesktopPetWindow : Window
 {
-    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag }
+    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag, Skill, Burst }
     private const int ClickDuration = 1200;
+    private const string KeqingId = "keqing";
+    private const int CombatFrameMilliseconds = 50;
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromMilliseconds(85);
+    private static readonly TimeSpan CombatInterval = TimeSpan.FromMilliseconds(CombatFrameMilliseconds);
 
     private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
 
@@ -28,7 +32,8 @@ internal sealed class DesktopPetWindow : Window
     {
         new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), false),
         new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
-        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true)
+        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true),
+        new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true)
     };
 
     private static Brush Paint(byte r, byte g, byte b)
@@ -41,6 +46,8 @@ internal sealed class DesktopPetWindow : Window
     private readonly BatteryService _battery;
     private readonly AppSettings _settings;
     private ImageSource[] _frames;
+    private ImageSource[] _skillFrames;
+    private ImageSource[] _burstFrames;
     private Character _skin;
     private readonly Border _bubble;
     private readonly Image _headerPortrait = new()
@@ -169,12 +176,16 @@ internal sealed class DesktopPetWindow : Window
 
         ContextMenu = new ContextMenu();
         ContextMenu.Opened += (_, _) => BuildMenu();
-        _timer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(85) };
+        _timer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = IdleInterval };
         _timer.Tick += (_, _) => RenderPose();
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) Refresh();
-            else _timer.Stop();
+            else
+            {
+                if (_action is Pose.Skill or Pose.Burst) _actionUntil = 0;
+                _timer.Stop();
+            }
         };
         Loaded += (_, _) => PlaceOnScreen(remember: false);
         _battery.Refreshed += OnRefresh;
@@ -185,9 +196,48 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        var atlas = new BitmapImage(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{skin.Atlas}"));
+        if (skin.Id == KeqingId)
+        {
+            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
+            _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
+            _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
+            _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
+        }
+        else
+        {
+            LoadBuiltInCharacter(skin);
+        }
+
+        _character.Source = _frames[0];
+        _skin = skin;
+        _actionUntil = 0;
+        Title = $"MouseDock · {skin.Name}桌宠";
+        _bubble.Background = skin.Surface;
+        _bubble.BorderBrush = skin.Outline;
+        _listedDevices = Array.Empty<DeviceInfo>();
+        _deviceList.Children.Clear();
+    }
+
+    private static BitmapImage LoadArtwork(string file) =>
+        new(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{file}"));
+
+    private static ImageSource[] LoadFrames(string file, int columns, int rows, int count)
+    {
+        var atlas = LoadArtwork(file);
+        int width = atlas.PixelWidth / columns, height = atlas.PixelHeight / rows;
+        return Enumerable.Range(0, count).Select(index =>
+        {
+            var frame = new CroppedBitmap(atlas, new Int32Rect(index % columns * width, index / columns * height, width, height));
+            frame.Freeze();
+            return (ImageSource)frame;
+        }).ToArray();
+    }
+
+    private void LoadBuiltInCharacter(Character skin)
+    {
+        var atlas = LoadArtwork(skin.Atlas);
         int width = atlas.PixelWidth / 3, height = atlas.PixelHeight / 2;
-        var interactions = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/desktop-pet-interactions.png"));
+        var interactions = LoadArtwork("desktop-pet-interactions.png");
         // The transparent gutters in the gesture atlas are not evenly spaced.
         int[] columns = { 0, 399, 837, interactions.PixelWidth };
         int[] rows = { 0, 388, 793, interactions.PixelHeight };
@@ -203,18 +253,10 @@ internal sealed class DesktopPetWindow : Window
             return (ImageSource)frame;
         }).ToArray();
 
-        var headers = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/desktop-pet-headers.png"));
+        var headers = LoadArtwork("desktop-pet-headers.png");
         int headerWidth = headers.PixelWidth / 3;
         _headerPortrait.Source = new CroppedBitmap(headers,
             new Int32Rect(skin.HeaderColumn * headerWidth, 0, headerWidth, headers.PixelHeight / 2));
-        _character.Source = _frames[0];
-        _skin = skin;
-        _actionUntil = 0;
-        Title = $"MouseDock · {skin.Name}桌宠";
-        _bubble.Background = skin.Surface;
-        _bubble.BorderBrush = skin.Outline;
-        _listedDevices = Array.Empty<DeviceInfo>();
-        _deviceList.Children.Clear();
     }
 
     private bool Motion => !_settings.DesktopPetReduceMotion && SystemParameters.ClientAreaAnimation;
@@ -283,9 +325,17 @@ internal sealed class DesktopPetWindow : Window
         if (pose == Pose.Idle && _skin.HasBlink && Motion && now % 5400 < 170) pose = Pose.Transition;
         if (Motion && _dragging) pose = Pose.Drag;
         else if (Motion && !inAction && _hovering) pose = Pose.Hover;
-        var image = _frames[(int)pose];
+        ImageSource[] combatFrames = pose switch
+        {
+            Pose.Skill => _skillFrames,
+            Pose.Burst => _burstFrames,
+            _ => null
+        };
+        var interval = combatFrames == null ? IdleInterval : CombatInterval;
+        if (_timer.Interval != interval) _timer.Interval = interval;
+        var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
         if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
-        _breath.ScaleY = Motion ? 1 + (pose == Pose.Charging ? .024 : .012) *
+        _breath.ScaleY = Motion && combatFrames == null ? 1 + (pose == Pose.Charging ? .024 : .012) *
             Math.Sin(now / (pose == Pose.Charging ? 230d : 580d)) : 1;
         double dragTime = Math.Min(700, now - _dragStartedAt);
         double clickProgress = pose == Pose.Click ? 1 - Math.Clamp((_actionUntil - now) / (double)ClickDuration, 0, 1) : 0;
@@ -298,7 +348,7 @@ internal sealed class DesktopPetWindow : Window
             _ => 0
         };
         _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion;
-        bool sparkling = _skin.Id == "rikka" && Motion && pose is Pose.Charging or Pose.Celebrate;
+        bool sparkling = (_skin.Id is "rikka" or KeqingId) && Motion && pose is Pose.Charging or Pose.Celebrate;
         _sparks.Visibility = sparkling ? Visibility.Visible : Visibility.Collapsed;
         if (sparkling)
         {
@@ -313,6 +363,12 @@ internal sealed class DesktopPetWindow : Window
             }
         }
 
+    }
+
+    private ImageSource CombatFrame(ImageSource[] frames, long now)
+    {
+        long startedAt = _actionUntil - frames.Length * CombatFrameMilliseconds;
+        return frames[(now - startedAt) / CombatFrameMilliseconds];
     }
 
     private void RebuildList()
@@ -398,6 +454,14 @@ internal sealed class DesktopPetWindow : Window
                 SaveAndRefresh();
             }, ReferenceEquals(_skin, skin));
         ContextMenu.Items.Add(characters);
+        if (_skin.Id == KeqingId)
+        {
+            var actions = new MenuItem { Header = "刻晴动作", IsEnabled = Motion };
+            Add(actions.Items, "星斗归位（元素战技）", () => Play(Pose.Skill, _skillFrames.Length * CombatFrameMilliseconds));
+            Add(actions.Items, "天街巡游（元素爆发）", () => Play(Pose.Burst, _burstFrames.Length * CombatFrameMilliseconds));
+            Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
+            ContextMenu.Items.Add(actions);
+        }
 
         var display = new MenuItem { Header = "显示设备", IsEnabled = _battery.Devices.Any(d => d.Connected && d.RecognitionEnabled && !d.Hidden) };
         foreach (var device in _battery.Devices.Where(d => d.Connected && d.RecognitionEnabled && !d.Hidden))

@@ -21,6 +21,10 @@ Services/FeedbackService（报告导出）
 Services/UpdateService（自更新）
 ```
 
+## 桌宠动作
+
+`DesktopPetWindow` 根据电量与指针状态选择姿势。刻晴使用独立内嵌的九姿势图集和卡片头像。战技和爆发在右键菜单手动触发，分别以 50 毫秒一帧播放；动画结束后重新读取当前界面状态以选择姿势。隐藏、拖动或启用减少动态效果时停止绘制战斗帧。设备读数和状态继续来自电量服务。
+
 ## 识别链路
 
 1. `HidDiscovery.Enumerate` 用 SetupAPI + hid.dll 枚举所有 HID 顶层集合，按 `InstanceScope` 把同一物理设备的多个接口归并成 `Bucket`。

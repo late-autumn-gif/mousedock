@@ -27,7 +27,7 @@ internal static class AuditChecks
 
     internal static void DesktopPet()
     {
-        foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka" })
+        foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka", "keqing" })
             VerifyDesktopPet(character);
         DesktopPetSizing();
         ChargingLineGeometry();
@@ -107,7 +107,10 @@ internal static class AuditChecks
         {
             pet.Show();
             Flush();
-            Require(image.Source is System.Windows.Media.Imaging.BitmapSource { PixelWidth: 512, PixelHeight: 512 }, "The embedded atlas must load in the real window.");
+            int frameSize = character == "keqing" ? 288 : 512;
+            Require(image.Source is System.Windows.Media.Imaging.BitmapSource bitmapSource &&
+                bitmapSource.PixelWidth == frameSize && bitmapSource.PixelHeight == frameSize,
+                "The embedded atlas must load in the real window.");
             if (character == "shin-chan")
             {
                 var list = (StackPanel)typeof(DesktopPetWindow).GetField("_deviceList", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
@@ -157,6 +160,7 @@ internal static class AuditChecks
                 using var file = File.Create(output);
                 png.Save(file);
             }
+            if (character == "keqing") VerifyKeqingActions(pet, settings, image, frames[4]);
             long firstAction = ActionUntil();
             source.Reading = 63;
             Wait(battery.PollAsync());
@@ -180,6 +184,45 @@ internal static class AuditChecks
         }
         finally { pet.Close(); }
         Require(!pet.IsVisible, "Closing the desktop pet must release the window.");
+    }
+
+    private static void VerifyKeqingActions(DesktopPetWindow pet, AppSettings settings, Image image, ImageSource charging)
+    {
+        var type = typeof(DesktopPetWindow);
+        var buildMenu = type.GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var actionUntil = type.GetField("_actionUntil", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var renderPose = type.GetMethod("RenderPose", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        MenuItem OpenActions()
+        {
+            buildMenu.Invoke(pet, null);
+            return pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "刻晴动作"));
+        }
+
+        foreach (var (name, field, count) in new[]
+        {
+            ("星斗归位（元素战技）", "_skillFrames", 21),
+            ("天街巡游（元素爆发）", "_burstFrames", 37)
+        })
+        {
+            var frames = (ImageSource[])type.GetField(field, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Require(frames.Length == count, "Each action must load its complete embedded animation.");
+            var item = OpenActions().Items.OfType<MenuItem>().Single(item => Equals(item.Header, name));
+            item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Require(frames.Contains(image.Source), "The context menu must start the selected action.");
+            actionUntil.SetValue(pet, Environment.TickCount64 + 25);
+            renderPose.Invoke(pet, null);
+            Require(ReferenceEquals(image.Source, frames[^1]), "The end of the action must show its final frame.");
+            actionUntil.SetValue(pet, 0L);
+            renderPose.Invoke(pet, null);
+            Require(ReferenceEquals(image.Source, charging), "The action must return to the live charging pose.");
+        }
+
+        settings.DesktopPetReduceMotion = true;
+        var reduced = OpenActions();
+        Require(!reduced.IsEnabled, "Reduced motion must disable the manual animations.");
+        ((MenuItem)reduced.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Require(ReferenceEquals(image.Source, charging), "Reduced motion must leave the charging art visible.");
+        settings.DesktopPetReduceMotion = false;
     }
 
     internal static void ChargingMerge()
