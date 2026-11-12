@@ -27,7 +27,8 @@ internal enum HandledBy
     /// <summary>狼蛛 AULA F75（3554:FA09），见 F75Protocol。</summary>
     AulaF75,
     /// <summary>凌豹 M9 Pro（093A:522C，产品串 LB-M9PRO），见 M9ProProtocol。</summary>
-    M9Pro
+    M9Pro,
+    RazerBlackShark
 }
 
 /// <summary>
@@ -55,6 +56,7 @@ internal static class DeviceRoutes
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
         M9ProProtocol.IsCandidate(vid, pid, product) ||
+        RazerBlackSharkProtocol.IsCandidate(vid, pid) ||
         RkKeyboardProtocol.IsCandidate(vid, pid) ||
         VendorProtocol.IsRogOmni(vid, pid) ||
         VendorProtocol.IsScopedModernMouse(vid, pid, product) ||
@@ -91,6 +93,9 @@ internal static class DeviceRoutes
     /// </summary>
     internal static Route Find(ushort vid, ushort pid, string product)
     {
+        if (RazerBlackSharkProtocol.IsCandidate(vid, pid))
+            return new Route { Reader = "RazerBlackShark", Kind = DeviceKind.Headset,
+                Transport = pid == RazerBlackSharkProtocol.WirelessPid ? "2.4G" : "USB" };
         // 3554:F503 / 3554:FA09 有精确产品串与精确集合要求，必须排在通用 33 字节旁路之前，
         // 否则会被公版接收器协议抢先认领。
         if (VgnF1Protocol.IsCandidate(vid, pid, product))

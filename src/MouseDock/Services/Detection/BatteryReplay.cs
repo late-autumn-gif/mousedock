@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 
 namespace MouseDock.Services.Detection;
 
-internal static class BatteryReplay
+internal static partial class BatteryReplay
 {
     internal const string EntryName = "battery-replay.json";
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
@@ -168,6 +168,13 @@ internal static class BatteryReplay
 
     private static bool MatchesChannel(string protocol, Collection channel, Collection[] collections)
     {
+        if (protocol == RazerBlackSharkProtocol.Protocol)
+            return RazerBlackSharkProtocol.MatchesChannel(channel.Vid, channel.Pid, channel.Page, channel.Usage,
+                channel.Input, channel.Output, channel.Feature) &&
+                channel.ReportIds == "IN[02] OUT[02] FEATURE[02]" &&
+                collections.Count(c => c.Receiver == channel.Receiver && !c.Excluded &&
+                    RazerBlackSharkProtocol.MatchesChannel(c.Vid, c.Pid, c.Page, c.Usage,
+                        c.Input, c.Output, c.Feature)) == 1;
         if (protocol == "Zg4")
             return VendorProtocol.IsZg4Channel(channel.Vid, channel.Pid, channel.Product,
                 channel.Page, channel.Input, channel.Output);
@@ -273,6 +280,7 @@ internal static class BatteryReplay
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
         if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
         if (query.Protocol == RogOmniMouseProtocol.Protocol) return ReplayRogMouse(query);
+        if (query.Protocol == RazerBlackSharkProtocol.Protocol) return ReplayRazerBlackShark(query, channel.Pid);
         if (query.Protocol == "Zg4") return ReplayZg4(query);
         if (query.Protocol == "Neon75Feature")
         {
