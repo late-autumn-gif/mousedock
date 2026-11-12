@@ -33,6 +33,16 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Character devices retain distinct artwork through reorder and restart", CharacterIdentityChecks.Assignments),
+            ("Character device captions stay below artwork with live independent values", CharacterIdentityChecks.Captions),
+            ("Character devices share stable identities across floating and compact surfaces", CharacterIdentityChecks.Floating),
+            ("Character device editor isolates per-device drafts", CharacterIdentityChecks.Editor),
+            ("Character previews preserve settings and charge marks without numbers", CharacterIdentityChecks.PreviewAndFull),
+            ("Device photos retain independent artwork and captions on every surface", DevicePhotoChecks.Surfaces),
+            ("Device photo editor separates images crops and applied drafts", DevicePhotoChecks.Editor),
+            ("Device photos preserve legacy fallback and tolerate missing images", DevicePhotoChecks.LegacyAndMissing),
+            ("Device photo floating wheel edits only the targeted crop", DevicePhotoChecks.FloatingWheel),
+            ("Device photo floating drag edits artwork without moving the window", DevicePhotoChecks.FloatingDrag),
             ("Only one of the six display modes is visible", UiRegressionChecks.ExclusiveSurfaces),
             ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),

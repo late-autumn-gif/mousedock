@@ -102,6 +102,8 @@ namespace MouseDock.Views
         {
             var devices = App.Battery.VisibleDevices.Take(5).ToArray();
             var style = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle);
+            if (style == "character" && CharacterAssignments.Ensure(App.Settings, App.Battery.VisibleDevices))
+                App.SaveSettings();
             var color = ResolveForeground(App.Settings, App.Theme);
             var battery = ResolveBatteryBrush(App.Settings, App.Theme);
             var presentation = (style, App.Settings.ShowBatteryNumber, color, battery?.ToString() ?? "", App.Settings.LowBatteryWarn,

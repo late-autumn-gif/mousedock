@@ -121,6 +121,8 @@ namespace MouseDock.Views
             }
             catch { }
             var devices = App.Battery.VisibleDevices.ToArray();
+            if (App.Settings.TaskbarStyle == "character" && CharacterAssignments.Ensure(App.Settings, devices))
+                App.SaveSettings();
             var foreground = light ? Colors.Black : Colors.WhiteSmoke;
             var presentation = (App.Settings.TaskbarStyle, App.Settings.ShowBatteryNumber, _vertical,
                 foreground, App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor,

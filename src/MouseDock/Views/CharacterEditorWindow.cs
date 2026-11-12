@@ -19,9 +19,14 @@ public sealed class CharacterEditorWindow : Window
     private readonly CharacterBatteryIcon _preview;
     private readonly Slider _zoom;
     private readonly ComboBox _characters;
+    private readonly ComboBox _deviceChoices;
+    private readonly Viewbox _previewHost;
+    private bool _switchingDevice;
     private Point _start, _origin;
     private BitmapSource _photo;
     private string _photoPath;
+    private readonly DeviceInfo _fallbackDevice = new() { Name = "设备", Level = 76 };
+    private DeviceInfo SelectedDevice => _deviceChoices.SelectedItem as DeviceInfo;
 
     public CharacterEditorWindow(AppSettings settings) : this(settings, null) { }
 
@@ -45,27 +50,45 @@ public sealed class CharacterEditorWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         _preview = new CharacterBatteryIcon { Width = 120, Height = 120, Level = 76, Cursor = Cursors.SizeAll };
         var devices = App.Battery?.VisibleDevices.Take(CharacterBatteryIcon.MaximumPhotoDevices).ToList();
-        if (devices?.Count > 0)
-        {
-            _preview.Devices = devices;
-            var first = devices[0];
-            _preview.SetBinding(CharacterBatteryIcon.LevelProperty, new System.Windows.Data.Binding(nameof(DeviceInfo.Level)) { Source = first });
-            _preview.SetBinding(CharacterBatteryIcon.ChargingProperty, new System.Windows.Data.Binding(nameof(DeviceInfo.IsChargingActive)) { Source = first });
-            _preview.SetBinding(CharacterBatteryIcon.StaleProperty, new System.Windows.Data.Binding(nameof(DeviceInfo.IsStale)) { Source = first });
-            _preview.SetBinding(CharacterBatteryIcon.KindProperty, new System.Windows.Data.Binding(nameof(DeviceInfo.Kind)) { Source = first });
-        }
-        panel.Children.Add(new Border { Child = new Viewbox { Width = 320, Height = 300, Stretch = Stretch.Uniform, Child = _preview },
+        CharacterAssignments.Ensure(Draft, devices ?? new());
+        _previewHost = new Viewbox { Width = 320, Height = 300, Stretch = Stretch.Uniform };
+        panel.Children.Add(new Border { Child = _previewHost,
             Background = new SolidColorBrush(theme.Surface), CornerRadius = new CornerRadius(8) });
-        _characters = new ComboBox { Margin = new Thickness(0, 12, 0, 6) };
+        _deviceChoices = new ComboBox
+        {
+            Name = "CharacterDeviceChoices", ItemsSource = devices, DisplayMemberPath = nameof(DeviceInfo.Name),
+            Margin = new Thickness(0, 12, 0, 0), ToolTip = "设备", SelectedIndex = devices?.Count > 0 ? 0 : -1
+        };
+        panel.Children.Add(_deviceChoices);
+        _characters = new ComboBox { Name = "CharacterArtworkChoices", Margin = new Thickness(0, 12, 0, 6) };
         foreach (var (key, label) in new[] { ("rei", "绫波丽"), ("asuka", "明日香"), ("peek", "趴趴款"), ("photo", "我的照片") })
             _characters.Items.Add(new ComboBoxItem { Tag = key, Content = label });
         _characters.SelectedItem = _characters.Items.OfType<ComboBoxItem>().FirstOrDefault(item =>
-            (string)item.Tag == (Draft.IconStyle == "portrait" ? "photo" : Draft.ReferenceCharacter)) ?? _characters.Items[0];
+            (string)item.Tag == (Draft.IconStyle == "portrait" ? "photo" :
+                CharacterAssignments.Resolve(Draft, _deviceChoices.SelectedItem as DeviceInfo))) ?? _characters.Items[0];
         _characters.SelectionChanged += (_, __) =>
         {
+            if (_switchingDevice) return;
             if (_characters.SelectedItem is not ComboBoxItem { Tag: string key }) return;
             if (key == "photo") Draft.IconStyle = "portrait";
-            else { Draft.IconStyle = "character"; Draft.ReferenceCharacter = key; }
+            else
+            {
+                Draft.IconStyle = "character";
+                if (_deviceChoices.SelectedItem is DeviceInfo device && !string.IsNullOrWhiteSpace(device.Id))
+                    Draft.DeviceCharacters[device.Id] = key;
+                else Draft.ReferenceCharacter = key;
+            }
+            Refresh();
+        };
+        _deviceChoices.SelectionChanged += (_, __) =>
+        {
+            _switchingDevice = true;
+            try
+            {
+                string key = Draft.IconStyle == "portrait" ? "photo" : CharacterAssignments.Resolve(Draft, SelectedDevice);
+                _characters.SelectedItem = _characters.Items.OfType<ComboBoxItem>().Single(item => (string)item.Tag == key);
+            }
+            finally { _switchingDevice = false; }
             Refresh();
         };
         panel.Children.Add(_characters);
@@ -90,32 +113,38 @@ public sealed class CharacterEditorWindow : Window
         var reset = Tool("\uE777", "恢复构图"); DockPanel.SetDock(reset, Dock.Right); tools.Children.Add(reset);
         reset.Click += (_, __) =>
         {
-            Draft.PhotoOffsetX = Draft.PhotoOffsetY = 0;
-            Draft.PhotoZoom = _zoom.Value = 1;
-            Refresh();
+            UpdatePhoto(PhotoAssignments.Resolve(Draft, SelectedDevice) with { Zoom = 1, OffsetX = 0, OffsetY = 0 });
         };
         panel.Children.Add(tools);
-        _zoom = new Slider { Minimum = 1, Maximum = 4, Value = PictureBackground.Clamp(Draft.PhotoZoom, 1, 4, 1),
+        _zoom = new Slider { Minimum = 1, Maximum = 4, Value = PhotoAssignments.Resolve(Draft, SelectedDevice).Zoom,
             Margin = new Thickness(0, 6, 0, 6), ToolTip = "照片缩放" };
-        _zoom.ValueChanged += (_, __) => { Draft.PhotoZoom = _zoom.Value; Refresh(); };
+        _zoom.ValueChanged += (_, __) =>
+        {
+            if (!_switchingDevice && Draft.IconStyle == "portrait")
+                UpdatePhoto(PhotoAssignments.Resolve(Draft, SelectedDevice) with { Zoom = _zoom.Value });
+        };
         panel.Children.Add(_zoom);
         _preview.MouseLeftButtonDown += (_, e) =>
         {
             if (Draft.IconStyle != "portrait") return;
-            _start = e.GetPosition(_preview); _origin = new Point(Draft.PhotoOffsetX, Draft.PhotoOffsetY);
+            var photo = PhotoAssignments.Resolve(Draft, SelectedDevice);
+            _start = e.GetPosition(_preview); _origin = new Point(photo.OffsetX, photo.OffsetY);
             _preview.CaptureMouse(); e.Handled = true;
         };
         _preview.MouseLeftButtonUp += (_, __) => _preview.ReleaseMouseCapture();
         _preview.MouseMove += (_, e) =>
         {
-            if (!_preview.IsMouseCaptured || _photo == null) return;
+            if (!_preview.IsMouseCaptured || _photo == null || Draft.IconStyle != "portrait") return;
+            var photo = PhotoAssignments.Resolve(Draft, SelectedDevice);
             var delta = e.GetPosition(_preview) - _start;
-            double width = _preview.ActualWidth - 6, height = _preview.ActualHeight - 4;
-            double scale = Math.Max(width / _photo.PixelWidth, height / _photo.PixelHeight) * Draft.PhotoZoom;
+            double width = _preview.ActualWidth - 6, height = _preview.ActualHeight - 4 - 5;
+            double scale = Math.Max(width / _photo.PixelWidth, height / _photo.PixelHeight) * photo.Zoom;
             double extraX = _photo.PixelWidth * scale - width, extraY = _photo.PixelHeight * scale - height;
-            Draft.PhotoOffsetX = extraX > .01 ? Math.Clamp(_origin.X + delta.X / extraX, -.5, .5) : 0;
-            Draft.PhotoOffsetY = extraY > .01 ? Math.Clamp(_origin.Y + delta.Y / extraY, -.5, .5) : 0;
-            Refresh();
+            UpdatePhoto(photo with
+            {
+                OffsetX = extraX > .01 ? Math.Clamp(_origin.X + delta.X / extraX, -.5, .5) : 0,
+                OffsetY = extraY > .01 ? Math.Clamp(_origin.Y + delta.Y / extraY, -.5, .5) : 0
+            });
         };
         _preview.MouseWheel += (_, e) =>
         { if (Draft.IconStyle == "portrait") { _zoom.Value += e.Delta > 0 ? .1 : -.1; e.Handled = true; } };
@@ -132,6 +161,8 @@ public sealed class CharacterEditorWindow : Window
     {
         settings.IconStyle = Draft.IconStyle;
         settings.ReferenceCharacter = Draft.ReferenceCharacter;
+        settings.DeviceCharacters = new(Draft.DeviceCharacters ?? new(), StringComparer.OrdinalIgnoreCase);
+        settings.DevicePhotos = new(Draft.DevicePhotos ?? new(), StringComparer.OrdinalIgnoreCase);
         settings.CharacterTransparentBackground = Draft.CharacterTransparentBackground;
         settings.CharacterBackgroundColor = Draft.CharacterBackgroundColor;
         settings.PhotoAsset = Draft.PhotoAsset; settings.IconBackground = Draft.IconBackground;
@@ -150,33 +181,59 @@ public sealed class CharacterEditorWindow : Window
         try
         {
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock", "portraits");
-            Draft.PhotoAsset = ImageImport.Import(picker.FileName, directory, true);
-            Draft.IconBackground = "";
-            Draft.PhotoOffsetX = Draft.PhotoOffsetY = 0; Draft.PhotoZoom = _zoom.Value = 1;
-            _characters.SelectedItem = _characters.Items.OfType<ComboBoxItem>().Single(item => (string)item.Tag == "photo");
-            Refresh();
+            UsePhoto(ImageImport.Import(picker.FileName, directory, true));
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法使用照片", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    private void UsePhoto(string path)
+    {
+        PhotoAssignments.Set(Draft, SelectedDevice, new DevicePhoto { Path = path });
+        Draft.IconStyle = "portrait";
+        _characters.SelectedItem = _characters.Items.OfType<ComboBoxItem>().Single(item => (string)item.Tag == "photo");
+        Refresh();
+    }
+
+    private void UpdatePhoto(DevicePhoto photo)
+    {
+        PhotoAssignments.Set(Draft, SelectedDevice, photo);
+        Refresh();
     }
 
     private void Refresh()
     {
         var palette = AppearanceColors.IconPalette(Draft, App.Theme, Draft.IconFollowTheme);
-        _preview.Character = Draft.IconStyle == "portrait" ? "photo" : Draft.ReferenceCharacter;
-        var size = _preview.Character == "photo" ? CharacterBatteryIcon.PhotoSize(_preview.Devices?.Count ?? 0) : new Size(120, 120);
-        _preview.Width = size.Width; _preview.Height = size.Height;
-        _preview.PhotoPath = string.IsNullOrWhiteSpace(Draft.IconBackground) ? Draft.PhotoAsset : Draft.IconBackground;
+        bool photo = Draft.IconStyle == "portrait";
+        var device = SelectedDevice ?? _fallbackDevice;
+        _deviceChoices.Visibility = _deviceChoices.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _preview.Character = photo ? "photo" : CharacterAssignments.Resolve(Draft, device);
+        var framing = PhotoAssignments.Resolve(Draft, SelectedDevice);
+        _preview.PhotoPath = framing.Path;
         if (_photoPath != _preview.PhotoPath)
         {
             _photoPath = _preview.PhotoPath;
             _photo = Palette.Load(_photoPath, 1024);
         }
-        _preview.PhotoZoom = Draft.PhotoZoom; _preview.PhotoOffsetX = Draft.PhotoOffsetX; _preview.PhotoOffsetY = Draft.PhotoOffsetY;
+        _preview.PhotoZoom = framing.Zoom; _preview.PhotoOffsetX = framing.OffsetX; _preview.PhotoOffsetY = framing.OffsetY;
+        _preview.CompactPhotoBar = photo;
         _preview.TransparentBackground = Draft.CharacterTransparentBackground;
         _preview.Accent = new SolidColorBrush(palette.Accent); _preview.Ink = new SolidColorBrush(palette.Text);
         _preview.Low = new SolidColorBrush(palette.Low); _preview.Muted = new SolidColorBrush(palette.TextDim);
         _preview.Surface = new SolidColorBrush(AppearanceColors.TryColor(Draft.CharacterBackgroundColor, out var color) ? color : palette.Surface);
-        if (_zoom != null) _zoom.IsEnabled = Draft.IconStyle == "portrait";
+        if (_zoom != null)
+        {
+            _zoom.IsEnabled = photo;
+            bool switching = _switchingDevice;
+            _switchingDevice = true;
+            try { _zoom.Value = framing.Zoom; }
+            finally { _switchingDevice = switching; }
+        }
+        if (_previewHost.Child is not CharacterDeviceBadge badge || !ReferenceEquals(badge.DataContext, device))
+        {
+            _previewHost.Child = null;
+            if (_preview.Parent is Panel previous) previous.Children.Remove(_preview);
+            _previewHost.Child = new CharacterDeviceBadge(device, _preview, new SolidColorBrush(palette.Text));
+        }
         _preview.InvalidateVisual();
     }
 }

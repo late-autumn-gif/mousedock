@@ -559,14 +559,16 @@ namespace MouseDock.Views
             {
                 FrameworkElement preview;
                 if (entry.Item1 is "character" or "portrait")
+                {
+                    var photo = PhotoAssignments.Resolve(App.Settings, App.Battery.VisibleDevices.FirstOrDefault());
                     preview = new CharacterBatteryIcon
                     {
                         Width = 120, Height = 120, Level = 76,
                         Character = entry.Item1 == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
-                        PhotoPath = string.IsNullOrWhiteSpace(App.Settings.IconBackground) ? App.Settings.PhotoAsset : App.Settings.IconBackground,
-                        PhotoZoom = App.Settings.PhotoZoom, PhotoOffsetX = App.Settings.PhotoOffsetX, PhotoOffsetY = App.Settings.PhotoOffsetY,
+                        PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
                         Accent = new SolidColorBrush(App.Settings.IconFollowTheme ? App.Theme.Accent : ThemePreset.C("#A6F5BF"))
                     };
+                }
                 else
                 {
                     var reference = new ReferenceBatteryIcon { StyleName=entry.Item1, Width=144,
@@ -648,6 +650,7 @@ namespace MouseDock.Views
         {
             App.Settings.PhotoAsset = "";
             App.Settings.IconBackground = "";
+            App.Settings.DevicePhotos?.Clear();
             App.RefreshDeviceViews();
             App.SaveSettings();
             RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();

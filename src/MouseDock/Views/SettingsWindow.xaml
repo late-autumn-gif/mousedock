@@ -339,7 +339,7 @@
                                 <Button Content="角色与照片…" Style="{StaticResource GhostButton}" Click="OnEditCharacter"
                                         HorizontalAlignment="Right" Margin="0,8,0,0" />
                                 <Grid Margin="0,8,0,0">
-                                    <TextBlock Text="角色" Style="{StaticResource RowText}" />
+                                    <TextBlock Text="默认角色" Style="{StaticResource RowText}" />
                                     <ComboBox x:Name="ReferenceCharacterChoices" Width="160" HorizontalAlignment="Right"
                                               SelectionChanged="OnReferenceCharacterChanged">
                                         <ComboBoxItem Content="绫波丽" Tag="rei" />

@@ -36,6 +36,7 @@ namespace MouseDock.Models
         public string CharacterAsset { get; set; } = "";
         public string AnimatedCharacter { get; set; } = "otter";
         public string ReferenceCharacter { get; set; } = "rei";
+        public Dictionary<string, string> DeviceCharacters { get; set; } = new();
         public bool CharacterTransparentBackground { get; set; } = true;
         public string CharacterBackgroundColor { get; set; } = "";
         public bool AnimatedPhotoBackground { get; set; }
@@ -43,6 +44,7 @@ namespace MouseDock.Models
         public double PhotoZoom { get; set; } = 1.0;
         public double PhotoOffsetX { get; set; }
         public double PhotoOffsetY { get; set; }
+        public Dictionary<string, DevicePhoto> DevicePhotos { get; set; } = new();
 
         public double Opacity { get; set; } = 0.96;
         public double Scale { get; set; } = 1.0;
@@ -168,12 +170,14 @@ namespace MouseDock.Models
                 PhotoAsset = PhotoAsset,
                 AnimatedCharacter = AnimatedCharacter,
                 ReferenceCharacter = ReferenceCharacter,
+                DeviceCharacters = new(DeviceCharacters ?? new(), System.StringComparer.OrdinalIgnoreCase),
                 CharacterTransparentBackground = CharacterTransparentBackground,
                 CharacterBackgroundColor = CharacterBackgroundColor,
                 AnimatedPhotoBackground = AnimatedPhotoBackground,
                 PhotoZoom = PhotoZoom,
                 PhotoOffsetX = PhotoOffsetX,
                 PhotoOffsetY = PhotoOffsetY,
+                DevicePhotos = new(DevicePhotos ?? new(), System.StringComparer.OrdinalIgnoreCase),
                 Opacity = Opacity,
                 Scale = Scale,
                 IconScale = IconScale,
