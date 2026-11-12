@@ -61,9 +61,10 @@ internal static class OriginalGpwProtocol
     }
 
     private static int softwareId;
-    internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link, ushort pid) => new Reader(link).Read(pid);
+    internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link, ushort pid,
+        bool readDpi = false, MouseDpiChange change = null) => new Reader(link, readDpi, change).Read(pid);
 
-    private sealed class Reader(ReferenceBatteryProtocol.ILink link)
+    private sealed class Reader(ReferenceBatteryProtocol.ILink link, bool readDpi, MouseDpiChange change)
     {
         private readonly long deadline = link.Now + 4000;
         private readonly StringBuilder trace = new();
@@ -101,10 +102,10 @@ internal static class OriginalGpwProtocol
                     return Fail("第二次电压响应无效/充电平台不能唯一换算：" + issue, name, confirmed);
                 bool full = (second[6] & 0x87) == 0x81;
                 string source = full ? "设备明确满电状态" : "一代 GPW 官方电池模型估算（非设备直接百分比）";
-                return new(level, charging, true, full ? ReferenceBatteryProtocol.State.Full :
+                return WithDpi(slot, new(level, charging, true, full ? ReferenceBatteryProtocol.State.Full :
                     charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
                     source + $"；slot={slot:X2} mV={(second[4] << 8) | second[5]} flags={second[6]:X2}；两次有效电压响应；回显={echoes} 无效={rejected}" + trace,
-                    Model, name);
+                    Model, name));
             }
             return Fail("没有取得一代 GPW 的实时名称/设备型号身份，接收器不等于外设型号：" + issue);
         }
@@ -127,9 +128,9 @@ internal static class OriginalGpwProtocol
             var second = Call(slot, feature, 0);
             if (second == null || !LogitechHidpp.TryParseBattery(0x1000, second, out int level, out _))
                 return Stop("G603 第二次百分比响应无效");
-            return new(level, false, true, ReferenceBatteryProtocol.State.Online,
+            return WithDpi(slot, new(level, false, true, ReferenceBatteryProtocol.State.Online,
                 "G603 实时身份确认；0x1000 设备百分比，两次有效响应；可更换电池，不支持充电" + trace,
-                G603Model, name);
+                G603Model, name));
         }
 
         private ReferenceBatteryProtocol.Reading ReadSuperlight()
@@ -145,8 +146,20 @@ internal static class OriginalGpwProtocol
             if(capabilities==null||(capabilities[5]&2)==0)return Stop("1004未确认支持真实百分比",name);
             var first=Call(1,feature,1);var second=Call(1,feature,1);
             if(!TrySuperlightPercentage(first,out _,out _)||!TrySuperlightPercentage(second,out int level,out bool charging))return Stop("1004未取得两次有效百分比/状态",name);
-            return new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
-                "GPW2实时身份确认；1004设备直接百分比，两次有效响应"+trace,model,name);
+            return WithDpi(1, new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
+                "GPW2实时身份确认；1004设备直接百分比，两次有效响应"+trace,model,name));
+        }
+
+        private ReferenceBatteryProtocol.Reading WithDpi(byte slot, ReferenceBatteryProtocol.Reading reading)
+        {
+            if (!readDpi || (change != null &&
+                (change.Expected.Protocol != MouseDpiProtocol.Hidpp || change.Expected.Identity != reading.Model)))
+                return reading;
+            return reading with
+            {
+                Dpi = LogitechMouseDpi.ReadOrChange(reading.Model, change,
+                    (feature, function, p0, p1, p2) => Call(slot, feature, function, p0, p1, p2))
+            };
         }
 
         private ReferenceBatteryProtocol.Reading Fail(string reason, string name = null, bool confirmed = false) =>
@@ -192,7 +205,7 @@ internal static class OriginalGpwProtocol
             catch (DecoderFallbackException) { return null; }
         }
 
-        private byte[] Call(byte slot, byte feature, byte function, byte p0 = 0, byte p1 = 0)
+        private byte[] Call(byte slot, byte feature, byte function, byte p0 = 0, byte p1 = 0, byte p2 = 0)
         {
             if (faulted) return null;
             if (link.Now >= deadline) { issue = "本实例总预算耗尽"; faulted = true; return null; }
@@ -202,7 +215,7 @@ internal static class OriginalGpwProtocol
             var request = new byte[20];
             request[0] = 0x11; request[1] = slot; request[2] = feature;
             byte client = (byte)(1 + (unchecked((uint)Interlocked.Increment(ref softwareId)) % 15));
-            request[3] = (byte)((function << 4) | client); request[4] = p0; request[5] = p1;
+            request[3] = (byte)((function << 4) | client); request[4] = p0; request[5] = p1; request[6] = p2;
             trace.Append(" TX=").Append(Convert.ToHexString(request));
             if (!link.Write(request, 250)) { issue = "请求未完整发送"; faulted = true; return null; }
             long until = Math.Min(deadline, link.Now + 300);

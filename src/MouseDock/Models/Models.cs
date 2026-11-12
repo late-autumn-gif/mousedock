@@ -53,8 +53,8 @@ namespace MouseDock.Models
         public string DpiLabel => _dpi <= 0 ? "DPI —" :
             _dpiSettings?.SeparateAxes == true ? $"X {_dpi} DPI" : $"{_dpi} DPI";
 
-        private ModernMouseDpi.State _dpiSettings;
-        internal ModernMouseDpi.State DpiSettings
+        private MouseDpiState _dpiSettings;
+        internal MouseDpiState DpiSettings
         {
             get => _dpiSettings;
             set
@@ -65,7 +65,7 @@ namespace MouseDock.Models
             }
         }
         public bool CanChangeDpi => _connected && _recognitionEnabled &&
-            _dpiSettings is { SeparateAxes: false, Count: > 1 };
+            _dpiSettings is { SeparateAxes: false, Writable: true, Count: > 1 };
 
         private string _note = "";
         public string Note

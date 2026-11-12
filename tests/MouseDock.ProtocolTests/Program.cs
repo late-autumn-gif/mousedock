@@ -355,6 +355,7 @@ assertions += G7V9Regression.Run();
 assertions += ZeroRainyRegression.Run();
 assertions += SupportAuditRegression.Run();
 assertions += SuperlightRegression.Run();
+assertions += LogitechDpiRegression.Run();
 assertions += ModernMouseRegression.Run();
 assertions += UpdateReleaseRegression.Run();
 assertions += UpdateInstallRegression.Run();

@@ -124,17 +124,17 @@ namespace MouseDock.Services.Detection
         private static bool IsSafeMode => BatteryReplay.Current?.SafeMode ?? App.Settings?.SafeMode ?? false;
 
         internal static DetectedDevice ReadOrChangeMouseDpi(DevicePreferences preferences, string instanceId,
-            ModernMouseDpi.Change change = null)
+            MouseDpiChange change = null)
         {
             if (string.IsNullOrEmpty(instanceId)) return null;
             lock (ScanGate)
                 return ScanDevices(preferences, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { instanceId }, change)
                     .FirstOrDefault(d => string.Equals(d.Id, instanceId, StringComparison.OrdinalIgnoreCase) &&
-                        d.ModernDpi != null && (change == null || d.ModernDpi.Index == change.Index));
+                        d.DpiSettings != null && (change == null || d.DpiSettings.Index == change.Index));
         }
 
         private static List<DetectedDevice> ScanDevices(DevicePreferences preferences, HashSet<string> scope = null,
-            ModernMouseDpi.Change dpiChange = null)
+            MouseDpiChange dpiChange = null)
         {
             LastDiagnostics.Clear();
             InstanceScope.BeginScan();
@@ -327,7 +327,9 @@ namespace MouseDock.Services.Detection
             QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
             if (BatteryReplay.Current == null) QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
             QueryZeroRainy(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadZeroRainy);
-            QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadOriginalGpw);
+            bool readLogitechDpi = BatteryReplay.Current == null;
+            QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences,
+                (path, vid, pid) => VendorProtocol.ReadOriginalGpw(path, vid, pid, readLogitechDpi, dpiChange));
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
             QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
@@ -955,6 +957,11 @@ namespace MouseDock.Services.Detection
                     }
                 }
                 string reader = g603 ? "G603" : "GPW";
+                if (result.Dpi is { } dpi)
+                {
+                    b.DpiSettings = dpi;
+                    b.Dpi = dpi.Values[dpi.Index];
+                }
                 if(b.Battery<0)b.BatteryFailures.Add(reader+"："+result.Diagnostic);
                 LastDiagnostics.Add($"{b.InstanceId} {reader}专用 状态={result.Status} 型号={result.Model} 电量={result.Level} {result.Diagnostic}");
             }
@@ -1397,7 +1404,7 @@ namespace MouseDock.Services.Detection
             public string M137Model;
             /// <summary>MCHOSE 官方 0x12 0x67 读到的 DPI；-1 表示未知。</summary>
             public int Dpi = -1;
-            public ModernMouseDpi.State ModernDpi;
+            public MouseDpiState DpiSettings;
             public int[] DpiSlots;
             public string DpiText;
             public string RogScopeModel;
@@ -1673,7 +1680,7 @@ namespace MouseDock.Services.Detection
                     Transport = transport,
                     Level = Battery,
                     Dpi = Dpi,
-                    ModernDpi = ModernDpi,
+                    DpiSettings = DpiSettings,
                     DpiSlots = DpiSlots,
                     DpiText = DpiText ?? "",
                     Charging = charging,

@@ -6,9 +6,6 @@ namespace MouseDock.Services.Detection;
 
 internal static class ModernMouseDpi
 {
-    internal sealed record State(byte Profile, byte Index, byte Count, bool SeparateAxes, int[] Values);
-    internal sealed record Change(State Expected, int Index);
-
     internal static byte[] BuildRequest(ushort command, ReadOnlySpan<byte> data)
     {
         var frame = new byte[64];
@@ -40,7 +37,7 @@ internal static class ModernMouseDpi
         return true;
     }
 
-    internal static State ParseSettings(byte[] frame, byte profile)
+    internal static MouseDpiState ParseSettings(byte[] frame, byte profile)
     {
         if (!TryPayload(frame, 3, 17, out var data) || profile > 2 || data[0] != profile || data[1] != 0 ||
             data[2] is < 1 or > 6 || data[3] >= data[2] || data[4] > 1) return null;
@@ -53,7 +50,7 @@ internal static class ModernMouseDpi
         return new(profile, data[3], data[2], data[4] == 1, values);
     }
 
-    internal static byte[] BuildSelection(State state, int index)
+    internal static byte[] BuildSelection(MouseDpiState state, int index)
     {
         if (state.SeparateAxes || index < 0 || index >= state.Count) return null;
         Span<byte> data = stackalloc byte[17];
@@ -66,7 +63,7 @@ internal static class ModernMouseDpi
         return BuildRequest(0x0103, data);
     }
 
-    internal static State ReadSettings(ReferenceBatteryProtocol.ILink link, Change change)
+    internal static MouseDpiState ReadSettings(ReferenceBatteryProtocol.ILink link, MouseDpiChange change)
     {
         long deadline = link.Now + 1700;
         byte[] Exchange(ushort command, byte[] request, int minimum)
@@ -84,7 +81,7 @@ internal static class ModernMouseDpi
             return null;
         }
 
-        State Read()
+        MouseDpiState Read()
         {
             var performance = Exchange(2, BuildRequest(2, []), 9);
             if (!TryPayload(performance, 2, 9, out var settings) || settings[0] > 2) return null;
@@ -94,7 +91,7 @@ internal static class ModernMouseDpi
 
         var before = Read();
         if (change == null) return before;
-        if (before == null || before.Profile != change.Expected.Profile || before.Count != change.Expected.Count ||
+        if (before == null || change.Expected.Protocol != MouseDpiProtocol.Mhub || before.Profile != change.Expected.Profile || before.Count != change.Expected.Count ||
             before.SeparateAxes || !before.Values.SequenceEqual(change.Expected.Values)) return null;
         if (before.Index == change.Index) return before;
         var request = BuildSelection(before, change.Index);

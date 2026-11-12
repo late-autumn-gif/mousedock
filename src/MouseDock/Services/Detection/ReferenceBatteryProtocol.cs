@@ -10,7 +10,7 @@ internal static class ReferenceBatteryProtocol
     internal sealed record Reading(int Level, bool Charging, bool ChargingKnown, State Status,
         string Diagnostic, string Model = null, string Identity = null)
     {
-        internal ModernMouseDpi.State Dpi { get; init; }
+        internal MouseDpiState Dpi { get; init; }
         internal static Reading Failed(string reason) => new(-1, false, false, State.Failed, reason);
     }
 

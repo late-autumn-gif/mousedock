@@ -96,7 +96,7 @@ internal static class ModernMouseRegression
         Check(ModernMouseDpi.ParseSettings(invalid, 0) == null, "DPI bad XOR");
         var display = new AutoDetectSource().UpdateFromDetection([new()
         {
-            Id = "dpi", Name = "Mouse", Kind = DeviceKind.Mouse, Dpi = 1600, ModernDpi = before
+            Id = "dpi", Name = "Mouse", Kind = DeviceKind.Mouse, Dpi = 1600, DpiSettings = before
         }]).Single();
         Check(display.DpiLabel == "1600 DPI" && display.CanChangeDpi, "DPI reaches bound device model");
         Check(!DeviceRoutes.IsKnown(0x3837,0x1018,"USB Receiver"),"Generic receiver not sufficient");

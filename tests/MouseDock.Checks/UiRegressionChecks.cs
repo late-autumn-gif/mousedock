@@ -13,10 +13,11 @@ internal static class UiRegressionChecks
 {
     internal static void DockDpi()
     {
-        using var battery = Fixtures();
+        using var battery = Fixtures(start: false);
         var mouse = battery.Devices.Single(d => d.Id == "mouse");
-        mouse.DpiSettings = new ModernMouseDpi.State(0, 1, 2, false, [800, 1600, 0, 0, 0, 0]);
+        mouse.DpiSettings = new MouseDpiState(0, 1, 2, false, [800, 1600, 0, 0, 0, 0]);
         mouse.Dpi = 1600;
+        battery.SaveSelection();
         var window = new DockWindow { Left = -2000, ShowActivated = false };
         try
         {
@@ -26,6 +27,10 @@ internal static class UiRegressionChecks
             var buttons = Descendants<Button>(list).Where(b => b.IsVisible).ToArray();
             Require(buttons.Length == 1 && Equals(buttons[0].Content, "1600 DPI"),
                 "Only the mouse with verified DPI settings should show the DPI selector.");
+            mouse.DpiSettings = new MouseDpiState(0, 0, 1, false, [1600], MouseDpiProtocol.Hidpp, "Logitech G603", Writable: false);
+            window.UpdateLayout();
+            Require(!buttons[0].IsVisible && Descendants<TextBlock>(list).Count(t => t.IsVisible && t.Text == "1600 DPI") == 1,
+                "Read-only Logitech DPI must stay visible without a selector.");
             mouse.Dpi = -1;
             mouse.DpiSettings = null;
             window.UpdateLayout();
@@ -262,10 +267,10 @@ internal static class UiRegressionChecks
         encoder.Save(file);
     }
 
-    private static BatteryService Fixtures()
+    private static BatteryService Fixtures(bool start = true)
     {
         var settings = new AppSettings { Provider = "json", JsonPath = "nonexistent-ui-fixture.json" };
-        var battery = new BatteryService(settings);
+        var battery = new BatteryService(settings, null, start);
         typeof(MouseDock.App).GetProperty("Settings")!.SetValue(null, settings);
         typeof(MouseDock.App).GetProperty("Battery")!.SetValue(null, battery);
         battery.Devices.Add(new DeviceInfo { Id = "hidden", Name = "Not selected", Selected = false });

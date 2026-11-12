@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MouseDock.Services;
@@ -24,7 +24,7 @@ public static partial class HidDiscovery
             else b.BatteryFailures.Add(r.Diagnostic);
             if (r.Dpi is { } dpi)
             {
-                b.ModernDpi = dpi;
+                b.DpiSettings = dpi;
                 b.Dpi = dpi.Values[dpi.Index];
             }
             LastDiagnostics.Add($"{b.InstanceId} MHUB专用 型号={b.ModernModel} 电量={r.Level} {r.Diagnostic}");

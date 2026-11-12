@@ -6,14 +6,18 @@ namespace MouseDock.Services.Detection;
 
 internal static partial class VendorProtocol
 {
-    internal static ReferenceBatteryProtocol.Reading ReadOriginalGpw(string path, ushort vid, ushort pid)
+    internal static ReferenceBatteryProtocol.Reading ReadOriginalGpw(string path, ushort vid, ushort pid) =>
+        ReadOriginalGpw(path, vid, pid, false, null);
+
+    internal static ReferenceBatteryProtocol.Reading ReadOriginalGpw(string path, ushort vid, ushort pid,
+        bool readDpi, MouseDpiChange change)
     {
         if (!OriginalGpwProtocol.IsCandidate(vid, pid) || InstanceScope.Current == null || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("一代 GPW 候选/实例不匹配，未发送查询");
         return ReferenceQueryGate.Run(path, () =>
         {
             using var link = new OriginalGpwLink(path, vid, pid);
-            return OriginalGpwProtocol.Read(link, pid);
+            return OriginalGpwProtocol.Read(link, pid, readDpi, change);
         }, 5000);
     }
 

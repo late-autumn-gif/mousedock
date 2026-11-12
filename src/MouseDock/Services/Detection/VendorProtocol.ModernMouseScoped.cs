@@ -83,7 +83,7 @@ internal static partial class VendorProtocol
         ReadScopedModernMouse(path, vid, pid, null, false);
 
     internal static ReferenceBatteryProtocol.Reading ReadScopedModernMouse(string path,ushort vid,ushort pid,
-        ModernMouseDpi.Change dpiChange, bool readDpi = true)
+        MouseDpiChange dpiChange, bool readDpi = true)
     {
         if(InstanceScope.Current==null||!InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("MHUB物理实例不符");
         return ReferenceQueryGate.Run(path,()=>{

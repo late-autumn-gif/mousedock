@@ -63,7 +63,8 @@ namespace MouseDock.Views
                 int target = index;
                 var item = new MenuItem
                 {
-                    Header = $"档位 {index + 1} · {state.Values[index]} DPI",
+                    Header = state.Protocol == MouseDpiProtocol.Mhub
+                        ? $"档位 {index + 1} · {state.Values[index]} DPI" : $"{state.Values[index]} DPI",
                     IsCheckable = true,
                     IsChecked = index == state.Index
                 };
@@ -80,9 +81,9 @@ namespace MouseDock.Views
                         if (result != null)
                         {
                             device.Dpi = result.Dpi;
-                            device.DpiSettings = result.ModernDpi;
+                            device.DpiSettings = result.DpiSettings;
                         }
-                        button.ToolTip = result == null ? "未能确认更改，请刷新后重试" : "切换 DPI 档位";
+                        button.ToolTip = result == null ? "未能确认更改，请刷新后重试" : "调整 DPI";
                     }
                     catch (Exception)
                     {
