@@ -90,6 +90,7 @@ namespace MouseDock.Models
         public double TaskbarIconOffset { get; set; }
         /// <summary>ring = 圆环；panel = 胶囊条；card = 迷你卡片。</summary>
         public string TaskbarStyle { get; set; } = "ring";
+        public double TaskbarSizePercent { get; set; } = 100;
         public string TaskbarTextColor { get; set; } = "";
         public string TaskbarBatteryColor { get; set; } = "";
         public bool ShowBatteryNumber { get; set; } = true;
@@ -197,6 +198,7 @@ namespace MouseDock.Models
                 TaskbarFollowIcons = TaskbarFollowIcons,
                 TaskbarIconOffset = TaskbarIconOffset,
             TaskbarStyle = TaskbarStyle,
+                TaskbarSizePercent = TaskbarSizePercent,
             TaskbarTextColor = TaskbarTextColor,
             TaskbarBatteryColor = TaskbarBatteryColor,
                 ShowBatteryNumber = ShowBatteryNumber,

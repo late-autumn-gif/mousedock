@@ -34,6 +34,12 @@ internal static class Program
         var checks = new (string Name, Action Check)[]
         {
             ("Low battery reminders can be disabled and restored from settings", LowBatteryWarningChecks.DisabledOption),
+            ("Compact sizes persist independently with legacy defaults", DisplaySizeChecks.Preferences),
+            ("Taskbar resizing preserves fit DPI signed offsets and overflow", DisplaySizeChecks.Placement),
+            ("Compact size settings and resets target their own surface", DisplaySizeChecks.Settings),
+            ("Compact size wheels clamp independently and synchronize settings", DisplaySizeChecks.Wheel),
+            ("Compact windows resize every style through native placement", DisplaySizeChecks.Windows),
+            ("Compact sizes keep all styles and device labels visible", DisplaySizeChecks.Rendering),
             ("Character devices retain distinct artwork through reorder and restart", CharacterIdentityChecks.Assignments),
             ("Character device captions stay below artwork with live independent values", CharacterIdentityChecks.Captions),
             ("Character devices share stable identities across floating and compact surfaces", CharacterIdentityChecks.Floating),
@@ -49,6 +55,8 @@ internal static class Program
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
+            ("Compact character editor opens and edits the selected device on its own surface", CharacterEditorChecks.CompactSurface),
+            ("Compact character editor completion retains its display mode and unrelated styles", CharacterEditorChecks.CompactCompletion),
             ("Character editor preview matches photo layout and opaque bounds", CharacterEditorChecks.PreviewAndBounds),
             ("Photo overlays correct dark text against the photo backing", CharacterEditorChecks.PhotoContrast),
             ("Floating and mini surfaces expand exclusively into the full panel", FloatingExpansionChecks.Expansion),

@@ -7,6 +7,15 @@ namespace MouseDock.Services
 {
     public static class TaskbarPlacement
     {
+        public static double NormalizeSizePercent(double value) =>
+            double.IsFinite(value) ? Math.Round(Math.Clamp(value, 50, 150)) : 100;
+
+        public static Size ScaleContent(Size content, double sizePercent)
+        {
+            double scale = NormalizeSizePercent(sizePercent) / 100;
+            return new Size(content.Width * scale, content.Height * scale);
+        }
+
         public static double NormalizeIconOffset(double value) =>
             double.IsFinite(value) ? Math.Round(Math.Clamp(value, -300, 300)) : 0;
 

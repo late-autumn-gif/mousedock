@@ -74,6 +74,20 @@ namespace MouseDock.Views
                 if (e.ClickCount == 2) App.ShowSettings(this);
                 e.Handled = true;
             };
+            MouseWheel += (_, e) =>
+            {
+                if (e.Delta == 0) return;
+                double current = TaskbarPlacement.NormalizeSizePercent(App.Settings.TaskbarSizePercent);
+                double next = TaskbarPlacement.NormalizeSizePercent(current + e.Delta / 120d * 5);
+                if (next != current)
+                {
+                    App.Settings.TaskbarSizePercent = next;
+                    UpdateAnchor();
+                    App.SettingsView?.SyncTaskbarSize();
+                    App.SaveSettings();
+                }
+                e.Handled = true;
+            };
             Closed += (_, __) =>
             {
                 _anchorTimer.Stop();
@@ -160,6 +174,7 @@ namespace MouseDock.Views
                 return;
             }
             var contentSize = _vertical ? new Size(_strip.Height, _strip.Width) : new Size(_strip.Width, _strip.Height);
+            contentSize = TaskbarPlacement.ScaleContent(contentSize, App.Settings.TaskbarSizePercent);
             Rect placement;
             if (App.Settings.TaskbarFollowIcons)
             {

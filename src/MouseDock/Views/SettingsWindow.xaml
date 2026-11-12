@@ -420,6 +420,22 @@
                                 <UniformGrid x:Name="TaskbarStyleChoices" Columns="3" Margin="0,6,0,0" />
                                 <Grid Margin="0,10,0,0">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="48" /><ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="整体大小" Style="{StaticResource RowText}" />
+                                    <Slider x:Name="TaskbarSizeSlider" Grid.Column="1" Minimum="50" Maximum="150"
+                                            TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0"
+                                            ToolTip="也可在任务栏电量图标上滚动调节；实际大小受任务栏高度限制"
+                                            ValueChanged="OnTaskbarSizeChanged" />
+                                    <TextBlock x:Name="TaskbarSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" />
+                                    <Button x:Name="TaskbarSizeReset" Grid.Column="3" Style="{StaticResource GhostButton}"
+                                            Margin="6,0,0,0" Padding="7,5" ToolTip="恢复大小为 100%" Click="OnResetTaskbarSize">
+                                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
+                                    </Button>
+                                </Grid>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -447,12 +463,17 @@
                                 <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="整体大小" Style="{StaticResource RowText}" />
                                     <Slider x:Name="EdgeSizeSlider" Grid.Column="1" Minimum="50" Maximum="150"
                                             TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0"
                                             ToolTip="也可将鼠标移到屏幕右侧电量面板上滚动调节" ValueChanged="OnEdgeSizeChanged" />
                                     <TextBlock x:Name="EdgeSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" />
+                                    <Button x:Name="EdgeSizeReset" Grid.Column="3" Style="{StaticResource GhostButton}"
+                                            Margin="6,0,0,0" Padding="7,5" ToolTip="恢复大小为 100%" Click="OnResetEdgeSize">
+                                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
+                                    </Button>
                                 </Grid>
                                 <Grid Margin="0,0,0,12">
                                     <TextBlock Text="图标颜色" Style="{StaticResource RowText}" />
