@@ -7,12 +7,20 @@ namespace MouseDock.Services.Detection;
 
 public static partial class HidDiscovery
 {
-    private static void QueryRogScope(Dictionary<string, Bucket> buckets, List<VendorCollectionInfo> collections,
-        bool safeMode, DevicePreferences preferences)
+    internal static void QueryRogScope(Dictionary<string, Bucket> buckets, List<VendorCollectionInfo> collections,
+        bool safeMode, DevicePreferences preferences,
+        Func<string, string, string, BatteryReplay.Trace, ReferenceBatteryProtocol.Reading> query = null)
     {
         foreach (var b in buckets.Values)
         {
             if (!VendorProtocol.IsRogOmni(b.Vid, b.Pid)) continue;
+            b.Battery = -1;
+            b.Charging = false;
+            b.ChargeFull = false;
+            b.ReadStale = false;
+            b.BatterySource = "";
+            b.RogScopeModel = null;
+            if (b.HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse) b.HandledBy = HandledBy.None;
             var scoped = collections.Where(c => VendorProtocol.IsRogOmni(c.Vid, c.Pid) &&
                 InstanceScope.ForPath(c.Path, "") == b.InstanceId).ToArray();
             string[] Paths(int reportId) => scoped.Where(c =>
@@ -21,26 +29,33 @@ public static partial class HidDiscovery
 
             var pairing = Paths(1);
             var battery = Paths(2);
+            var mouse = Paths(3);
             string reason = safeMode ? "安全模式" :
                 !(preferences?.CanRead(b.InstanceId, "hid-0B05-1ACE") ?? true) ? "识别已停用" :
-                pairing.Length != 1 || battery.Length != 1 ? $"集合不唯一或缺失：配对={pairing.Length} 电量={battery.Length}" : null;
+                pairing.Length != 1 ? $"配对集合不唯一或缺失：配对={pairing.Length}" : null;
             var scan = BatteryReplay.Current;
             if (reason != null)
             {
                 scan?.AddQuery(b.InstanceId, null, "RogScopeRxOmni", safeMode ? "safe-mode" :
-                    pairing.Length != 1 || battery.Length != 1 ? "collection-missing-or-ambiguous" : "recognition-disabled", null);
+                    pairing.Length != 1 ? "collection-missing-or-ambiguous" : "recognition-disabled", null);
                 LastDiagnostics.Add($"{b.InstanceId} ROG Omni：{reason}");
                 continue;
             }
 
             using var scope = InstanceScope.Enter(b.InstanceId);
             var trace = scan == null ? null : new BatteryReplay.Trace();
-            var result = VendorProtocol.ReadRogScope(pairing[0], battery[0], trace);
-            scan?.AddQuery(b.InstanceId, battery[0], "RogScopeRxOmni", result.Status.ToString(), result.Model, result.Level, trace);
+            string batteryPath = battery.Length == 1 ? battery[0] : null;
+            string mousePath = mouse.Length == 1 ? mouse[0] : null;
+            var result = query != null ? query(pairing[0], batteryPath, mousePath, trace) :
+                VendorProtocol.ReadRogScope(pairing[0], batteryPath, trace, mousePath);
+            bool isMouse = result.Model == RogOmniMouseProtocol.Model;
+            scan?.AddQuery(b.InstanceId, isMouse ? mousePath : batteryPath,
+                isMouse ? RogOmniMouseProtocol.Protocol : "RogScopeRxOmni",
+                result.Status.ToString(), result.Model, result.Level, trace);
             LastDiagnostics.Add($"{b.InstanceId} ROG Omni：{result.Diagnostic} 电量={result.Level}");
             if (result.Model == null) continue;
-            b.HandledBy = HandledBy.RogScope;
-            b.RogScopeModel = result.Model;
+            b.HandledBy = isMouse ? HandledBy.RogOmniMouse : HandledBy.RogScope;
+            if (!isMouse) b.RogScopeModel = result.Model;
             b.Battery = result.Level;
             b.Charging = result.Charging;
             b.ReadStale = false;

@@ -77,7 +77,8 @@ internal static class BatteryReplay
             collections.Add(new(Receiver(instance), number, vid, pid, SafeLabel(product), page, usage, input, output, feature, excluded, path.Contains("&mi_02", StringComparison.OrdinalIgnoreCase),
                 VendorProtocol.IsRogOmni(vid, pid)
                     ? VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 1) ? 1 :
-                        VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 2) ? 2 : 0
+                        VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 2) ? 2 :
+                            VendorProtocol.IsRogOmniChannel(path, product, page, usage, input, output, feature, 3) ? 3 : 0
                     : 0, interfaceLabel, usbRevision, openError, exclusion, status, reportIds, route, queryPolicy));
         }
 
@@ -178,6 +179,13 @@ internal static class BatteryReplay
                 collections.Count(c => c.Receiver == channel.Receiver && !c.Excluded && c.OmniReport == 1 &&
                     VendorProtocol.IsRogOmni(c.Vid, c.Pid) &&
                     VendorProtocol.IsRogOmniReport(c.Page, c.Usage, c.Input, c.Output, 1)) == 1;
+        if (protocol == RogOmniMouseProtocol.Protocol)
+            return VendorProtocol.IsRogOmni(channel.Vid, channel.Pid) && channel.OmniReport == 3 &&
+                channel.Feature == 0 && channel.Mi02 && channel.Product == "ROG OMNI RECEIVER" &&
+                VendorProtocol.IsRogOmniReport(channel.Page, channel.Usage, channel.Input, channel.Output, 3) &&
+                collections.Count(c => c.Receiver == channel.Receiver && !c.Excluded && c.OmniReport == 1 &&
+                    VendorProtocol.IsRogOmni(c.Vid, c.Pid) &&
+                    VendorProtocol.IsRogOmniReport(c.Page, c.Usage, c.Input, c.Output, 1)) == 1;
 
         if (protocol is "Sc580Receiver" or "Sc630Pro")
         {
@@ -208,8 +216,9 @@ internal static class BatteryReplay
             byte[] raw;
             try { raw = Convert.FromHexString(sample.Hex); }
             catch (FormatException) { continue; }
-            if (sample.Stage == "omni-paired" && VendorProtocol.RogOmniHasScopeRx(raw)) paired = raw;
-            if (paired != null && sample.Stage == "omni-battery" &&
+            if (sample.Stage == "omni-paired" &&
+                (VendorProtocol.RogOmniHasScopeRx(raw) || RogOmniMouseProtocol.IsPaired(raw))) paired = raw;
+            if (paired != null && VendorProtocol.RogOmniHasScopeRx(paired) && sample.Stage == "omni-battery" &&
                 VendorProtocol.TryParseRogScopeBattery(raw, out int level, out bool charge))
             {
                 percent = level;
@@ -222,9 +231,30 @@ internal static class BatteryReplay
         // Reports from older builds lacked the second pairing response.
         bool verified = percent != null && (query.Status is "Online" or "Charging") && (!afterSeen || unchanged);
         return new(query.Receiver, query.Interface, query.Protocol, query.Status,
-            paired != null && (!afterSeen || unchanged) ? VendorProtocol.RogScopeRxWireless : null,
+            paired != null && (!afterSeen || unchanged) ? VendorProtocol.RogPairedModel(paired, out _) ??
+                (RogOmniMouseProtocol.IsPaired(paired) ? RogOmniMouseProtocol.Model : null) : null,
             verified ? percent : null, verified ? charging : null,
             verified ? (unchanged ? "captured" : "captured-without-pairing-recheck") : "unavailable");
+    }
+
+    private static Result ReplayRogMouse(Query query)
+    {
+        int position = 0;
+        byte[] Next(string stage)
+        {
+            var samples = query.Samples ?? Array.Empty<Sample>();
+            if (position >= samples.Length) return null;
+            var sample = samples[position++];
+            if (sample.Stage != stage || !sample.Ok || sample.Length != 64 || sample.Hex?.Length != 128) return null;
+            try { return Convert.FromHexString(sample.Hex); }
+            catch (FormatException) { return null; }
+        }
+        var paired = Next("omni-paired");
+        var reading = RogOmniMouseProtocol.Read(paired, (report, subcommand, _) =>
+            Next(report == 1 ? "omni-paired-after" : subcommand == 0 ? "omni-mouse-present" : "omni-mouse-battery"));
+        bool verified = reading.Level >= 0 && query.Status is "Online" or "Charging";
+        return new(query.Receiver, query.Interface, query.Protocol, query.Status, reading.Model,
+            verified ? reading.Level : null, verified ? reading.Charging : null, verified ? "captured" : "unavailable");
     }
 
     internal static Result Replay(Query query, Collection[] collections)
@@ -242,6 +272,7 @@ internal static class BatteryReplay
             return new(query.Receiver, query.Interface, query.Protocol,
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
         if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
+        if (query.Protocol == RogOmniMouseProtocol.Protocol) return ReplayRogMouse(query);
         if (query.Protocol == "Zg4") return ReplayZg4(query);
         if (query.Protocol == "Neon75Feature")
         {

@@ -5,6 +5,11 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Contains("--verify-rog-omni-mouse"))
+{
+    Console.WriteLine($"PASS {RogOmniMouseRegression.Run()} ROG Keris II ACE receiver checks.");
+    return;
+}
 Console.WriteLine($"PASS {LegacySelectionRegression.Run()} legacy device preference checks.");
 if (args.Length > 0 && args[0] == "--inspect-k87-battery")
 {
@@ -196,7 +201,7 @@ if (args.Length > 0 && args[0] == "--inspect-rog-omni")
         Console.WriteLine($"{rogDevice.Name} {rogDevice.Transport} battery={rogDevice.Level}");
     return;
 }
-int assertions = Zg4Regression.Run() + RogScopeRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run() + M137FeatureRegression.Run() + MchoseDpiRegression.Run() + RealTekRegression.Run() + VgnF1Regression.Run() + F75Regression.Run() + M9ProRegression.Run();
+int assertions = Zg4Regression.Run() + RogScopeRegression.Run() + RogOmniMouseRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run() + M137FeatureRegression.Run() + MchoseDpiRegression.Run() + RealTekRegression.Run() + VgnF1Regression.Run() + F75Regression.Run() + M9ProRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;

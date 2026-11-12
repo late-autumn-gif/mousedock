@@ -17,6 +17,7 @@ internal enum HandledBy
     Aula,
     Inphic,
     RogScope,
+    RogOmniMouse,
     MchoseModern,
     MchoseG7,
     ZeroRainy,
@@ -100,7 +101,7 @@ internal static class DeviceRoutes
         if (M9ProProtocol.IsCandidate(vid, pid, product))
             return new Route { Reader = "M9Pro", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsRogOmni(vid, pid))
-            return new Route { Reader = "RogScope", Kind = DeviceKind.Keyboard, Transport = "2.4G" };
+            return new Route { Reader = "RogOmni", Kind = DeviceKind.Other, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseA7V2(vid, pid))
             return new Route { Reader = "MchoseA7V2", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseModern(vid, pid))
