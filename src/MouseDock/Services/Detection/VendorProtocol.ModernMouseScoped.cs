@@ -61,6 +61,13 @@ internal static partial class VendorProtocol
     internal static bool AllowsModernReport(HashSet<byte> ids, int declaredCaps, bool k5) =>
         k5 ? ids.Contains(0x4D) : declaredCaps == 0 || (ids.Count == 1 && ids.Contains(0x4D));
 
+    internal static bool AllowsA7V3ProReceiverReports(ushort vid, ushort pid, string product, string interfaceLabel,
+        HashSet<byte> inputIds, HashSet<byte> outputIds) =>
+        vid == 0x3837 && pid == 0x1018 && interfaceLabel == "MI_02/COL_02" &&
+        string.Equals(product?.Trim(), "MCHOSE A7 V3 Pro", StringComparison.OrdinalIgnoreCase) &&
+        inputIds.SetEquals(new byte[] { 0x11, 0x13, 0x4D }) &&
+        outputIds.SetEquals(new byte[] { 0x13, 0x4D });
+
     internal static ReferenceBatteryProtocol.Reading ReadScopedModernMouse(string path,ushort vid,ushort pid)
     {
         if(InstanceScope.Current==null||!InstanceScope.Allows(path))return ReferenceBatteryProtocol.Reading.Failed("MHUB物理实例不符");
@@ -76,8 +83,11 @@ internal static partial class VendorProtocol
                     bool k5 = string.Equals(product?.Trim(), "MCHOSE K5 Ultra", StringComparison.OrdinalIgnoreCase);
                     var inputIds = ReadDescriptorReportIds(prep, 0, c.NumberInputValueCaps, c.NumberInputButtonCaps);
                     var outputIds = ReadDescriptorReportIds(prep, 1, c.NumberOutputValueCaps, c.NumberOutputButtonCaps);
-                    if (!AllowsModernReport(inputIds, c.NumberInputValueCaps + c.NumberInputButtonCaps, k5) ||
-                        !AllowsModernReport(outputIds, c.NumberOutputValueCaps + c.NumberOutputButtonCaps, k5))
+                    HidInventory.ParsePath(path, out _, out _, out string label);
+                    bool a7V3ProReceiver = AllowsA7V3ProReceiverReports(vid, pid, product, label, inputIds, outputIds);
+                    if (!a7V3ProReceiver &&
+                        (!AllowsModernReport(inputIds, c.NumberInputValueCaps + c.NumberInputButtonCaps, k5) ||
+                         !AllowsModernReport(outputIds, c.NumberOutputValueCaps + c.NumberOutputButtonCaps, k5)))
                         throw new IOException($"MHUB 报告编号不匹配（输入 {string.Join(",", inputIds.Select(id => id.ToString("X2")))}；输出 {string.Join(",", outputIds.Select(id => id.ToString("X2"))) }）");
                 }finally{HidD_FreePreparsedData(prep);}
                 signal=CreateEvent(IntPtr.Zero,true,false,IntPtr.Zero);if(signal==IntPtr.Zero)throw new IOException("MHUB事件创建失败");

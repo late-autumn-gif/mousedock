@@ -48,6 +48,21 @@ internal static class ModernMouseRegression
             !VendorProtocol.AllowsModernReport(new HashSet<byte> { 0x4D, 0x4E }, 2, false) &&
             !VendorProtocol.AllowsModernReport(new HashSet<byte> { 0 }, 1, true),
             "K5 Ultra accepts 4D alongside another ID but never guesses 4D");
+        const string a7V3Pro = "MCHOSE A7 V3 Pro";
+        HashSet<byte> proInput = [0x11, 0x13, 0x4D];
+        HashSet<byte> proOutput = [0x13, 0x4D];
+        Check(VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, a7V3Pro,
+            "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro admits the observed receiver report IDs");
+        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, "MCHOSE A7 V3 Pro+",
+            "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro receiver rule does not match Pro+");
+        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1014, a7V3Pro,
+            "MI_02/COL_02", proInput, proOutput), "A7 V3 Pro receiver rule requires the measured receiver PID");
+        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, a7V3Pro,
+            "MI_02/COL_01", proInput, proOutput), "A7 V3 Pro receiver rule rejects the auxiliary collection");
+        Check(!VendorProtocol.AllowsA7V3ProReceiverReports(0x3837, 0x1018, a7V3Pro,
+            "MI_02/COL_02", proInput, [0x13]), "A7 V3 Pro receiver rule still requires 4D in both directions");
+        Check(!VendorProtocol.TryModernScopedFrame(Frame(0x4026, 83, 0), a7V3Pro, out _, out _),
+            "A5 V3 Ultra+ response identity does not become A7 V3 Pro battery");
         const string nameA="MCHOSE K5 Ultra";InstanceScope.BeginScan();
         string a=InstanceScope.Register("fake#mhub#a",new[]{(@"USB\VID_3837&PID_1018\A","usbccgp")});
         string b=InstanceScope.Register("fake#mhub#b",new[]{(@"USB\VID_3837&PID_1018\B","usbccgp")});
