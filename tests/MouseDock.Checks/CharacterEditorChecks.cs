@@ -78,8 +78,13 @@ internal static class CharacterEditorChecks
         try
         {
             var preview = (CharacterBatteryIcon)typeof(CharacterEditorWindow).GetField("_preview", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(editor)!;
-            Require(preview.Devices.Count == 6 && preview.Width == 160 && preview.Height == CharacterBatteryIcon.PhotoSize(6).Height,
-                "Photo editing does not share the real six-device photo layout.");
+            Require(preview.DataContext == fixture.Battery.VisibleDevices[0] && !preview.ShowNumber &&
+                preview.Width == 112 && preview.Height == 112,
+                "Photo editing does not preview the selected device's individual photo.");
+            var devices = (System.Windows.Controls.ComboBox)typeof(CharacterEditorWindow)
+                .GetField("_deviceChoices", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(editor)!;
+            Require(devices.Items.Count == 6 && devices.Visibility == Visibility.Visible,
+                "Photo editing cannot select every displayed device.");
             var root = (FrameworkElement)editor.Content;
             root.Measure(new Size(364, 680)); root.Arrange(new Rect(0, 0, 364, 680)); root.UpdateLayout();
             Save(root, "character-editor");

@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using MouseDock.Models;
+using MouseDock.Services;
 
 namespace MouseDock.Controls;
 
@@ -26,6 +27,8 @@ public sealed class TaskbarBatteryStrip : Border
         $"{settings.ReferenceCharacter}|{settings.IconBackground}|{settings.PhotoAsset}|{settings.PhotoZoom}|" +
         $"{settings.PhotoOffsetX}|{settings.PhotoOffsetY}|{settings.IconHideBackground}|{settings.IconFollowTheme}|" +
         $"{settings.CharacterTransparentBackground}|{settings.CharacterBackgroundColor}|" +
+        $"{CharacterAssignments.CacheKey(settings)}|" +
+        $"{PhotoAssignments.CacheKey(settings)}|" +
         $"{theme.Surface}|{theme.Text}|{theme.Accent}|{theme.Low}|{theme.TextDim}";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
@@ -73,6 +76,11 @@ public sealed class TaskbarBatteryStrip : Border
             ? new SolidColorBrush(theme.Text) : foreground);
         var batteryBrush = ResolveBrush(batteryColor, themeAccent);
         var items = devices.ToArray();
+        if (StyleName == "character")
+        {
+            appearance = appearance.Clone();
+            CharacterAssignments.Ensure(appearance, items);
+        }
         DeviceCount = items.Length;
         Background = Brushes.Transparent;
         // 矢量绘制：不做位图缩放，任务栏尺寸下文字与图标保持清晰。
@@ -241,45 +249,19 @@ public sealed class TaskbarBatteryStrip : Border
         badge.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
         if (style is "character" or "portrait")
         {
-            var content = new Grid { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var photo = PhotoAssignments.Resolve(appearance, device);
             var portrait = new CharacterBatteryIcon
             {
-                Width = 36, Height = 36, Character = style == "portrait" ? "photo" : appearance.ReferenceCharacter,
-                PhotoPath = string.IsNullOrWhiteSpace(appearance.IconBackground) ? appearance.PhotoAsset : appearance.IconBackground,
-                PhotoZoom = appearance.PhotoZoom, PhotoOffsetX = appearance.PhotoOffsetX, PhotoOffsetY = appearance.PhotoOffsetY,
+                Width = 36, Height = 36, Character = style == "portrait" ? "photo" : CharacterAssignments.Resolve(appearance, device),
+                PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
                 ShowNumber = false, ShowGlyph = false, CompactPhotoBar = style == "portrait", Accent = batteryBrush ?? foreground,
                 TransparentBackground = appearance.CharacterTransparentBackground,
                 Surface = ResolveBrush(appearance.CharacterBackgroundColor, theme != null ? new SolidColorBrush(theme.Surface) : Brushes.Black),
                 Low = theme?.Low.A > 0 ? new SolidColorBrush(theme.Low) : Brushes.IndianRed,
                 Muted = theme != null ? new SolidColorBrush(theme.TextDim) : Brushes.Gray
             };
-            portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
-            portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
-            content.Children.Add(portrait);
-            var value = new TextBlock
-            {
-                Name = "BatteryNumber", FontFamily = new FontFamily("Segoe UI"), FontSize = 16,
-                FontWeight = FontWeights.SemiBold, Foreground = textBrush, VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
-            };
-            value.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
-            if (vertical)
-            {
-                content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                Grid.SetRow(value, 1);
-            }
-            else
-            {
-                content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
-                content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                Grid.SetColumn(value, 2);
-            }
-            content.Children.Add(value);
-            badge.Children.Add(content);
-            AttachCharging(badge, device, textBrush);
+            BindingOperations.ClearBinding(badge, OpacityProperty);
+            badge.Children.Add(new CharacterDeviceBadge(device, portrait, textBrush, true, vertical, showNumber));
             return Finish(badge, device);
         }
         DeviceBatteryRing ring = null;

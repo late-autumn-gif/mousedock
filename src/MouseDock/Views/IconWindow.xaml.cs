@@ -415,21 +415,23 @@ namespace MouseDock.Views
         {
             ReferenceIcons.Children.Clear();
             var shown = devices.Take(CharacterBatteryIcon.MaximumPhotoDevices).ToList();
-            ReferenceIcons.Columns = _activeStyle == "character" ? Math.Min(2, Math.Max(1, shown.Count)) : 1;
+            if (_activeStyle == "character" && CharacterAssignments.Ensure(App.Settings, shown))
+                App.SaveSettings();
+            ReferenceIcons.Columns = _activeStyle is "character" or "portrait" ? Math.Min(2, Math.Max(1, shown.Count)) : 1;
             if (_activeStyle is "character" or "portrait")
             {
                 var palette = AppearanceColors.IconPalette(App.Settings, _theme, App.Settings.IconFollowTheme);
-                int count = _activeStyle == "portrait" ? 1 : Math.Max(1, shown.Count);
+                int count = Math.Max(1, shown.Count);
                 for (int i = 0; i < count; i++)
                 {
                     var item = i < shown.Count ? shown[i] : null;
+                    var photo = PhotoAssignments.Resolve(App.Settings, item);
                     var portrait = new CharacterBatteryIcon
                     {
-                        Width = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Width : 120,
-                        Height = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Height : 120,
-                        Character = _activeStyle == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
-                        PhotoPath = string.IsNullOrWhiteSpace(App.Settings.IconBackground) ? App.Settings.PhotoAsset : App.Settings.IconBackground,
-                        PhotoZoom = App.Settings.PhotoZoom, PhotoOffsetX = App.Settings.PhotoOffsetX, PhotoOffsetY = App.Settings.PhotoOffsetY,
+                        Width = 120, Height = 120,
+                        Character = _activeStyle == "portrait" ? "photo" : CharacterAssignments.Resolve(App.Settings, item),
+                        PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
+                        CompactPhotoBar = _activeStyle == "portrait",
                         Accent = new SolidColorBrush(palette.Accent),
                         Ink = new SolidColorBrush(palette.Text),
                         Surface = new SolidColorBrush(AppearanceColors.TryColor(App.Settings.CharacterBackgroundColor, out var background)
@@ -437,21 +439,13 @@ namespace MouseDock.Views
                         TransparentBackground = App.Settings.CharacterTransparentBackground,
                         Low = new SolidColorBrush(palette.Low),
                         Muted = new SolidColorBrush(palette.TextDim),
-                        Devices = _activeStyle == "portrait" ? shown : null, DataContext = item
+                        DataContext = item
                     };
-                    if (item != null)
-                    {
-                        portrait.SetBinding(CharacterBatteryIcon.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
-                        portrait.SetBinding(CharacterBatteryIcon.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
-                        portrait.SetBinding(CharacterBatteryIcon.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
-                        portrait.SetBinding(CharacterBatteryIcon.StaleProperty, new Binding(nameof(DeviceInfo.IsStale)));
-                        portrait.SetBinding(CharacterBatteryIcon.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
-                    }
-                    Attach(portrait, item);
+                    Attach(new CharacterDeviceBadge(item ?? new DeviceInfo { Name = "设备" }, portrait,
+                        new SolidColorBrush(palette.Text)), item);
                 }
-                RootGrid.Width = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Width : ReferenceIcons.Columns * 120;
-                RootGrid.Height = _activeStyle == "portrait" ? CharacterBatteryIcon.PhotoSize(shown.Count).Height
-                    : Math.Ceiling(count / (double)ReferenceIcons.Columns) * 120;
+                RootGrid.Width = ReferenceIcons.Columns * 120;
+                RootGrid.Height = Math.Ceiling(count / (double)ReferenceIcons.Columns) * 158;
                 return;
             }
             var size = IconComposition.Measure(_activeStyle, shown.Count);
@@ -468,6 +462,7 @@ namespace MouseDock.Views
 
             void Attach(FrameworkElement icon, DeviceInfo item)
             {
+                icon.Tag = item;
                 icon.ToolTip = item == null ? string.Join("\n", shown.Select(d => d.Name + " · " + d.LevelText))
                     : item.Name + " · " + item.LevelText;
                 System.Windows.Automation.AutomationProperties.SetName(icon, icon.ToolTip.ToString());
@@ -602,8 +597,9 @@ namespace MouseDock.Views
             _iconDragStart = e.GetPosition(this);
             _iconDrag = true;
             _photoCropDrag = _activeStyle == "portrait" && (Keyboard.Modifiers & ModifierKeys.Control) != 0;
-            _dragOriginX = App.Settings.PhotoOffsetX;
-            _dragOriginY = App.Settings.PhotoOffsetY;
+            var photo = PhotoAssignments.Resolve(App.Settings, (sender as FrameworkElement)?.Tag as DeviceInfo);
+            _dragOriginX = photo.OffsetX;
+            _dragOriginY = photo.OffsetY;
             (sender as UIElement)?.CaptureMouse();
             e.Handled = true;
         }
@@ -612,13 +608,25 @@ namespace MouseDock.Views
         {
             if (!_iconDrag) return;
             var p = e.GetPosition(this);
-            if (_photoCropDrag && sender is CharacterBatteryIcon portrait)
+            if (_photoCropDrag)
             {
-                App.Settings.PhotoOffsetX = Math.Clamp(_dragOriginX + (p.X - _iconDragStart.X) / Math.Max(1, portrait.ActualWidth), -.5, .5);
-                App.Settings.PhotoOffsetY = Math.Clamp(_dragOriginY + (p.Y - _iconDragStart.Y) / Math.Max(1, portrait.ActualHeight), -.5, .5);
-                portrait.PhotoOffsetX = App.Settings.PhotoOffsetX;
-                portrait.PhotoOffsetY = App.Settings.PhotoOffsetY;
-                portrait.InvalidateVisual();
+                e.Handled = true;
+                if (sender is CharacterDeviceBadge badge &&
+                    badge.Children.OfType<CharacterBatteryIcon>().FirstOrDefault() is { } portrait)
+                {
+                    var device = badge.Tag as DeviceInfo;
+                    var photo = PhotoAssignments.Resolve(App.Settings, device) with
+                    {
+                        OffsetX = Math.Clamp(_dragOriginX + (p.X - _iconDragStart.X) /
+                            (_currentScale * Math.Max(1, portrait.ActualWidth - 6)), -.5, .5),
+                        OffsetY = Math.Clamp(_dragOriginY + (p.Y - _iconDragStart.Y) /
+                            (_currentScale * Math.Max(1, portrait.ActualHeight - 9)), -.5, .5)
+                    };
+                    PhotoAssignments.Set(App.Settings, device, photo);
+                    portrait.PhotoOffsetX = photo.OffsetX;
+                    portrait.PhotoOffsetY = photo.OffsetY;
+                    portrait.InvalidateVisual();
+                }
                 return;
             }
             Left += p.X - _iconDragStart.X;
@@ -640,7 +648,13 @@ namespace MouseDock.Views
             if (_activeStyle == "portrait")
             {
                 e.Handled = true;
-                App.Settings.PhotoZoom = Math.Clamp(App.Settings.PhotoZoom * (e.Delta > 0 ? 1.08 : 1 / 1.08), 1, 4);
+                if (sender is not CharacterDeviceBadge badge) return;
+                var device = badge.Tag as DeviceInfo;
+                var photo = PhotoAssignments.Resolve(App.Settings, device);
+                PhotoAssignments.Set(App.Settings, device, photo with
+                {
+                    Zoom = Math.Clamp(photo.Zoom * (e.Delta > 0 ? 1.08 : 1 / 1.08), 1, 4)
+                });
                 UpdateValue();
                 App.Taskbar?.UpdateDevices();
                 App.Edge?.UpdateDevices();
