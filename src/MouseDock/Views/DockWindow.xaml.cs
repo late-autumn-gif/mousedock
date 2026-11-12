@@ -63,8 +63,7 @@ namespace MouseDock.Views
                 int target = index;
                 var item = new MenuItem
                 {
-                    Header = state.Protocol != MouseDpiProtocol.Hidpp
-                        ? $"档位 {index + 1} · {state.Values[index]} DPI" : $"{state.Values[index]} DPI",
+                    Header = state.OptionLabel(index),
                     IsCheckable = true,
                     IsChecked = index == state.Index
                 };

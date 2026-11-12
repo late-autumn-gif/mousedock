@@ -8,8 +8,7 @@ namespace MouseDock.Services.Detection;
 public static partial class HidDiscovery
 {
     /// <summary>
-    /// VGN 蜻蜓 F1 MOBA（3554:F503）。整套协议只在真机验证过的构建里出现过，
-    /// 见 <see cref="VgnF1Protocol"/>；这里负责找出唯一的 FF02/0002 17/17 接口并落库。
+    /// VGN 蜻蜓 F1 MOBA（3554:F503）。为电量与 DPI 选出同一实例内唯一的 FF02/0002 17/17 接口。
     /// </summary>
     internal static void QueryVgnF1(Dictionary<string, Bucket> buckets,
         List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
@@ -63,6 +62,11 @@ public static partial class HidDiscovery
                 b.Battery = result.Level;
                 b.Charging = result.ChargingKnown && result.Charging;
                 b.BatterySource = result.Diagnostic;
+                if (b.VgnF1Model != null && result.Dpi is { } dpi)
+                {
+                    b.DpiSettings = dpi;
+                    b.Dpi = dpi.Values[dpi.Index];
+                }
             }
             else if (b.Battery < 0)
             {

@@ -11,22 +11,27 @@ internal static partial class VendorProtocol
         ushort vid, ushort pid, string instanceProduct = null) => ReadAulaBattery(route, path, vid, pid, instanceProduct, false);
 
     internal static ReferenceBatteryProtocol.Reading ReadAulaBattery(AulaBatteryProtocol.Route route, string path,
-        ushort vid, ushort pid, string instanceProduct, bool readDpi)
+        ushort vid, ushort pid, string instanceProduct, bool readDpi, MouseDpiChange dpiChange = null)
     {
         if (InstanceScope.Current == null || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的设备实例，未发送查询");
         var trace = BatteryReplay.Current?.Active;
-        readDpi = readDpi && trace == null && route == AulaBatteryProtocol.Route.Sc580Receiver;
+        readDpi = readDpi && trace == null && (dpiChange == null ||
+            route == AulaBatteryProtocol.Route.Sc630Pro && dpiChange.Expected.Protocol == MouseDpiProtocol.AulaSc630);
         return ReferenceQueryGate.Run(path, () =>
         {
-            using var link = new AulaLink(route, path, vid, pid, instanceProduct, readDpi);
+            using var link = new AulaLink(route, path, vid, pid, instanceProduct, readDpi, dpiChange != null);
             trace?.Add("open-and-validate", true);
             var reading = route == AulaBatteryProtocol.Route.Sc580Receiver
                 ? AulaBatteryProtocol.ReadIdentify(link, trace)
                 : AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence, trace);
-            var dpi = readDpi ? AulaSc580Dpi.Read(link, reading) : null;
+            MouseDpiState dpi = null;
+            if (readDpi && reading.Level >= 0)
+                dpi = route == AulaBatteryProtocol.Route.Sc580Receiver ? AulaSc580Dpi.Read(link, reading) :
+                    AulaSc630Dpi.ReadOrChange(link, NextSc630Sequence, dpiChange,
+                        () => AulaBatteryProtocol.ReadSc630(link, NextSc630Sequence).Level >= 0);
             return reading with { Diagnostic = link.ReportMetadata + "；" + reading.Diagnostic, Dpi = dpi };
-        }, route == AulaBatteryProtocol.Route.Sc580Receiver ? (readDpi ? 7300 : 6000) : 4000);
+        }, route == AulaBatteryProtocol.Route.Sc580Receiver ? (readDpi ? 7300 : 6000) : (readDpi ? 6000 : 4000));
     }
 
     private static byte NextSc630Sequence()
@@ -41,11 +46,14 @@ internal static partial class VendorProtocol
         private IntPtr handle, signal;
         private readonly AulaBatteryProtocol.Route route;
         private readonly bool readDpi;
+        private readonly bool changeDpi;
         internal string ReportMetadata { get; private set; }
-        internal AulaLink(AulaBatteryProtocol.Route route, string path, ushort vid, ushort pid, string instanceProduct, bool readDpi)
+        internal AulaLink(AulaBatteryProtocol.Route route, string path, ushort vid, ushort pid, string instanceProduct,
+            bool readDpi, bool changeDpi)
         {
             this.route = route;
             this.readDpi = readDpi;
+            this.changeDpi = changeDpi;
             handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                 IntPtr.Zero, OPEN_EXISTING, route == AulaBatteryProtocol.Route.Sc580Receiver ? FILE_FLAG_OVERLAPPED : 0, IntPtr.Zero);
             if (handle == IntPtr.Zero || handle == new IntPtr(-1))
@@ -101,7 +109,8 @@ internal static partial class VendorProtocol
              readDpi && request.AsSpan().SequenceEqual(AulaSc580Dpi.Request())) &&
             Transfer(handle, signal, request, true, timeoutMs, out int count) && count == request.Length;
         public bool SetFeature(byte[] request) => route == AulaBatteryProtocol.Route.Sc630Pro && request.Length == 41 &&
-            request.AsSpan().SequenceEqual(BuildAulaSc630BatteryRequest(request[4])) && HidD_SetFeature(handle, request, request.Length);
+            (request.AsSpan().SequenceEqual(BuildAulaSc630BatteryRequest(request[4])) ||
+             readDpi && AulaSc630Dpi.IsRequest(request, changeDpi)) && HidD_SetFeature(handle, request, request.Length);
         public byte[] GetFeature(byte reportId, int length)
         {
             if (route != AulaBatteryProtocol.Route.Sc630Pro || reportId != 6 || length != 41) throw new InvalidOperationException();

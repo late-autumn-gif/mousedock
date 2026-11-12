@@ -50,7 +50,8 @@ namespace MouseDock.Models
             get => _dpi;
             set { if (_dpi == value) return; _dpi = value; Raise(nameof(Dpi)); Raise(nameof(DpiLabel)); }
         }
-        public string DpiLabel => _dpi <= 0 ? "DPI —" :
+        public string DpiLabel => _dpi <= 0 ? (_dpiSettings?.HardwareStages != null
+                ? $"DPI — · 档位 {_dpiSettings.StageNumber(_dpiSettings.Index)}" : "DPI —") :
             _dpiSettings?.SeparateAxes == true ? $"X {_dpi} DPI" : $"{_dpi} DPI";
 
         private MouseDpiState _dpiSettings;

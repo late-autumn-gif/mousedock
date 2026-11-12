@@ -313,14 +313,16 @@ namespace MouseDock.Services.Detection
             QueryM137Feature(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
             QueryRealTekBattery(buckets, vendorCollections, safeMode, preferences);
             // 3554:F503 / 3554:FA09 在通用旁路之前跑，避免公版接收器协议抢走。
-            QueryVgnF1(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadVgnF1);
+            bool readVgnDpi = BatteryReplay.Current == null;
+            QueryVgnF1(buckets, vendorCollections, safeMode, preferences,
+                path => VendorProtocol.ReadVgnF1(path, readVgnDpi, dpiChange));
             QueryF75(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
             QueryM9Pro(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
             QueryRazerBlackShark(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadRazerBlackShark);
             QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
-            bool readAulaDpi = BatteryReplay.Current == null && dpiChange == null;
+            bool readAulaDpi = BatteryReplay.Current == null;
             QueryAulaCollections(buckets, vendorCollections, safeMode, preferences,
-                (route, path, vid, pid, product) => VendorProtocol.ReadAulaBattery(route, path, vid, pid, product, readAulaDpi));
+                (route, path, vid, pid, product) => VendorProtocol.ReadAulaBattery(route, path, vid, pid, product, readAulaDpi, dpiChange));
             QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
             QueryGenericReceiver33(buckets, safeMode, preferences);
             QueryRogScope(buckets, vendorCollections, safeMode, preferences, readDpi: true, dpiChange: dpiChange);

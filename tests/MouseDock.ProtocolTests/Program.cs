@@ -358,6 +358,7 @@ assertions += ScyroxV12DpiRegression.Run();
 assertions += MchoseA7UltraDpiRegression.Run();
 assertions += AulaSc580DpiRegression.Run();
 assertions += RogOmniMouseDpiRegression.Run();
+assertions += AulaSc630DpiRegression.Run() + VgnF1DpiRegression.Run();
 assertions += SupportAuditRegression.Run();
 assertions += SuperlightRegression.Run();
 assertions += LogitechDpiRegression.Run();

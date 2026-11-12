@@ -29,7 +29,7 @@ internal static partial class VendorProtocol
         {
             var buffer = new byte[_length];
             return Transfer(_handle, _signal, buffer, false, Math.Max(1, timeoutMs), out int count) && count > 0
-                ? buffer
+                ? buffer.AsSpan(0, count).ToArray()
                 : null;
         }
 

@@ -8,7 +8,7 @@ namespace MouseDock.Services.Detection;
 /// VGN 蜻蜓 F1 MOBA（3554:F503，产品串 "VGN Mouse 2.4G Receiver"）。
 ///
 /// 协议来源：用户提供的 1.1.1+bac923f 构建里 <c>VgnF1Protocol</c> 的反编译结果，
-/// 该构建已在真机上跑通这款鼠标。厂商没有公开文档，这是唯一的实现依据。
+/// 该构建已在真机上跑通这款鼠标的电量。DPI 另按 VGN HUB 网页驱动核对。
 ///
 /// 帧：17 字节，<c>[0]=0x08</c>、<c>[1]=命令</c>，<c>[16] = 0x55 - sum([0..15])</c>。
 /// 命令 1 = 身份（[5]=8，[6..9] 随机，应答 [10],[11] 是 CID/MID），
@@ -55,23 +55,27 @@ internal static class VgnF1Protocol
         return frame;
     }
 
-    private static void SetChecksum(byte[] frame)
+    internal static void SetChecksum(byte[] frame)
     {
         int sum = 0;
         for (int i = 0; i < 16; i++) sum += frame[i];
         frame[16] = (byte)(85 - sum);
     }
 
-    internal static bool ValidReply(ReadOnlySpan<byte> reply, byte[] request)
+    internal static bool ValidReply(ReadOnlySpan<byte> reply, byte[] request) =>
+        ValidEnvelope(reply, request) && reply[3] == 0 && reply[4] == 0;
+
+    internal static bool ValidEnvelope(ReadOnlySpan<byte> reply, byte[] request)
     {
         if (reply.Length != 17 || reply[0] != 8 || reply[1] != request[1] ||
-            reply[2] != 0 || reply[3] != 0 || reply[4] != 0 || reply.SequenceEqual(request)) return false;
+            reply[2] != 0 || reply.SequenceEqual(request)) return false;
         int sum = 0;
         for (int i = 0; i < reply.Length; i++) sum += reply[i];
         return (sum & 0xFF) == 85;
     }
 
-    private static byte[] Exchange(ReferenceBatteryProtocol.ILink link, byte[] request, long deadline, int timeoutMs)
+    private static byte[] Exchange(ReferenceBatteryProtocol.ILink link, byte[] request, long deadline, int timeoutMs,
+        Func<byte[], byte[], bool> matches = null)
     {
         long until = Math.Min(deadline, link.Now + timeoutMs);
         bool drained = false;
@@ -87,17 +91,18 @@ internal static class VgnF1Protocol
         }
         if (!drained) throw new IOException("旧输入队列未清空");
         if (link.Now >= until || !link.Write(request, (int)Math.Min(300L, until - link.Now)))
-            throw new IOException("只读查询未完整发送");
+            throw new IOException("请求未完整发送");
         for (int i = 0; i < 128; i++)
         {
             if (link.Now >= until) break;
             byte[] reply = link.Read((int)Math.Max(1L, Math.Min(100L, until - link.Now)));
-            if (reply != null && ValidReply(reply, request)) return reply;
+            if (reply != null && (matches?.Invoke(reply, request) ?? ValidReply(reply, request))) return reply;
         }
         return null;
     }
 
-    internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link)
+    internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link,
+        bool readDpi = false, MouseDpiChange change = null)
     {
         try
         {
@@ -122,9 +127,28 @@ internal static class VgnF1Protocol
             bool charging = battery[7] == 1;
             string diagnostic = "VGN F1 本轮在线/电量/在线响应，配对地址一致；CID/MID=" + (identity ?? "未取得") +
                 "；RX=" + Convert.ToHexString(online) + "/" + Convert.ToHexString(battery) + "/" + Convert.ToHexString(confirm);
-            return new ReferenceBatteryProtocol.Reading(battery[6], charging, true,
+            var reading = new ReferenceBatteryProtocol.Reading(battery[6], charging, true,
                 charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
                 diagnostic, model, identity);
+            if (!readDpi || model != Model || (change != null && change.Expected.Protocol != MouseDpiProtocol.VgnF1Moba)) return reading;
+
+            try
+            {
+                deadline = link.Now + (change == null ? 3700 : 7500);
+                bool StillPaired()
+                {
+                    var current = Exchange(link, IdentityCommand(), deadline, 450);
+                    var presence = Exchange(link, Command(3), deadline, 450);
+                    return current != null && current[5] == 8 && current[12] <= 5 &&
+                        current.AsSpan(10, 2).SequenceEqual(hello.AsSpan(10, 2)) && presence != null && presence[6] == 1 &&
+                        presence.AsSpan(7, 3).SequenceEqual(online.AsSpan(7, 3));
+                }
+                string paired = $"{identity}/{Convert.ToHexString(online.AsSpan(7, 3))}";
+                var dpi = VgnF1Dpi.ReadOrChange(change, paired,
+                    request => Exchange(link, request, deadline, 350, VgnF1Dpi.MatchesResponse), StillPaired);
+                return reading with { Dpi = dpi };
+            }
+            catch (IOException) { return reading; }
         }
         catch (Exception ex)
         {
