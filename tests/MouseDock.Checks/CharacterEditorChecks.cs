@@ -1,6 +1,8 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MouseDock.Controls;
 using MouseDock.Models;
 using MouseDock.Views;
@@ -67,6 +69,77 @@ internal static class CharacterEditorChecks
                 fixture.Settings.SurfaceMode == "icon", "Completing the editor leaves the visible floating style unchanged.");
         }
         finally { editor.Close(); }
+    }
+
+    internal static void CompactSurface()
+    {
+        foreach (string surface in new[] { "taskbar", "edge" })
+        {
+            using var fixture = new AppearanceFixture();
+            var first = fixture.Battery.VisibleDevices[0];
+            var second = new DeviceInfo { Id = "keyboard-editor", Name = "Keyboard", Level = 28 };
+            fixture.Battery.VisibleDevices.Add(second);
+            fixture.Settings.SurfaceMode = surface;
+            fixture.Settings.IconStyle = "portrait";
+            fixture.Settings.TaskbarStyle = fixture.Settings.EdgeStyle = "character";
+            fixture.Settings.DeviceCharacters[first.Id] = "asuka";
+            fixture.Settings.DeviceCharacters[second.Id] = "rei";
+            var editor = new CharacterEditorWindow(fixture.Settings);
+            try
+            {
+                var root = (FrameworkElement)editor.Content;
+                root.Measure(new Size(364, 680)); root.Arrange(new Rect(0, 0, 364, 680)); root.UpdateLayout();
+                var preview = Children<CharacterBatteryIcon>((DependencyObject)editor.Content).Single();
+                Require(preview.Character == "asuka", $"{surface} character editing opens the unrelated floating photo style.");
+                var devices = Children<ComboBox>((DependencyObject)editor.Content).Single(c => c.Name == "CharacterDeviceChoices");
+                var characters = Children<ComboBox>((DependencyObject)editor.Content).Single(c => c.Name == "CharacterArtworkChoices");
+                devices.SelectedIndex = 1;
+                characters.SelectedItem = characters.Items.OfType<ComboBoxItem>().Single(item => (string)item.Tag == "peek");
+                Require(fixture.Settings.DeviceCharacters[second.Id] == "rei", "Compact character drafts leak before completion.");
+                editor.ApplyTo(fixture.Settings);
+                Require(fixture.Settings.IconStyle == "portrait", $"{surface} character editing overwrites the floating photo style.");
+                var strip = new TaskbarBatteryStrip(new[] { first, second }, "character", true, surface == "edge",
+                    Brushes.White, 20, "", "", null, fixture.Settings, ThemePreset.ById("dusk"));
+                var artwork = Children<CharacterBatteryIcon>(strip).ToDictionary(i => ((DeviceInfo)i.DataContext).Id, i => i.Character);
+                Require(artwork[first.Id] == "asuka" && artwork[second.Id] == "peek",
+                    $"{surface} cannot independently apply the selected device's character.");
+                Save(root, surface + "-character-editor");
+            }
+            finally { editor.Close(); }
+        }
+    }
+
+    internal static void CompactCompletion()
+    {
+        foreach (string surface in new[] { "taskbar", "edge" })
+        foreach (bool show in new[] { false, true })
+        {
+            using var fixture = new AppearanceFixture();
+            fixture.Settings.SurfaceMode = surface;
+            fixture.Settings.IconStyle = "ring";
+            fixture.Settings.TaskbarStyle = fixture.Settings.EdgeStyle = "character";
+            var settings = new SettingsWindow();
+            fixture.Set("SettingsView", settings);
+            var editor = new CharacterEditorWindow(fixture.Settings, "portrait");
+            try
+            {
+                if (show)
+                {
+                    editor.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+                        Children<Button>((DependencyObject)editor.Content).Single(b => b.Content is string text && text == "使用并显示")
+                            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+                    Require(editor.ShowDialog() == true, "The editor's apply-and-show action did not complete.");
+                }
+                typeof(SettingsWindow).GetMethod("ApplyCharacterEdit", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(settings, [editor]);
+                Require(fixture.Settings.SurfaceMode == surface, $"Completing {surface} editing switches to a different surface.");
+                Require(fixture.Settings.IconStyle == "ring", $"Completing {surface} editing changes the floating style.");
+                Require(fixture.Settings.TaskbarStyle == (surface == "taskbar" ? "portrait" : "character") &&
+                    fixture.Settings.EdgeStyle == (surface == "edge" ? "portrait" : "character"),
+                    $"Completing {surface} editing changes the wrong compact style.");
+            }
+            finally { editor.Close(); }
+        }
     }
 
     internal static void PreviewAndBounds()
@@ -143,4 +216,11 @@ internal static class CharacterEditorChecks
     }
     private static void Require(bool condition, string message)
     { if (!condition) throw new InvalidOperationException(message); }
+
+    private static IEnumerable<T> Children<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T item) yield return item;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            foreach (var child in Children<T>(VisualTreeHelper.GetChild(root, i))) yield return child;
+    }
 }
