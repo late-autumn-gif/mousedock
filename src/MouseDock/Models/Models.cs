@@ -44,6 +44,7 @@ namespace MouseDock.Models
         public string Detail { get; set; } = "";
 
         private int _dpi = -1;
+        public DateTimeOffset DpiCapturedAt { get; set; }
         /// <summary>硬件 DPI；-1 表示没读到或设备不提供。</summary>
         public int Dpi
         {

@@ -194,6 +194,7 @@ namespace MouseDock
             ExtractedAccent = extracted;
 
             Battery = new BatteryService(Settings);
+            WatchDpiDevices();
             Battery.PreferencesChanged += (_, __) =>
             {
                 RefreshDeviceViews();
@@ -424,6 +425,7 @@ namespace MouseDock
             menu.Items.Add("显示当前面板", null, (_, __) => ShowCurrentSurface());
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("切换到卡片窗", null, (_, __) => SetSurface("dock"));
+            AddDpiMenu(menu, null);
             menu.Items.Add("切换到迷你窗", null, (_, __) => SetSurface("mini"));
             menu.Items.Add("切换到悬浮图标", null, (_, __) => SetSurface("icon"));
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
@@ -883,6 +885,7 @@ namespace MouseDock
 
         public static void ApplyTheme(bool animate)
         {
+            foreach (var window in _dpiWindows.Values.ToArray()) window.ApplyTheme(Theme);
             HeadsetView?.ApplyTheme(Theme);
             Dock?.ApplyTheme(Theme, animate);
             Mini?.ApplyTheme(Theme, animate);
@@ -1131,6 +1134,7 @@ namespace MouseDock
         {
             _exiting = true;
             _desktopPet?.Close();
+            foreach (var window in _dpiWindows.Values.ToArray()) window.Close();
             SaveWindowPositions();
             SaveDeviceSelection();
             _trayClickTimer?.Stop();

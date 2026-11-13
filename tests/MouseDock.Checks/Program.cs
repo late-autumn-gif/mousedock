@@ -39,6 +39,11 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("DPI stages fit compact windows and retain theme changes", DpiWindowChecks.Layout),
+            ("DPI workflow separates numeric edits from stage switching", DpiWindowChecks.Workflow),
+            ("DPI busy readonly and disconnected states disable writes", DpiWindowChecks.ReadOnlyAndBusy),
+            ("DPI scan values update and expire when a device is removed", DpiLifecycleChecks.MirroredReadings),
+            ("DPI editors close when their physical device is removed", DpiLifecycleChecks.RemovedEditor),
             ("Dock DPI shows the selector only for a verified mouse", UiRegressionChecks.DockDpi),
             ("Low battery reminders can be disabled and restored from settings", LowBatteryWarningChecks.DisabledOption),
             ("Compact sizes persist independently with legacy defaults", DisplaySizeChecks.Preferences),
