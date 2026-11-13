@@ -346,6 +346,7 @@ assertions += DpiDeviceRegression.Run();
 assertions += DpiReviewRegression.Run();
 assertions += HidIoLeaseRegression.Run();
 assertions += InphicRegression.Run();
+assertions += MouseExpansionChecks.Run();
 assertions += Receiver33Regression.Run();
 assertions += ExtraRoutingRegression.Run();
 assertions += OfficialInphicAulaRegression.Run();

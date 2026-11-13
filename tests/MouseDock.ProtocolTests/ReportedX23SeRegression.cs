@@ -24,8 +24,10 @@ internal static class ReportedX23SeRegression
         Check(DeviceRoutes.IsKnown(0xA8A5,0x2255,"EWEADN X23SE"),"Explicit requested profile enabled");
         Check(VendorProtocol.IsReportedX23Se(0xA8A5,0x2255,"  eweadn  x23se  "),"Harmless case/space differences accepted");
         foreach (string name in new[] { "EWEADN X23E","EWEADN X23Pro","EWEADN X23","USB Receiver","EWEADN X23SE V2" })
-            Check(!DeviceRoutes.IsKnown(0xA8A5,0x2255,name),"Other models sharing an ID remain gated: "+name);
-        Check(!DeviceRoutes.IsKnown(0xA8A4,0x2255,"EWEADN X23SE"),"Wired variant not enabled from a wireless-only report");
+            Check(!VendorProtocol.IsReportedX23Se(0xA8A5,0x2255,name),
+                "Other models cannot use the report-specific X23SE reader: "+name);
+        Check(!VendorProtocol.IsReportedX23Se(0xA8A4,0x2255,"EWEADN X23SE"),
+            "Report-specific X23SE reader remains wireless-only");
         foreach (bool safe in new[] { false, true })
         {
             var probe=VendorProtocol.ProbeDevice(0xA8A5,0x2255,"User alias",safe);
