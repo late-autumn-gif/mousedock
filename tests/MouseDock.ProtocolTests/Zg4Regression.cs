@@ -30,6 +30,26 @@ internal static class Zg4Regression
         Register(other.Path, @"USB\VID_3654&PID_5055\TWO");
         var channels = new List<HidDiscovery.VendorCollectionInfo>
             { first, consumer, other, wrongModel, second, third, third };
+        var paths = InstanceScope.SnapshotPaths();
+        Task.Run(() =>
+        {
+            Check(InstanceScope.Current == null, "ZG4 native worker does not inherit thread-local scan scope");
+            var primary = new Zg4Link();
+            using var input = new VendorProtocol.Zg4InputLink(primary, 0xCE, third,
+                Array.Empty<HidDiscovery.VendorCollectionInfo>(), instance, paths, null);
+            Check(input.InputIds.SetEquals(new byte[] { 0xCE }) &&
+                input.Write(VendorProtocol.BuildZg4DongleRequest(0xCD, 64, 2), 300) &&
+                primary.Commands.SequenceEqual(new byte[] { 2 }),
+                "ZG4 worker validates captured instance membership and retains primary writes");
+            bool rejected = false;
+            try
+            {
+                using var foreign = new VendorProtocol.Zg4InputLink(primary, 0xCE, third,
+                    Array.Empty<HidDiscovery.VendorCollectionInfo>(), "another-instance", paths, null);
+            }
+            catch (System.IO.IOException) { rejected = true; }
+            Check(rejected, "ZG4 worker rejects a foreign captured instance before opening a handle");
+        }).GetAwaiter().GetResult();
         HidDiscovery.Bucket Bucket() => new()
         {
             InstanceId = instance, Vid = 0x3654, Pid = 0x5055, Product = model,
@@ -45,9 +65,11 @@ internal static class Zg4Regression
         var queried = new List<string>();
         try
         {
-            HidDiscovery.QueryZg4Collections(buckets, channels, false, null, channel =>
+            HidDiscovery.QueryZg4Collections(buckets, channels, false, null, (channel, inputs) =>
             {
                 Check(InstanceScope.Current == instance, "ZG4 opens channels in the physical instance scope");
+                Check(inputs.Select(c => c.Path).SequenceEqual(new[] { third.Path, first.Path, second.Path }),
+                    "ZG4 input listeners receive only unique, matching same-instance collections");
                 queried.Add(channel.Path);
                 return channel.Path == second.Path
                     ? new(67, true, true, ReferenceBatteryProtocol.State.Charging, "verified", model)
@@ -70,7 +92,7 @@ internal static class Zg4Regression
             int calls = 0;
             var preferences = safe ? null : new DevicePreferences(new AppSettings
                 { DisabledRecognitionDeviceIds = new() { instance } });
-            HidDiscovery.QueryZg4Collections(buckets, channels, safe, preferences, _ =>
+            HidDiscovery.QueryZg4Collections(buckets, channels, safe, preferences, (_, _) =>
             {
                 calls++;
                 return new(67, false, true, ReferenceBatteryProtocol.State.Online, "", model);
@@ -81,10 +103,10 @@ internal static class Zg4Regression
         bucket = Bucket();
         buckets[instance] = bucket;
         HidDiscovery.QueryZg4Collections(buckets, channels, false, null,
-            _ => ReferenceBatteryProtocol.Reading.Failed("no response"));
+            (_, _) => ReferenceBatteryProtocol.Reading.Failed("no response"));
         Check(bucket.Battery == -1 && !bucket.Charging, "Failed ZG4 reads never reuse an old battery");
         HidDiscovery.QueryZg4Collections(buckets, channels, false, null,
-            _ => new(50, true, true, ReferenceBatteryProtocol.State.Online, "", "ZhuAudio ZG3"));
+            (_, _) => new(50, true, true, ReferenceBatteryProtocol.State.Online, "", "ZhuAudio ZG3"));
         Check(bucket.Battery == -1 && !bucket.Charging, "A different model cannot establish a ZG4 reading");
 
         var trace = new BatteryReplay.Trace();
@@ -93,9 +115,9 @@ internal static class Zg4Regression
         var reading = VendorProtocol.ReadZg4Exchange(link, 0xCE, 0xCD, 64, trace);
         Check(reading is { Level: 67, Charging: true, Model: model },
             "ZG4 requires online and model confirmation before accepting the battery");
-        Check(link.Commands.SequenceEqual(new byte[] { 2, 6, 7 }),
+        Check(link.Commands.SequenceEqual(new byte[] { 2, 6, 0xFE }),
             "ZG4 uses online, identity, and battery property commands in order");
-        Check(trace.Snapshot().Single(s => s.Stage == "zg4-battery").Hex?.Length == 30,
+        Check(trace.Snapshot().Single(s => s.Stage == "zg4-battery").Hex?.Length == 20,
             "ZG4 diagnostics retain the validated frame without HID report padding");
         var replayCollection = new BatteryReplay.Collection("r", 1, 0x3654, 0x5055, model,
             0xFF02, 2, 64, 64, 0, false, false);
@@ -122,11 +144,35 @@ internal static class Zg4Regression
         Check(BatteryReplay.Replay(query, new[] { replayCollection with { Product = "ZhuAudio ZG3" } }).Percent == null,
             "ZG4 replay rejects a mismatched channel");
 
+        foreach (byte auxId in new byte[] { 0, 0xC0 })
+        {
+            var aux = replayCollection with { Interface = 2, InterfaceLabel = "MI_04/COL_02",
+                ReportIds = $"IN[{auxId:X2}] OUT[C0] FEATURE[]" };
+            var samples = trace.Snapshot().ToList();
+            samples.Insert(1, new("zg4-input-open", true, auxId, Result: aux.InterfaceLabel));
+            samples = samples.Select(s => s.Stage == "zg4-battery" ? s with
+                { Hex = auxId.ToString("X2") + s.Hex![2..] } : s).ToList();
+            var auxQuery = query with { Samples = samples.ToArray() };
+            Check(BatteryReplay.Replay(auxQuery, new[] { replayCollection, aux }).Percent == 67,
+                "ZG4 replay accepts a descriptor-confirmed same-instance auxiliary input " + auxId);
+            foreach (var invalid in new[]
+            {
+                aux with { Receiver = "another" }, aux with { Excluded = true },
+                aux with { Product = "ZhuAudio ZG3" }, aux with { Input = 3 },
+                aux with { InterfaceLabel = "MI_03" }, aux with { ReportIds = "IN[00,C0] OUT[C0] FEATURE[]" }
+            })
+                Check(BatteryReplay.Replay(auxQuery, new[] { replayCollection, invalid }).Percent == null,
+                    "ZG4 auxiliary replay requires exact collection metadata");
+            Check(BatteryReplay.Replay(auxQuery with { Samples = samples.Where(s =>
+                s.Stage != "zg4-input-open").ToArray() }, new[] { replayCollection, aux }).Percent == null,
+                "ZG4 auxiliary replay requires a successful input-open record");
+        }
+
         foreach (bool offline in new[] { false, true })
         {
             var rejected = new Zg4Link { Offline = offline, WrongModel = !offline };
             Check(VendorProtocol.ReadZg4Exchange(rejected, 0xCE, 0xCD, 64, null).Level == -1 &&
-                !rejected.Commands.Contains((byte)7), "Offline or unconfirmed ZG4 never receives a battery query");
+                !rejected.Commands.Contains((byte)0xFE), "Offline or unconfirmed ZG4 never receives a battery query");
         }
         InstanceScope.BeginScan();
         return count;
@@ -145,7 +191,7 @@ internal static class Zg4Regression
         public bool Write(byte[] request, int timeoutMs)
         {
             if (request.Length != 64 || request[0] != 0xCD) throw new Exception("ZG4 request channel mismatch");
-            byte command = request[1] == 7 ? request[8] : request[10];
+            byte command = request[1] == 7 ? request[8] : request[9];
             Commands.Add(command);
             reply = command switch
             {
@@ -153,7 +199,7 @@ internal static class Zg4Regression
                 6 => WrongModel
                     ? new byte[] { 0xCE, 0xAA, 0xCC, 0, 5, 0x8F, 0x9C, 6, 0, 0, 9, 16 }
                     : new byte[] { 0xCE, 0xAA, 0xCC, 0, 5, 0x8A, 0x9C, 6, 0, 0, 5, 16 },
-                7 => new byte[] { 0xCE, 0xEA, 0x80, 0, 9, 0, 0xFF, request[7], 5, 0xFE, 7, 0xC3, 0, 0, 0xAA, 0x99 },
+                0xFE => new byte[] { 0xCE, 0xEA, 0x80, 0, 9, 0, 0xFF, request[7], 5, 0xFE, 7, 0xC3, 0, 0, 0xAA, 0x99 },
                 _ => null
             };
             Now++;

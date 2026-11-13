@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -38,13 +39,15 @@ internal static partial class VendorProtocol
         report[0] = reportId;
         report[1] = 0xEE;
         report[2] = 0x80;
-        report[4] = 6;
+        report[4] = 18;
         report[6] = 0xFF;
         report[7] = sequence;
-        report[8] = 2;
+        report[8] = 14;
         report[9] = 0xFE;
-        report[10] = Zg4BatteryProperty;
-        report[11] = 0xAA;
+        // The official driver's initial read includes battery among these properties.
+        new byte[] { 5, 7, 4, 6, 0x24, 0x1B, 0x22, 0x2C, 0x1C, 0x2D, 0x26, 0x27, 0x1F }
+            .CopyTo(report, 10);
+        report[23] = 0xAA;
         return report;
     }
 
@@ -77,25 +80,7 @@ internal static partial class VendorProtocol
     }
 
     internal static int ParseZg4Battery(ReadOnlySpan<byte> report, byte reportId, byte sequence, out bool charging)
-    {
-        charging = false;
-        if (report.Length < 2 || report[0] != reportId) return -1;
-        var frame = report.Slice(1);
-        if (frame[0] is 0xEE or 0xEA)
-        {
-            if (frame.Length < 5 || frame[1] != 0x80 || frame[2] != 0) return -1;
-            int size = BinaryPrimitives.ReadUInt16LittleEndian(frame.Slice(3));
-            if (size > frame.Length - 5) return -1;
-            frame = frame.Slice(5, size);
-        }
-        if (frame.Length < 9 || frame[0] != 0xFF || frame[1] != sequence ||
-            frame[2] < 5 || frame[2] + 4 > frame.Length || frame[frame[2] + 3] != 0xAA ||
-            frame[3] != 0xFE || frame[4] != Zg4BatteryProperty) return -1;
-        int level = frame[5] & 0x7F;
-        if (level > 100) return -1;
-        charging = (frame[5] & 0x80) != 0;
-        return level;
-    }
+        => new Zg4BatteryInput().Read(report, reportId, sequence, 0, out charging, out _);
 
     private static ushort Zg4Crc(ReadOnlySpan<byte> bytes)
     {
@@ -125,6 +110,7 @@ internal static partial class VendorProtocol
         while (link.Now < deadline)
         {
             var reply = link.Read((int)Math.Max(1, deadline - link.Now));
+            if (link.Now > deadline) break;
             bool valid = identity ? IsZg4Identity(reply, reportId) : IsZg4Online(reply, reportId);
             if (valid || reply == null || !rejectionRecorded)
             {
@@ -147,7 +133,7 @@ internal static partial class VendorProtocol
     }
 
     internal static ReferenceBatteryProtocol.Reading ReadZg4Exchange(ReferenceBatteryProtocol.ILink link,
-        byte inputId, byte outputId, int length, BatteryReplay.Trace trace)
+        byte inputId, byte outputId, int length, BatteryReplay.Trace trace, IReadOnlySet<byte> inputIds = null)
     {
         if (!ReadZg4DongleStage(link, BuildZg4DongleRequest(outputId, length, 2), inputId, false, trace))
             return ReferenceBatteryProtocol.Reading.Failed("ZG4 未确认耳机在线（发送失败或无有效在线应答）");
@@ -158,21 +144,24 @@ internal static partial class VendorProtocol
         bool sent = link.Write(request, 300);
         trace?.Add("zg4-battery-write", sent, sequence, request);
         if (!sent) return ReferenceBatteryProtocol.Reading.Failed("ZG4 已确认型号，电量查询发送失败");
-        long deadline = link.Now + 500;
+        long deadline = link.Now + 2000;
+        var inputs = new Dictionary<byte, Zg4BatteryInput>();
         bool rejectionRecorded = false;
         while (link.Now < deadline)
         {
             var reply = link.Read((int)Math.Max(1, deadline - link.Now));
-            int level = ParseZg4Battery(reply, inputId, sequence, out bool charging);
+            if (link.Now > deadline) break;
+            int level = -1;
+            bool charging = false;
+            byte[] replay = null;
+            if (reply is { Length: > 0 } && (reply[0] == inputId || inputIds?.Contains(reply[0]) == true))
+            {
+                if (!inputs.TryGetValue(reply[0], out var input))
+                    inputs[reply[0]] = input = new Zg4BatteryInput();
+                level = input.Read(reply, reply[0], sequence, link.Now, out charging, out replay);
+            }
             if (level >= 0 || reply == null || !rejectionRecorded)
             {
-                byte[] replay = null;
-                if (trace != null && level >= 0)
-                {
-                    int start = reply[1] is 0xEE or 0xEA ? 6 : 1;
-                    if (reply[start + 2] == 5 && (start == 1 || (reply[4] == 9 && reply[5] == 0)))
-                        replay = reply.AsSpan(0, start + 9).ToArray();
-                }
                 trace?.Add("zg4-battery", level >= 0, sequence, replay ?? reply, keep: replay != null,
                     result: level >= 0 ? "accepted" : reply == null ? "no-response" : "response-rejected");
             }
@@ -185,12 +174,16 @@ internal static partial class VendorProtocol
         return ReferenceBatteryProtocol.Reading.Failed("ZG4 已确认型号，未取得有效电量回包");
     }
 
-    internal static ReferenceBatteryProtocol.Reading ReadZg4(HidDiscovery.VendorCollectionInfo channel)
+    internal static ReferenceBatteryProtocol.Reading ReadZg4(HidDiscovery.VendorCollectionInfo channel,
+        IReadOnlyList<HidDiscovery.VendorCollectionInfo> channels)
     {
         if (!IsZg4Channel(channel.Vid, channel.Pid, channel.Product, channel.UsagePage, channel.Input, channel.Output) ||
             InstanceScope.Current == null || !InstanceScope.Allows(channel.Path))
             return ReferenceBatteryProtocol.Reading.Failed("ZG4 接口或物理实例不符");
         var trace = BatteryReplay.Current?.Active;
+        // ReferenceQueryGate uses a worker; InstanceScope is local to the scan thread.
+        string instance = InstanceScope.Current;
+        var pathsByInstance = InstanceScope.SnapshotPaths();
         return ReferenceQueryGate.Run(channel.Path, () =>
         {
             IntPtr handle = OpenOverlapped(channel.Path, out IntPtr signal);
@@ -206,6 +199,8 @@ internal static partial class VendorProtocol
                 var attributes = new HIDD_ATTRIBUTES { Size = Marshal.SizeOf<HIDD_ATTRIBUTES>() };
                 if (!HidD_GetAttributes(handle, ref attributes) || attributes.VendorID != channel.Vid ||
                     attributes.ProductID != channel.Pid) throw new IOException("ZG4 打开后 VID/PID 不符");
+                if (!VendorMap.IsZhuAudioZg4(HidDiscovery.ReadHidProduct(handle, channel.Path)))
+                    throw new IOException("ZG4 打开后产品名称不符");
                 var caps = Caps(handle);
                 if (caps.UsagePage != channel.UsagePage || caps.Usage != channel.Usage ||
                     caps.InputReportByteLength != channel.Input || caps.OutputReportByteLength != channel.Output ||
@@ -221,8 +216,9 @@ internal static partial class VendorProtocol
                 finally { HidD_FreePreparsedData(prep); }
                 if (!HidD_FlushQueue(handle)) throw new IOException("ZG4 无法清空输入队列");
                 trace?.Add("zg4-open", true, inputId);
-                return ReadZg4Exchange(new G7Link(handle, signal, caps.InputReportByteLength),
-                    inputId, outputId, caps.OutputReportByteLength, trace);
+                using var link = new Zg4InputLink(new Zg4HidLink(handle, signal, caps.InputReportByteLength),
+                    inputId, channel, channels, instance, pathsByInstance, trace);
+                return ReadZg4Exchange(link, inputId, outputId, caps.OutputReportByteLength, trace, link.InputIds);
             }
             catch (IOException ex)
             {
@@ -234,6 +230,6 @@ internal static partial class VendorProtocol
                 if (signal != IntPtr.Zero) CloseHandle(signal);
                 CloseHandle(handle);
             }
-        }, 4000);
+        }, 6000);
     }
 }

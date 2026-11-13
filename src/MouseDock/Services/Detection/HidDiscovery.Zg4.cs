@@ -9,7 +9,7 @@ public static partial class HidDiscovery
 {
     internal static void QueryZg4Collections(Dictionary<string, Bucket> buckets,
         List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
-        Func<VendorCollectionInfo, ReferenceBatteryProtocol.Reading> query)
+        Func<VendorCollectionInfo, IReadOnlyList<VendorCollectionInfo>, ReferenceBatteryProtocol.Reading> query)
     {
         foreach (var bucket in buckets.Values)
         {
@@ -51,7 +51,7 @@ public static partial class HidDiscovery
                 {
                     if (scan != null) scan.Active = trace;
                     using var scope = InstanceScope.Enter(bucket.InstanceId);
-                    reading = query(channel) ?? ReferenceBatteryProtocol.Reading.Failed("ZG4 读取器未返回结果");
+                    reading = query(channel, channels) ?? ReferenceBatteryProtocol.Reading.Failed("ZG4 读取器未返回结果");
                 }
                 catch (Exception ex) { reading = ReferenceBatteryProtocol.Reading.Failed("ZG4 接口查询失败：" + ex.Message); }
                 finally { if (scan != null) scan.Active = previous; }
