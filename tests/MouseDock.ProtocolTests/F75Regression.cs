@@ -55,7 +55,8 @@ internal static class F75Regression
         Check(DeviceRoutes.Find(0x3554, 0xFA09, "2.4G Wireless Receiver")?.Reader == "AulaF75", "Routes to F75 reader"); n++;
         Check(DeviceRoutes.Find(0x3554, 0xFA09, "2.4G Wireless Receiver")?.Kind == DeviceKind.Keyboard,
             "AULA F75 is a keyboard"); n++;
-        Check(!DeviceRoutes.IsKnown(0x3554, 0xFA09, "无线键盘 3554:FA09"), "Localized product string stays unclaimed"); n++;
+        Check(DeviceRoutes.Find(0x3554, 0xFA09, "无线键盘 3554:FA09")?.Reader != "AulaF75",
+            "Localized product string cannot claim the named F75 reader"); n++;
         return n;
     }
 

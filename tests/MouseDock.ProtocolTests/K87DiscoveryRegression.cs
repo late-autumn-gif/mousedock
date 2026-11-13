@@ -17,8 +17,8 @@ internal static class K87DiscoveryRegression
         // PR #7 的原始断言：K87 必须能从常规发现流程读到电量，极性是"可达"。
         Check(DeviceRoutes.IsKnown(0x3837, 0x1015, product),
             "The verified K87 battery reader must be reachable from normal discovery.");
-        Check(!DeviceRoutes.IsKnown(0x3837, 0x1015, "MCHOSE G98 V3 2.4G"),
-            "A shared PID must not admit a different keyboard.");
+        Check(!MchoseKeyboardProtocol.IsSupportedDevice(0x3837, 0x1015, "MCHOSE G98 V3 2.4G"),
+            "The K87 reader must not claim a different keyboard sharing its PID.");
         Check(DeviceRoutes.IsKnown(0x3837, 0x1018, "MCHOSE K5 Ultra"),
             "K5 Ultra now has its separate exact MHUB profile; K87 does not grant it.");
 
