@@ -194,6 +194,7 @@ namespace MouseDock
             ExtractedAccent = extracted;
 
             Battery = new BatteryService(Settings);
+            WatchDpiDevices();
             Battery.PreferencesChanged += (_, __) =>
             {
                 RefreshDeviceViews();
@@ -431,6 +432,7 @@ namespace MouseDock
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("切换到桌宠", null, (_, __) => SetSurface("pet"));
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
+            AddDpiMenu(menu, null);
             menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
@@ -883,6 +885,7 @@ namespace MouseDock
 
         public static void ApplyTheme(bool animate)
         {
+            foreach (var window in _dpiWindows.Values.ToArray()) window.ApplyTheme(Theme);
             HeadsetView?.ApplyTheme(Theme);
             Dock?.ApplyTheme(Theme, animate);
             Mini?.ApplyTheme(Theme, animate);
@@ -1130,6 +1133,7 @@ namespace MouseDock
         public static void ExitApp()
         {
             _exiting = true;
+            foreach (var window in _dpiWindows.Values.ToArray()) window.Close();
             _desktopPet?.Close();
             SaveWindowPositions();
             SaveDeviceSelection();

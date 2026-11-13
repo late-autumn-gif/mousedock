@@ -57,6 +57,17 @@ namespace MouseDock.Controls
             };
             menu.Items.Add(new MenuItem { Header = device.Name, IsEnabled = false });
             menu.Items.Add(new Separator());
+            if (App.SupportsDpi(device))
+            {
+                var dpi = new MenuItem
+                {
+                    Header = "DPI 调节…",
+                    IsEnabled = device.Connected && device.RecognitionEnabled && !App.Settings.SafeMode
+                };
+                dpi.Click += (_, __) => App.ShowDpi(device);
+                menu.Items.Add(dpi);
+                menu.Items.Add(new Separator());
+            }
             var cancel = new MenuItem { Header = "取消识别", IsEnabled = device.RecognitionEnabled,
                 ToolTip = "停止 MouseDock 的电量查询；仍可在设置中重新识别" };
             cancel.Click += (_, __) => battery.CancelRecognition(device);

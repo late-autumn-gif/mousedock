@@ -153,6 +153,7 @@ internal static class ReferenceQueryGate
     internal static ReferenceBatteryProtocol.Reading Run(string path,
         Func<ReferenceBatteryProtocol.Reading> operation, int timeoutMs)
     {
+        string instance = InstanceScope.Current ?? InstanceScope.ForPath(path, path);
         Task<ReferenceBatteryProtocol.Reading> worker;
         lock (gate)
         {
@@ -164,7 +165,13 @@ internal static class ReferenceQueryGate
                 return ReferenceBatteryProtocol.Reading.Failed("原生查询等待数已达上限，本轮未启动查询");
             worker = Task.Factory.StartNew(() =>
             {
-                try { return operation(); }
+                try
+                {
+                    using var lease = HidIoLease.TryAcquire(instance);
+                    return lease == null
+                        ? ReferenceBatteryProtocol.Reading.Failed("此设备的通信接口正在使用，本轮未启动查询")
+                        : operation();
+                }
                 catch (Exception ex) { return ReferenceBatteryProtocol.Reading.Failed("接口查询失败：" + ex.Message); }
             }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             pending[path] = worker;

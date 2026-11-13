@@ -422,6 +422,7 @@ namespace MouseDock.Services
                     return source.Read()?.Select(d => new DeviceInfo
                     {
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
+                        DpiCapturedAt = d.Dpi > 0 && !d.IsStale ? DateTimeOffset.UtcNow : default,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
                         Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull,
@@ -445,6 +446,10 @@ namespace MouseDock.Services
                 {
                     if (existing != null)
                     {
+                        existing.Connected = false;
+                        existing.Dpi = -1;
+                        existing.DpiCapturedAt = default;
+                        existing.PropertyChanged -= OnDeviceChanged;
                         _mirror.Remove(existing);
                         Devices.Remove(existing);
                     }
@@ -520,6 +525,8 @@ namespace MouseDock.Services
                     existing.Detail = incoming.Detail;
                     existing.Note = incoming.Note;
                     existing.IsStale = incoming.IsStale;
+                    existing.Dpi = incoming.Dpi;
+                    existing.DpiCapturedAt = incoming.DpiCapturedAt;
                     existing.RawName = incoming.RawName; existing.ConfirmedModel = incoming.ConfirmedModel;
                     existing.InterfaceDiscovered = incoming.InterfaceDiscovered; existing.ReceiverDiscovered = incoming.ReceiverDiscovered; existing.PeripheralConfirmed = incoming.PeripheralConfirmed;
                     existing.DetectionIds = incoming.DetectionIds;
@@ -539,6 +546,9 @@ namespace MouseDock.Services
                 missTimes++;
                 _absent[Devices[i].Id] = missTimes;
                 if (missTimes < 3) continue;
+                Devices[i].Connected = false;
+                Devices[i].Dpi = -1;
+                Devices[i].DpiCapturedAt = default;
                 _mirror.Remove(Devices[i]);
                 Devices[i].PropertyChanged -= OnDeviceChanged;
                 Devices.RemoveAt(i);

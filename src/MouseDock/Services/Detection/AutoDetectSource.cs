@@ -143,7 +143,7 @@ namespace MouseDock.Services.Detection
                 Kind = best.Kind,
                 Transport = best.Transport,
                 Level = best.Level,
-                Dpi = best.DpiSettings == null ? -1 : best.Dpi,
+                Dpi = !best.IsStale && best.Dpi > 0 ? best.Dpi : -1,
                 DpiSettings = best.DpiSettings,
                 Charging = best.Charging,
                 ChargeFull = best.ChargeFull,
