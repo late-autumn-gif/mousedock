@@ -133,9 +133,16 @@ namespace MouseDock.Services.Detection
         }
 
         /// <summary>打开一个罗技 HID 接口，读型号和电量。读不到返回 -1 / null。</summary>
-        public static LogiResult Probe(string path)
+        public static LogiResult Probe(string path, bool mouseOnly = false)
         {
             var result = new LogiResult { Battery = -1, Name = null };
+            using var lease = mouseOnly
+                ? HidIoLease.TryAcquire(InstanceScope.Current ?? InstanceScope.ForPath(path, path)) : null;
+            if (mouseOnly && lease == null)
+            {
+                result.Diagnostic = "共享接收器的上一项通信尚未结束";
+                return result;
+            }
             int started = Environment.TickCount;
             var diag = new StringBuilder();
 
@@ -168,6 +175,13 @@ namespace MouseDock.Services.Detection
                 if (caps.UsagePage != 0xFF00)
                 {
                     result.Diagnostic = "非 FF00 集合";
+                    return result;
+                }
+                if (mouseOnly && (caps.FeatureReportByteLength != 0 ||
+                    !((caps.InputReportByteLength == 20 && caps.OutputReportByteLength == 20) ||
+                      (caps.InputReportByteLength == 7 && caps.OutputReportByteLength == 7))))
+                {
+                    result.Diagnostic = "共享接收器未提供已批准的无 Feature HID++ 通道";
                     return result;
                 }
 
@@ -209,9 +223,25 @@ namespace MouseDock.Services.Detection
                         break;
                     }
 
+                    byte typeFeature = 0, identityFeature = 0;
+                    byte[] identity = null;
+                    if (mouseOnly)
+                    {
+                        typeFeature = FeatureIndex(link, idx, 5);
+                        if (typeFeature == 0 || !IsMouseType(Call(link, idx, typeFeature, 2))) continue;
+                        identityFeature = FeatureIndex(link, idx, 3);
+                        identity = identityFeature == 0 ? null : Call(link, idx, identityFeature, 0);
+                        if (identity == null || identity.Length < 9) continue;
+                    }
                     string name = ReadName(link, idx);
                     bool gpw = IsOriginalGpwName(name) || path.IndexOf("vid_046d&pid_c088", StringComparison.OrdinalIgnoreCase) >= 0;
                     bool charging = ReadBattery(link, idx, out int level, out string note, gpw);
+                    if (mouseOnly)
+                    {
+                        var after = Call(link, idx, identityFeature, 0);
+                        if (after == null || !identity.AsSpan().SequenceEqual(after) ||
+                            !IsMouseType(Call(link, idx, typeFeature, 2))) continue;
+                    }
                     if (level >= 0)
                     {
                         result.Battery = level;
@@ -221,7 +251,7 @@ namespace MouseDock.Services.Detection
                         diag.Append($"slot=0x{idx:X2} 名称={name ?? "（无）"} 电量={level}% ");
                         break; // Battery and name always belong to the same receiver slot.
                     }
-                    if (string.IsNullOrWhiteSpace(result.Name)) result.Name = name;
+                    if (!mouseOnly && string.IsNullOrWhiteSpace(result.Name)) result.Name = name;
                     diag.Append($"slot=0x{idx:X2} 未读到电量 ");
                 }
                 return result;
@@ -237,6 +267,9 @@ namespace MouseDock.Services.Detection
                 link.Dispose();
             }
         }
+
+        internal static bool IsMouseType(ReadOnlySpan<byte> report) =>
+            report.Length is 7 or 20 && report[0] is ReportShort or ReportLong && report[4] == 3;
 
 
         /// <summary>

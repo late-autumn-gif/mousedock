@@ -340,6 +340,7 @@ Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_045E&PID_0000", ""), (@"BT
 assertions += BluetoothRegression.Run();
 assertions += RazerBlackSharkRegression.Run();
 assertions += HfpRegression.Run();
+assertions += ExtraRoutingRegression.Run();
 assertions += InphicRegression.Run();
 assertions += Receiver33Regression.Run();
 assertions += OfficialInphicAulaRegression.Run();

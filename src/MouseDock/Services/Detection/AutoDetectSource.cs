@@ -97,6 +97,7 @@ namespace MouseDock.Services.Detection
             var list = new List<DetectedDevice>();
 
             try { list.AddRange(HidDiscovery.Enumerate(preferences)); } catch { }
+            try { ExtraDeviceRoutes.AddSystemDevices(list, preferences, HidDiscovery.IsSafeMode); } catch { }
 
             // 蓝牙设备常常不给 Appearance，用 HID 里已经识别出的同名设备当提示
             var hints = new Dictionary<string, DeviceKind>(StringComparer.OrdinalIgnoreCase);
