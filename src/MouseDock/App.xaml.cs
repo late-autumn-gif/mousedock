@@ -423,6 +423,11 @@ namespace MouseDock
         private static WinForms.ContextMenuStrip CreateTrayMenu(DeviceInfo device = null)
         {
             var menu = new WinForms.ContextMenuStrip { Tag = device };
+            menu.Opening += (_, __) =>
+            {
+                _trayClickTimer?.Stop();
+                TrayMenuRenderer.Apply(menu, Theme);
+            };
             if (device != null)
             {
                 menu.Items.Add(new WinForms.ToolStripMenuItem(device.Name) { Enabled = false });
@@ -461,6 +466,7 @@ namespace MouseDock
             };
             _tray.MouseClick += (_, e) =>
             {
+                _trayClickTimer?.Stop();
                 if (e.Button == WinForms.MouseButtons.Left)
                 {
                     // Wait for the double-click window so one double-click is not also a toggle.
@@ -493,6 +499,7 @@ namespace MouseDock
                     if (doubleClick) ShowCurrentSurface();
                     else ToggleCurrentSurface();
                 });
+            InitializeTrayInteraction();
 
             // 电量一刷新就把托盘图标重画一遍
             Battery.Refreshed += (_, __) => UpdateTrayIcon();
@@ -696,6 +703,11 @@ namespace MouseDock
 
         public static void ToggleCurrentSurface()
         {
+            if (_trayHover?.Pin() == true)
+            {
+                ShowCurrentSurface();
+                return;
+            }
             SyncSurfaceFlags();
             if (Settings.SurfaceMode == "taskbar" || Settings.SurfaceMode == "edge")
             {
@@ -720,6 +732,7 @@ namespace MouseDock
 
         public static void ShowCurrentSurface()
         {
+            _trayHover?.Pin();
             ApplySurface();
             if (Settings.SurfaceMode != "taskbar" && Settings.SurfaceMode != "edge")
                 BringToFront(Surfaces.GetWindow(Settings.SurfaceMode));
@@ -806,6 +819,7 @@ namespace MouseDock
 
         public static void ShowHeadsets()
         {
+            _trayHover?.Pin();
             HeadsetView ??= new HeadsetAudioWindow();
             HeadsetView.ApplyTheme(Theme);
             HeadsetView.Show();
@@ -814,6 +828,7 @@ namespace MouseDock
 
         public static void ShowSettings(Window owner)
         {
+            _trayHover?.Pin();
             if (SettingsView == null) SettingsView = new SettingsWindow();
             SettingsView.Reload();
             SettingsView.Show();
@@ -822,6 +837,7 @@ namespace MouseDock
 
         public static void ShowQuickMenu(Window owner)
         {
+            _trayHover?.Pin();
             var theme = Theme;
             var menu = new ContextMenu
             {
@@ -912,6 +928,7 @@ namespace MouseDock
         /// <summary>右键菜单切显示方式：三选一，顺带把另外两个藏起来。</summary>
         public static void SetSurface(string mode)
         {
+            _trayHover?.Pin();
             Settings.SurfaceMode = mode;
             SaveSettings();
             ApplySurface();
@@ -998,9 +1015,9 @@ namespace MouseDock
 
         public static void SaveWindowPositions()
         {
-            if (Dock != null && Dock.IsVisible) { Settings.DockX = Dock.Left; Settings.DockY = Dock.Top; }
-            if (Mini != null && Mini.IsVisible) { Settings.MiniX = Mini.Left; Settings.MiniY = Mini.Top; }
-            if (Icon != null && Icon.IsVisible) { Settings.IconX = Icon.Left; Settings.IconY = Icon.Top; }
+            if (Dock != null && Dock.IsVisible && _trayHover?.Owns(Dock) != true) { Settings.DockX = Dock.Left; Settings.DockY = Dock.Top; }
+            if (Mini != null && Mini.IsVisible && _trayHover?.Owns(Mini) != true) { Settings.MiniX = Mini.Left; Settings.MiniY = Mini.Top; }
+            if (Icon != null && Icon.IsVisible && _trayHover?.Owns(Icon) != true) { Settings.IconX = Icon.Left; Settings.IconY = Icon.Top; }
             SaveSettings();
         }
 
@@ -1180,6 +1197,8 @@ namespace MouseDock
         public static void ExitApp()
         {
             _exiting = true;
+            _trayHover?.Dispose();
+            _trayHover = null;
             _desktopPet?.Close();
             foreach (var window in _dpiWindows.Values.ToArray()) window.Close();
             SaveWindowPositions();

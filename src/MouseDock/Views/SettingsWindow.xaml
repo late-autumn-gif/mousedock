@@ -301,6 +301,8 @@
                             <CheckBox x:Name="TrayFollowMainCheck" Content="跟随主面板设备选择"
                                       Checked="OnTrayFollowMainChanged" Unchecked="OnTrayFollowMainChanged" />
                             <StackPanel x:Name="TrayDeviceRows" Margin="24,3,0,0" />
+                            <CheckBox x:Name="TrayHoverCheck" Content="托盘悬停预览"
+                                      Checked="OnTrayHoverChanged" Unchecked="OnTrayHoverChanged" />
                         </StackPanel>
                     </Border>
 

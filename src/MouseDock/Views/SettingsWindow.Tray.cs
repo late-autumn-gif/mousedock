@@ -15,6 +15,7 @@ public partial class SettingsWindow
         try
         {
             MultiTrayCheck.IsChecked = App.Settings.MultiTray;
+            TrayHoverCheck.IsChecked = App.Settings.TrayHover;
             TrayFollowMainCheck.IsChecked = App.Settings.TrayDeviceIds == null;
             TrayFollowMainCheck.IsEnabled = App.Settings.MultiTray;
             TrayDeviceRows.Children.Clear();
@@ -45,6 +46,13 @@ public partial class SettingsWindow
         if (_loading) return;
         App.Settings.MultiTray = MultiTrayCheck.IsChecked == true;
         SaveTraySelection();
+    }
+
+    private void OnTrayHoverChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        App.Settings.TrayHover = TrayHoverCheck.IsChecked == true;
+        App.SaveSettings();
     }
 
     private void OnTrayFollowMainChanged(object sender, RoutedEventArgs e)
