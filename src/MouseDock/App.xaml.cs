@@ -421,7 +421,7 @@ namespace MouseDock
 
         private static WinForms.ContextMenuStrip CreateTrayMenu(DeviceInfo device = null)
         {
-            var menu = new WinForms.ContextMenuStrip();
+            var menu = new WinForms.ContextMenuStrip { Tag = device };
             if (device != null)
             {
                 menu.Items.Add(new WinForms.ToolStripMenuItem(device.Name) { Enabled = false });
