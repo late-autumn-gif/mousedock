@@ -20,6 +20,9 @@ internal static class InstanceScope
         return key;
     }
     internal static string ForPath(string path, string fallback) => paths != null && paths.TryGetValue(path ?? "", out var key) ? key : fallback;
+    internal static IReadOnlyDictionary<string, string> SnapshotPaths() =>
+        paths == null ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) :
+            new Dictionary<string, string>(paths, StringComparer.OrdinalIgnoreCase);
     internal static bool Allows(string path) => Current == null || ForPath(path, "") == Current;
     internal static IDisposable Enter(string key) { var previous = Current; Current = key; return new Restore(previous); }
     private sealed class Restore(string previous) : IDisposable { public void Dispose() => Current = previous; }
