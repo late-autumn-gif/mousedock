@@ -28,7 +28,10 @@ internal static class G7V9Regression
         Check(VendorProtocol.ReadG7Exchange(one,65,"MCHOSE G7").Level==-1,"One response cannot promote a reading");
         var flood=new Link();for(int i=0;i<32;i++)flood.Input.Enqueue(Reply(65,80,0));
         Check(VendorProtocol.ReadG7Exchange(flood,65,"MCHOSE G7").Level==-1&&flood.Writes==0,"Flood sends nothing");
-        Check(!DeviceRoutes.IsKnown(0x291D,0x385D,"MCHOSE V9 PRO"),"V9 HID battery remains disabled");
+        Check(ExtraDeviceRoutes.Find(0x291D,0x385D,"MCHOSE V9 PRO") is
+            { Kind: DeviceKind.Headset, Family: "V9Pro" } &&
+            ExtraDeviceRoutes.Find(0x291D,0x385D,"MCHOSE V9 PRO MAX") == null,
+            "V9 uses its exact new headset reader without admitting a different model");
         var v9=new AudioEndpointInfo("v9","扬声器 (MCHOSE V9 PRO)",false,Guid.Empty,1,70,false);
         Check(v9.IsHeadset && v9.Name=="扬声器 (MCHOSE V9 PRO)","V9 speaker-form audio endpoint keeps original name");
         Check(!(v9 with {Name="扬声器 (MCHOSE S9)"}).IsHeadset,"Shared S9 not renamed as V9");

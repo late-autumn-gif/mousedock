@@ -30,8 +30,11 @@ internal static class SupportAuditRegression
             Check(!(e with{Capture=true}).IsHeadset,"Cloud microphone never becomes playback");
         }
         Check(!new AudioEndpointInfo("x","Speakers (HyperX Cloud III Keyboard)",false,Guid.Empty,1,50,false).IsHeadset,"Non-model suffix rejected");
-        foreach(ushort pid in new ushort[]{0x06BE,0x02CC,0x05B7,0x0C9D,0x0FCC,0x0ACE})
-            Check(!DeviceRoutes.IsKnown(0x03F0,pid,"HyperX Cloud III Wireless"),"HyperX audio-only policy remains closed to HID battery");
+        foreach(ushort pid in new ushort[]{0x06BE,0x02CC,0x05B7,0x0C9D,0x0FCC})
+            Check(ExtraDeviceRoutes.Find(0x03F0,pid,"HyperX Cloud III Wireless")?.Kind == DeviceKind.Headset,
+                "HyperX finite profiles enter the descriptor-validated headset reader");
+        Check(!DeviceRoutes.IsKnown(0x03F0,0x0ACE,"HyperX Cloud III Wireless"),
+            "Unlisted HyperX identity remains outside HID battery admission");
         Check(VendorProtocol.TryReadCloud3S(0x03F0,0x06BE,out bool chg)==-1&&!chg,"Direct legacy HyperX entry exits at policy gate without native I/O");
         var research=VendorProtocol.BuildCloud3SRequest(62,2);research[6]=2;
         Check(!VendorProtocol.TryParseCloud3SDeviceInfo(research,research),"A guessed device-info byte cannot prove RF online");
@@ -47,7 +50,9 @@ internal static class SupportAuditRegression
             ushort vid=(ushort)r.GetProperty("vid").GetInt32(),pid=(ushort)r.GetProperty("pid").GetInt32();string name=r.GetProperty("name").GetString()??"";
             bool eligible=vid!=0&&pid!=0&&DeviceRoutes.IsKnown(vid,pid,name);
             string status=vid==0||pid==0?"无直接VID/PID，不能由此行验证":eligible?"仅允许进入候选；仍需真实集合/身份/响应":"此目录名称/编号未开放主动电量；不等于永久不支持";
-            if(vid is 0x03F0 or 0x0951 || VendorProtocol.IsMchoseV9Pro(vid,pid,name))status="耳机仅系统音频，未启用HID电量";
+            if((vid is 0x03F0 or 0x0951 || VendorProtocol.IsMchoseV9Pro(vid,pid,name)) &&
+                ExtraDeviceRoutes.Find(vid,pid,name)?.Kind != DeviceKind.Headset)
+                status="耳机仅系统音频，未启用HID电量";
             csv.AppendLine(string.Join(',',Q(r.GetProperty("source").GetString()??""),r.GetProperty("index").GetInt32(),Q(name),$"{vid:X4}",$"{pid:X4}",Q(r.GetProperty("declared_protocol").ToString()),r.GetProperty("upstream_declared_verified").GetBoolean(),eligible,true,Q(status)));
         }
         System.IO.File.WriteAllText(output,csv.ToString(),new UTF8Encoding(true));
