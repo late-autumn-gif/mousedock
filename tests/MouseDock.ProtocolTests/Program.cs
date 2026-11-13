@@ -5,6 +5,11 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Contains("--verify-zg4"))
+{
+    Console.WriteLine($"PASS {Zg4FramingRegression.Run() + Zg4Regression.Run()} ZG4 checks.");
+    return;
+}
 if (args.Contains("--verify-razer-blackshark"))
 {
     Console.WriteLine($"PASS {RazerBlackSharkRegression.Run()} BlackShark V2 HyperSpeed checks.");
@@ -206,7 +211,7 @@ if (args.Length > 0 && args[0] == "--inspect-rog-omni")
         Console.WriteLine($"{rogDevice.Name} {rogDevice.Transport} battery={rogDevice.Level}");
     return;
 }
-int assertions = ReportedReceiversRegression.Run() + Zg4Regression.Run() + RogScopeRegression.Run() + RogOmniMouseRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run() + M137FeatureRegression.Run() + MchoseDpiRegression.Run() + RealTekRegression.Run() + VgnF1Regression.Run() + F75Regression.Run() + M9ProRegression.Run();
+int assertions = ReportedReceiversRegression.Run() + Zg4FramingRegression.Run() + Zg4Regression.Run() + RogScopeRegression.Run() + RogOmniMouseRegression.Run() + ReportedX23SeRegression.Run() + HeadsetAudioRegression.RunPolicy() + ReferenceBatteryRegression.Run() + IdentityBoundaryRegression.Run() + MchoseA7V2Regression.Run() + ReceiverClassificationRegression.Run() + HandledByRegression.Run() + M137FeatureRegression.Run() + MchoseDpiRegression.Run() + RealTekRegression.Run() + VgnF1Regression.Run() + F75Regression.Run() + M9ProRegression.Run();
 void Check(bool condition, string message)
 {
     assertions++;

@@ -39,7 +39,27 @@ internal static class NativeIoRegression
                     "Overlapped write completes fully before memory is released");
                 Check(read.GetAwaiter().GetResult() == 64 && receive[0] == i + 40, "Exact write payload reaches peer");
             }
+            var zg4 = new VendorProtocol.Zg4HidLink(client, ev, 64);
+            for (int i = 0; i < 40; i++)
+            {
+                Check(zg4.Read(1) == null, "ZG4 empty input cancels before reusing native buffers");
+                byte value = (byte)(i + 80);
+                var send = server.WriteAsync(new byte[] { value }.AsMemory()).AsTask();
+                var bytes = zg4.Read(0) ?? zg4.Read(1000);
+                Check(bytes is { Length: 1 } && bytes[0] == value,
+                    "ZG4 retains a completed read even with an immediate cancellation boundary");
+                send.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+                var buffer = new byte[64];
+                buffer[0] = value;
+                var receive = new byte[64];
+                var read = server.ReadAsync(receive).AsTask();
+                Check(zg4.Write(buffer, 1000), "ZG4 read and write safely reuse the completed event");
+                Check(read.GetAwaiter().GetResult() == 64 && receive[0] == value,
+                    "ZG4 writes remain on the primary native link");
+            }
             Check(!VendorProtocol.Transfer(new IntPtr(-1), ev, new byte[32], false, 1, out _), "Invalid handle fails safely");
+            Check(new VendorProtocol.Zg4HidLink(new IntPtr(-1), ev, 64).Read(1) == null,
+                "ZG4 invalid input handle fails without abandoning memory");
         }
         finally { CloseHandle(ev); CloseHandle(client); }
         return checks;

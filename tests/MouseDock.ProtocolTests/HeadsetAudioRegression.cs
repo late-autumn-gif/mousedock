@@ -53,9 +53,9 @@ internal static class HeadsetAudioRegression
         // Correct CRC for a valid reply containing the neighboring ZG3 MID (0x1009).
         byte[] zg3Identity = { inputReportId, 0xAA, 0xCC, 0, 5, 0x8F, 0x9C, 6, 0, 0, 9, 16 };
         Check(!VendorProtocol.IsZg4Identity(zg3Identity, inputReportId), "ZG4 rejects a different model");
-        Check(VendorProtocol.BuildZg4BatteryRequest(reportId, 64, sequence).Take(12)
-            .SequenceEqual(new byte[] { reportId, 0xEE, 0x80, 0, 6, 0, 0xFF, sequence, 2, 0xFE, 7, 0xAA }),
-            "ZG4 uses the read-only property command");
+        Check(VendorProtocol.BuildZg4BatteryRequest(reportId, 64, sequence).Take(24)
+            .SequenceEqual(Convert.FromHexString("CDEE80001200FF310EFE05070406241B222C1C2D26271FAA")),
+            "ZG4 uses the official read-only property batch");
         byte[] batteryReply = { inputReportId, 0xEA, 0x80, 0, 9, 0, 0xFF, sequence, 5, 0xFE, 7, 0xC3, 0, 0, 0xAA };
         int usbLevel = VendorProtocol.ParseZg4Battery(batteryReply, inputReportId, sequence, out bool usbCharging);
         var liveZg4 = new HidDiscovery.Bucket { Vid = 0x3654, Pid = 0x5055, Product = zg4, Identity = zg4,

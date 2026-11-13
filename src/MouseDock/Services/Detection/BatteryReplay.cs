@@ -288,7 +288,7 @@ internal static partial class BatteryReplay
         if (query.Protocol == "RogScopeRxOmni") return ReplayRogScope(query);
         if (query.Protocol == RogOmniMouseProtocol.Protocol) return ReplayRogMouse(query);
         if (query.Protocol == RazerBlackSharkProtocol.Protocol) return ReplayRazerBlackShark(query, channel.Pid);
-        if (query.Protocol == "Zg4") return ReplayZg4(query);
+        if (query.Protocol == "Zg4") return ReplayZg4(query, collections);
         if (query.Protocol == "Neon75Feature")
         {
             bool pending = false, charging = false;
@@ -437,10 +437,11 @@ internal static partial class BatteryReplay
             valid ? charging : null, valid ? "captured" : "unavailable");
     }
 
-    private static Result ReplayZg4(Query query)
+    private static Result ReplayZg4(Query query, Collection[] collections)
     {
         bool opened = false, onlineSent = false, identitySent = false, batterySent = false, online = false, identified = false;
         byte inputId = 0, sequence = 0;
+        var inputIds = new HashSet<byte>();
         int level = -1;
         bool charging = false;
         foreach (var sample in query.Samples ?? Array.Empty<Sample>())
@@ -449,9 +450,26 @@ internal static partial class BatteryReplay
             {
                 opened = sample.Ok;
                 inputId = sample.Sequence;
+                inputIds.Clear();
+                if (opened) inputIds.Add(inputId);
                 onlineSent = identitySent = batterySent = online = identified = false;
                 level = -1;
                 charging = false;
+                continue;
+            }
+            if (sample.Stage == "zg4-input-open" && opened && sample.Ok && sample.Result != null)
+            {
+                var candidates = collections.Where(c => c.Receiver == query.Receiver && !c.Excluded &&
+                    c.Interface != query.Interface &&
+                    string.Equals(c.InterfaceLabel, sample.Result, StringComparison.OrdinalIgnoreCase) &&
+                    VendorProtocol.IsZg4Channel(c.Vid, c.Pid, c.Product, c.Page, c.Input, c.Output)).ToArray();
+                if (candidates.Length == 1 && candidates[0].ReportIds != null)
+                {
+                    var match = Regex.Match(candidates[0].ReportIds, @"^IN\[([0-9A-F]{2})\](?: |$)",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    if (match.Success && Convert.ToByte(match.Groups[1].Value, 16) == sample.Sequence)
+                        inputIds.Add(sample.Sequence);
+                }
                 continue;
             }
             if (sample.Stage == "zg4-online-write") onlineSent = opened && sample.Ok;
@@ -471,10 +489,11 @@ internal static partial class BatteryReplay
                 online = true;
             if (sample.Stage == "zg4-identity" && identitySent && VendorProtocol.IsZg4Identity(raw, inputId))
                 identified = true;
-            if (sample.Stage == "zg4-battery" && batterySent && sample.Sequence == sequence)
-                level = VendorProtocol.ParseZg4Battery(raw, inputId, sequence, out charging);
+            if (sample.Stage == "zg4-battery" && batterySent && sample.Sequence == sequence &&
+                raw.Length > 0 && inputIds.Contains(raw[0]))
+                level = VendorProtocol.ParseZg4Battery(raw, raw[0], sequence, out charging);
         }
-        bool verified = level >= 0 && query.Status is "Online" or "Charging";
+        bool verified = level >= 0 && query.ObservedPercent == level && query.Status is "Online" or "Charging";
         return new(query.Receiver, query.Interface, query.Protocol, query.Status,
             identified ? "ZhuAudio ZG4" : null, verified ? level : null, verified ? charging : null,
             verified ? "captured" : "unavailable");
