@@ -422,7 +422,11 @@ namespace MouseDock
         private static WinForms.ContextMenuStrip CreateTrayMenu(DeviceInfo device = null)
         {
             var menu = new WinForms.ContextMenuStrip();
-            menu.Opening += (_, __) => TrayMenuRenderer.Apply(menu, Theme);
+            menu.Opening += (_, __) =>
+            {
+                _trayClickTimer?.Stop();
+                TrayMenuRenderer.Apply(menu, Theme);
+            };
             if (device != null)
             {
                 menu.Items.Add(new WinForms.ToolStripMenuItem(device.Name) { Enabled = false });
@@ -460,6 +464,7 @@ namespace MouseDock
             };
             _tray.MouseClick += (_, e) =>
             {
+                _trayClickTimer?.Stop();
                 if (e.Button == WinForms.MouseButtons.Left)
                 {
                     // Wait for the double-click window so one double-click is not also a toggle.
