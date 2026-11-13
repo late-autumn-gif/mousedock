@@ -341,6 +341,7 @@ assertions += BluetoothRegression.Run();
 assertions += RazerBlackSharkRegression.Run();
 assertions += HfpRegression.Run();
 assertions += InphicRegression.Run();
+assertions += MouseExpansionChecks.Run();
 assertions += Receiver33Regression.Run();
 assertions += ExtraRoutingRegression.Run();
 assertions += OfficialInphicAulaRegression.Run();

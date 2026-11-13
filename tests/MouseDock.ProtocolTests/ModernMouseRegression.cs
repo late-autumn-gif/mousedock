@@ -99,7 +99,8 @@ internal static class ModernMouseRegression
             Id = "dpi", Name = "Mouse", Kind = DeviceKind.Mouse, Dpi = 1600, DpiSettings = before
         }]).Single();
         Check(display.DpiLabel == "1600 DPI" && display.CanChangeDpi, "DPI reaches bound device model");
-        Check(!DeviceRoutes.IsKnown(0x3837,0x1018,"USB Receiver"),"Generic receiver not sufficient");
+        Check(!VendorProtocol.IsScopedModernMouse(0x3837,0x1018,"USB Receiver"),
+            "Generic receiver cannot enter the name-specific modern mouse reader");
         Check(VendorProtocol.IsScopedModernChannel(0x3837,0x1018,"MCHOSE K5 Ultra",0xFF01,1,64,64,0),
             "K5 Ultra Output/Input collection does not require Feature");
         Check(!VendorProtocol.IsScopedModernChannel(0x3837,0x1018,"MCHOSE K5 Pro",0xFF01,1,64,64,0),
