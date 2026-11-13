@@ -293,6 +293,17 @@
                     </Border>
                     <TextBlock x:Name="DeviceHint" Text="勾选同步到所有视图；右键可隐藏或重新识别" FontSize="10" Opacity="0.42" Margin="3,0,0,2" TextWrapping="Wrap" />
 
+                    <TextBlock Text="系统托盘" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <CheckBox x:Name="MultiTrayCheck" Content="每台设备显示独立托盘图标"
+                                      Checked="OnMultiTrayChanged" Unchecked="OnMultiTrayChanged" />
+                            <CheckBox x:Name="TrayFollowMainCheck" Content="跟随主面板设备选择"
+                                      Checked="OnTrayFollowMainChanged" Unchecked="OnTrayFollowMainChanged" />
+                            <StackPanel x:Name="TrayDeviceRows" Margin="24,3,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="耳机" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>

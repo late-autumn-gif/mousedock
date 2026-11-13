@@ -50,7 +50,11 @@ namespace MouseDock.Views
             _themeBackground = Root.Background;
             App.Battery.Refreshed += (_, __) =>
             {
-                if (IsVisible && !_loading) UpdateDeviceHint();
+                if (IsVisible && !_loading)
+                {
+                    UpdateDeviceHint();
+                    ReloadTraySettings();
+                }
             };
             Loaded += (_, __) =>
             {
@@ -100,6 +104,7 @@ namespace MouseDock.Views
 
                 DeviceChecks.ItemsSource = App.Battery.Devices;
                 UpdateDeviceHint();
+                ReloadTraySettings();
 
                 OpacitySlider.Value = s.Opacity;
                 OpacityValue.Text = $"{s.Opacity * 100:0}%";

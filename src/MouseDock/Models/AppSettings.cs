@@ -24,6 +24,9 @@ namespace MouseDock.Models
 
         // 监视的设备 id（最多 4 台用于迷你视图，主卡片最多 6 行）
         public List<string> SelectedDeviceIds { get; set; } = new List<string>();
+        public bool MultiTray { get; set; }
+        // null follows main-panel selection; an empty list explicitly selects none.
+        public List<string> TrayDeviceIds { get; set; }
         public bool DeviceSelectionInitialized { get; set; }
         public bool HasDeviceSelection { get; set; }
         public List<string> HiddenDeviceIds { get; set; } = new List<string>();
@@ -163,6 +166,8 @@ namespace MouseDock.Models
                 BackgroundPositionY = BackgroundPositionY,
                 BackgroundDepth = BackgroundDepth,
                 SelectedDeviceIds = new List<string>(SelectedDeviceIds),
+                MultiTray = MultiTray,
+                TrayDeviceIds = TrayDeviceIds == null ? null : new List<string>(TrayDeviceIds),
                 DeviceSelectionInitialized = DeviceSelectionInitialized,
                 HiddenDeviceIds = new List<string>(HiddenDeviceIds),
                 DisabledRecognitionDeviceIds = new List<string>(DisabledRecognitionDeviceIds),
