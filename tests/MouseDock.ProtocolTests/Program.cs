@@ -338,6 +338,7 @@ Check(HidDiscovery.ExclusionReason(new[] {
     "Keep the real Logitech receiver on a machine that also runs G HUB");
 Check(HidDiscovery.ExclusionReason(new[] { (@"HID\VID_045E&PID_0000", ""), (@"BTHLEDEVICE\ABC", ""), (@"ACPI\PNP0A08", "") }) == null, "Preserve Bluetooth despite upstream ACPI");
 assertions += BluetoothRegression.Run();
+assertions += ControllerExpansionRegression.Run();
 assertions += RazerBlackSharkRegression.Run();
 assertions += HfpRegression.Run();
 assertions += InphicRegression.Run();
