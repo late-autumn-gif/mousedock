@@ -55,7 +55,8 @@ public partial class App
         {
             foreach (var item in dpi.DropDownItems.Cast<Forms.ToolStripItem>().ToArray()) item.Dispose();
             dpi.DropDownItems.Clear();
-            var devices = device != null ? new[] { device } :
+            var targetDevice = device ?? menu.Tag as DeviceInfo;
+            var devices = targetDevice != null ? new[] { targetDevice } :
                 Battery?.Devices.Where(SupportsDpi).GroupBy(d => d.Id, StringComparer.OrdinalIgnoreCase)
                     .Where(group => group.Count() == 1).Select(group => group.Single()).ToArray()
                 ?? Array.Empty<DeviceInfo>();

@@ -425,6 +425,7 @@ namespace MouseDock
             menu.Items.Add("显示当前面板", null, (_, __) => ShowCurrentSurface());
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("切换到卡片窗", null, (_, __) => SetSurface("dock"));
+            AddDpiMenu(menu, null);
             menu.Items.Add("切换到迷你窗", null, (_, __) => SetSurface("mini"));
             menu.Items.Add("切换到悬浮图标", null, (_, __) => SetSurface("icon"));
             menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
@@ -432,7 +433,6 @@ namespace MouseDock
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("切换到桌宠", null, (_, __) => SetSurface("pet"));
             menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
-            AddDpiMenu(menu, null);
             menu.Items.Add("检查更新…", null, (_, __) => _ = CheckUpdateOnStartupAsync(manual: true));
             menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
@@ -1133,8 +1133,8 @@ namespace MouseDock
         public static void ExitApp()
         {
             _exiting = true;
-            foreach (var window in _dpiWindows.Values.ToArray()) window.Close();
             _desktopPet?.Close();
+            foreach (var window in _dpiWindows.Values.ToArray()) window.Close();
             SaveWindowPositions();
             SaveDeviceSelection();
             _trayClickTimer?.Stop();
