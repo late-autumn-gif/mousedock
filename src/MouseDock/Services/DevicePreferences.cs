@@ -37,6 +37,12 @@ namespace MouseDock.Services
             lock (_gate) return !keys.Any(k => k != null && _disabled.Contains(k));
         }
 
+        internal string[] DisabledDescendants(string prefix)
+        {
+            lock (_gate)
+                return _disabled.Where(id => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+
         public void Apply(DeviceInfo device)
         {
             string[] keys = Keys(device);

@@ -121,7 +121,7 @@ namespace MouseDock.Services.Detection
             }
         }
 
-        private static bool IsSafeMode => BatteryReplay.Current?.SafeMode ?? App.Settings?.SafeMode ?? false;
+        internal static bool IsSafeMode => BatteryReplay.Current?.SafeMode ?? App.Settings?.SafeMode ?? false;
 
         internal static DetectedDevice ReadOrChangeMouseDpi(DevicePreferences preferences, string instanceId,
             MouseDpiChange change = null)
@@ -203,6 +203,7 @@ namespace MouseDock.Services.Detection
 
             foreach (var bucket in buckets.Values)
             {
+                if (ExtraDeviceRoutes.Primary(bucket.Vid, bucket.Pid, bucket.Product) != null) continue;
                 if (!VendorProtocol.IsNeon75Air(bucket.Vid, bucket.Pid)) continue;
                 if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
                     VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true) ||
@@ -226,6 +227,7 @@ namespace MouseDock.Services.Detection
             {
                 foreach (var bucket in buckets.Values)
                 {
+                    if (ExtraDeviceRoutes.Primary(bucket.Vid, bucket.Pid, bucket.Product) != null) continue;
                     using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
                     if (!DeviceRoutes.IsKnown(bucket.Vid, bucket.Pid, bucket.Product) ||
                         VendorProtocol.IsRogOmni(bucket.Vid, bucket.Pid)) continue;
@@ -301,49 +303,57 @@ namespace MouseDock.Services.Detection
             bool safeMode = false;
             try { safeMode = IsSafeMode; } catch { }
 
+            var legacyBuckets = buckets.Where(pair =>
+                ExtraDeviceRoutes.Primary(pair.Value.Vid, pair.Value.Pid, pair.Value.Product) == null)
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
             bool readA7UltraDpi = BatteryReplay.Current == null;
-            QueryReportedReceivers(buckets, vendorCollections, safeMode, preferences,
+            QueryReportedReceivers(legacyBuckets, vendorCollections, safeMode, preferences,
                 (route, channel, trace) => VendorProtocol.ReadReportedReceiver(route, channel, trace, readA7UltraDpi, dpiChange));
-            QueryZg4Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadZg4);
-            QueryReferenceCollections(buckets, vendorCollections, safeMode, preferences,
+            QueryZg4Collections(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadZg4);
+            QueryReferenceCollections(legacyBuckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReferenceBattery, BatteryReplay.Current == null
                     ? (profile, path) => VendorProtocol.ReadReferenceBattery(profile, path, true, dpiChange) : null);
-            QueryReportedX23SeCollections(buckets, vendorCollections, safeMode, preferences,
+            QueryReportedX23SeCollections(legacyBuckets, vendorCollections, safeMode, preferences,
                 VendorProtocol.ReadReportedX23Se);
-            QueryM137Feature(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
-            QueryRealTekBattery(buckets, vendorCollections, safeMode, preferences);
+            QueryM137Feature(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM137Feature);
+            QueryRealTekBattery(legacyBuckets, vendorCollections, safeMode, preferences);
             // 3554:F503 / 3554:FA09 在通用旁路之前跑，避免公版接收器协议抢走。
             bool readVgnDpi = BatteryReplay.Current == null;
-            QueryVgnF1(buckets, vendorCollections, safeMode, preferences,
+            QueryVgnF1(legacyBuckets, vendorCollections, safeMode, preferences,
                 path => VendorProtocol.ReadVgnF1(path, readVgnDpi, dpiChange));
-            QueryF75(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
-            QueryM9Pro(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
-            QueryRazerBlackShark(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadRazerBlackShark);
-            QueryK87Collections(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
+            QueryF75(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadF75);
+            QueryM9Pro(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadM9Pro);
+            QueryRazerBlackShark(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadRazerBlackShark);
+            QueryK87Collections(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadK87);
             bool readAulaDpi = BatteryReplay.Current == null;
-            QueryAulaCollections(buckets, vendorCollections, safeMode, preferences,
+            QueryAulaCollections(legacyBuckets, vendorCollections, safeMode, preferences,
                 (route, path, vid, pid, product) => VendorProtocol.ReadAulaBattery(route, path, vid, pid, product, readAulaDpi, dpiChange));
-            QueryScopedInphic(buckets,vendorCollections,safeMode,preferences);
-            QueryGenericReceiver33(buckets, safeMode, preferences);
-            QueryRogScope(buckets, vendorCollections, safeMode, preferences, readDpi: true, dpiChange: dpiChange);
+            QueryScopedInphic(legacyBuckets,vendorCollections,safeMode,preferences);
+            QueryGenericReceiver33(legacyBuckets, safeMode, preferences);
+            QueryRogScope(legacyBuckets, vendorCollections, safeMode, preferences, readDpi: true, dpiChange: dpiChange);
             if (BatteryReplay.Current == null)
-                QueryScopedModernMouse(buckets, vendorCollections, safeMode, preferences,
+                QueryScopedModernMouse(legacyBuckets, vendorCollections, safeMode, preferences,
                     (path, vid, pid) => VendorProtocol.ReadScopedModernMouse(path, vid, pid, dpiChange));
             else
-                QueryScopedModernMouse(buckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadScopedModernMouse);
-            QueryScopedG7(buckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
-            if (BatteryReplay.Current == null) QueryMchoseDpi(buckets, vendorCollections, safeMode, preferences);
+                QueryScopedModernMouse(legacyBuckets, vendorCollections, safeMode, preferences, VendorProtocol.ReadScopedModernMouse);
+            QueryScopedG7(legacyBuckets,vendorCollections,safeMode,preferences,VendorProtocol.ReadScopedG7);
+            if (BatteryReplay.Current == null) QueryMchoseDpi(legacyBuckets, vendorCollections, safeMode, preferences);
             bool readAtkDpi = BatteryReplay.Current == null;
-            QueryZeroRainy(buckets, vendorCollections, safeMode, preferences,
+            QueryZeroRainy(legacyBuckets, vendorCollections, safeMode, preferences,
                 (path, vid, pid) => VendorProtocol.ReadZeroRainy(path, vid, pid, readAtkDpi, dpiChange));
             bool readLogitechDpi = BatteryReplay.Current == null;
-            QueryOriginalGpwCollections(buckets, vendorCollections, safeMode, preferences,
+            QueryOriginalGpwCollections(legacyBuckets, vendorCollections, safeMode, preferences,
                 (path, vid, pid) => VendorProtocol.ReadOriginalGpw(path, vid, pid, readLogitechDpi, dpiChange));
+            QueryExtraDevices(buckets, vendorCollections, safeMode, preferences, ExtraDeviceRoutes.Read);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
-            QueryVendorCollections(buckets, vendorCollections, safeMode, path =>
+            QueryVendorCollections(legacyBuckets, vendorCollections, safeMode, path =>
             {
-                var result = LogitechHidpp.Probe(path);
+                var collection = vendorCollections.FirstOrDefault(c =>
+                    string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase));
+                bool sharedReceiver = collection != null &&
+                    ExtraDeviceRoutes.Find(collection.Vid, collection.Pid, collection.Product)?.SharedReceiver == true;
+                var result = LogitechHidpp.Probe(path, sharedReceiver);
                 if (result.Battery >= 0 && !string.IsNullOrEmpty(result.BatteryNote))
                     foreach (var bucket in buckets.Values)
                         if (bucket.InstanceId == InstanceScope.ForPath(path, ""))
@@ -351,9 +361,21 @@ namespace MouseDock.Services.Detection
                 return (result.Battery, result.Name, result.Charging, result.Diagnostic);
             }, ReadVendorCollection);
 
+            foreach (var pair in buckets.ToArray())
+                if (ExtraDeviceRoutes.Find(pair.Value.Vid, pair.Value.Pid, pair.Value.Product)?.SharedReceiver == true &&
+                    pair.Value.ExtraRoute == null && buckets.Keys.Any(id =>
+                        id.StartsWith(pair.Key + "-keyboard-", StringComparison.OrdinalIgnoreCase)))
+                {
+                    bool mouseConfirmed;
+                    lock (_logiHints) mouseConfirmed = _logiHints.TryGetValue(pair.Key, out var hint) &&
+                        hint.Battery >= 0 && !string.IsNullOrWhiteSpace(hint.Name);
+                    if (!mouseConfirmed) buckets.Remove(pair.Key);
+                }
+
             // MCHOSE K87 V3：2.4G 键盘的 QHW 电量在独立厂商集合上，按整机身份读一次。
             foreach (var bucket in buckets.Values)
             {
+                if (bucket.ExtraRoute != null) continue;
                 using var instanceScope = InstanceScope.Enter(bucket.InstanceId);
                 if (!DeviceRoutes.IsKnown(bucket.Vid, bucket.Pid, bucket.Product)) continue;
                 if (!(preferences?.CanRead(bucket.InstanceId, $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}",
@@ -374,6 +396,7 @@ namespace MouseDock.Services.Detection
             {
                 // RK R98Pro V2：接收器 PID 与别家共用，先验身份再读电量；连接状态也要带出来。
                 using var instanceScope = InstanceScope.Enter(b.InstanceId);
+                if (b.ExtraRoute != null) return b.ToDevice();
                 if (ReferenceProfiles.Find(b.Vid, b.Pid) != null) return b.ToDevice();
                 if (VendorProtocol.IsReportedX23Se(b.Vid, b.Pid, b.Product)) return b.ToDevice();
                 if (b.HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) return b.ToDevice();
@@ -478,6 +501,8 @@ namespace MouseDock.Services.Detection
 
         internal static bool TryDeviceKind(ushort vid, ushort pid, ushort usagePage, ushort usage, out DeviceKind kind, string product = null)
         {
+            if (ExtraDeviceRoutes.Primary(vid, pid, product) is { } extra)
+            { kind = extra.Kind; return true; }
             if (RazerBlackSharkProtocol.IsCandidate(vid, pid) && usagePage == 0xFF14 && usage == 1)
             { kind = DeviceKind.Headset; return true; }
             if(ZeroRainyProtocol.Candidate(vid,pid,product) && ((usagePage==0xFF05&&usage==1)||(usagePage==0xFF1C&&usage==0x92))){kind=vid==0x373B?DeviceKind.Mouse:DeviceKind.Keyboard;return true;}
@@ -658,7 +683,7 @@ namespace MouseDock.Services.Detection
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
-            if ((recognitionEnabled && (caps.UsagePage >= 0xFF00 ||
+            if ((recognitionEnabled && (ExtraDeviceRoutes.Primary(vid, pid, product) != null || caps.UsagePage >= 0xFF00 ||
                     VendorProtocol.IsScopedInphicChannel(vid, pid, product, path, caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength))) ||
                 (string.IsNullOrWhiteSpace(product) && AulaBatteryProtocol.IsSc630Collection(caps.UsagePage, caps.Usage, caps.FeatureReportByteLength)) ||
                 VendorProtocol.IsInphicWakeCollection(vid, pid, product, caps.UsagePage, caps.Usage, caps.FeatureReportByteLength) ||
@@ -690,7 +715,7 @@ namespace MouseDock.Services.Detection
                 headset.Counts[kind] = headset.Counts.TryGetValue(kind, out int count) ? count + 1 : 1;
 
                 // HyperX Cloud III 走 0xFF13 私有通道，一次读完整机就行，别的集合不再重复。
-                if (VendorProtocol.IsHyperXHeadset(vid, pid) && recognitionEnabled && !safeMode && !headset.HeadsetQueried && headset.Battery < 0)
+                if (ExtraDeviceRoutes.Primary(vid, pid, product) == null && VendorProtocol.IsHyperXHeadset(vid, pid) && recognitionEnabled && !safeMode && !headset.HeadsetQueried && headset.Battery < 0)
                 {
                     headset.HeadsetQueried = true;
                     var headsetTrace = new List<string>();
@@ -737,7 +762,9 @@ namespace MouseDock.Services.Detection
             var batteryTrace = new List<string>();
             if (recognitionEnabled)
             {
-            if (VendorProtocol.IsRogOmni(vid, pid))
+            if (ExtraDeviceRoutes.Primary(vid, pid, product) != null)
+                batteryTrace.Add("扩展协议由归并后的精确物理实例读取");
+            else if (VendorProtocol.IsRogOmni(vid, pid))
                 batteryTrace.Add("ROG Omni 由本实例的配对与键盘集合读取");
             else if (VendorProtocol.ReportedReceiverRoute(vid, pid, product) != null)
                 batteryTrace.Add("由归并后的物理实例与精确 HID 集合读取电量");
@@ -1418,6 +1445,8 @@ namespace MouseDock.Services.Detection
             }
             public string Path = "";
             public string ReferenceModel;
+            public ExtraDeviceRoutes.Route ExtraRoute;
+            public string ExtraModel;
             public string ReferenceIdentity;
             public string ReferenceIdentityModel;
             public bool ReportedX23SeIdentified;
@@ -1690,11 +1719,18 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Keyboard;
                     transport = HandledBy == HandledBy.RogScope ? "2.4G" : "有线";
                 }
+                if (ExtraRoute != null)
+                {
+                    name = ExtraModel ?? Product ?? "未确认型号的设备";
+                    kind = ExtraRoute.Kind;
+                    transport = ExtraRoute.Transport ?? transport;
+                    charging = Charging;
+                }
                 return new DetectedDevice
                 {
                     Id = InstanceId ?? $"hid-{Vid:X4}-{Pid:X4}",
                     RawName = Product ?? "",
-                    ConfirmedModel = HandledBy == HandledBy.MchoseA7Ultra ? (Battery >= 0 ? VendorProtocol.A7UltraName : "") : HandledBy == HandledBy.RazerBlackShark ? RazerBlackSharkProtocol.Model : HandledBy == HandledBy.RogOmniMouse ? RogOmniMouseProtocol.Model : HandledBy == HandledBy.M137 ? M137Model ?? "" : HandledBy == HandledBy.RealTek ? Product?.Trim() ?? "" : HandledBy == HandledBy.VgnF1 ? VgnF1Model ?? "" : HandledBy == HandledBy.AulaF75 ? F75Model ?? "" : HandledBy == HandledBy.M9Pro ? M9ProModel ?? "" : RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
+                    ConfirmedModel = ExtraRoute != null ? ExtraModel ?? "" : HandledBy == HandledBy.MchoseA7Ultra ? (Battery >= 0 ? VendorProtocol.A7UltraName : "") : HandledBy == HandledBy.RazerBlackShark ? RazerBlackSharkProtocol.Model : HandledBy == HandledBy.RogOmniMouse ? RogOmniMouseProtocol.Model : HandledBy == HandledBy.M137 ? M137Model ?? "" : HandledBy == HandledBy.RealTek ? Product?.Trim() ?? "" : HandledBy == HandledBy.VgnF1 ? VgnF1Model ?? "" : HandledBy == HandledBy.AulaF75 ? F75Model ?? "" : HandledBy == HandledBy.M9Pro ? M9ProModel ?? "" : RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
                     ReceiverDiscovered = HandledBy is HandledBy.MchoseA7Ultra or HandledBy.MonsGeekBatteryEvent or HandledBy.MonsGeekDongleStatus || zg4Receiver || (HandledBy == HandledBy.RazerBlackShark && Pid == RazerBlackSharkProtocol.WirelessPid) || HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),

@@ -31,7 +31,11 @@ internal enum HandledBy
     RazerBlackShark,
     MchoseA7Ultra,
     MonsGeekBatteryEvent,
-    MonsGeekDongleStatus
+    MonsGeekDongleStatus,
+    ExtraMouse,
+    ExtraKeyboard,
+    ExtraController,
+    ExtraHeadset
 }
 
 /// <summary>
@@ -56,6 +60,7 @@ internal static class DeviceRoutes
 
     /// <summary>允许对这台设备发厂商查询。等同于旧 RecognitionPolicy.CanQuery。</summary>
     internal static bool IsKnown(ushort vid, ushort pid, string product) =>
+        ExtraDeviceRoutes.Find(vid, pid, product) != null ||
         VendorProtocol.ReportedReceiverRoute(vid, pid, product) != null ||
         VgnF1Protocol.IsCandidate(vid, pid, product) ||
         F75Protocol.IsCandidate(vid, pid, product) ||
@@ -97,6 +102,8 @@ internal static class DeviceRoutes
     /// </summary>
     internal static Route Find(ushort vid, ushort pid, string product)
     {
+        if (ExtraDeviceRoutes.Primary(vid, pid, product) is { } extra)
+            return new Route { Reader = extra.Reader, Kind = extra.Kind, Transport = extra.Transport };
         string reported = VendorProtocol.ReportedReceiverRoute(vid, pid, product);
         if (reported != null)
             return new Route { Reader = reported, Kind = reported == VendorProtocol.A7UltraRoute ? DeviceKind.Mouse : DeviceKind.Keyboard, Transport = "2.4G" };
