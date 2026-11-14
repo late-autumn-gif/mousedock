@@ -20,6 +20,28 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     public Brush Outline = Brush("#303936");
     public Brush Low = Brush("#FF687D");
     public Brush Muted = Brush("#BCC6C1");
+    private bool TransparentFloating => !Compact && (HideBackground || TaskbarBatteryStrip.NormalizeStyle(StyleName) == "plain");
+    private static readonly Color HaloColor = Color.FromRgb(21, 26, 32);
+    private static readonly Brush HaloInk = new SolidColorBrush(HaloColor);
+    private static readonly Brush FloatingInk = Brush("#F7FAFC");
+    private readonly Dictionary<Color, Brush> _floatingColors = new();
+    private Brush FloatingContrast(Brush brush)
+    {
+        if (!TransparentFloating || brush is not SolidColorBrush solid || ColorContrast.Ratio(solid.Color, HaloColor) >= 4.5) return brush;
+        if (ReferenceEquals(brush, Ink) || ReferenceEquals(brush, Muted)) return FloatingInk;
+        if (_floatingColors.TryGetValue(solid.Color, out var cached)) return cached;
+        if (_floatingColors.Count >= 32) _floatingColors.Clear();
+        var corrected = new SolidColorBrush(Palette.Mix(solid.Color, Colors.White, .55)); corrected.Freeze();
+        _floatingColors[solid.Color] = corrected;
+        return corrected;
+    }
+    private double StaleOpacity(bool stale) => !stale ? 1 : TransparentFloating ? .85 : .45;
+    private void LegibleText(DrawingContext dc, FormattedText value, Point point)
+    {
+        if (TransparentFloating)
+            dc.DrawGeometry(HaloInk, new Pen(HaloInk, 2.2) { LineJoin = PenLineJoin.Round }, value.BuildGeometry(point));
+        dc.DrawText(value, point);
+    }
     public bool HideBackground;
     public bool Compact, Vertical, UseStatusColors;
     public int LowBatteryThreshold = 20;
@@ -116,7 +138,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         double scale = Math.Min(ActualWidth, ActualHeight) / 96;
         dc.PushTransform(new TranslateTransform((ActualWidth - 96 * scale) / 2, (ActualHeight - 96 * scale) / 2));
         dc.PushTransform(new ScaleTransform(scale, scale));
-        dc.PushOpacity(item.Stale ? .45 : 1);
+        dc.PushOpacity(StaleOpacity(item.Stale));
         var background = HideBackground ? Brushes.Transparent : Surface;
         var track = new Pen(Outline, 1.2);
         double drawn = DrawnLevel(slot, item.Level, item.Charging && !item.Stale);
@@ -155,6 +177,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 Bar(dc, new Rect(18, 76, 60, 2.5), drawn, item.Charging && !item.Stale ? _phase : -1);
                 break;
         }
+        if (item.Stale && TransparentFloating) Text(dc, "旧", 9, new Point(78, 14), StatusBrush(-1, true), 14);
         // The source single-device styles signal charging through color, with a separate pulse in styles without a charging ring.
         if (_models != null && slot < _models.Count && _models[slot].IsFullActive)
             Text(dc, "✓", 11, new Point(70, 62), Accent, 15);
@@ -183,7 +206,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                     new Rect(5, 7 + i * rowHeight, width - 10, Math.Max(1, rowHeight - 5)), rowHeight / 2, rowHeight / 2);
             if (i > 0 && style is "ring" or "tile" or "battery")
                 dc.DrawLine(track, new Point(16, 6 + i * rowHeight), new Point(width - 16, 6 + i * rowHeight));
-            dc.PushOpacity(item.Stale ? .45 : 1);
+            dc.PushOpacity(StaleOpacity(item.Stale));
             double glyphSize = Math.Min(25, rowHeight * .42);
             if (style == "ring")
             {
@@ -194,13 +217,18 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             }
             if (style == "ring" && _completed[i] < ChargeSweep.CompletionDuration)
                 Text(dc, "✓", glyphSize, new Point(31, y), Accent, glyphSize + 4);
-            else DeviceGlyph.Draw(dc, item.Kind, new Rect(31 - glyphSize / 2, y - glyphSize / 2, glyphSize, glyphSize),
-                StatusBrush(item.Level), 1.8);
+            else
+            {
+                var glyphBounds = new Rect(31 - glyphSize / 2, y - glyphSize / 2, glyphSize, glyphSize);
+                if (TransparentFloating) DeviceGlyph.Draw(dc, item.Kind, glyphBounds, HaloInk, 4);
+                DeviceGlyph.Draw(dc, item.Kind, glyphBounds, StatusBrush(item.Level), 1.8);
+            }
             Number(dc, item.Level, Math.Min(32, rowHeight * .6), new Point((width + 46) / 2, y), width - 62);
             if (style is "battery" or "plain") Bar(dc, new Rect(59, y + rowHeight * .35, width - 76, 2), drawn, item.Charging && !item.Stale ? _phase : -1);
             if (style != "ring" && IsFull(i))
                 Text(dc, "✓", 9, new Point(width - 20, y + rowHeight * .23), Accent, 13);
             else if (style != "ring" && item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(width - 20, y + rowHeight * .23), 9);
+            if (item.Stale && TransparentFloating) Text(dc, "旧", 9, new Point(width - 12, y - rowHeight * .3), StatusBrush(-1, true), 14);
             dc.Pop();
         }
     }
@@ -215,14 +243,17 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             var item = items[i];
             var cell = cells[i];
             double center = cell.X + cell.Width / 2;
-            dc.PushOpacity(item.Stale ? .45 : 1);
+            dc.PushOpacity(StaleOpacity(item.Stale));
             var identity = _models != null && i < _models.Count
                 ? new SolidColorBrush(IconComposition.IdentityColor(_models[i].Id)) : Alpha(Ink, .85);
-            DeviceGlyph.Draw(dc, item.Kind, new Rect(center - 14, cell.Y + 3, 22, 22), identity, 1.8);
+            var glyphBounds = new Rect(center - 14, cell.Y + 3, 22, 22);
+            if (TransparentFloating) DeviceGlyph.Draw(dc, item.Kind, glyphBounds, HaloInk, 4);
+            DeviceGlyph.Draw(dc, item.Kind, glyphBounds, FloatingContrast(identity), 1.8);
             dc.DrawEllipse(StatusBrush(item.Level), null, new Point(center + 14, cell.Y + 13), 2.5, 2.5);
             Text(dc, item.Level < 0 ? "\u2014" : item.Level.ToString(CultureInfo.InvariantCulture),
                 Math.Min(31, cell.Width * .58), new Point(center, cell.Y + cell.Height * .73),
                 StatusBrush(item.Level, true), cell.Width - 4);
+            if (item.Stale && TransparentFloating) Text(dc, "旧", 9, new Point(center + 14, cell.Y + 27), StatusBrush(-1, true), 14);
             if (item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(center + 14, cell.Y + 27), 9);
             dc.Pop();
         }
@@ -243,8 +274,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             width = digits.Width + suffix.Width + 2;
         }
         double left = center.X - width / 2;
-        dc.DrawText(digits, new Point(left, center.Y - digits.Height / 2));
-        dc.DrawText(suffix, new Point(left + digits.Width + 2, center.Y + digits.Height * .36 - suffix.Height));
+        LegibleText(dc, digits, new Point(left, center.Y - digits.Height / 2));
+        LegibleText(dc, suffix, new Point(left + digits.Width + 2, center.Y + digits.Height * .36 - suffix.Height));
     }
 
     private void DrawRing(DrawingContext dc, Point center, double radius, double level, double thickness)
@@ -269,14 +300,14 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         if (level <= 0) return;
         ChargeSweep.HorizontalLine(dc, bounds, level / 100, bounds.Height / 2, StatusBrush((int)Math.Round(level)), phase);
     }
-    private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
+    private Brush StatusBrush(int level, bool text = false) => FloatingContrast(AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted));
     private FormattedText Format(string text, double size, Brush brush) => new(text, CultureInfo.CurrentCulture,
         FlowDirection.LeftToRight, new Typeface("Segoe UI"), Math.Max(1, size), brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
     private void Text(DrawingContext dc, string text, double size, Point center, Brush brush, double maxWidth)
     {
         var value = Format(text, size, brush);
         if (value.Width > maxWidth) value = Format(text, size * maxWidth / value.Width, brush);
-        dc.DrawText(value, new Point(center.X - value.Width / 2, center.Y - value.Height / 2));
+        LegibleText(dc, value, new Point(center.X - value.Width / 2, center.Y - value.Height / 2));
     }
     private void DrawChargingPulse(DrawingContext dc, Point center, double size) =>
         ChargeSweep.Pulse(dc, center, Math.Max(2, size * .28), _phase);

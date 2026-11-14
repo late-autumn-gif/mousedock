@@ -174,6 +174,7 @@ namespace MouseDock.Views
             {
                 bool selected = (string)button.Tag == section;
                 button.Background = selected ? new SolidColorBrush(Palette.Mix(App.Theme.Surface, App.Theme.Accent, .18)) : Brushes.Transparent;
+                button.BorderThickness = new Thickness(0);
                 button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
             }
             RootScroll.ScrollToTop();
@@ -219,6 +220,16 @@ namespace MouseDock.Views
             RootScroll?.ScrollToEnd();
         }
 
+        private static Color ReadableControl(Color candidate, Color text, params Color[] surfaces)
+        {
+            for (int step = 0; step <= 100; step++)
+            {
+                Color color = Palette.Mix(candidate, text, step / 100.0);
+                if (surfaces.All(surface => ColorContrast.Ratio(color, surface) >= 3.2)) return color;
+            }
+            return text;
+        }
+
         public void ApplyTheme(ThemePreset theme, bool animate)
         {
             var text = new SolidColorBrush(theme.Text);
@@ -243,6 +254,17 @@ namespace MouseDock.Views
                 Resources["ButtonBrush"] = new SolidColorBrush(theme.Surface);
                 Resources["ButtonHoverBrush"] = new SolidColorBrush(theme.Hover);
             }
+            var cardColor = ((SolidColorBrush)Resources["CardBrush"]).Color;
+            Color CardOver(Color background) => Palette.Mix(background, Color.FromRgb(cardColor.R, cardColor.G, cardColor.B), cardColor.A / 255.0);
+            var surfaces = new[] { theme.BgTop, theme.BgBottom, CardOver(theme.BgTop), CardOver(theme.BgBottom) };
+            Color outline = ReadableControl(Palette.Mix(theme.Surface, theme.Text, .38), theme.Text, surfaces);
+            Color controlAccent = ReadableControl(theme.Accent, theme.Text, surfaces);
+            Resources["ControlOutlineBrush"] = new SolidColorBrush(outline);
+            Resources["ControlFillBrush"] = new SolidColorBrush(Palette.Mix(theme.Surface, theme.Text, .06));
+            Resources["ControlAccentBrush"] = new SolidColorBrush(controlAccent);
+            Resources["ControlMarkBrush"] = new SolidColorBrush(ColorContrast.Ratio(Colors.White, controlAccent) > ColorContrast.Ratio(Colors.Black, controlAccent) ? Colors.White : Colors.Black);
+            foreach (var button in SectionNavigation.Children.OfType<Button>())
+                button.Background = (string)button.Tag == _section ? new SolidColorBrush(Palette.Mix(theme.Surface, theme.Accent, .10)) : Brushes.Transparent;
             var accent = new SolidColorBrush(theme.Accent);
             accent.Freeze();
             AccentBrush = accent;

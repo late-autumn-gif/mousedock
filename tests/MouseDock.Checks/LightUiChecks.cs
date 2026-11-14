@@ -9,6 +9,102 @@ using Forms = System.Windows.Forms;
 
 internal static class LightUiChecks
 {
+    internal static void FloatingContrast()
+    {
+        Directory.CreateDirectory("artifacts/light-controls");
+        var light = ReferenceThemes.Resolve("rose", "light");
+        foreach (bool hide in new[] { false, true })
+        foreach (var background in new[] { System.Windows.Media.Colors.Black, System.Windows.Media.Colors.White })
+        {
+            var mouse = new DeviceInfo { Kind = DeviceKind.Mouse, Level = 99 };
+            var keyboard = new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 54, IsStale = true };
+            var icon = new MouseDock.Controls.ReferenceBatteryIcon { StyleName = "plain", Width = 160, Height = 130, HideBackground = hide, DeviceModels = new[] { mouse, keyboard } };
+            icon.ApplyPalette(light, new AppSettings { IconFollowTheme = true });
+            var canvas = new Grid { Width = 160, Height = 130, Background = new System.Windows.Media.SolidColorBrush(background) };
+            canvas.Children.Add(icon);
+            canvas.Measure(new Size(160, 130)); canvas.Arrange(new Rect(0, 0, 160, 130)); canvas.UpdateLayout();
+            System.Windows.Media.Imaging.RenderTargetBitmap Snapshot()
+            {
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(160, 130, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                bitmap.Render(canvas); return bitmap;
+            }
+            var pixels = new byte[160 * 130 * 4]; Snapshot().CopyPixels(pixels, 160 * 4, 0);
+            int Visible(int y0, bool bright)
+            {
+                int count = 0;
+                for (int y = y0; y < y0 + 37; y++) for (int x = 60; x < 142; x++)
+                {
+                    int i = (y * 160 + x) * 4;
+                    if (bright ? pixels[i] > 180 && pixels[i+1] > 180 && pixels[i+2] > 180 : pixels[i] < 80 && pixels[i+1] < 80 && pixels[i+2] < 80) count++;
+                }
+                return count;
+            }
+            Require(Visible(16, background == System.Windows.Media.Colors.Black) > 40 && Visible(76, background == System.Windows.Media.Colors.Black) > 40,
+                "Fresh or stale floating digits vanish on a light/dark desktop.");
+            Require(mouse.Level == 99 && keyboard.Level == 54 && keyboard.IsStale && !keyboard.IsChargingActive, "Readability changed battery evidence.");
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(Snapshot()));
+            using (var file = File.Create($"artifacts/light-controls/floating-{background.R}-{hide}.png")) encoder.Save(file);
+            mouse.Level = -1; icon.InvalidateVisual(); canvas.UpdateLayout();
+            var unknown = new byte[pixels.Length]; Snapshot().CopyPixels(unknown, 160 * 4, 0);
+            Require(!pixels.SequenceEqual(unknown) && mouse.LevelText == "—", "Unknown reading was replaced with a made-up percentage.");
+        }
+    }
+    internal static void SettingsContrast()
+    {
+        using var fixture = new AppearanceFixture();
+        var window = new SettingsWindow { Left = -2000, ShowActivated = false };
+        fixture.Set("SettingsView", window);
+        window.Show(); window.SelectSection("behavior");
+        var visibleRoot = (UIElement)window.Content;
+        visibleRoot.BeginAnimation(UIElement.OpacityProperty, null); visibleRoot.Opacity = 1;
+        var custom = ReferenceThemes.Resolve("resident", "light").Clone();
+        custom.Accent = System.Windows.Media.Colors.White;
+        var themes = new[] { ReferenceThemes.Resolve("rose", "light"), ReferenceThemes.Resolve("resident", "light"), ThemePreset.ById("cloud"), ReferenceThemes.Resolve("resident", "dark"), custom };
+        static double Ratio(System.Windows.Media.Color a, System.Windows.Media.Color b)
+        {
+            static double L(System.Windows.Media.Color c)
+            {
+                static double S(byte b) { double v = b / 255d; return v <= .04045 ? v / 12.92 : Math.Pow((v + .055) / 1.055, 2.4); }
+                return .2126 * S(c.R) + .7152 * S(c.G) + .0722 * S(c.B);
+            }
+            return (Math.Max(L(a), L(b)) + .05) / (Math.Min(L(a), L(b)) + .05);
+        }
+        foreach (var theme in themes)
+        {
+            fixture.Set("Theme", theme);
+            window.ApplyTheme(theme, false); window.UpdateLayout();
+            var checkbox = (CheckBox)window.FindName("TopmostBox"); checkbox.ApplyTemplate();
+            var box = (Border)checkbox.Template.FindName("Box", checkbox);
+            var slider = (Slider)window.FindName("OpacitySlider"); slider.ApplyTemplate();
+            var rail = (Border)slider.Template.FindName("SliderRail", slider);
+            var outline = ((System.Windows.Media.SolidColorBrush)box.BorderBrush).Color;
+            var track = ((System.Windows.Media.SolidColorBrush)rail.Background).Color;
+            var card = ((System.Windows.Media.SolidColorBrush)window.Resources["CardBrush"]).Color;
+            var painted = Palette.Mix(theme.BgTop, System.Windows.Media.Color.FromRgb(card.R, card.G, card.B), card.A / 255d);
+            Require(outline.A == 255 && Ratio(outline, painted) >= 3.19 && Ratio(track, painted) >= 3.19,
+                $"{theme.Id}: checkbox boundary or slider rail disappears into its actual card background.");
+            checkbox.IsChecked = true; window.UpdateLayout();
+            var fill = ((System.Windows.Media.SolidColorBrush)box.Background).Color;
+            var tick = (System.Windows.Shapes.Path)checkbox.Template.FindName("Tick", checkbox);
+            Require(tick.Opacity == 1 && Ratio(fill, painted) >= 3.19 && Ratio(fill, ((System.Windows.Media.SolidColorBrush)tick.Stroke).Color) >= 4.5,
+                "Checked state or check mark is not readable.");
+            checkbox.IsChecked = false;
+            Require(tick.Opacity == 0 && Equals(box.BorderBrush, window.Resources["ControlOutlineBrush"]), "Unchecking did not restore the theme boundary.");
+            slider.Value = .8;
+            Require(Math.Abs(fixture.Settings.Opacity - .8) < .001, "The visible slider no longer applies its value.");
+            if (theme.Id == "rose")
+            {
+                checkbox.IsChecked = true;
+                window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+                var root = (FrameworkElement)window.Content;
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth), (int)Math.Ceiling(root.ActualHeight), 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                bitmap.Render(root);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                Directory.CreateDirectory("artifacts/light-controls");
+                using var output = File.Create("artifacts/light-controls/rose-behavior.png"); encoder.Save(output);
+            }
+        }
+    }
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern int GetWindowLong(IntPtr handle, int index);
     [System.Runtime.InteropServices.DllImport("user32.dll")]

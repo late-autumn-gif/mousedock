@@ -18,11 +18,11 @@
                 <Setter.Value><ControlTemplate TargetType="ComboBox">
                     <Grid>
                         <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
-                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{DynamicResource ButtonBrush}" CornerRadius="7" Padding="9,6"><Grid><ContentPresenter/><TextBlock Text="⌄" HorizontalAlignment="Right" Foreground="{DynamicResource TextBrush}"/></Grid></Border></ControlTemplate></ToggleButton.Template>
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{DynamicResource ControlFillBrush}" BorderBrush="{DynamicResource ControlOutlineBrush}" BorderThickness="1" CornerRadius="7" Padding="9,6"><Grid><ContentPresenter/><TextBlock Text="⌄" HorizontalAlignment="Right" Foreground="{DynamicResource TextBrush}"/></Grid></Border></ControlTemplate></ToggleButton.Template>
                         </ToggleButton>
                         <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" IsHitTestVisible="False" Margin="9,6,25,6" VerticalAlignment="Center"/>
                         <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
-                            <Border Background="{DynamicResource MenuSurfaceBrush}" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource ButtonHoverBrush}" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Padding="5">
+                            <Border Background="{DynamicResource MenuSurfaceBrush}" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource ControlOutlineBrush}" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Padding="5">
                                 <ScrollViewer MaxHeight="280"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
                             </Border>
                         </Popup>
@@ -30,6 +30,10 @@
                 </ControlTemplate></Setter.Value>
             </Setter>
         </Style>
+        <SolidColorBrush x:Key="ControlOutlineBrush" Color="#8995A3"/>
+        <SolidColorBrush x:Key="ControlFillBrush" Color="#292F38"/>
+        <SolidColorBrush x:Key="ControlAccentBrush" Color="#8FDFC3"/>
+        <SolidColorBrush x:Key="ControlMarkBrush" Color="#171C22"/>
         <SolidColorBrush x:Key="MenuSurfaceBrush" Color="#20262E"/>
         <!-- 这四个跟着主题换，浅色主题下用深字、深卡片，不会糊成一片 -->
         <SolidColorBrush x:Key="TextBrush" Color="#ECE7FA" />
@@ -50,7 +54,8 @@
         <Style x:Key="GhostButton" TargetType="Button">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
-            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlOutlineBrush}"/>
+            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="11,6" />
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="Cursor" Value="Hand" />
@@ -101,7 +106,7 @@
                                     <Thumb>
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
-                                                <Border CornerRadius="3" Background="#33FFFFFF" Margin="1,2" />
+                                                <Border CornerRadius="3" Background="{DynamicResource ControlOutlineBrush}" Margin="1,2" />
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -122,23 +127,21 @@
                     <ControlTemplate TargetType="CheckBox">
                         <StackPanel Orientation="Horizontal" Background="Transparent">
                             <Border x:Name="Box" Width="15" Height="15" CornerRadius="5" BorderThickness="1.2"
-                                    BorderBrush="#4DFFFFFF" Background="#0AFFFFFF" VerticalAlignment="Center" Margin="0,0,9,0">
-                                <TextBlock x:Name="Tick" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="9.5"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0"
-                                           Foreground="#12101C" />
+                                    BorderBrush="{DynamicResource ControlOutlineBrush}" Background="{DynamicResource ControlFillBrush}" VerticalAlignment="Center" Margin="0,0,9,0">
+                                <Path x:Name="Tick" Width="9" Height="7" Data="M 0,3 L 3,6 L 9,0" Stroke="{DynamicResource ControlMarkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0"/>
                             </Border>
                             <ContentPresenter VerticalAlignment="Center" />
                         </StackPanel>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Box" Property="Background"
-                                        Value="{Binding AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        Value="{DynamicResource ControlAccentBrush}" />
                                 <Setter TargetName="Box" Property="BorderBrush"
-                                        Value="{Binding AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        Value="{DynamicResource ControlAccentBrush}" />
                                 <Setter TargetName="Tick" Property="Opacity" Value="1" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Box" Property="BorderBrush" Value="#80FFFFFF" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource ControlAccentBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -153,7 +156,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
                         <Grid Background="Transparent">
-                            <Border Height="3" CornerRadius="2" Background="#26FFFFFF" VerticalAlignment="Center" />
+                            <Border x:Name="SliderRail" Height="3" CornerRadius="2" Background="{DynamicResource ControlOutlineBrush}" VerticalAlignment="Center" />
                             <Track x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Style="{StaticResource InvisibleRepeat}" Command="Slider.DecreaseLarge" />
@@ -167,8 +170,8 @@
                                             <ControlTemplate TargetType="Thumb">
                                                 <Grid>
                                                     <Ellipse Width="12" Height="12"
-                                                             Fill="{Binding AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                                    <Ellipse Width="4" Height="4" Fill="#88FFFFFF" HorizontalAlignment="Center" />
+                                                             Fill="{DynamicResource ControlAccentBrush}" />
+                                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource ControlMarkBrush}" HorizontalAlignment="Center" />
                                                 </Grid>
                                             </ControlTemplate>
                                         </Thumb.Template>
@@ -514,8 +517,8 @@
                     </Border></StackPanel><StackPanel x:Name="PageBehavior" Visibility="Collapsed"><TextBlock Text="常驻与交互" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="放在合适的位置，保持安静。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="窗口行为" Style="{StaticResource Section}"/>
 <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <CheckBox x:Name="TopmostBox" Content="窗口置顶（一直压在其他窗口上面）" FontSize="11" Opacity="0.85" Checked="OnTopmostChanged" Unchecked="OnTopmostChanged"/>
-                            <CheckBox x:Name="ClickThroughBox" Content="鼠标穿透（点不到窗口，直接落到下面的程序上）" FontSize="11" Opacity="0.85" Margin="0,9,0,0" Checked="OnClickThroughChanged" Unchecked="OnClickThroughChanged"/>
+                            <CheckBox x:Name="TopmostBox" Content="窗口置顶（一直压在其他窗口上面）" FontSize="11" Checked="OnTopmostChanged" Unchecked="OnTopmostChanged"/>
+                            <CheckBox x:Name="ClickThroughBox" Content="鼠标穿透（点不到窗口，直接落到下面的程序上）" FontSize="11" Margin="0,9,0,0" Checked="OnClickThroughChanged" Unchecked="OnClickThroughChanged"/>
                             <TextBlock Text="穿透打开后用托盘图标右键菜单关掉" FontSize="10" Opacity="0.42" Margin="0,7,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>

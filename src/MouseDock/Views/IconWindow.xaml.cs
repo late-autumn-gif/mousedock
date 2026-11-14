@@ -463,8 +463,8 @@ namespace MouseDock.Views
             void Attach(FrameworkElement icon, DeviceInfo item)
             {
                 icon.Tag = item;
-                icon.ToolTip = item == null ? string.Join("\n", shown.Select(d => d.Name + " · " + d.LevelText))
-                    : item.Name + " · " + item.LevelText;
+                icon.ToolTip = item == null ? string.Join("\n", shown.Select(d => d.Name + " · " + d.LevelText + " · " + d.StatusText))
+                    : item.Name + " · " + item.LevelText + " · " + item.StatusText;
                 System.Windows.Automation.AutomationProperties.SetName(icon, icon.ToolTip.ToString());
                 icon.MouseLeftButtonDown += OnDragWindow;
                 icon.MouseMove += OnDragMove;
