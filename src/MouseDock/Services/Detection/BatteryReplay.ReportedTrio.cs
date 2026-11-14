@@ -39,6 +39,43 @@ internal static partial class BatteryReplay
             ReferenceBatteryProtocol.Reading result = null;
             if (rapoo || v9)
             {
+                if (rapoo && samples.Any(s => s.Stage == "ahub-session-start"))
+                {
+                    var controls = collections.Where(c => c.Receiver == query.Receiver && !c.Excluded &&
+                        c.Vid == 0x24AE && c.Pid == 0x1417 && c.UsbRevision == 0x0105).ToArray();
+                    if (controls.Count(c => c.Page == 0xFF00 && c.Usage == 14 && c.Input == 33 && c.Output == 33 &&
+                        c.Feature == 0 && c.InterfaceLabel == "MI_01/COL_05" && c.ReportIds == "IN[06] OUT[06] FEATURE[]") != 1 ||
+                        controls.Count(c => c.Page == 0xFF00 && c.Usage == 15 && c.Input == 0 && c.Output == 0 &&
+                        c.Feature == 33 && c.InterfaceLabel == "MI_01/COL_06" && c.ReportIds == "IN[] OUT[] FEATURE[08]") != 1)
+                        return Missing("ahub-control-channel-mismatch");
+                    int ready = Array.FindIndex(samples, s => s.Stage == "ahub-initialized" && s.Ok);
+                    int complete = Array.FindIndex(samples, s => s.Stage == "ahub-battery-complete" && s.Ok);
+                    int sessionStart = Array.FindIndex(samples, s => s.Stage == "ahub-session-start" && s.Ok);
+                    if (sessionStart < 0 || ready <= sessionStart || complete <= ready ||
+                        samples.Count(s => s.Stage == "ahub-session-start") != 1 ||
+                        samples.Count(s => s.Stage == "ahub-initialized") != 1 ||
+                        samples.Count(s => s.Stage == "ahub-battery-complete") != 1 ||
+                        samples.Any(s => s.Stage.StartsWith("expansion-") || s.Stage.StartsWith("vt3-") ||
+                            s.Stage is "ahub-session-failure" or "ahub-read-rejected")) return Missing();
+                    var exchanges = samples.Take(ready).Where(s => s.Stage is "ahub-read-output" or "ahub-read-ack").ToArray();
+                    int cursor = 0;
+                    RapooAhubProtocol.Initialize(request =>
+                    {
+                        if (cursor + 1 >= exchanges.Length || exchanges[cursor].Stage != "ahub-read-output" ||
+                            exchanges[cursor + 1].Stage != "ahub-read-ack" || !Bytes(exchanges[cursor]).AsSpan().SequenceEqual(request))
+                            throw new InvalidDataException("AHUB replay command mismatch");
+                        var response = Bytes(exchanges[cursor + 1]);
+                        cursor += 2;
+                        return response;
+                    });
+                    if (cursor != exchanges.Length) return Missing();
+                    var events = samples.Skip(ready + 1).Take(complete - ready - 1).Where(s => s.Stage == "ahub-battery-input").ToArray();
+                    if (events.Length != 1 || !events[0].At.HasValue || !samples[complete].At.HasValue ||
+                        events[0].At > samples[complete].At || samples[complete].At - events[0].At > TimeSpan.FromSeconds(30)) return Missing();
+                    result = RapooVt3MaxProtocol.Decode(Bytes(events[0]));
+                    return new(query.Receiver, candidates[0].Interface, query.Protocol, query.Status,
+                        result.Model, result.Level, result.ChargingKnown ? result.Charging : null, "captured");
+                }
                 if (rapoo && samples.Any(s => s.Stage == "vt3-snapshot-start"))
                 {
                     int begin = Array.FindIndex(samples, s => s.Stage == "vt3-snapshot-start" && s.Ok);

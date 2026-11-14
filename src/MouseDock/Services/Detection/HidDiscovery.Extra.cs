@@ -55,6 +55,7 @@ public static partial class HidDiscovery
             if (string.IsNullOrEmpty(instance) || safeMode ||
                 !(preferences?.CanRead(instance, legacy, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true))
             {
+                if (route.Family == "RapooVt3Max") RapooAhubSessions.Stop(instance);
                 bucket.BatteryFailures.Add(safeMode ? "安全模式已跳过扩展协议" : "此实例识别已停用");
                 Record(safeMode ? "SafeMode" : "RecognitionDisabled");
                 continue;

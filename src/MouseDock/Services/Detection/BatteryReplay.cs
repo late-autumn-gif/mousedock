@@ -45,6 +45,11 @@ internal static partial class BatteryReplay
         }
 
         internal Sample[] Snapshot() { lock (samples) return samples.ToArray(); }
+        internal void Append(IEnumerable<Sample> captured)
+        {
+            lock (samples) foreach (var sample in captured)
+                if (samples.Count < 64) samples.Add(sample);
+        }
     }
 
     internal sealed class Scan
