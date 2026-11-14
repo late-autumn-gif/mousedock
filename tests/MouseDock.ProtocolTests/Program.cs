@@ -5,6 +5,11 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Contains("--verify-scyrox-legacy"))
+{
+    Console.WriteLine($"PASS {ScyroxLegacyRegression.Run()} Scyrox legacy receiver checks; no hardware I/O.");
+    return;
+}
 if (args.Contains("--verify-mchose-feedback"))
 {
     Console.WriteLine($"PASS {MchoseFeedbackRegression.Run()} G89/V9 Pro feedback checks; no hardware I/O.");
@@ -369,6 +374,7 @@ assertions += OfficialInphicAulaRegression.Run();
 assertions += AulaScopedRegression.Run();
 assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
+assertions += ScyroxLegacyRegression.Run();
 assertions += MchoseFeedbackRegression.Run();
 assertions += ReportedTrioRegression.Run();
 assertions += OfficialIntegrationRegression.Run();

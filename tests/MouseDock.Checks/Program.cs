@@ -16,6 +16,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--scyrox-ui") { ScyroxLegacyUiChecks.Run(args[1]); return 0; }
         if (args.Length == 3 && args[0] == "--mchose-report-ui")
         {
             MchoseFeedbackUiChecks.Run(args[1], args[2]);
@@ -47,6 +48,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Scyrox receiver protocol reaches the normal visible battery card", () => ScyroxLegacyUiChecks.Run()),
             ("MCHOSE reported keyboard battery remains visible in the normal card", () => MchoseFeedbackUiChecks.Run()),
             ("Light UI appearance grid retains themes modes and persistence", LightUiChecks.AppearanceLayout),
             ("Light UI floating digits stay readable on light and dark desktops", LightUiChecks.FloatingContrast),

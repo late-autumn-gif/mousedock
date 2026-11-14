@@ -80,7 +80,7 @@ internal static class MchoseFeedbackUiChecks
         });
     }
 
-    private static void Wait(Task task)
+    internal static void Wait(Task task)
     {
         if (!task.IsCompleted)
         {

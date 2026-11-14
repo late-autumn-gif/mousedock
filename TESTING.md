@@ -1,5 +1,7 @@
 # 测试
 
+2026-11-15 SCYROX V6/V8 旧代接收器：`--verify-scyrox-legacy` 268 项、全量协议 26613 条、模拟完整显示链路及相关界面/路由 5 项通过。旧报告仍零查询，不能标为实机通过。见 [验证范围](docs/SCYROX-V6-V8-LEGACY.md)。
+
 2026-11-15 迈从完整服务链路补充：`MouseDock.Checks --mchose-report-ui <用户G89 ZIP> <本地PNG>` 专项 1 项通过，覆盖 AutoDetectSource → BatteryService.PollAsync → 设备选择与可见列表 → WPF 卡片；G89 旧报告显示 100%，V9 无读数显示 —。仅改测试，未重新运行全量协议；最新两台均 — 的用户问题仍需新报告定位。
 
 2026-11-15 迈从实机反馈修正：`--verify-mchose-feedback` 新增 506 项、全量协议 26345 条通过；相关界面/路由 5/5，加真实 G89 ZIP 到 WPF 卡片 1 项通过。G89 三轮重放均 100%、未充电；V9 原被动报告三轮仍无电量，官方固定查询需要下一轮实机验证。此前数量为历史记录。
