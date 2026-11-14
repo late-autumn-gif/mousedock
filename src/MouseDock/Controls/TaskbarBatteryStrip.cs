@@ -206,7 +206,7 @@ public sealed class TaskbarBatteryStrip : Border
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
-        number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
+        number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
         if (vertical) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         grid.Children.Add(number);
 
@@ -307,7 +307,7 @@ public sealed class TaskbarBatteryStrip : Border
                 IsHitTestVisible = false
             };
             ringNumber.SetBinding(TextBlock.TextProperty,
-                new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
+                new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
             var numberStyle = new Style(typeof(TextBlock));
             var completed = new DataTrigger { Binding = new Binding(nameof(DeviceBatteryRing.CompletionVisible)) { Source = ring }, Value = true };
             completed.Setters.Add(new Setter(OpacityProperty, 0d));
@@ -361,7 +361,7 @@ public sealed class TaskbarBatteryStrip : Border
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
-        number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
+        number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
         if (stacked) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         row.Children.Add(number);
         badge.Children.Add(row);
@@ -401,7 +401,7 @@ public sealed class TaskbarBatteryStrip : Border
     private sealed class NumberConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-            value is int level && level >= 0 ? level.ToString(CultureInfo.InvariantCulture) : "\u2014";
+            value is string text ? text.TrimEnd('%') : value is int level && level >= 0 ? level.ToString(CultureInfo.InvariantCulture) : "\u2014";
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
 

@@ -23,12 +23,18 @@ internal static partial class ExtraDeviceRoutes
         {
             var existing = devices.FirstOrDefault(d => string.Equals(d.Id, item.Id, StringComparison.OrdinalIgnoreCase));
             if (existing == null) { devices.Add(item); continue; }
-            if (existing.Kind != DeviceKind.Controller || !existing.Connected || existing.Level >= 0 || item.Level < 0) continue;
+            if (existing.Kind != DeviceKind.Controller || !existing.Connected || !item.Connected) continue;
+            // Exact physical ID only; system wireless metadata does not depend on a percentage being available.
+            if (!string.IsNullOrEmpty(item.Transport)) existing.Transport = item.Transport;
+            if (existing.Level >= 0 || item.Level < 0 && string.IsNullOrEmpty(item.BatteryBand)) continue;
             existing.Level = item.Level;
+            existing.BatteryBand = item.BatteryBand;
+            existing.HandledBy = HandledBy.SystemController;
             existing.Charging = item.Charging;
             existing.ChargeFull = item.ChargeFull;
             existing.IsStale = false;
             existing.Note = item.Note;
+            existing.Detail = item.Detail;
         }
     }
 }

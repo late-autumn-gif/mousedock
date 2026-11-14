@@ -35,7 +35,8 @@ internal enum HandledBy
     ExtraMouse,
     ExtraKeyboard,
     ExtraController,
-    ExtraHeadset
+    ExtraHeadset,
+    SystemController
 }
 
 /// <summary>

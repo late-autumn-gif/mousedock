@@ -425,7 +425,7 @@ namespace MouseDock.Services
                         DpiCapturedAt = d.Dpi > 0 && !d.IsStale ? DateTimeOffset.UtcNow : default,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
-                        Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull,
+                        Connected = d.Connected, Level = d.Level, BatteryBand = d.BatteryBand, Charging = d.Charging, ChargeFull = d.ChargeFull,
                         Selected = d.Selected, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds?.ToArray()
                     }).ToList();
@@ -440,7 +440,7 @@ namespace MouseDock.Services
             foreach (var incoming in snapshot)
             {
                 _preferences.Apply(incoming);
-                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; incoming.Dpi = -1; incoming.DpiSettings = null; }
+                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.BatteryBand = ""; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; incoming.Dpi = -1; incoming.DpiSettings = null; }
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
                 if (!incoming.Connected)
                 {
@@ -474,7 +474,7 @@ namespace MouseDock.Services
 
                 // 设备还在，只是这一次没读到（厂商通道忙/设备刚唤醒）：
                 // 保留上一次的有效读数，避免百分比闪成「—」；连续 6 次读不到再清零
-                if (incoming.RecognitionEnabled && existing != null && incoming.Level < 0 && existing.Level >= 0 && !incoming.ChargeFull && !incoming.Charging)
+                if (incoming.RecognitionEnabled && existing != null && incoming.Level < 0 && string.IsNullOrEmpty(incoming.BatteryBand) && existing.Level >= 0 && !incoming.ChargeFull && !incoming.Charging)
                 {
                     // 设备休眠 / 通道忙：一直沿用上一次成功的读数，只标记为「旧值」，
                     // 这样鼠标静止十秒、几分钟都不会突然变成 —
@@ -485,6 +485,11 @@ namespace MouseDock.Services
                     incoming.Level = existing.Level;
                     incoming.Charging = existing.Charging;
                     incoming.IsStale = true; // Cached charge flags must not keep a live charging animation running.
+                }
+                else if (!string.IsNullOrEmpty(incoming.BatteryBand) && !incoming.IsStale)
+                {
+                    _misses[incoming.Id] = 0;
+                    _lastKnown.Remove(incoming.Id);
                 }
                 else if (incoming.Level >= 0 && !incoming.IsStale)
                 {
@@ -500,7 +505,7 @@ namespace MouseDock.Services
                 if (existing == null)
                 {
                     // 短暂掉线后重新出现：如果几分钟内读过，先用旧值顶上，避免界面闪成 —
-                    if (incoming.RecognitionEnabled && incoming.Level < 0 && !incoming.Charging && !incoming.ChargeFull && _lastKnown.TryGetValue(incoming.Id, out var last)
+                    if (incoming.RecognitionEnabled && incoming.Level < 0 && string.IsNullOrEmpty(incoming.BatteryBand) && !incoming.Charging && !incoming.ChargeFull && _lastKnown.TryGetValue(incoming.Id, out var last)
                         && (DateTime.UtcNow - last.At).TotalMinutes < 10)
                     {
                         incoming.Level = last.Level;
@@ -516,6 +521,7 @@ namespace MouseDock.Services
                     existing.Name = incoming.Name;
                     existing.Kind = incoming.Kind;
                     existing.Level = incoming.Level;
+                    existing.BatteryBand = incoming.BatteryBand;
                     existing.Dpi = incoming.Dpi;
                     existing.DpiSettings = incoming.DpiSettings;
                     existing.Charging = incoming.Charging;
@@ -637,6 +643,7 @@ namespace MouseDock.Services
             _lastKnown.Remove(device.Id);
             _misses.Remove(device.Id);
             device.Level = -1;
+            device.BatteryBand = "";
             device.Charging = false;
             device.ChargeFull = false;
             device.IsStale = false;

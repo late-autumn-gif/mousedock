@@ -5,6 +5,11 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Contains("--verify-xbox-wireless"))
+{
+    Console.WriteLine($"PASS {XboxWirelessRegression.Run()} Xbox system battery checks; no hardware I/O.");
+    return;
+}
 if (args.Contains("--verify-scyrox-legacy"))
 {
     Console.WriteLine($"PASS {ScyroxLegacyRegression.Run()} Scyrox legacy receiver checks; no hardware I/O.");
@@ -374,6 +379,7 @@ assertions += OfficialInphicAulaRegression.Run();
 assertions += AulaScopedRegression.Run();
 assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
+assertions += XboxWirelessRegression.Run();
 assertions += ScyroxLegacyRegression.Run();
 assertions += MchoseFeedbackRegression.Run();
 assertions += ReportedTrioRegression.Run();

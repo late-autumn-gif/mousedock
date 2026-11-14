@@ -79,7 +79,7 @@ internal static class ControllerExpansionRegression
             int? design = null, int? rate = null, string status = "Discharging", ushort vid = 0x045E, ushort pid = 0x0B13) =>
             new(identity, "Controller", vid, pid, true, status, remaining, full, design, rate);
         var systemBand = ControllerExpansionSystem.Normalize([Sample("one",400,1000)]).Single();
-        Check(systemBand.Level == -1 && systemBand.Note.Contains("2/5"), "WGI fallback ratio is a system band");
+        Check(systemBand.Level == -1 && systemBand.BatteryBand == "400/1000" && systemBand.Note.Contains("不是精确百分比"), "WGI relative reading preserves raw scale without inventing five bands");
         Check(ControllerExpansionSystem.Normalize([Sample("one",400,1000,1000)]).Single().Level == 40,
             "WGI detailed design capacity preserves precise percentage");
         Check(ControllerExpansionSystem.Normalize([Sample("one",400,1000,rate:0)]).Single().Level == 40,

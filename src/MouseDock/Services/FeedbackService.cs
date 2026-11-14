@@ -302,7 +302,7 @@ namespace MouseDock.Services
 
         internal sealed record DisplayReading(string Name, string Product, string Model, string Kind, string Transport,
             string VidPid, bool Connected, bool ReceiverPresent, bool PeripheralConfirmed, int? Percent,
-            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances);
+            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances, string BatteryBand = null);
 
         private static DisplayReading[] CreateDisplaySnapshot(IEnumerable<DeviceInfo> devices,
             Dictionary<string, string> aliases = null) =>
@@ -311,11 +311,11 @@ namespace MouseDock.Services
                 Detection.BatteryReplay.SafeLabel(d.ConfirmedModel), d.Kind.ToString(), d.Transport,
                 Regex.Match(d.Detail ?? "", @"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$").Value,
                 d.Connected, d.ReceiverDiscovered, d.PeripheralConfirmed, d.Level is >= 0 and <= 100 ? d.Level : null,
-                d.Level < 0 ? "unknown" : d.IsStale || !d.Connected ? "cached" : "display-snapshot",
+                d.IsStale || !d.Connected ? "cached" : !string.IsNullOrEmpty(d.BatteryBand) ? "system-relative" : d.Level < 0 ? "unknown" : "display-snapshot",
                 d.IsChargingActive ? true : null, d.IsFullActive ? true : null, d.HandledByLabel, d.Source,
                 aliases == null ? Array.Empty<string>() : DevicePreferences.Keys(d)
-                    .Where(key => key.StartsWith("instance-", StringComparison.OrdinalIgnoreCase))
-                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray())).ToArray();
+                    .Where(key => key.StartsWith("instance-", StringComparison.OrdinalIgnoreCase) || key.StartsWith("system-controller-", StringComparison.OrdinalIgnoreCase))
+                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray(), d.BatteryBand)).ToArray();
 
         private static string ReplayEntry(int index) => index == 0 ? Detection.BatteryReplay.EntryName :
             $"samples/{index + 1:D2}.json";
@@ -344,9 +344,9 @@ namespace MouseDock.Services
             sb.AppendLine($"范围: {(single ? "单设备（按实例限定）" : "全部设备")}");
             if (cableConnected) sb.AppendLine("用户标注: 插线后采样。");
             sb.AppendLine($"安全模式: {(settings?.SafeMode == true ? "开" : "关")}；应用刷新: {settings?.RefreshSeconds} 秒");
-            sb.AppendLine("界面快照仅记录采样前的显示状态；蓝牙和其他非 HID 来源在本报告中仅记录界面快照。");
+            sb.AppendLine("界面快照仅记录采样前的显示状态；系统手柄另采集有界电池报告，其他非 HID 来源仅记录界面快照。");
             foreach (var item in snapshot)
-                sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {item.Percent?.ToString() ?? "—"} ({item.Freshness})");
+                sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} ({item.Freshness})");
             for (int i = 0; i < rounds.Length; i++)
             {
                 var round = rounds[i];
@@ -354,7 +354,7 @@ namespace MouseDock.Services
                 if (round.ScanError != null) sb.AppendLine($"  扫描错误: {round.ScanError}");
                 else if (round.Collections.Length == 0) sb.AppendLine("  此轮没有找到范围内的 HID 集合。");
                 foreach (var item in round.Observations)
-                    sb.AppendLine($"  {item.Receiver} {item.Name} {item.Transport} {item.Percent?.ToString() ?? "—"} " +
+                    sb.AppendLine($"  {item.Receiver} {item.Name} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} " +
                         $"{item.Source}；充电 {item.Charging?.ToString() ?? "未知"}");
                 foreach (var query in round.Queries)
                     sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}");

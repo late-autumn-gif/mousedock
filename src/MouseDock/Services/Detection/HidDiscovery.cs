@@ -104,10 +104,16 @@ namespace MouseDock.Services.Detection
         {
             lock (ScanGate)
             {
-                var scan = new BatteryReplay.Scan(aliases, safeMode);
+                var scan = new BatteryReplay.Scan(aliases, safeMode, selectedIds);
                 var scope = selectedIds?.ToHashSet(StringComparer.OrdinalIgnoreCase);
                 BatteryReplay.Current = scan;
-                try { return scan.Detected = ScanDevices(preferences, scope); }
+                try
+                {
+                    scan.Detected = ScanDevices(preferences, scope);
+                    ExtraDeviceRoutes.AddSystemDevices(scan.Detected,preferences,IsSafeMode);
+                    XboxBatteryDiagnostics.Capture(IsSafeMode);
+                    return scan.Detected;
+                }
                 catch (Exception ex)
                 {
                     scan.ScanError = ex.GetType().Name;

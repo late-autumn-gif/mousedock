@@ -24,12 +24,12 @@ internal static partial class BatteryReplay
         int? ObservedPercent, Sample[] Samples);
     internal sealed record Observation(string Receiver, string Model, string Transport, int? Percent, bool Stale, bool Connected = true, bool? Charging = null, bool? Full = null,
         string Reader = null, bool ReceiverPresent = false, bool PeripheralConfirmed = false, string Product = null,
-        string Name = null, string Source = null);
+        string Name = null, string Source = null, string BatteryBand = null);
     internal sealed record Capture(int Schema, string AppVersion, Guid BuildId, string WindowsVersion, string ScanError,
         DateTimeOffset StartedAt, DateTimeOffset FinishedAt,
         Collection[] Collections, Query[] Queries, Observation[] Observations);
     internal sealed record Result(string Receiver, int? Interface, string Protocol, string Status, string Model,
-        int? Percent, bool? Charging, string ValueKind);
+        int? Percent, bool? Charging, string ValueKind, string BatteryBand = null);
 
     internal sealed class Trace
     {
@@ -52,11 +52,13 @@ internal static partial class BatteryReplay
         private readonly DateTimeOffset started = DateTimeOffset.UtcNow;
         private readonly Dictionary<string, string> receivers;
         internal bool? SafeMode { get; }
+        internal IReadOnlySet<string> SelectedIds { get; }
 
-        internal Scan(Dictionary<string, string> aliases = null, bool? safeMode = null)
+        internal Scan(Dictionary<string, string> aliases = null, bool? safeMode = null, IEnumerable<string> selectedIds = null)
         {
             receivers = aliases ?? new(StringComparer.OrdinalIgnoreCase);
             SafeMode = safeMode;
+            SelectedIds = selectedIds?.ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
         private readonly Dictionary<string, int> interfaces = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<Collection> collections = new();
@@ -104,7 +106,8 @@ internal static partial class BatteryReplay
                                 (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or "ExtraKeyboard:MchoseBy" or "ExtraMouse:RapooVt3Max" or ScyroxLegacyProtocol.Reader or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
                             ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
                         device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
-                        SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") : "unknown")).ToArray());
+                        SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") :
+                            !string.IsNullOrEmpty(device.BatteryBand) ? "system-relative" : "unknown", device.BatteryBand)).ToArray());
         }
     }
 
@@ -269,6 +272,8 @@ internal static partial class BatteryReplay
 
     internal static Result Replay(Query query, Collection[] collections)
     {
+        if (query.Protocol == "WindowsGameController") return ReplaySystemController(query);
+        if (query.Protocol == "XInputBatteryDiagnostics") return ReplayXInputBattery(query);
         if (query.Protocol == ScyroxLegacyProtocol.Reader) return ReplayScyroxLegacy(query,collections);
         if (query.Protocol is "ExtraMouse:RapooVt3Max" or "ExtraHeadset:V9Pro" or "ExtraKeyboard:MchoseBy")
             return ReplayReportedTrio(query, collections);

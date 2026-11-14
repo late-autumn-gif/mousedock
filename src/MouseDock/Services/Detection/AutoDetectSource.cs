@@ -60,6 +60,7 @@ namespace MouseDock.Services.Detection
                     device.DpiSettings = merged.DpiSettings;
                     device.Connected = merged.Connected;
                     device.Level = merged.Level >= 0 ? merged.Level : -1;
+                    device.BatteryBand = merged.BatteryBand;
                     // 换电池的型号（G304/G305、G602/G603、办公 Nano 鼠）没有充电状态，
                     // 别让任何读取路径把「电量低」画成「充电中」。
                     device.Charging = merged.Charging && !VendorMap.IsReplaceableBattery(merged.Name);
@@ -85,7 +86,7 @@ namespace MouseDock.Services.Detection
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
-                        Connected = d.Connected, Level = d.Level, Charging = d.Charging, ChargeFull = d.ChargeFull, IsStale = d.IsStale,
+                        Connected = d.Connected, Level = d.Level, BatteryBand = d.BatteryBand, Charging = d.Charging, ChargeFull = d.ChargeFull, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds.ToArray()
                     })
                     .ToList();
@@ -133,6 +134,7 @@ namespace MouseDock.Services.Detection
             group = connected;
             var best = group.OrderByDescending(d => d.Level >= 0 ? 1 : 0)
                             .ThenBy(d => d.IsStale)
+                            .ThenByDescending(d => !string.IsNullOrEmpty(d.BatteryBand))
                             .ThenByDescending(d => d.Transport == "蓝牙" || d.Transport == "蓝牙 LE")
                             .First();
 
@@ -144,6 +146,7 @@ namespace MouseDock.Services.Detection
                 Kind = best.Kind,
                 Transport = best.Transport,
                 Level = best.Level,
+                BatteryBand = best.BatteryBand,
                 Dpi = !best.IsStale && best.Dpi > 0 ? best.Dpi : -1,
                 DpiSettings = best.DpiSettings,
                 Charging = best.Charging,
@@ -159,6 +162,7 @@ namespace MouseDock.Services.Detection
                 if (merged.Level < 0 && item.Level >= 0)
                 {
                     merged.Level = item.Level;
+                    merged.BatteryBand = item.BatteryBand;
                     merged.Charging = item.Charging;
                     merged.ChargeFull = item.ChargeFull;
                     merged.IsStale = item.IsStale;
