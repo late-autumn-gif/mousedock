@@ -49,6 +49,7 @@ namespace MouseDock.Views
             App.Battery.SourceChanged += (_, __) => RefreshDevices();
             RefreshDevices();
             Loaded += OnLoaded;
+            PreviewKeyDown += OnDockKeyDown;
             UpdateLayout();
         }
 
@@ -118,6 +119,7 @@ namespace MouseDock.Views
         public void ApplyDensity(string style)
         {
             style = (style ?? "standard").ToLowerInvariant();
+            Root.Width = style == "compact" ? 288 : 316;
             switch (style)
             {
                 case "compact":
@@ -131,11 +133,11 @@ namespace MouseDock.Views
                     Root.CornerRadius = new CornerRadius(0);
                     Root.BorderThickness = new Thickness(0);
                     RootShadow.Opacity = 0;
-                    Root.Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x10, 0x0D, 0x1C));
+                    Root.Background = new SolidColorBrush(App.Theme.Surface);
                     return;
                 default:
-                    Root.Padding = new Thickness(12, 10, 12, 9);
-                    Root.CornerRadius = new CornerRadius(18);
+                    Root.Padding = new Thickness(15, 12, 15, 10);
+                    Root.CornerRadius = new CornerRadius(16);
                     Root.BorderThickness = new Thickness(1);
                     RootShadow.Opacity = 0.45;
                     break;
@@ -155,6 +157,7 @@ namespace MouseDock.Views
             GlyphBrush.Freeze();
             AccentColor = theme.Accent;
             Accent2Color = theme.Accent2;
+            Root.BorderBrush = new SolidColorBrush(theme.Border.A == 0 ? Palette.Mix(theme.Surface, theme.Text, .15) : theme.Border);
             ThemeNameText.Text = theme.Name;
             ThemeNameText.Foreground = new SolidColorBrush(theme.TextDim);
             FooterText.Foreground = new SolidColorBrush(theme.TextDim);
@@ -244,17 +247,69 @@ namespace MouseDock.Views
             if (DeviceList.ItemsSource == null) DeviceList.ItemsSource = App.Battery.VisibleDevices;
             string label = App.Battery.Source?.Label ?? "自动检测";
             int displayed = App.Battery.VisibleDevices.Count;
+            if (DetailPanel.DataContext is DeviceInfo target && !App.Battery.VisibleDevices.Contains(target))
+                DetailPanel.Visibility = Visibility.Collapsed;
+            FooterText.Text = $"{displayed} 台设备 · 右键切换样式";
+            PinButton.ToolTip = App.Settings.AlwaysOnTop ? "取消始终置顶" : "始终置顶";
             SourceText.Text = $"{label} · {displayed} 台显示";
             var accent = new SolidColorBrush(App.Theme.Accent);
             LiveDot.Fill = accent;
         }
 
+
+        private void OnPinClick(object sender, RoutedEventArgs e)
+        {
+            App.Settings.AlwaysOnTop = !App.Settings.AlwaysOnTop;
+            App.ApplyWindowBehavior();
+            App.SaveSettings();
+            PinButton.ToolTip = App.Settings.AlwaysOnTop ? "取消始终置顶" : "始终置顶";
+        }
+        private void OnSettingsClick(object sender, RoutedEventArgs e) => App.ShowSettings(this);
+        private void OnHideClick(object sender, RoutedEventArgs e) => Hide();
+        private void OnCloseDetailClick(object sender, RoutedEventArgs e) => DetailPanel.Visibility = Visibility.Collapsed;
+        private void OnDeviceManagementClick(object sender, RoutedEventArgs e)
+        {
+            App.ShowSettings(this);
+            App.SettingsView.SelectSection("devices");
+        }
+        private void OnDockKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape) { DetailPanel.Visibility = Visibility.Collapsed; e.Handled = true; }
+        }
+        private void OnDeviceClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not FrameworkElement { DataContext: DeviceInfo device }) return;
+            DependencyObject current = e.OriginalSource as DependencyObject;
+            while (current != null && current != sender)
+            {
+                if (current is System.Windows.Controls.Primitives.ButtonBase) return;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            DetailPanel.DataContext = device;
+            DetailPanel.Visibility = Visibility.Visible;
+            e.Handled = true;
+        }
+        private void OnDeviceKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key is not (Key.Enter or Key.Space) || sender is not FrameworkElement { DataContext: DeviceInfo device }) return;
+            if (e.OriginalSource is System.Windows.Controls.Primitives.ButtonBase) return;
+            DetailPanel.DataContext = device;
+            DetailPanel.Visibility = Visibility.Visible;
+            e.Handled = true;
+        }
         private void OnDragWindow(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton != MouseButton.Left) return;
 
             // 点在齿轮等可交互元素上时不拖动
-            if (e.OriginalSource is DependencyObject src && IsInside(src, GearButton)) return;
+            if (e.OriginalSource is DependencyObject src)
+            {
+                while (src != null)
+                {
+                    if (src is System.Windows.Controls.Primitives.ButtonBase) return;
+                    src = VisualTreeHelper.GetParent(src);
+                }
+            }
 
             try { DragMove(); } catch { }
         }

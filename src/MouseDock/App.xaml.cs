@@ -19,6 +19,9 @@ namespace MouseDock
 {
     public partial class App : Application
     {
+        public static bool IsTestProfile => SettingsStore.IsPortableTest || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR"));
+        private static string InstanceName => IsTestProfile ? ".Ui121." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(SettingsStore.Dir).ToUpperInvariant())))[..16] : "";
+        public static event Action<bool> SettingsSaveCompleted;
         private static Mutex _mutex;
         private static WinForms.NotifyIcon _tray;
         private static TrayIconGroup _deviceTrays;
@@ -107,13 +110,13 @@ namespace MouseDock
                 return;
             }
 
-            _mutex = new Mutex(true, "MouseDock.SingleInstance", out bool isNew);
+            _mutex = new Mutex(true, "MouseDock.SingleInstance" + InstanceName, out bool isNew);
             if (!isNew && !IsDiagnosticCommand(e.Args))
             {
                 // 已有实例常驻后台：发唤醒信号让它显示面板，本实例随即退出。
                 try
                 {
-                    if (EventWaitHandle.TryOpenExisting("MouseDock.ShowPanel", out var wake))
+                    if (EventWaitHandle.TryOpenExisting("MouseDock.ShowPanel" + InstanceName, out var wake))
                     {
                         wake.Set();
                         wake.Dispose();
@@ -141,7 +144,7 @@ namespace MouseDock
             Settings.Provider = "auto";
 
             // 常驻唤醒通道：其它实例（快捷方式/托盘）唤起面板
-            _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "MouseDock.ShowPanel");
+            _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "MouseDock.ShowPanel" + InstanceName);
             var wakeThread = new System.Threading.Thread(() =>
             {
                 while (true)
@@ -340,7 +343,7 @@ namespace MouseDock
 
 
             // 第一次启动弹「关于」通告
-            Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
+            if (!IsTestProfile) Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
 
             // 启动后延迟检查更新。无网直接放弃，不打扰用户。
             _ = CheckUpdateOnStartupAsync();
@@ -423,34 +426,37 @@ namespace MouseDock
         private static WinForms.ContextMenuStrip CreateTrayMenu(DeviceInfo device = null)
         {
             var menu = new WinForms.ContextMenuStrip { Tag = device };
-            menu.Opening += (_, __) =>
+            var title = new WinForms.ToolStripMenuItem(device?.Name ?? "MouseDock · 1.2.1") { Enabled = false };
+            menu.Items.Add(title);
+            menu.Items.Add("显示电量窗", null, (_, _) => ShowCurrentSurface());
+            menu.Items.Add("收起电量窗", null, (_, _) => Surfaces.Apply(Settings.SurfaceMode, false));
+            menu.Items.Add(new WinForms.ToolStripSeparator());
+            var picker = new TraySurfacePicker(SetSurface);
+            menu.Items.Add(picker);
+            menu.Items.Add(new WinForms.ToolStripSeparator());
+            var pin = new WinForms.ToolStripMenuItem("始终置顶");
+            pin.Click += (_, _) => { Settings.AlwaysOnTop = !Settings.AlwaysOnTop; ApplyWindowBehavior(); SaveSettings(); SettingsView?.Reload(); };
+            menu.Items.Add(pin);
+            var through = new WinForms.ToolStripMenuItem("鼠标穿透");
+            through.Click += (_, _) => { Settings.ClickThrough = !Settings.ClickThrough; ApplyWindowBehavior(); SaveSettings(); SettingsView?.Reload(); };
+            menu.Items.Add(through);
+            menu.Items.Add("立即刷新", null, (_, _) => ScheduleDeviceRefresh());
+            menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("管理设备…", null, (_, _) => { ShowSettings(Dock); SettingsView.SelectSection("devices"); });
+            AddDpiMenu(menu, device);
+            menu.Items.Add("耳机控制…", null, (_, _) => ShowHeadsets());
+            menu.Items.Add("检查更新…", null, (_, _) => CheckUpdatesFromSettings());
+            menu.Items.Add("设置…", null, (_, _) => ShowSettings(Dock));
+            menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("退出 MouseDock", null, (_, _) => ExitApp());
+            menu.Opening += (_, _) =>
             {
                 _trayClickTimer?.Stop();
+                picker.Refresh(Theme, Settings.SurfaceMode);
+                pin.Checked = Settings.AlwaysOnTop;
+                through.Checked = Settings.ClickThrough;
                 TrayMenuRenderer.Apply(menu, Theme);
             };
-            if (device != null)
-            {
-                menu.Items.Add(new WinForms.ToolStripMenuItem(device.Name) { Enabled = false });
-                menu.Items.Add(new WinForms.ToolStripSeparator());
-            }
-            menu.Items.Add("显示当前面板", null, (_, __) => ShowCurrentSurface());
-            menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("切换到卡片窗", null, (_, __) => SetSurface("dock"));
-            AddDpiMenu(menu, null);
-            menu.Items.Add("切换到迷你窗", null, (_, __) => SetSurface("mini"));
-            menu.Items.Add("切换到悬浮图标", null, (_, __) => SetSurface("icon"));
-            menu.Items.Add("固定到任务栏左侧", null, (_, __) => SetSurface("taskbar"));
-            menu.Items.Add("固定到屏幕右侧", null, (_, __) => SetSurface("edge"));
-            menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("切换到桌宠", null, (_, __) => SetSurface("pet"));
-            menu.Items.Add("耳机控制…", null, (_, __) => ShowHeadsets());
-            menu.Items.Add("检查更新…", null, (_, __) =>
-            {
-                if (Current is App app) _ = app.CheckUpdateOnStartupAsync(manual: true);
-            });
-            menu.Items.Add("设置…", null, (_, __) => ShowSettings(Dock));
-            menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("退出 MouseDock", null, (_, __) => ExitApp());
             return menu;
         }
 
@@ -1021,7 +1027,11 @@ namespace MouseDock
             SaveSettings();
         }
 
-        public static void SaveSettings() => SettingsStore.Save(Settings);
+        public static void SaveSettings()
+        {
+            bool success = SettingsStore.TrySave(Settings);
+            SettingsSaveCompleted?.Invoke(success);
+        }
 
         // ── 三个窗口各挑各的背景图 ──
         public static void PickBackground(string surface)
@@ -1354,6 +1364,33 @@ namespace MouseDock
             Capture(iconChar, Path.Combine(dir, "icon-character.png"));
             Capture(iconPhoto, Path.Combine(dir, "icon-photo.png"));
             Capture(settings, Path.Combine(dir, "settings.png"));
+            foreach (string section in new[] { "display", "devices", "appearance", "behavior", "battery", "help" })
+            {
+                settings.SelectSection(section);
+                Pump(TimeSpan.FromMilliseconds(120));
+                Capture(settings, Path.Combine(dir, "settings-" + section + ".png"));
+            }
+            foreach (string style in new[] { "standard", "compact", "bare" })
+            {
+                dock.ApplyDensity(style);
+                Pump(TimeSpan.FromMilliseconds(120));
+                Capture(dock, Path.Combine(dir, "dock-" + style + ".png"));
+            }
+            settings.SelectSection("display");
+            using (var trayMenu = CreateTrayMenu())
+            {
+                foreach (var picker in trayMenu.Items.OfType<TraySurfacePicker>()) picker.Refresh(Theme, Settings.SurfaceMode);
+                TrayMenuRenderer.Apply(trayMenu, Theme);
+                trayMenu.Show(new System.Drawing.Point(40, 40));
+                Pump(TimeSpan.FromMilliseconds(180));
+                trayMenu.Size = trayMenu.GetPreferredSize(System.Drawing.Size.Empty);
+                using var image = new System.Drawing.Bitmap(trayMenu.Width, trayMenu.Height);
+                trayMenu.DrawToBitmap(image, trayMenu.ClientRectangle);
+                foreach (var picker in trayMenu.Items.OfType<TraySurfacePicker>())
+                    picker.Control.DrawToBitmap(image, picker.Bounds);
+                image.Save(Path.Combine(dir, "tray-menu.png"), System.Drawing.Imaging.ImageFormat.Png);
+                trayMenu.Close();
+            }
             settings.ScrollToBottom();
             Pump(TimeSpan.FromMilliseconds(220));
             Capture(settings, Path.Combine(dir, "settings-bottom.png"));
@@ -1429,8 +1466,18 @@ namespace MouseDock
         /// <summary>
         /// 启动后延迟检查更新。断网 / 超时 / 用户关掉开关都静默跳过。
         /// </summary>
+        public static void CheckUpdatesFromSettings()
+        {
+            if (Current is App app) _ = app.CheckUpdateOnStartupAsync(true);
+        }
+
         private async Task CheckUpdateOnStartupAsync(bool manual = false)
         {
+            if (IsTestProfile)
+            {
+                if (manual) MessageBox.Show("隔离测试版不检查或下载更新。", "MouseDock 1.2.1 测试版");
+                return;
+            }
             try
             {
                 if (!manual && Settings != null && !Settings.AutoUpdate) return;

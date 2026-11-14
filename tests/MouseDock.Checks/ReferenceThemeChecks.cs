@@ -161,10 +161,11 @@ internal static class ReferenceThemeChecks
 
     private static void ThemeWheel(MouseDock.Views.SettingsWindow window, AppSettings settings)
     {
+        window.SelectSection("appearance");
         var list = (ListBox)window.FindName("ThemeList");
         list.SelectedItem = list.Items.Cast<MouseDock.Views.SettingsWindow.ThemeRow>().Single(r => r.Id == "pine");
         var root = (FrameworkElement)window.Content;
-        root.Measure(new Size(396, 740));
+        root.Measure(new Size(760, 620));
         root.Arrange(new Rect(root.DesiredSize));
         root.UpdateLayout();
         var scroll = (ScrollViewer)window.FindName("RootScroll");

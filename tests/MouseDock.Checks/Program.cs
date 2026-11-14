@@ -39,6 +39,10 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Light UI settings navigation retains controls and applies density", LightUiChecks.Navigation),
+            ("Light UI save feedback reports real success and write failure", LightUiChecks.SaveFailure),
+            ("Light UI six tray choices retain selection and invoke exact modes", LightUiChecks.TrayChoices),
+            ("Light UI compact cards preserve unknown and stale battery states", LightUiChecks.BatteryStates),
             ("DPI stages fit compact windows and retain theme changes", DpiWindowChecks.Layout),
             ("DPI workflow separates numeric edits from stage switching", DpiWindowChecks.Workflow),
             ("DPI busy readonly and disconnected states disable writes", DpiWindowChecks.ReadOnlyAndBusy),

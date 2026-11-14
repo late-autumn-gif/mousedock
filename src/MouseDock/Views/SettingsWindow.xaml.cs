@@ -47,6 +47,9 @@ namespace MouseDock.Views
         public SettingsWindow()
         {
             InitializeComponent();
+            Loaded += (_, _) => App.SettingsSaveCompleted += OnSettingsSaveCompleted;
+            Unloaded += (_, _) => App.SettingsSaveCompleted -= OnSettingsSaveCompleted;
+            PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { Hide(); e.Handled = true; } };
             _themeBackground = Root.Background;
             App.Battery.Refreshed += (_, __) =>
             {
@@ -58,6 +61,11 @@ namespace MouseDock.Views
             };
             Loaded += (_, __) =>
             {
+                Width = Math.Min(760, Math.Max(320, SystemParameters.WorkArea.Width - 32));
+                Height = Math.Min(620, Math.Max(360, SystemParameters.WorkArea.Height - 32));
+                MinWidth = Math.Min(680, Width);
+                MinHeight = Math.Min(500, Height);
+                SelectSection(_section);
                 Root.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
                 Reload();
             };
@@ -112,9 +120,16 @@ namespace MouseDock.Views
                 ScaleValue.Text = $"{s.Scale * 100:0}%";
                 RefreshSlider.Value = Math.Clamp(s.RefreshSeconds, 5, 120);
                 RefreshValue.Text = $"{s.RefreshSeconds}s";
-                AutoStartCheck.IsChecked = AutoStart.IsEnabled();
+                AutoStartCheck.IsChecked = !App.IsTestProfile && AutoStart.IsEnabled();
+                AutoStartCheck.IsEnabled = !App.IsTestProfile;
+                AutoStartCheck.ToolTip = App.IsTestProfile ? "隔离测试版不修改开机启动项" : null;
+                DockDensityChoice.SelectedIndex = s.DockStyle == "compact" ? 1 : s.DockStyle == "bare" ? 2 : 0;
+                SafeModeChoice.IsChecked = s.SafeMode;
                 ApplyWarnButtons(s.LowBatteryWarn);
-            AutoUpdateBox.IsChecked = s.AutoUpdate;
+                SelectSection(_section);
+            AutoUpdateBox.IsChecked = !App.IsTestProfile && s.AutoUpdate;
+                AutoUpdateBox.IsEnabled = !App.IsTestProfile;
+                AutoUpdateBox.ToolTip = App.IsTestProfile ? "隔离测试版不访问更新源" : null;
                 ApplySurfaceButtons(s.SurfaceMode);
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
@@ -147,6 +162,41 @@ namespace MouseDock.Views
             ApplyTheme(App.Theme, false);
         }
 
+
+        private string _section = "display";
+        public void SelectSection(string section)
+        {
+            var pages = new[] { ("display", PageDisplay), ("devices", PageDevices), ("appearance", PageAppearance), ("behavior", PageBehavior), ("battery", PageBattery), ("help", PageHelp) };
+            if (!pages.Any(p => p.Item1 == section)) section = "display";
+            _section = section;
+            foreach (var (key, panel) in pages) panel.Visibility = key == section ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var button in SectionNavigation.Children.OfType<Button>())
+            {
+                bool selected = (string)button.Tag == section;
+                button.Background = selected ? new SolidColorBrush(Palette.Mix(App.Theme.Surface, App.Theme.Accent, .18)) : Brushes.Transparent;
+                button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+            RootScroll.ScrollToTop();
+        }
+        private void OnSectionClick(object sender, RoutedEventArgs e) => SelectSection((string)((Button)sender).Tag);
+        private void OnCloseButtonClick(object sender, RoutedEventArgs e) => Hide();
+        private void OnSettingsSaveCompleted(bool success) => SaveStateText.Text = success ? $"已保存 · {DateTime.Now:HH:mm:ss}" : "保存失败，请检查数据目录是否可写";
+        private void OnDockDensityChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading || DockDensityChoice.SelectedItem is not ComboBoxItem { Tag: string style }) return;
+            App.Settings.DockStyle = style;
+            App.Dock?.ApplyDensity(style);
+            App.SaveSettings();
+        }
+        private void OnSafeModeChoice(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.SafeMode = SafeModeChoice.IsChecked == true;
+            App.Battery.Configure(App.Settings);
+            App.ScheduleDeviceRefresh();
+            App.SaveSettings();
+        }
+        private void OnCheckUpdateClick(object sender, RoutedEventArgs e) => App.CheckUpdatesFromSettings();
         private static ThemeRow MakeRow(string id, string name, Color accent, Color bgTop, Color bgBottom)
         {
             var swatch = new LinearGradientBrush(bgTop, bgBottom, new Point(0, 0), new Point(1, 1));
@@ -177,6 +227,7 @@ namespace MouseDock.Views
             // 资源画刷跟着主题走：浅色主题用深字、深卡片，免得白字糊在白底上
             bool isLight = theme.IsLight;
             Resources["TextBrush"] = new SolidColorBrush(theme.Text);
+            Resources["MenuSurfaceBrush"] = new SolidColorBrush(theme.Surface);
             Resources["CardBrush"] = new SolidColorBrush(isLight
                 ? Color.FromArgb(0x14, 0x00, 0x00, 0x00)
                 : Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF));
@@ -537,8 +588,9 @@ namespace MouseDock.Views
             {
                 if (btn == null) continue;
                 bool on = pct == selected;
-                btn.Background = new SolidColorBrush(Color.FromArgb(
-                    on ? (byte)0x46 : (byte)0x16, 0xFF, 0xFF, 0xFF));
+                btn.Background = new SolidColorBrush(on ? Palette.Mix(App.Theme.Surface, App.Theme.Accent, .20) : App.Theme.Surface);
+                btn.BorderBrush = on ? AccentBrush : Brushes.Transparent;
+                btn.BorderThickness = new Thickness(on ? 1 : 0);
                 btn.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
             }
         }

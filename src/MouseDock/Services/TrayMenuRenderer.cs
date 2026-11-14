@@ -33,9 +33,12 @@ internal sealed class TrayMenuRenderer : Forms.ToolStripProfessionalRenderer
         menu.BackColor = ThemeTable.C(theme.Surface);
         menu.ForeColor = ThemeTable.C(theme.Text);
         menu.ShowImageMargin = false;
+        menu.ShowCheckMargin = true;
+        menu.Padding = new Forms.Padding(6);
         foreach (Forms.ToolStripItem item in menu.Items)
         {
             item.ForeColor = ThemeTable.C(item.Enabled ? theme.Text : theme.TextDim);
+            if (item is Forms.ToolStripMenuItem) item.Padding = new Forms.Padding(7, 5, 7, 5);
             if (item is Forms.ToolStripMenuItem parent && parent.HasDropDownItems)
                 parent.DropDown.Renderer = new TrayMenuRenderer(theme);
         }

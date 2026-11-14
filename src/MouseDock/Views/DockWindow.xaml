@@ -11,12 +11,18 @@
         TextOptions.TextFormattingMode="Ideal">
 
     <Window.Resources>
+        <Style x:Key="DockAction" TargetType="Button">
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}"/>
+            <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="5"/><Setter Property="MinWidth" Value="27"/><Setter Property="MinHeight" Value="27"/>
+            <Setter Property="FontSize" Value="12"/><Setter Property="Cursor" Value="Hand"/>
+        </Style>
         <v:PercentageWarningConverter x:Key="PercentageWarning" />
     </Window.Resources>
 
-    <Border x:Name="Root" Width="268" CornerRadius="18" Padding="12,10,12,9"
+    <Border x:Name="Root" Width="316" CornerRadius="16" Padding="15,12,15,10"
             BorderThickness="1" BorderBrush="#12FFFFFF"
-            MouseLeftButtonDown="OnDragWindow" MouseRightButtonUp="OnContextMenu">
+            MouseRightButtonUp="OnContextMenu">
         <Border.Background>
             <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.9,1">
                 <GradientStop x:Name="BgTopStop" Color="#221B3B" Offset="0" />
@@ -35,10 +41,11 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- 标题行 -->
-            <Grid Grid.Row="0" Margin="2,0,2,8">
+            <Grid Grid.Row="0" Margin="2,0,2,10" MouseLeftButtonDown="OnDragWindow">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Width="14" Height="14" CornerRadius="5" Margin="0,0,6,0">
                         <Border.Background>
@@ -52,8 +59,11 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Ellipse x:Name="LiveDot" Width="5" Height="5" Margin="0,0,6,0" Opacity="0.8" />
-                    <TextBlock x:Name="ThemeNameText" Text="暮色蓝紫" FontSize="9.5" Opacity="0.6" />
+                    <Ellipse x:Name="LiveDot" Visibility="Collapsed" Width="5" Height="5"/>
+                    <TextBlock x:Name="ThemeNameText" Visibility="Collapsed"/>
+                    <Button x:Name="PinButton" Content="置顶" Style="{StaticResource DockAction}" Click="OnPinClick" AutomationProperties.Name="切换始终置顶" ToolTip="始终置顶"/>
+                    <Button Content="设置" Style="{StaticResource DockAction}" Click="OnSettingsClick" AutomationProperties.Name="打开设置"/>
+                    <Button Content="收起" Style="{StaticResource DockAction}" Click="OnHideClick" AutomationProperties.Name="收起电量窗" ToolTip="收起到托盘，继续监测"/>
                 </StackPanel>
             </Grid>
 
@@ -66,10 +76,11 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border x:Name="Row" CornerRadius="12" Padding="6,5,6,5" Margin="0,0,0,3"
+                        <Border x:Name="Row" CornerRadius="10" Padding="8,10,8,10" Margin="0,0,0,6" BorderThickness="1" BorderBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                 c:DeviceActions.Enabled="True"
                                 Background="Transparent" SnapsToDevicePixels="True"
-                                ToolTip="{Binding Note}" ToolTipService.ShowDuration="12000">
+                                ToolTip="{Binding Note}" ToolTipService.ShowDuration="12000" PreviewMouseLeftButtonDown="OnDeviceClick"
+                                Focusable="True" KeyDown="OnDeviceKeyDown" AutomationProperties.Name="{Binding Name}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -77,14 +88,15 @@
                                 </Grid.ColumnDefinitions>
 
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <c:DeviceGlyph x:Name="Glyph" Kind="{Binding Kind}" Width="14" Height="14"
-                                                   Margin="0,0,6,0" VerticalAlignment="Center" Opacity="0.75"
+                                    <c:DeviceGlyph x:Name="Glyph" Kind="{Binding Kind}" Width="20" Height="20"
+                                                   Margin="0,0,10,0" VerticalAlignment="Center" Opacity="0.75"
                                                    GlyphBrush="{Binding GlyphBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding MetaLabel}" FontSize="9" Opacity="0.5" Margin="0,0,0,1" />
-                                        <TextBlock Text="{Binding Name}" FontSize="11.5" FontWeight="Medium"
-                                                   TextTrimming="CharacterEllipsis" MaxWidth="112" />
-                                        <Grid>
+                                        <TextBlock Text="{Binding MetaLabel}" FontSize="11" Opacity="0.7" Margin="0,0,0,2" />
+                                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="150" />
+                                        <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.75" Margin="0,3,0,0"/>
+                                        <Grid Margin="0,4,0,0">
                                             <Grid.Style>
                                                 <Style TargetType="Grid">
                                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -125,9 +137,9 @@
                                     </StackPanel>
                                 </StackPanel>
 
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
                                     <c:ChargingGlyph Active="{Binding IsChargingActive}" Full="{Binding IsFullActive}" Width="18" Height="17" Margin="0,0,4,0" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="Pct" Text="{Binding LevelText}" FontSize="17" FontWeight="Bold" Opacity="{Binding ValueOpacity}"
+                                    <TextBlock x:Name="Pct" Text="{Binding LevelText}" FontSize="24" FontWeight="SemiBold" Opacity="{Binding ValueOpacity}"
                                                Margin="0,0,7,0" VerticalAlignment="Center">
                                         <TextBlock.Foreground>
                                             <MultiBinding Converter="{StaticResource PercentageWarning}">
@@ -137,7 +149,7 @@
                                             </MultiBinding>
                                         </TextBlock.Foreground>
                                     </TextBlock>
-                                    <c:MeterBar Width="40" Height="9" Value="{Binding LevelFraction}" Charging="{Binding IsChargingActive}" Opacity="{Binding ValueOpacity}"
+                                    <c:MeterBar Width="56" Height="4" Value="{Binding LevelFraction}" Charging="{Binding IsChargingActive}" Opacity="{Binding ValueOpacity}"
                                                 Accent="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 Accent2="{Binding Accent2Color, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 TrackBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -149,6 +161,9 @@
                             <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Row" Property="Background" Value="#12FFFFFF" />
                             </Trigger>
+                            <Trigger SourceName="Row" Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Row" Property="BorderBrush" Value="{Binding GlyphBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </Trigger>
                             <DataTrigger Binding="{Binding Connected}" Value="False">
                                 <Setter TargetName="Row" Property="Opacity" Value="0.42" />
                             </DataTrigger>
@@ -157,6 +172,15 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <Border x:Name="DetailPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,8,0,0" Padding="10" BorderThickness="1" BorderBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}" CornerRadius="10">
+                <StackPanel><TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding MetaLabel}" FontSize="11" Margin="0,5,0,0"/>
+                    <TextBlock Text="{Binding StatusText}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Note}" FontSize="11" TextWrapping="Wrap" MaxHeight="140" Margin="0,6,0,0"/>
+                    <Button Content="设备设置与更多操作…" Click="OnDeviceManagementClick" Padding="7" Margin="0,10,0,0"/>
+                    <Button Content="收起详情" Click="OnCloseDetailClick" Padding="7" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
             <TextBlock Grid.Row="1" Text="未选择显示设备，可在设置中勾选" FontSize="10.5" Opacity="0.55" Margin="6,12"
                        x:Name="EmptyDeviceHint" HorizontalAlignment="Center">
                 <TextBlock.Style>
@@ -172,15 +196,15 @@
             </TextBlock>
 
             <!-- 底栏 -->
-            <Grid Grid.Row="2" Margin="2,7,2,0">
-                <TextBlock x:Name="FooterText" Text="电量，一起看见" FontSize="9.5" Opacity="0.42"
+            <Grid Grid.Row="3" Margin="2,7,2,0">
+                <TextBlock x:Name="FooterText" Text="安静常驻，抬眼即见。" FontSize="11" Opacity="0.65"
                            VerticalAlignment="Center" />
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Border x:Name="SourceChip" CornerRadius="8" Padding="7,3" Background="#10FFFFFF" Margin="0,0,6,0">
+                    <Border x:Name="SourceChip" Visibility="Collapsed" CornerRadius="8" Padding="7,3" Background="#10FFFFFF" Margin="0,0,6,0">
                         <TextBlock x:Name="SourceText" Text="演示数据" FontSize="9.5" Opacity="0.6" />
                     </Border>
-                    <Border x:Name="GearButton" Width="22" Height="22" CornerRadius="8" Background="#14FFFFFF"
+                    <Border x:Name="GearButton" Visibility="Collapsed" Width="22" Height="22" CornerRadius="8" Background="#14FFFFFF"
                             Cursor="Hand" PreviewMouseLeftButtonDown="OnGearClick">
                         <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.75" />

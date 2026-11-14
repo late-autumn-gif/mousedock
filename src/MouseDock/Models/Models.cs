@@ -91,6 +91,7 @@ namespace MouseDock.Models
                 Raise(nameof(MiniText));
                 Raise(nameof(LevelFraction));
                 Raise(nameof(HasLevel));
+                Raise(nameof(StatusText));
             }
         }
 
@@ -177,7 +178,7 @@ namespace MouseDock.Models
         public bool IsChargingActive => _connected && _charging && !_stale && !_chargeFull;
         public bool HasChargeMark => IsFullActive;
         public string ChargeMark => IsFullActive ? "✓" : "";
-        public string StatusText => !_connected ? "待机" : _stale ? "已连接 · 状态待刷新" : _chargeFull ? "已连接 · 已充满" : _charging ? "已连接 · 充电中" : "已连接";
+        public string StatusText => !_connected ? "待机" : _stale ? "已过期 · 上次读数待刷新" : _chargeFull ? "已连接 · 已充满" : _charging ? "已连接 · 充电中" : _level < 0 ? "电量暂不可用" : "已连接";
 
         public string MetaLabel => KindLabel + (string.IsNullOrWhiteSpace(Transport) ? "" : " · " + Transport);
 
@@ -241,7 +242,8 @@ namespace MouseDock.Models
             Services.ReferenceThemes.Resolve("ocean", ""),
             Services.ReferenceThemes.Resolve("rose", ""),
             Services.ReferenceThemes.Resolve("plum", ""),
-            Services.ReferenceThemes.Resolve("amber", "")
+            Services.ReferenceThemes.Resolve("amber", ""),
+            Services.ReferenceThemes.Resolve("resident", "")
         };
 
         public static ThemePreset ById(string id)
@@ -255,4 +257,3 @@ namespace MouseDock.Models
         public ThemePreset Clone() => (ThemePreset)MemberwiseClone();
     }
 }
-

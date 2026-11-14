@@ -4,7 +4,7 @@
 
 > [耳机分类与音频控制](docs/HEADSET-AUDIO.md)支持所选耳机音量和对应麦克风静音／恢复，入口在设置及托盘右键。
 
-> 当前源码版本为 v1.2.0。设备识别范围见[识别规则说明](docs/RECOGNITION-1.1.1.md)，竹林鸟烛龙的接收器电量见 [ZG4 适配说明](docs/ZHUAUDIO-ZG4.md)。
+> 当前分支为 v1.2.1「轻驻」本地测试版，基于 GitHub v1.2.0 源码，尚未远程发布。[更改、验证及便携使用说明](docs/UI-1.2.1-TEST.md)。设备识别范围见[识别规则说明](docs/RECOGNITION-1.1.1.md)，竹林鸟烛龙的接收器电量见 [ZG4 适配说明](docs/ZHUAUDIO-ZG4.md)。
 
 # MouseDock
 

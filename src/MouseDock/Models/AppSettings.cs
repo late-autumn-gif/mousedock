@@ -7,7 +7,7 @@ namespace MouseDock.Models
     {
         public int Version { get; set; } = 6;
 
-        public string ThemeId { get; set; } = "dusk";
+        public string ThemeId { get; set; } = "resident";
         public string ThemeMode { get; set; } = "";
 
         // 自定义背景（取主色）与手动覆盖

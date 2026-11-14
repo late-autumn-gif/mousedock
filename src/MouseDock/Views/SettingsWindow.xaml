@@ -4,25 +4,46 @@
         xmlns:c="clr-namespace:MouseDock.Controls"
         Title="MouseDock 设置"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        ShowInTaskbar="True" Topmost="False" ResizeMode="NoResize"
-        Width="396" SizeToContent="Height" SnapsToDevicePixels="True" UseLayoutRounding="True"
+        ShowInTaskbar="True" Topmost="False" ResizeMode="CanResizeWithGrip"
+        Width="760" Height="620" MinWidth="680" MinHeight="500" WindowStartupLocation="CenterScreen" SnapsToDevicePixels="True" UseLayoutRounding="True"
         FontFamily="Segoe UI, Microsoft YaHei UI"
         TextOptions.TextFormattingMode="Ideal">
 
     <Window.Resources>
+        <Style TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBrush}"/>
+            <Setter Property="Padding" Value="9,6"/>
+            <Setter Property="Template">
+                <Setter.Value><ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{DynamicResource ButtonBrush}" CornerRadius="7" Padding="9,6"><Grid><ContentPresenter/><TextBlock Text="⌄" HorizontalAlignment="Right" Foreground="{DynamicResource TextBrush}"/></Grid></Border></ControlTemplate></ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" IsHitTestVisible="False" Margin="9,6,25,6" VerticalAlignment="Center"/>
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
+                            <Border Background="{DynamicResource MenuSurfaceBrush}" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource ButtonHoverBrush}" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Padding="5">
+                                <ScrollViewer MaxHeight="280"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate></Setter.Value>
+            </Setter>
+        </Style>
+        <SolidColorBrush x:Key="MenuSurfaceBrush" Color="#20262E"/>
         <!-- 这四个跟着主题换，浅色主题下用深字、深卡片，不会糊成一片 -->
         <SolidColorBrush x:Key="TextBrush" Color="#ECE7FA" />
         <SolidColorBrush x:Key="CardBrush" Color="#0DFFFFFF" />
         <SolidColorBrush x:Key="ButtonBrush" Color="#16FFFFFF" />
         <SolidColorBrush x:Key="ButtonHoverBrush" Color="#28FFFFFF" />
         <Style x:Key="Section" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="Opacity" Value="0.55" />
-            <Setter Property="Margin" Value="3,14,0,7" />
+            <Setter Property="Margin" Value="3,18,0,10" />
         </Style>
         <Style x:Key="Card" TargetType="Border">
             <Setter Property="CornerRadius" Value="12" />
-            <Setter Property="Padding" Value="11,9" />
+            <Setter Property="Padding" Value="15,13" />
             <Setter Property="Background" Value="{DynamicResource CardBrush}" />
             <Setter Property="Margin" Value="0,0,0,6" />
         </Style>
@@ -161,7 +182,7 @@
         </Style>
     </Window.Resources>
 
-    <Border x:Name="Root" CornerRadius="20" Padding="18,16,18,14" MouseLeftButtonDown="OnDragWindow">
+    <Border x:Name="Root" CornerRadius="20" Padding="18,16,18,14">
         <Border.Background>
             <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.9,1">
                 <GradientStop x:Name="BgTopStop" Color="#221B3B" Offset="0" />
@@ -175,115 +196,211 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0" MouseLeftButtonDown="OnDragWindow" Margin="0,0,0,4">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="设置" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock Text="MouseDock / 设置" FontSize="15" FontWeight="SemiBold" />
                     <TextBlock x:Name="VersionText" FontSize="10.5" Opacity="0.45" VerticalAlignment="Bottom" Margin="0,0,0,2" />
                 </StackPanel>
-                <Border x:Name="CloseButton" HorizontalAlignment="Right" Width="24" Height="24" CornerRadius="8" Background="#12FFFFFF" Cursor="Hand" PreviewMouseLeftButtonDown="OnCloseClick">
+                <Button x:Name="CloseButton" HorizontalAlignment="Right" Width="30" Height="28" Style="{StaticResource GhostButton}" Padding="0" Click="OnCloseButtonClick" AutomationProperties.Name="关闭设置">
                     <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.8" />
-                </Border>
+                </Button>
             </Grid>
 
-            <ScrollViewer x:Name="RootScroll" Grid.Row="1" MaxHeight="620" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel Margin="0,4,0,0">
-
-                    <TextBlock Text="主题" Style="{StaticResource Section}" />
-                    <UniformGrid Columns="3" Margin="2,0,2,10">
-                        <RadioButton x:Name="ThemeDefault" Content="预设" Tag="" GroupName="ThemeMode"
-                                     Checked="OnThemeModeChanged" />
-                        <RadioButton x:Name="ThemeDark" Content="深色" Tag="dark" GroupName="ThemeMode"
-                                     Checked="OnThemeModeChanged" />
-                        <RadioButton x:Name="ThemeLight" Content="浅色" Tag="light" GroupName="ThemeMode"
-                                     Checked="OnThemeModeChanged" />
-                    </UniformGrid>
-                    <WrapPanel Margin="0,8,0,6">
-                        <Button Content="主题配色" Tag="theme" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0" />
-                        <Button Content="悬浮配色" Tag="icon" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0" />
-                        <Button Content="托盘配色" Tag="tray" Style="{StaticResource GhostButton}" Click="OnEditColors" />
-                    </WrapPanel>
-                    <ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0"
-                             Foreground="{DynamicResource TextBrush}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             SelectionChanged="OnThemeSelected">
-                        <ListBox.Template>
-                            <ControlTemplate TargetType="ListBox">
-                                <ItemsPresenter />
-                            </ControlTemplate>
-                        </ListBox.Template>
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-                                <Setter Property="Padding" Value="0" />
-                                <Setter Property="Margin" Value="0" />
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ListBoxItem">
-                                            <ContentPresenter />
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Border x:Name="Box" CornerRadius="12" Padding="11,8" Margin="0,0,0,6"
-                                        Background="#09FFFFFF" BorderThickness="1.4" BorderBrush="Transparent">
-                                    <Grid>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border Width="18" Height="18" CornerRadius="6" Background="{Binding Swatch}" Margin="0,0,10,0" />
-                                            <TextBlock Text="{Binding Name}" FontSize="12.5" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                        <TextBlock x:Name="Tick" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                                                   HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0"
-                                                   Foreground="{Binding AccentBrush}" />
-                                    </Grid>
-                                </Border>
-                                <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                        <Setter TargetName="Box" Property="BorderBrush" Value="{Binding AccentBrush}" />
-                                        <Setter TargetName="Box" Property="Background" Value="#14FFFFFF" />
-                                        <Setter TargetName="Tick" Property="Opacity" Value="1" />
-                                    </DataTrigger>
-                                </DataTemplate.Triggers>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    <Grid Margin="0,3,0,8">
-                        <TextBlock Text="图片背景" Style="{StaticResource RowText}" />
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="EditBackgroundButton" Style="{StaticResource GhostButton}" Click="OnPickBackground"
-                                    ToolTip="编辑图片背景" Padding="9,6">
-                                <TextBlock Text="&#xE790;" FontFamily="Segoe MDL2 Assets" />
-                            </Button>
-                            <Button Style="{StaticResource GhostButton}" Click="OnClearBackground"
-                                    ToolTip="清除图片背景" Padding="9,6" Margin="7,0,0,0">
-                                <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" />
-                            </Button>
+<Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><DockPanel Margin="0,18,16,0"><TextBlock DockPanel.Dock="Bottom" Text="安静常驻，抬眼即见。" FontSize="11" Opacity="0.65" TextWrapping="Wrap" Margin="8,18,0,12"/><StackPanel x:Name="SectionNavigation"><Button Content="显示与样式" Tag="display" Click="OnSectionClick" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" Margin="0,0,0,7" Padding="12,11"/><Button Content="我的设备" Tag="devices" Click="OnSectionClick" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" Margin="0,0,0,7" Padding="12,11"/><Button Content="外观" Tag="appearance" Click="OnSectionClick" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" Margin="0,0,0,7" Padding="12,11"/><Button Content="常驻与交互" Tag="behavior" Click="OnSectionClick" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" Margin="0,0,0,7" Padding="12,11"/><Button Content="电量与提醒" Tag="battery" Click="OnSectionClick" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" Margin="0,0,0,7" Padding="12,11"/><Button Content="帮助与高级" Tag="help" Click="OnSectionClick" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" Margin="0,0,0,7" Padding="12,11"/></StackPanel></DockPanel><ScrollViewer x:Name="RootScroll" Grid.Column="1" Margin="12,16,0,12" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="0,0,12,8"><StackPanel x:Name="PageDisplay" Visibility="Visible"><TextBlock Text="显示与样式" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="选择电量陪伴你的方式。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><Border Style="{StaticResource Card}"><Grid><TextBlock Text="卡片密度" Style="{StaticResource RowText}"/><ComboBox x:Name="DockDensityChoice" Width="150" HorizontalAlignment="Right" SelectionChanged="OnDockDensityChanged"><ComboBoxItem Content="标准" Tag="standard"/><ComboBoxItem Content="紧凑" Tag="compact"/><ComboBoxItem Content="极简" Tag="bare"/></ComboBox></Grid></Border><TextBlock Text="显示方式" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <UniformGrid Columns="3" Margin="-4,0">
+                                <UniformGrid.Resources>
+                                    <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                                        <Setter Property="MinHeight" Value="56"/>
+                                        <Setter Property="Margin" Value="4"/>
+                                        <Setter Property="Padding" Value="6,7"/>
+                                        <EventSetter Event="Click" Handler="OnSurfaceClick"/>
+                                    </Style>
+                                </UniformGrid.Resources>
+                                <Button x:Name="SurfaceDock" Content="卡片窗" Tag="dock"/>
+                                <Button x:Name="SurfaceMini" Content="迷你" Tag="mini"/>
+                                <Button x:Name="SurfaceIcon" Content="悬浮图标" Tag="icon"/>
+                                <Button x:Name="SurfaceTaskbar" Content="任务栏" Tag="taskbar"/>
+                                <Button x:Name="SurfaceEdge" Content="屏幕右侧" Tag="edge"/>
+                                <Button x:Name="SurfacePet" Content="桌宠" Tag="pet"/>
+                            </UniformGrid>
+                            <StackPanel x:Name="IconOptionsPanel">
+                            <TextBlock Text="悬浮图标样式" FontWeight="SemiBold" Margin="0,14,0,5"/>
+                            <UniformGrid x:Name="IconStyleChoices" Columns="3" Margin="-3,5,-3,0"/>
+                            <TextBlock Text="悬浮图标大小（滚轮也可调节）" Margin="0,12,0,5"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/><ColumnDefinition Width="54"/></Grid.ColumnDefinitions>
+                                <Slider x:Name="IconScaleSlider" Minimum="0.5" Maximum="3" ValueChanged="OnIconScaleChanged"/>
+                                <TextBlock x:Name="IconScaleValue" Grid.Column="1" TextAlignment="Right" VerticalAlignment="Center"/>
+                                <Button Content="重置" Grid.Column="2" Margin="6,0,0,0" Style="{StaticResource GhostButton}" Padding="4,3" Click="OnResetIconScale"/>
+                            </Grid>
+                            <TextBlock Text="50%–300%，仅影响悬浮图标。照片内部缩放使用 Ctrl+滚轮。" FontSize="10" TextWrapping="Wrap" Opacity="0.65" Margin="0,5,0,0"/>
+                            </StackPanel>
+                            <StackPanel x:Name="ReferenceAppearanceOptions" Margin="0,10,0,0">
+                                <CheckBox x:Name="IconFollowThemeBox" Content="跟随界面主题色" Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged"/>
+                                <CheckBox x:Name="IconHideBackgroundBox" Content="隐藏图标底色" Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged"/>
+                                <Button Content="角色与照片…" Style="{StaticResource GhostButton}" Click="OnEditCharacter" HorizontalAlignment="Right" Margin="0,8,0,0"/>
+                                <Grid Margin="0,8,0,0">
+                                    <TextBlock Text="默认角色" Style="{StaticResource RowText}"/>
+                                    <ComboBox x:Name="ReferenceCharacterChoices" Width="160" HorizontalAlignment="Right" SelectionChanged="OnReferenceCharacterChanged">
+                                        <ComboBoxItem Content="绫波丽" Tag="rei"/>
+                                        <ComboBoxItem Content="明日香" Tag="asuka"/>
+                                        <ComboBoxItem Content="趴趴款" Tag="peek"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <TextBlock Text="照片" Style="{StaticResource RowText}"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Style="{StaticResource GhostButton}" ToolTip="编辑照片" Click="OnPickReferencePhoto" Padding="9,6">
+                                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets"/>
+                                        </Button>
+                                        <Button Style="{StaticResource GhostButton}" ToolTip="清除照片" Click="OnClearReferencePhoto" Padding="9,6" Margin="7,0,0,0">
+                                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                            <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0" Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="充电动效" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ComboBox x:Name="ChargeEffectChoice" Width="110" SelectionChanged="OnChargeEffectChanged">
+                                    <ComboBoxItem Content="扫光"/>
+                                    <ComboBoxItem Content="流光／波浪"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0" Checked="OnTaskbarFollowIconsChanged" Unchecked="OnTaskbarFollowIconsChanged"/>
+                            <Grid x:Name="TaskbarIconOffsetRow" Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="图标偏移" Style="{StaticResource RowText}"/>
+                                <Grid Grid.Column="1" Margin="14,0,8,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Slider x:Name="TaskbarIconOffsetSlider" Width="Auto" Minimum="-300" Maximum="300" SmallChange="1" LargeChange="10" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="OnTaskbarIconOffsetChanged" AutomationProperties.Name="图标偏移"/>
+                                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" IsHitTestVisible="False">
+                                        <Border Width="1" Height="4" Background="{DynamicResource TextBrush}" Opacity="0.5"/>
+                                        <TextBlock Text="0" FontSize="10" HorizontalAlignment="Center" Opacity="0.65"/>
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="TaskbarIconOffsetInput" Width="52" Padding="3,2" FontSize="12.5" TextAlignment="Center" VerticalContentAlignment="Center" Foreground="{DynamicResource TextBrush}" Background="Transparent" BorderBrush="{DynamicResource ButtonBrush}" BorderThickness="1" LostFocus="OnTaskbarIconOffsetInputLostFocus" KeyDown="OnTaskbarIconOffsetInputKeyDown" AutomationProperties.Name="图标偏移数值"/>
+                                    <TextBlock Text="px" FontSize="10" Margin="4,0,0,0" VerticalAlignment="Center" Opacity="0.65"/>
+                                </StackPanel>
+                            </Grid>
+                            <Grid x:Name="TaskbarPositionRow" Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="48"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="任务栏位置（%）" Style="{StaticResource RowText}"/>
+                                <Slider x:Name="TaskbarOffsetSlider" Grid.Column="1" Minimum="0" Maximum="100" Width="Auto" Margin="14,0,8,0" SmallChange="1" LargeChange="10" ToolTip="相对任务栏可用长度的百分比；2K/4K 和高 DPI 自动等比缩放" ValueChanged="OnTaskbarOffsetChanged"/>
+                                <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right" Style="{StaticResource RowText}" Opacity="0.65"/>
+                            </Grid>
+                            <StackPanel x:Name="TaskbarStylePanel" Margin="0,14,0,0">
+                                <TextBlock Text="任务栏样式" Style="{StaticResource RowText}"/>
+                                <UniformGrid x:Name="TaskbarStyleChoices" Columns="3" Margin="0,6,0,0"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="48"/><ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="整体大小" Style="{StaticResource RowText}"/>
+                                    <Slider x:Name="TaskbarSizeSlider" Grid.Column="1" Minimum="50" Maximum="150" TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0" ToolTip="也可在任务栏电量图标上滚动调节；实际大小受任务栏高度限制" ValueChanged="OnTaskbarSizeChanged"/>
+                                    <TextBlock x:Name="TaskbarSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right"/>
+                                    <Button x:Name="TaskbarSizeReset" Grid.Column="3" Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5" ToolTip="恢复大小为 100%" Click="OnResetTaskbarSize">
+                                        <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="12"/>
+                                    </Button>
+                                </Grid>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="文字颜色" Style="{StaticResource RowText}"/>
+                                    <Button x:Name="TaskbarTextColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0" Tag="text" Click="OnPickTaskbarColor" BorderThickness="1"/>
+                                    <TextBlock x:Name="TaskbarTextColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65"/>
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="电量颜色" Style="{StaticResource RowText}"/>
+                                    <Button x:Name="TaskbarBatteryColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0" Tag="battery" Click="OnPickTaskbarColor" BorderThickness="1"/>
+                                    <TextBlock x:Name="TaskbarBatteryColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65"/>
+                                </Grid>
+                            </StackPanel>
+                            <StackPanel x:Name="EdgeOptionsPanel" Margin="0,12,0,0">
+                                <TextBlock Text="屏幕右侧样式" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <UniformGrid x:Name="EdgeStyleChoices" Columns="3" Margin="0,0,0,12"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="整体大小" Style="{StaticResource RowText}"/>
+                                    <Slider x:Name="EdgeSizeSlider" Grid.Column="1" Minimum="50" Maximum="150" TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0" ToolTip="也可将鼠标移到屏幕右侧电量面板上滚动调节" ValueChanged="OnEdgeSizeChanged"/>
+                                    <TextBlock x:Name="EdgeSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right"/>
+                                    <Button x:Name="EdgeSizeReset" Grid.Column="3" Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5" ToolTip="恢复大小为 100%" Click="OnResetEdgeSize">
+                                        <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="12"/>
+                                    </Button>
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <TextBlock Text="图标颜色" Style="{StaticResource RowText}"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button x:Name="EdgeColorButton" Style="{StaticResource GhostButton}" Padding="7,5" ToolTip="选择图标颜色" Click="OnPickEdgeColor">
+                                            <Border x:Name="EdgeColorSwatch" Width="28" Height="16" CornerRadius="3" Background="WhiteSmoke" BorderBrush="#808080" BorderThickness="1"/>
+                                        </Button>
+                                        <Button Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5" ToolTip="恢复默认颜色" Click="OnResetEdgeColor">
+                                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="12"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="上下位置" Style="{StaticResource RowText}"/>
+                                    <Slider x:Name="EdgePositionSlider" Grid.Column="1" Minimum="0" Maximum="100" Width="Auto" Margin="14,0,8,0" ValueChanged="OnEdgePositionChanged"/>
+                                    <TextBlock x:Name="EdgePositionValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" Opacity="0.65"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="右侧边距" Style="{StaticResource RowText}"/>
+                                    <Slider x:Name="EdgeInsetSlider" Grid.Column="1" Minimum="0" Maximum="160" Width="Auto" Margin="14,0,8,0" ValueChanged="OnEdgeInsetChanged"/>
+                                    <TextBlock x:Name="EdgeInsetValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" Opacity="0.65"/>
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
-                    </Grid>
-
-                    <TextBlock Text="显示设备 · 全部视图同步（最多 6 台）" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+                    </Border></StackPanel><StackPanel x:Name="PageDevices" Visibility="Collapsed"><TextBlock Text="我的设备" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="勾选要常驻显示的设备。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="显示设备 · 全部视图同步（最多 6 台）" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
                             <Grid Margin="0,0,0,6">
-                                <TextBlock Text="当前连接" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
-                                <Button x:Name="RefreshDevicesButton" Content="立即刷新" HorizontalAlignment="Right"
-                                        Style="{StaticResource GhostButton}" Padding="9,3" FontSize="10.5"
-                                        Click="OnRefreshDevicesClick" />
+                                <TextBlock Text="当前连接" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+                                <Button x:Name="RefreshDevicesButton" Content="立即刷新" HorizontalAlignment="Right" Style="{StaticResource GhostButton}" Padding="9,3" FontSize="10.5" Click="OnRefreshDevicesClick"/>
                             </Grid>
                             <ItemsControl x:Name="DeviceChecks" Foreground="{DynamicResource TextBrush}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border c:DeviceActions.Enabled="True" Background="Transparent" Padding="0,3">
                                             <StackPanel>
-                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                          Checked="OnDeviceChecked" Unchecked="OnDeviceChecked" Foreground="{DynamicResource TextBrush}" />
-                                                <TextBlock Text="{Binding ManagementStatus}" FontSize="9.5" Opacity="0.5" Margin="23,2,0,0" />
+                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Checked="OnDeviceChecked" Unchecked="OnDeviceChecked" Foreground="{DynamicResource TextBrush}"/>
+                                                <TextBlock Text="{Binding ManagementStatus}" FontSize="9.5" Opacity="0.5" Margin="23,2,0,0"/>
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -291,366 +408,174 @@
                             </ItemsControl>
                         </StackPanel>
                     </Border>
-                    <TextBlock x:Name="DeviceHint" Text="勾选同步到所有视图；右键可隐藏或重新识别" FontSize="10" Opacity="0.42" Margin="3,0,0,2" TextWrapping="Wrap" />
-
-                    <TextBlock Text="系统托盘" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+<TextBlock x:Name="DeviceHint" Text="勾选同步到所有视图；右键可隐藏或重新识别" FontSize="10" Opacity="0.42" Margin="3,0,0,2" TextWrapping="Wrap"/><TextBlock Text="系统托盘" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <CheckBox x:Name="MultiTrayCheck" Content="每台设备显示独立托盘图标"
-                                      Checked="OnMultiTrayChanged" Unchecked="OnMultiTrayChanged" />
-                            <CheckBox x:Name="TrayFollowMainCheck" Content="跟随主面板设备选择"
-                                      Checked="OnTrayFollowMainChanged" Unchecked="OnTrayFollowMainChanged" />
-                            <StackPanel x:Name="TrayDeviceRows" Margin="24,3,0,0" />
-                            <CheckBox x:Name="TrayHoverCheck" Content="托盘悬停预览"
-                                      Checked="OnTrayHoverChanged" Unchecked="OnTrayHoverChanged" />
+                            <CheckBox x:Name="MultiTrayCheck" Content="每台设备显示独立托盘图标" Checked="OnMultiTrayChanged" Unchecked="OnMultiTrayChanged"/>
+                            <CheckBox x:Name="TrayFollowMainCheck" Content="跟随主面板设备选择" Checked="OnTrayFollowMainChanged" Unchecked="OnTrayFollowMainChanged"/>
+                            <StackPanel x:Name="TrayDeviceRows" Margin="24,3,0,0"/>
+                            <CheckBox x:Name="TrayHoverCheck" Content="托盘悬停预览" Checked="OnTrayHoverChanged" Unchecked="OnTrayHoverChanged"/>
                         </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="耳机" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+                    </Border><TextBlock Text="耳机" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Text="设备名称 · 音量 · 麦克风静音" Foreground="{DynamicResource TextBrush}" FontSize="12" Margin="0,0,0,8" />
-                            <Button Content="打开耳机控制" Style="{StaticResource GhostButton}" Click="OnHeadsetAudioClick" />
+                            <TextBlock Text="设备名称 · 音量 · 麦克风静音" Foreground="{DynamicResource TextBrush}" FontSize="12" Margin="0,0,0,8"/>
+                            <Button Content="打开耳机控制" Style="{StaticResource GhostButton}" Click="OnHeadsetAudioClick"/>
                         </StackPanel>
-                    </Border>
-                    <TextBlock Text="显示方式" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
-                        <StackPanel>
-                            <UniformGrid Columns="3" Margin="-4,0">
-                                <UniformGrid.Resources>
-                                    <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
-                                        <Setter Property="MinHeight" Value="36" />
-                                        <Setter Property="Margin" Value="4" />
-                                        <Setter Property="Padding" Value="6,7" />
-                                        <EventSetter Event="Click" Handler="OnSurfaceClick" />
-                                    </Style>
-                                </UniformGrid.Resources>
-                                <Button x:Name="SurfaceDock" Content="主面板" Tag="dock" />
-                                <Button x:Name="SurfaceMini" Content="迷你" Tag="mini" />
-                                <Button x:Name="SurfaceIcon" Content="悬浮图标" Tag="icon" />
-                                <Button x:Name="SurfaceTaskbar" Content="任务栏" Tag="taskbar" />
-                                <Button x:Name="SurfaceEdge" Content="屏幕右侧" Tag="edge" />
-                                <Button x:Name="SurfacePet" Content="桌宠" Tag="pet" />
-                            </UniformGrid>
-                            <StackPanel x:Name="IconOptionsPanel">
-                            <TextBlock Text="悬浮图标样式" FontWeight="SemiBold" Margin="0,14,0,5" />
-                            <UniformGrid x:Name="IconStyleChoices" Columns="3" Margin="-3,5,-3,0" />
-                            <TextBlock Text="悬浮图标大小（滚轮也可调节）" Margin="0,12,0,5" />
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/><ColumnDefinition Width="54"/></Grid.ColumnDefinitions>
-                                <Slider x:Name="IconScaleSlider" Minimum="0.5" Maximum="3" ValueChanged="OnIconScaleChanged" />
-                                <TextBlock x:Name="IconScaleValue" Grid.Column="1" TextAlignment="Right" VerticalAlignment="Center"/>
-                                <Button Content="重置" Grid.Column="2" Margin="6,0,0,0" Style="{StaticResource GhostButton}" Padding="4,3" Click="OnResetIconScale"/>
-                            </Grid>
-                            <TextBlock Text="50%–300%，仅影响悬浮图标。照片内部缩放使用 Ctrl+滚轮。" FontSize="10" TextWrapping="Wrap" Opacity="0.65" Margin="0,5,0,0"/>
-                            </StackPanel>
-                            <StackPanel x:Name="ReferenceAppearanceOptions" Margin="0,10,0,0">
-                                <CheckBox x:Name="IconFollowThemeBox" Content="跟随界面主题色"
-                                          Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged" />
-                                <CheckBox x:Name="IconHideBackgroundBox" Content="隐藏图标底色"
-                                          Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged" />
-                                <Button Content="角色与照片…" Style="{StaticResource GhostButton}" Click="OnEditCharacter"
-                                        HorizontalAlignment="Right" Margin="0,8,0,0" />
-                                <Grid Margin="0,8,0,0">
-                                    <TextBlock Text="默认角色" Style="{StaticResource RowText}" />
-                                    <ComboBox x:Name="ReferenceCharacterChoices" Width="160" HorizontalAlignment="Right"
-                                              SelectionChanged="OnReferenceCharacterChanged">
-                                        <ComboBoxItem Content="绫波丽" Tag="rei" />
-                                        <ComboBoxItem Content="明日香" Tag="asuka" />
-                                        <ComboBoxItem Content="趴趴款" Tag="peek" />
-                                    </ComboBox>
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <TextBlock Text="照片" Style="{StaticResource RowText}" />
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                        <Button Style="{StaticResource GhostButton}" ToolTip="编辑照片" Click="OnPickReferencePhoto" Padding="9,6">
-                                            <TextBlock Text="&#xE91B;" FontFamily="Segoe MDL2 Assets" />
-                                        </Button>
-                                        <Button Style="{StaticResource GhostButton}" ToolTip="清除照片" Click="OnClearReferencePhoto" Padding="9,6" Margin="7,0,0,0">
-                                            <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" />
-                                        </Button>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                            <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0"
-                                      Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged" />
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <TextBlock Text="充电动效" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                <ComboBox x:Name="ChargeEffectChoice" Width="110" SelectionChanged="OnChargeEffectChanged">
-                                    <ComboBoxItem Content="扫光" />
-                                    <ComboBoxItem Content="流光／波浪" />
-                                </ComboBox>
-                            </StackPanel>
-                            <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0"
-                                      Checked="OnTaskbarFollowIconsChanged" Unchecked="OnTaskbarFollowIconsChanged" />
-                            <Grid x:Name="TaskbarIconOffsetRow" Margin="0,10,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="图标偏移" Style="{StaticResource RowText}" />
-                                <Grid Grid.Column="1" Margin="14,0,8,0">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Slider x:Name="TaskbarIconOffsetSlider" Width="Auto" Minimum="-300" Maximum="300"
-                                            SmallChange="1" LargeChange="10" IsSnapToTickEnabled="True" TickFrequency="1"
-                                            ValueChanged="OnTaskbarIconOffsetChanged"
-                                            AutomationProperties.Name="图标偏移" />
-                                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" IsHitTestVisible="False">
-                                        <Border Width="1" Height="4" Background="{DynamicResource TextBrush}" Opacity="0.5" />
-                                        <TextBlock Text="0" FontSize="10" HorizontalAlignment="Center" Opacity="0.65" />
-                                    </StackPanel>
-                                </Grid>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBox x:Name="TaskbarIconOffsetInput" Width="52" Padding="3,2"
-                                             FontSize="12.5" TextAlignment="Center" VerticalContentAlignment="Center"
-                                             Foreground="{DynamicResource TextBrush}" Background="Transparent"
-                                             BorderBrush="{DynamicResource ButtonBrush}" BorderThickness="1"
-                                             LostFocus="OnTaskbarIconOffsetInputLostFocus" KeyDown="OnTaskbarIconOffsetInputKeyDown"
-                                             AutomationProperties.Name="图标偏移数值" />
-                                    <TextBlock Text="px" FontSize="10" Margin="4,0,0,0" VerticalAlignment="Center" Opacity="0.65" />
-                                </StackPanel>
-                            </Grid>
-                            <Grid x:Name="TaskbarPositionRow" Margin="0,10,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="48" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="任务栏位置（%）" Style="{StaticResource RowText}" />
-                                <Slider x:Name="TaskbarOffsetSlider" Grid.Column="1" Minimum="0" Maximum="100"
-                                        Width="Auto" Margin="14,0,8,0" SmallChange="1" LargeChange="10"
-                                        ToolTip="相对任务栏可用长度的百分比；2K/4K 和高 DPI 自动等比缩放"
-                                        ValueChanged="OnTaskbarOffsetChanged" />
-                                <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right"
-                                           Style="{StaticResource RowText}" Opacity="0.65" />
-                            </Grid>
-                            <StackPanel x:Name="TaskbarStylePanel" Margin="0,14,0,0">
-                                <TextBlock Text="任务栏样式" Style="{StaticResource RowText}" />
-                                <UniformGrid x:Name="TaskbarStyleChoices" Columns="3" Margin="0,6,0,0" />
-                                <Grid Margin="0,10,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="48" /><ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="整体大小" Style="{StaticResource RowText}" />
-                                    <Slider x:Name="TaskbarSizeSlider" Grid.Column="1" Minimum="50" Maximum="150"
-                                            TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0"
-                                            ToolTip="也可在任务栏电量图标上滚动调节；实际大小受任务栏高度限制"
-                                            ValueChanged="OnTaskbarSizeChanged" />
-                                    <TextBlock x:Name="TaskbarSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" />
-                                    <Button x:Name="TaskbarSizeReset" Grid.Column="3" Style="{StaticResource GhostButton}"
-                                            Margin="6,0,0,0" Padding="7,5" ToolTip="恢复大小为 100%" Click="OnResetTaskbarSize">
-                                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
-                                    </Button>
-                                </Grid>
-                                <Grid Margin="0,10,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="文字颜色" Style="{StaticResource RowText}" />
-                                    <Button x:Name="TaskbarTextColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0"
-                                            Tag="text" Click="OnPickTaskbarColor" BorderThickness="1" />
-                                    <TextBlock x:Name="TaskbarTextColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65" />
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="电量颜色" Style="{StaticResource RowText}" />
-                                    <Button x:Name="TaskbarBatteryColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0"
-                                            Tag="battery" Click="OnPickTaskbarColor" BorderThickness="1" />
-                                    <TextBlock x:Name="TaskbarBatteryColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65" />
-                                </Grid>
-                            </StackPanel>
-                            <StackPanel x:Name="EdgeOptionsPanel" Margin="0,12,0,0">
-                                <TextBlock Text="屏幕右侧样式" FontWeight="SemiBold" Margin="0,0,0,6" />
-                                <UniformGrid x:Name="EdgeStyleChoices" Columns="3" Margin="0,0,0,12" />
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="整体大小" Style="{StaticResource RowText}" />
-                                    <Slider x:Name="EdgeSizeSlider" Grid.Column="1" Minimum="50" Maximum="150"
-                                            TickFrequency="1" IsSnapToTickEnabled="True" Margin="14,0,8,0"
-                                            ToolTip="也可将鼠标移到屏幕右侧电量面板上滚动调节" ValueChanged="OnEdgeSizeChanged" />
-                                    <TextBlock x:Name="EdgeSizeValue" Grid.Column="2" Style="{StaticResource RowText}" TextAlignment="Right" />
-                                    <Button x:Name="EdgeSizeReset" Grid.Column="3" Style="{StaticResource GhostButton}"
-                                            Margin="6,0,0,0" Padding="7,5" ToolTip="恢复大小为 100%" Click="OnResetEdgeSize">
-                                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
-                                    </Button>
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <TextBlock Text="图标颜色" Style="{StaticResource RowText}" />
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                        <Button x:Name="EdgeColorButton" Style="{StaticResource GhostButton}"
-                                                Padding="7,5" ToolTip="选择图标颜色" Click="OnPickEdgeColor">
-                                            <Border x:Name="EdgeColorSwatch" Width="28" Height="16" CornerRadius="3"
-                                                    Background="WhiteSmoke" BorderBrush="#808080" BorderThickness="1" />
-                                        </Button>
-                                        <Button Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5"
-                                                ToolTip="恢复默认颜色" Click="OnResetEdgeColor">
-                                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
-                                        </Button>
-                                    </StackPanel>
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="上下位置" Style="{StaticResource RowText}" />
-                                    <Slider x:Name="EdgePositionSlider" Grid.Column="1" Minimum="0" Maximum="100"
-                                            Width="Auto" Margin="14,0,8,0" ValueChanged="OnEdgePositionChanged" />
-                                    <TextBlock x:Name="EdgePositionValue" Grid.Column="2" Style="{StaticResource RowText}"
-                                               TextAlignment="Right" Opacity="0.65" />
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="48" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="右侧边距" Style="{StaticResource RowText}" />
-                                    <Slider x:Name="EdgeInsetSlider" Grid.Column="1" Minimum="0" Maximum="160"
-                                            Width="Auto" Margin="14,0,8,0" ValueChanged="OnEdgeInsetChanged" />
-                                    <TextBlock x:Name="EdgeInsetValue" Grid.Column="2" Style="{StaticResource RowText}"
-                                               TextAlignment="Right" Opacity="0.65" />
-                                </Grid>
-                            </StackPanel>
+                    </Border></StackPanel><StackPanel x:Name="PageAppearance" Visibility="Collapsed"><TextBlock Text="外观" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="保留你的配色与背景，让读数更清楚。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="主题" Style="{StaticResource Section}"/>
+<UniformGrid Columns="3" Margin="2,0,2,10">
+                        <RadioButton x:Name="ThemeDefault" Content="预设" Tag="" GroupName="ThemeMode" Checked="OnThemeModeChanged"/>
+                        <RadioButton x:Name="ThemeDark" Content="深色" Tag="dark" GroupName="ThemeMode" Checked="OnThemeModeChanged"/>
+                        <RadioButton x:Name="ThemeLight" Content="浅色" Tag="light" GroupName="ThemeMode" Checked="OnThemeModeChanged"/>
+                    </UniformGrid>
+<WrapPanel Margin="0,8,0,6">
+                        <Button Content="主题配色" Tag="theme" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0"/>
+                        <Button Content="悬浮配色" Tag="icon" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0"/>
+                        <Button Content="托盘配色" Tag="tray" Style="{StaticResource GhostButton}" Click="OnEditColors"/>
+                    </WrapPanel>
+<ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnThemeSelected">
+                        <ListBox.Template>
+                            <ControlTemplate TargetType="ListBox">
+                                <ItemsPresenter/>
+                            </ControlTemplate>
+                        </ListBox.Template>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border x:Name="Box" CornerRadius="12" Padding="11,8" Margin="0,0,0,6" Background="#09FFFFFF" BorderThickness="1.4" BorderBrush="Transparent">
+                                    <Grid>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="18" Height="18" CornerRadius="6" Background="{Binding Swatch}" Margin="0,0,10,0"/>
+                                            <TextBlock Text="{Binding Name}" FontSize="12.5" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="Tick" Text="" FontFamily="Segoe MDL2 Assets" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0" Foreground="{Binding AccentBrush}"/>
+                                    </Grid>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                        <Setter TargetName="Box" Property="BorderBrush" Value="{Binding AccentBrush}"/>
+                                        <Setter TargetName="Box" Property="Background" Value="#14FFFFFF"/>
+                                        <Setter TargetName="Tick" Property="Opacity" Value="1"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+<Grid Margin="0,3,0,8">
+                        <TextBlock Text="图片背景" Style="{StaticResource RowText}"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="EditBackgroundButton" Style="{StaticResource GhostButton}" Click="OnPickBackground" ToolTip="编辑图片背景" Padding="9,6">
+                                <TextBlock Text="" FontFamily="Segoe MDL2 Assets"/>
+                            </Button>
+                            <Button Style="{StaticResource GhostButton}" Click="OnClearBackground" ToolTip="清除图片背景" Padding="9,6" Margin="7,0,0,0">
+                                <TextBlock Text="" FontFamily="Segoe MDL2 Assets"/>
+                            </Button>
                         </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="窗口背景" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+                    </Grid><TextBlock Text="窗口背景" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
                             <Grid Margin="0,0,0,7">
-                                <TextBlock Text="卡片窗" Style="{StaticResource RowText}" />
+                                <TextBlock Text="卡片窗" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickDockBg" />
-                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearDockBg" />
+                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickDockBg"/>
+                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearDockBg"/>
                                 </StackPanel>
                             </Grid>
                             <Grid Margin="0,0,0,7">
-                                <TextBlock Text="迷你窗" Style="{StaticResource RowText}" />
+                                <TextBlock Text="迷你窗" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickMiniBg" />
-                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearMiniBg" />
+                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickMiniBg"/>
+                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearMiniBg"/>
                                 </StackPanel>
                             </Grid>
                             <Grid>
-                                <TextBlock Text="悬浮图标" Style="{StaticResource RowText}" />
+                                <TextBlock Text="悬浮图标" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickIconBackground" />
-                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearIconBackground" />
+                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickIconBackground"/>
+                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearIconBackground"/>
                                 </StackPanel>
                             </Grid>
-                            <TextBlock Text="三个窗口各用各的背景；不设就用预设主题" FontSize="10" Opacity="0.42" Margin="0,9,0,0" TextWrapping="Wrap" />
+                            <TextBlock Text="三个窗口各用各的背景；不设就用预设主题" FontSize="10" Opacity="0.42" Margin="0,9,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border></StackPanel><StackPanel x:Name="PageBehavior" Visibility="Collapsed"><TextBlock Text="常驻与交互" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="放在合适的位置，保持安静。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="窗口行为" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <CheckBox x:Name="TopmostBox" Content="窗口置顶（一直压在其他窗口上面）" FontSize="11" Opacity="0.85" Checked="OnTopmostChanged" Unchecked="OnTopmostChanged"/>
+                            <CheckBox x:Name="ClickThroughBox" Content="鼠标穿透（点不到窗口，直接落到下面的程序上）" FontSize="11" Opacity="0.85" Margin="0,9,0,0" Checked="OnClickThroughChanged" Unchecked="OnClickThroughChanged"/>
+                            <TextBlock Text="穿透打开后用托盘图标右键菜单关掉" FontSize="10" Opacity="0.42" Margin="0,7,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
-
-                    <TextBlock Text="外观" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+<TextBlock Text="左键拖动窗口 · 右键打开快捷菜单 · 双击托盘图标显示当前面板" FontSize="10" Opacity="0.34" Margin="3,12,0,0" TextWrapping="Wrap"/><TextBlock Text="外观" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
                             <Grid>
-                                <TextBlock Text="不透明度" Style="{StaticResource RowText}" />
+                                <TextBlock Text="不透明度" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="OpacitySlider" Minimum="0.55" Maximum="1" SmallChange="0.01"
-                                            ValueChanged="OnOpacityChanged" />
-                                    <TextBlock x:Name="OpacityValue" Text="96%" Width="42" TextAlignment="Right"
-                                               Style="{StaticResource RowText}" Opacity="0.65" />
+                                    <Slider x:Name="OpacitySlider" Minimum="0.55" Maximum="1" SmallChange="0.01" ValueChanged="OnOpacityChanged"/>
+                                    <TextBlock x:Name="OpacityValue" Text="96%" Width="42" TextAlignment="Right" Style="{StaticResource RowText}" Opacity="0.65"/>
                                 </StackPanel>
                             </Grid>
                             <Grid Margin="0,10,0,0">
-                                <TextBlock Text="界面缩放" Style="{StaticResource RowText}" />
+                                <TextBlock Text="界面缩放" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="ScaleSlider" Minimum="0.8" Maximum="1.3" SmallChange="0.05"
-                                            ValueChanged="OnScaleChanged" />
-                                    <TextBlock x:Name="ScaleValue" Text="100%" Width="42" TextAlignment="Right"
-                                               Style="{StaticResource RowText}" Opacity="0.65" />
+                                    <Slider x:Name="ScaleSlider" Minimum="0.8" Maximum="1.3" SmallChange="0.05" ValueChanged="OnScaleChanged"/>
+                                    <TextBlock x:Name="ScaleValue" Text="100%" Width="42" TextAlignment="Right" Style="{StaticResource RowText}" Opacity="0.65"/>
                                 </StackPanel>
                             </Grid>
-                            <CheckBox x:Name="AutoStartCheck" Content="开机自启" Margin="0,12,0,0" Click="OnAutoStartClick" />
+                            <CheckBox x:Name="AutoStartCheck" Content="开机自启" Margin="0,12,0,0" Click="OnAutoStartClick"/>
                         </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="刷新与提醒" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+                    </Border></StackPanel><StackPanel x:Name="PageBattery" Visibility="Collapsed"><TextBlock Text="电量与提醒" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="只展示有依据的设备读数。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="刷新与提醒" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
                             <Grid>
-                                <TextBlock Text="刷新间隔" Style="{StaticResource RowText}" />
+                                <TextBlock Text="刷新间隔" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="RefreshSlider" Minimum="1" Maximum="120" SmallChange="1"
-                                            ValueChanged="OnRefreshChanged" />
-                                    <TextBlock x:Name="RefreshValue" Text="30s" Width="42" TextAlignment="Right"
-                                               Style="{StaticResource RowText}" Opacity="0.65" />
+                                    <Slider x:Name="RefreshSlider" Minimum="1" Maximum="120" SmallChange="1" ValueChanged="OnRefreshChanged"/>
+                                    <TextBlock x:Name="RefreshValue" Text="30s" Width="42" TextAlignment="Right" Style="{StaticResource RowText}" Opacity="0.65"/>
                                 </StackPanel>
                             </Grid>
                             <Grid Margin="0,10,0,0">
-                                <TextBlock Text="低电量提醒" Style="{StaticResource RowText}" />
+                                <TextBlock Text="低电量提醒" Style="{StaticResource RowText}"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button x:Name="Warn0" Content="0%" Tag="0" Style="{StaticResource GhostButton}"
-                                            Padding="8,3" FontSize="10.5" ToolTip="不提醒"
-                                            AutomationProperties.Name="0%（不提醒）" Click="OnWarnClick" />
-                                    <Button x:Name="Warn10" Content="10%" Tag="10" Style="{StaticResource GhostButton}"
-                                            Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick" />
-                                    <Button x:Name="Warn20" Content="20%" Tag="20" Style="{StaticResource GhostButton}"
-                                            Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick" />
-                                    <Button x:Name="Warn30" Content="30%" Tag="30" Style="{StaticResource GhostButton}"
-                                            Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick" />
-                                    <Button x:Name="Warn40" Content="40%" Tag="40" Style="{StaticResource GhostButton}"
-                                            Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick" />
+                                    <Button x:Name="Warn0" Content="0%" Tag="0" Style="{StaticResource GhostButton}" Padding="8,3" FontSize="10.5" ToolTip="不提醒" AutomationProperties.Name="0%（不提醒）" Click="OnWarnClick"/>
+                                    <Button x:Name="Warn10" Content="10%" Tag="10" Style="{StaticResource GhostButton}" Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick"/>
+                                    <Button x:Name="Warn20" Content="20%" Tag="20" Style="{StaticResource GhostButton}" Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick"/>
+                                    <Button x:Name="Warn30" Content="30%" Tag="30" Style="{StaticResource GhostButton}" Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick"/>
+                                    <Button x:Name="Warn40" Content="40%" Tag="40" Style="{StaticResource GhostButton}" Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick"/>
                                 </StackPanel>
                             </Grid>
-                            <Grid Margin="0,10,0,0">
-                                <TextBlock Text="自动检查更新" Style="{StaticResource RowText}" />
-                                <CheckBox x:Name="AutoUpdateBox" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                          Click="OnAutoUpdateClick" />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
 
-                    <TextBlock Text="帮助与反馈" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
+                        </StackPanel>
+                    </Border></StackPanel><StackPanel x:Name="PageHelp" Visibility="Collapsed"><TextBlock Text="帮助与高级" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="诊断、更新与维护。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><Grid Margin="0,10,0,0">
+                                <TextBlock Text="自动检查更新" Style="{StaticResource RowText}"/>
+                                <CheckBox x:Name="AutoUpdateBox" HorizontalAlignment="Right" VerticalAlignment="Center" Click="OnAutoUpdateClick"/>
+                            </Grid><TextBlock Text="帮助与反馈" Style="{StaticResource Section}"/>
+<Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Text="点「导出错误报告」会先让你选设备：选哪台就只抓哪台，产品名、接口、只读查询和原始应答都在里面。"
-                                       FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,10" />
-                            <TextBlock Text="2653880019@qq.com" FontSize="12" Foreground="#9CB4FF" Margin="0,0,0,4" />
-                            <TextBlock Text="QQ 群 148894057" FontSize="11" Opacity="0.5" Margin="0,0,0,12" />
+                            <TextBlock Text="点「导出错误报告」会先让你选设备：选哪台就只抓哪台，产品名、接口、只读查询和原始应答都在里面。" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                            <TextBlock Text="2653880019@qq.com" FontSize="12" Foreground="#9CB4FF" Margin="0,0,0,4"/>
+                            <TextBlock Text="QQ 群 148894057" FontSize="11" Opacity="0.5" Margin="0,0,0,12"/>
                             <StackPanel Orientation="Horizontal">
-                                <Button x:Name="BtnReport" Content="导出错误报告" Style="{StaticResource GhostButton}"
-                                        Padding="12,5" FontSize="11.5" Click="OnExportReportClick" />
-                                <Button x:Name="BtnFeedback" Content="反馈" Style="{StaticResource GhostButton}"
-                                        Padding="12,5" FontSize="11.5" Margin="8,0,0,0" Click="OnFeedbackClick" />
-                                <Button x:Name="BtnAbout" Content="关于" Style="{StaticResource GhostButton}"
-                                        Padding="12,5" FontSize="11.5" Margin="8,0,0,0" Click="OnAboutClick" />
+                                <Button x:Name="BtnReport" Content="导出错误报告" Style="{StaticResource GhostButton}" Padding="12,5" FontSize="11.5" Click="OnExportReportClick"/>
+                                <Button x:Name="BtnFeedback" Content="反馈" Style="{StaticResource GhostButton}" Padding="12,5" FontSize="11.5" Margin="8,0,0,0" Click="OnFeedbackClick"/>
+                                <Button x:Name="BtnAbout" Content="关于" Style="{StaticResource GhostButton}" Padding="12,5" FontSize="11.5" Margin="8,0,0,0" Click="OnAboutClick"/>
                             </StackPanel>
                         </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="窗口行为" Style="{StaticResource Section}" />
-                    <Border Style="{StaticResource Card}">
-                        <StackPanel>
-                            <CheckBox x:Name="TopmostBox" Content="窗口置顶（一直压在其他窗口上面）"
-                                      FontSize="11" Opacity="0.85"
-                                      Checked="OnTopmostChanged" Unchecked="OnTopmostChanged" />
-                            <CheckBox x:Name="ClickThroughBox" Content="鼠标穿透（点不到窗口，直接落到下面的程序上）"
-                                      FontSize="11" Opacity="0.85" Margin="0,9,0,0"
-                                      Checked="OnClickThroughChanged" Unchecked="OnClickThroughChanged" />
-                            <TextBlock Text="穿透打开后用托盘图标右键菜单关掉" FontSize="10" Opacity="0.42"
-                                       Margin="0,7,0,0" TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="左键拖动窗口 · 右键打开快捷菜单 · 双击托盘图标显示当前面板"
-                               FontSize="10" Opacity="0.34" Margin="3,12,0,0" TextWrapping="Wrap" />
-                </StackPanel>
-            </ScrollViewer>
-        </Grid>
+                    </Border><Border Style="{StaticResource Card}"><StackPanel><CheckBox x:Name="SafeModeChoice" Content="安全模式（限制厂商查询）" Click="OnSafeModeChoice"/><TextBlock Text="部分设备电量可能不可用。诊断报告不会自动上传。" TextWrapping="Wrap" FontSize="12" Opacity="0.7"/><Button Content="检查更新" Style="{StaticResource GhostButton}" HorizontalAlignment="Left" Click="OnCheckUpdateClick" Margin="0,12,0,0"/></StackPanel></Border></StackPanel></StackPanel></ScrollViewer></Grid>
+<TextBlock x:Name="SaveStateText" Grid.Row="2" Text="更改即时生效" FontSize="12" Opacity="0.75" Margin="172,4,0,0" TextWrapping="Wrap"/>        </Grid>
     </Border>
 </Window>

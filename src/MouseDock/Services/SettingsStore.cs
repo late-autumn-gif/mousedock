@@ -9,8 +9,9 @@ namespace MouseDock.Services
     public static class SettingsStore
     {
         internal static string TestDirectory { get; set; }
-        public static string Dir => TestDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock");
+        public static bool IsPortableTest => File.Exists(Path.Combine(AppContext.BaseDirectory, "test-portable.flag"));
+        public static string Dir => TestDirectory ?? Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR") ?? (IsPortableTest ? Path.Combine(AppContext.BaseDirectory, "data") : Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock"));
 
         public static string FilePath => Path.Combine(Dir, "settings.json");
 
@@ -50,14 +51,17 @@ namespace MouseDock.Services
             return true;
         }
 
-        public static void Save(AppSettings settings)
+        public static void Save(AppSettings settings) => TrySave(settings);
+
+        public static bool TrySave(AppSettings settings)
         {
             try
             {
                 Directory.CreateDirectory(Dir);
                 File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, Options));
+                return true;
             }
-            catch { /* 磁盘不可写时忽略，不影响运行 */ }
+            catch { return false; }
         }
     }
 
@@ -69,6 +73,7 @@ namespace MouseDock.Services
 
         public static bool IsEnabled()
         {
+            if (App.IsTestProfile) return false;
             try
             {
                 using var key = Registry.CurrentUser.OpenSubKey(RunKey);
@@ -79,6 +84,7 @@ namespace MouseDock.Services
 
         public static void Set(bool enabled)
         {
+            if (App.IsTestProfile) return;
             try
             {
                 using var key = Registry.CurrentUser.CreateSubKey(RunKey);
@@ -100,6 +106,7 @@ namespace MouseDock.Services
         /// </summary>
         public static void Sync(bool enabled)
         {
+            if (App.IsTestProfile) return;
             try
             {
                 string current = Environment.ProcessPath;

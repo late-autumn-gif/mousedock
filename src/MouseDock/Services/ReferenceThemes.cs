@@ -8,6 +8,9 @@ namespace MouseDock.Services
         // Background, surface, text, secondary text, accent, readable accent, hover, border, low battery.
         private static readonly (string Id, string Name, bool Light, string Dark, string Bright)[] Colors =
         {
+            ("resident", "轻驻薄荷", false,
+                "171c22 20262e edf2f5 a0adba 8fdfc3 8fdfc3 294239 36404b ffbc7b",
+                "f7f8fa ffffff 232d38 617080 13775f 13775f e1f3ec dce2e7 a55519"),
             ("reference-mint", "默认主题", false,
                 "141719 1b1f21 edf3ef bcc6c1 a6f5bf a6f5bf 29312d 303936 ff687d",
                 "f6f7f7 ffffff 202b29 3e4b4c 53b89e 337161 e8eeea dde4df b42342"),

@@ -106,6 +106,8 @@ internal static class UiRegressionChecks
                 window.UpdateLayout();
                 if (surface == "settings")
                 {
+                    ((SettingsWindow)window).SelectSection("devices");
+                    window.UpdateLayout();
                     var themes = (ListBox)window.FindName("ThemeList");
                     var checks = (ItemsControl)window.FindName("DeviceChecks");
                     Require(ColorOf(themes.Foreground) == theme.Text, "Theme names use the wrong foreground.");
@@ -113,6 +115,8 @@ internal static class UiRegressionChecks
                     Require(boxes.Length >= 2, "Device checkboxes were not realized.");
                     Require(boxes.All(box => ColorOf(box.Foreground) == theme.Text),
                         "Device labels do not follow the theme.");
+                    ((SettingsWindow)window).SelectSection("display");
+                    window.UpdateLayout();
                     var firstSurface = (Button)window.FindName("SurfaceDock");
                     var modes = (Panel)firstSurface.Parent;
                     var modeButtons = modes.Children.OfType<Button>().ToArray();

@@ -2,7 +2,9 @@
 
 ## 总体
 
-单体 WPF 应用，单进程常驻，托盘 + 四种界面形态。没有后端、没有数据库，配置在 `%APPDATA%\MouseDock`。核心复杂度在 HID 枚举与厂商协议，不在界面。
+单体 WPF 应用，单进程常驻，托盘 + 六种显示方式。没有后端、没有数据库，普通配置在 `%APPDATA%\MouseDock`；1.2.1 便携测试标记或 `MOUSEDOCK_DATA_DIR` 可隔离配置及实例，测试模式不改开机启动、不访问更新源。核心复杂度在 HID 枚举与厂商协议，不在界面。
+
+1.2.1 设置用六分类控制既有命名控件的可见性，保留事件和保存路径。`TraySurfacePicker` 以原生 WinForms 按钮实现六模式互斥快选，仍由 `App.SetSurface` 调度既有窗口。`SettingsStore.TrySave` 回报真实写入结果，设置底栏通过 `App.SettingsSaveCompleted` 显示成功或失败。卡片详情绑定原 DeviceInfo，不创建额外采集任务。硬件发现、去重和协议模块未变更。
 
 ```
 App.xaml.cs
