@@ -103,6 +103,7 @@ namespace MouseDock.Views
                 ThemeList.ItemsSource = rows;
                 var current = rows.FirstOrDefault(r => r.Id == (hasBg ? "custom" : s.ThemeId)) ?? rows[2];
                 ThemeList.SelectedItem = current;
+                CurrentThemeText.Text = "当前 · " + current.Name;
                 foreach (var r in rows) r.IsSelected = r == current;
                 ThemeDefault.IsChecked = s.ThemeMode != "dark" && s.ThemeMode != "light";
                 ThemeDark.IsChecked = s.ThemeMode == "dark";
@@ -239,6 +240,7 @@ namespace MouseDock.Views
             bool isLight = theme.IsLight;
             Resources["TextBrush"] = new SolidColorBrush(theme.Text);
             Resources["MenuSurfaceBrush"] = new SolidColorBrush(theme.Surface);
+            Resources["ThemeChoiceBrush"] = new SolidColorBrush(Palette.Mix(theme.Surface, theme.Accent, .10));
             Resources["CardBrush"] = new SolidColorBrush(isLight
                 ? Color.FromArgb(0x14, 0x00, 0x00, 0x00)
                 : Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF));

@@ -41,6 +41,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Light UI appearance grid retains themes modes and persistence", LightUiChecks.AppearanceLayout),
             ("Light UI floating digits stay readable on light and dark desktops", LightUiChecks.FloatingContrast),
             ("Light UI light theme controls retain contrast and working interaction", LightUiChecks.SettingsContrast),
             ("Light UI card gestures separate dragging clicks and diagnostic text", LightUiChecks.CardGestures),

@@ -9,6 +9,42 @@ using Forms = System.Windows.Forms;
 
 internal static class LightUiChecks
 {
+    internal static void AppearanceLayout()
+    {
+        using var fixture = new AppearanceFixture();
+        var window = new SettingsWindow { Left = -2000, ShowActivated = false };
+        fixture.Set("SettingsView", window);
+        window.Show(); window.SelectSection("appearance");
+        var root = (FrameworkElement)window.Content;
+        root.BeginAnimation(UIElement.OpacityProperty, null); root.Opacity = 1;
+        var list = (ListBox)window.FindName("ThemeList");
+        foreach (double width in new[] { 680d, 760d })
+        {
+            window.Width = width; window.UpdateLayout();
+            Require(Descendants<System.Windows.Controls.Primitives.UniformGrid>(list).Any(grid => grid.Columns == 2), "Theme choices must use a two-column grid.");
+            Require(list.Items.Count == ThemePreset.Presets.Length, "Appearance layout lost existing theme choices.");
+            var label = (RadioButton)window.FindName("ThemeDark");
+            Require(label.Foreground is System.Windows.Media.SolidColorBrush brush && brush.Color == ((System.Windows.Media.SolidColorBrush)window.Resources["TextBrush"]).Color, "Mode labels lost readable theme foreground.");
+        }
+        ((RadioButton)window.FindName("ThemeDark")).IsChecked = true;
+        Require(fixture.Settings.ThemeMode == "dark", "Dark mode no longer reaches real preferences.");
+        ((RadioButton)window.FindName("ThemeLight")).IsChecked = true;
+        Require(fixture.Settings.ThemeMode == "light", "Light mode no longer reaches real preferences.");
+        list.SelectedItem = list.Items.Cast<SettingsWindow.ThemeRow>().Single(row => row.Id == "rose");
+        Require(fixture.Settings.ThemeId == "rose" && ((TextBlock)window.FindName("CurrentThemeText")).Text.Contains("雾樱粉"), "Theme selection and its saved caption disagree.");
+        Require(File.Exists(SettingsStore.FilePath) && window.FindName("EditBackgroundButton") is Button, "Appearance persistence or picture editing action was removed.");
+        foreach (string mode in new[] { "light", "dark" })
+        {
+            ((RadioButton)window.FindName(mode == "light" ? "ThemeLight" : "ThemeDark")).IsChecked = true;
+            window.Width = 760; window.UpdateLayout();
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth), (int)Math.Ceiling(root.ActualHeight), 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            bitmap.Render(root);
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+            Directory.CreateDirectory("artifacts/appearance-layout");
+            using var file = File.Create($"artifacts/appearance-layout/{mode}.png"); encoder.Save(file);
+        }
+    }
     internal static void FloatingContrast()
     {
         Directory.CreateDirectory("artifacts/light-controls");
