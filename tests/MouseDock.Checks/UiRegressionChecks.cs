@@ -25,17 +25,25 @@ internal static class UiRegressionChecks
             window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
             var list = (ItemsControl)window.FindName("DeviceList");
             var buttons = Descendants<Button>(list).Where(b => b.IsVisible).ToArray();
-            Require(buttons.Length == 1 && Equals(buttons[0].Content, "1600 DPI"),
-                "Only the mouse with verified DPI settings should show the DPI selector.");
+            Require(buttons.Length == 1 && System.Windows.Automation.AutomationProperties.GetName(buttons[0]) == "DPI 设置",
+                "Mouse must have one dedicated DPI settings area.");
+            Require(Descendants<TextBlock>(buttons[0]).Any(t => t.Text == "1600 DPI"), "Dedicated DPI area lost the current reading.");
+            buttons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var popupField = typeof(DockWindow).GetField("_legacyDpiWindow", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var popup = (Window)popupField.GetValue(window)!;
+            Require(popup.IsVisible && popup.Title.Contains("DPI"), "DPI area did not open a settings window.");
+            popup.Close();
             mouse.DpiSettings = new MouseDpiState(0, 0, 1, false, [1600], MouseDpiProtocol.Hidpp, "Logitech G603", Writable: false);
             window.UpdateLayout();
-            Require(!buttons[0].IsVisible && Descendants<TextBlock>(list).Count(t => t.IsVisible && t.Text == "1600 DPI") == 1,
-                "Read-only Logitech DPI must stay visible without a selector.");
-            mouse.Dpi = -1;
-            mouse.DpiSettings = null;
+            Require(buttons[0].IsVisible && Descendants<TextBlock>(buttons[0]).Count(t => t.Text == "1600 DPI") == 1,
+                "Read-only DPI should retain its clearly labeled settings area.");
+            mouse.Dpi = -1; mouse.DpiSettings = null;
             window.UpdateLayout();
-            Require(!buttons[0].IsVisible && Descendants<TextBlock>(list).Count(t => t.IsVisible && t.Text == "DPI —") == 1,
-                "An unreadable mouse DPI should show a single unknown label and hide the selector.");
+            Require(Descendants<TextBlock>(buttons[0]).Count(t => t.Text == "DPI —") == 1, "Unknown DPI must remain unknown.");
+            buttons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            popup = (Window)popupField.GetValue(window)!;
+            Require(!Descendants<Button>(popup).Any(b => b.IsEnabled && b.Content is string text && text.Contains("档")), "Unknown DPI exposed a write command.");
+            popup.Close();
         }
         finally { window.Close(); }
     }

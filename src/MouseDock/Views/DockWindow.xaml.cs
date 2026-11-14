@@ -53,51 +53,55 @@ namespace MouseDock.Views
             UpdateLayout();
         }
 
+        private Window _legacyDpiWindow;
         private void OnDpiClick(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button button || button.DataContext is not DeviceInfo device ||
-                !device.CanChangeDpi || device.DpiSettings is not { } state) return;
-
-            var menu = new ContextMenu { PlacementTarget = button };
+            e.Handled = true;
+            if (sender is not Button { DataContext: DeviceInfo device }) return;
+            if (App.SupportsDpi(device)) { App.ShowDpi(device); return; }
+            _legacyDpiWindow?.Close();
+            var theme = App.Theme;
+            var body = new StackPanel { Margin = new Thickness(22) };
+            var status = new TextBlock { Text = device.DpiLabel, FontSize = 24, Margin = new Thickness(0,12,0,16) };
+            body.Children.Add(new TextBlock { Text = device.Name + " · DPI 设置", FontSize = 16, TextWrapping = TextWrapping.Wrap });
+            body.Children.Add(status);
+            var state = device.DpiSettings;
+            bool writable = !App.Settings.SafeMode && device.CanChangeDpi && state != null;
+            body.Children.Add(new TextBlock { Text = writable ? "选择设备已有的 DPI 档位" : "当前仅显示读数；设备未适配、离线或安全模式下不可更改。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12) });
+            var choices = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3 };
+            body.Children.Add(choices);
+            if (state != null)
             for (int index = 0; index < state.Count; index++)
             {
                 int target = index;
-                var item = new MenuItem
+                var choice = new Button { Content = state.OptionLabel(index), IsEnabled = writable, Margin = new Thickness(4), Padding = new Thickness(10) };
+                choice.Click += async (_, _) =>
                 {
-                    Header = state.OptionLabel(index),
-                    IsCheckable = true,
-                    IsChecked = index == state.Index
-                };
-                item.Click += async (_, _) =>
-                {
-                    if (!device.CanChangeDpi || target == state.Index) return;
-                    button.IsEnabled = false;
-                    button.ToolTip = "正在确认 DPI";
+                    if (App.Settings.SafeMode || !device.CanChangeDpi || !ReferenceEquals(device.DpiSettings, state) || !App.Battery.Devices.Contains(device))
+                    { status.Text = "设备状态已变化，请重新打开设置"; return; }
+                    if (target == state.Index) return;
+                    choices.IsEnabled = false;
+                    status.Text = "正在确认 DPI…";
                     try
                     {
                         var preferences = App.Battery.Preferences;
                         string id = device.Id;
                         var result = await Task.Run(() => HidDiscovery.ReadOrChangeMouseDpi(preferences, id, new(state, target)));
-                        if (result != null)
-                        {
-                            device.Dpi = result.Dpi;
-                            device.DpiSettings = result.DpiSettings;
-                        }
-                        button.ToolTip = result == null ? "未能确认更改，请刷新后重试" : "调整 DPI";
+                        if (result != null) { device.Dpi = result.Dpi; device.DpiSettings = result.DpiSettings; }
+                        status.Text = result == null ? "未能确认更改，请刷新后重试" : device.DpiLabel;
                     }
-                    catch (Exception)
-                    {
-                        button.ToolTip = "未能确认更改，请刷新后重试";
-                    }
-                    finally
-                    {
-                        button.IsEnabled = true;
-                        App.Battery.Poll();
-                    }
+                    catch (Exception) { status.Text = "未能确认更改，请刷新后重试"; }
+                    finally { choices.IsEnabled = true; App.Battery.Poll(); }
                 };
-                menu.Items.Add(item);
+                choices.Children.Add(choice);
             }
-            menu.IsOpen = true;
+            var close = new Button { Content = "关闭", Padding = new Thickness(12,7,12,7), Margin = new Thickness(0,16,0,0), HorizontalAlignment = HorizontalAlignment.Right };
+            body.Children.Add(close);
+            _legacyDpiWindow = new Window { Title = device.Name + " · DPI 设置", Owner = this, Width = 430, SizeToContent = SizeToContent.Height, MaxHeight = Math.Max(300, SystemParameters.WorkArea.Height - 40), WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = new SolidColorBrush(theme.Surface), Foreground = new SolidColorBrush(theme.Text), Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, FontFamily = FontFamily };
+            var popup = _legacyDpiWindow;
+            close.Click += (_, _) => popup.Close();
+            popup.Closed += (_, _) => { if (ReferenceEquals(_legacyDpiWindow, popup)) _legacyDpiWindow = null; };
+            popup.Show();
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -251,6 +255,7 @@ namespace MouseDock.Views
                 DetailPanel.Visibility = Visibility.Collapsed;
             FooterText.Text = $"{displayed} 台设备 · 右键切换样式";
             PinButton.ToolTip = App.Settings.AlwaysOnTop ? "取消始终置顶" : "始终置顶";
+            PinButton.Background = App.Settings.AlwaysOnTop ? TrackBrush : Brushes.Transparent;
             SourceText.Text = $"{label} · {displayed} 台显示";
             var accent = new SolidColorBrush(App.Theme.Accent);
             LiveDot.Fill = accent;
@@ -263,6 +268,7 @@ namespace MouseDock.Views
             App.ApplyWindowBehavior();
             App.SaveSettings();
             PinButton.ToolTip = App.Settings.AlwaysOnTop ? "取消始终置顶" : "始终置顶";
+            PinButton.Background = App.Settings.AlwaysOnTop ? TrackBrush : Brushes.Transparent;
         }
         private void OnSettingsClick(object sender, RoutedEventArgs e) => App.ShowSettings(this);
         private void OnHideClick(object sender, RoutedEventArgs e) => Hide();

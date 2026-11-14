@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.IO;
 using System.IO.Compression;
 using System.Windows;
@@ -16,6 +16,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--settings-drag-fixture")) return LightUiChecks.RunDragFixture(true);
         if (args.Contains("--card-drag-fixture")) return LightUiChecks.RunDragFixture();
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);

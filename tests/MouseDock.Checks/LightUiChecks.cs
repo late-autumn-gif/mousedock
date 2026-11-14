@@ -13,15 +13,18 @@ internal static class LightUiChecks
     private static extern int GetWindowLong(IntPtr handle, int index);
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern int SetWindowLong(IntPtr handle, int index, int value);
-    internal static int RunDragFixture()
+    internal static int RunDragFixture(bool settings = false)
     {
         using var fixture = new AppearanceFixture();
         fixture.Battery.VisibleDevices[0].Note = "RX=synthetic-private-diagnostic";
-        var window = new DockWindow { Title = "MouseDock drag verification", Left = 240, Top = 160, ShowInTaskbar = true };
-        fixture.Set("Dock", window);
-        window.ApplyTheme(MouseDock.App.Theme, false);
+        Window window = settings ? new SettingsWindow() : new DockWindow();
+        window.Title = settings ? "MouseDock settings drag verification" : "MouseDock drag verification";
+        window.Left = 240; window.Top = 160; window.ShowInTaskbar = true;
+        fixture.Set(settings ? "SettingsView" : "Dock", window);
+        if (window is DockWindow dock) dock.ApplyTheme(MouseDock.App.Theme, false);
+        else ((SettingsWindow)window).ApplyTheme(MouseDock.App.Theme, false);
         window.Show();
-        string result = Path.Combine(Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR")!, "native-drag.txt");
+        string result = Path.Combine(Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR")!, settings ? "native-settings-drag.txt" : "native-drag.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(result)!);
         File.WriteAllText(result, $"start {window.Left},{window.Top}\n");
         window.LocationChanged += (_, _) => File.AppendAllText(result, $"move {window.Left},{window.Top}\n");
@@ -41,6 +44,8 @@ internal static class LightUiChecks
         window.Show(); window.UpdateLayout();
         var row = Descendants<Border>((DependencyObject)window.Content).Single(b => b.Name == "Row");
         var detail = (Border)window.FindName("DetailPanel");
+        var pin = (Button)window.FindName("PinButton");
+        Require(pin.FocusVisualStyle == null && pin.Content is Viewbox, "Card actions must use vector icons and subtle custom focus feedback.");
         foreach (string style in new[] { "standard", "compact", "bare" })
         {
             window.ApplyDensity(style); window.UpdateLayout();

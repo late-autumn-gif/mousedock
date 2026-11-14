@@ -200,7 +200,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" MouseLeftButtonDown="OnDragWindow" Margin="0,0,0,4">
+            <Grid x:Name="SettingsTitleBar" Grid.Row="0" Background="Transparent" PreviewMouseLeftButtonDown="OnDragWindow" Margin="0,0,0,4" MinHeight="32">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="MouseDock / 设置" FontSize="15" FontWeight="SemiBold" />
                     <TextBlock x:Name="VersionText" FontSize="10.5" Opacity="0.45" VerticalAlignment="Bottom" Margin="0,0,0,2" />
