@@ -39,6 +39,19 @@ internal static partial class BatteryReplay
             ReferenceBatteryProtocol.Reading result = null;
             if (rapoo || v9)
             {
+                if (rapoo && samples.Any(s => s.Stage == "vt3-snapshot-start"))
+                {
+                    int begin = Array.FindIndex(samples, s => s.Stage == "vt3-snapshot-start" && s.Ok);
+                    int finish = Array.FindIndex(samples, s => s.Stage == "vt3-snapshot-complete" && s.Ok);
+                    if (begin < 0 || finish <= begin || samples.Any(s => s.Stage.Contains("output") || s.Stage.Contains("feature")))
+                        return Missing();
+                    var snapshots = samples.Skip(begin + 1).Take(finish - begin - 1)
+                        .Where(s => s.Stage == "vt3-input-snapshot").ToArray();
+                    if (snapshots.Length != 2) return Missing();
+                    foreach (var snapshot in snapshots) result = RapooVt3MaxProtocol.Decode(Bytes(snapshot));
+                    return new(query.Receiver, candidates[0].Interface, query.Protocol, query.Status,
+                        result.Model, result.Level, result.ChargingKnown ? result.Charging : null, "captured");
+                }
                 if (v9 && samples.Any(s => s.Stage == "expansion-output"))
                 {
                     var exchanges = samples.Where(s => s.Stage == "expansion-output" || s.Stage == "expansion-input" && s.Ok).ToArray();

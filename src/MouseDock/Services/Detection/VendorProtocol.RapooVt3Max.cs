@@ -17,7 +17,7 @@ internal static partial class VendorProtocol
             var rules = new ExpansionHidRules("RapooVt3Max", RapooVt3MaxProtocol.Matches,
                 RapooVt3MaxProtocol.Validate, Passive: true);
             using var link = new ExpansionHidLink(rules, selected[0], trace);
-            return RapooVt3MaxProtocol.Read(link.Wire(4000));
+            return RapooVt3MaxProtocol.ReadWithSnapshot(link.Wire(4000), link.GetRapooCurrentInput);
         }, 4500);
     }
 }

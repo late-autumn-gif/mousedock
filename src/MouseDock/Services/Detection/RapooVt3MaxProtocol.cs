@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using static MouseDock.Services.Detection.ExpansionFacts;
 
 namespace MouseDock.Services.Detection;
@@ -27,6 +28,32 @@ internal static class RapooVt3MaxProtocol
     {
         wire.TraceInput = b => PassiveBatteryNotifications.Mask(b, 0, 1, 7, 8, 18);
         return PassiveBatteryNotifications.Read(wire, b => b.Length > 0 && b[0] == 7, Decode);
+    }
+
+    // Standard HID current-state request, not a vendor Output/Feature command.
+    // Firmware support is experimental until a real receiver returns this report.
+    internal static ReferenceBatteryProtocol.Reading ReadWithSnapshot(ExpansionWire wire, Func<byte[]> getInput)
+    {
+        try { return Read(wire); }
+        catch (IOException ex) when (ex.Message == "Fresh matching device response not received")
+        {
+            wire.Trace?.Add("vt3-snapshot-start", true);
+            ReferenceBatteryProtocol.Reading result = null;
+            for (int i = 0; i < 2; i++)
+            {
+                wire.CheckTime();
+                var raw = getInput();
+                wire.CheckTime();
+                bool valid = raw is { Length: 19 } && raw[0] == 7;
+                wire.Trace?.Add("vt3-input-snapshot", valid,
+                    raw: raw == null ? null : PassiveBatteryNotifications.Mask(raw, 0, 1, 7, 8, 18), keep: true);
+                Require(valid, "VT3 MAX current input report unavailable");
+                result = Decode(raw);
+                if (i == 0) wire.Link.Delay(50);
+            }
+            wire.Trace?.Add("vt3-snapshot-complete", true);
+            return result with { Diagnostic = "VT3 MAX standard HID current input snapshot; hardware validation pending" };
+        }
     }
 }
 

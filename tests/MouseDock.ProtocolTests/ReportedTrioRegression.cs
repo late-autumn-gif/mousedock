@@ -65,6 +65,24 @@ internal static class ReportedTrioRegression
         var empty = new Link(); Check(Reject(() => RapooVt3MaxProtocol.Read(new(empty, 19, 19))) && empty.Writes == 0, "no notifications is unknown");
         var flood = new Link() { Flood = true }; Check(Reject(() => RapooVt3MaxProtocol.Read(new(flood, 19, 19))) && flood.Writes == 0, "undrainable old queue no writes");
         var badSecond = new Link(Rapoo(50), offline); Check(Reject(() => RapooVt3MaxProtocol.Read(new(badSecond, 19, 19))), "second offline invalidates prior percentage");
+        var snapshotTrace = new BatteryReplay.Trace();
+        var snapshotLink = new Link(); int snapshotCalls = 0;
+        Check(RapooVt3MaxProtocol.ReadWithSnapshot(new(snapshotLink, 19, 19, trace: snapshotTrace),
+            () => Rapoo(++snapshotCalls == 1 ? 44 : 45)).Level == 45 && snapshotCalls == 2 && snapshotLink.Writes == 0,
+            "standard current-state fallback after notification timeout uses second snapshot without writes");
+        int noFallback = 0;
+        Check(RapooVt3MaxProtocol.ReadWithSnapshot(new(new Link(Rapoo(50), Rapoo(51)), 19, 19),
+            () => { noFallback++; return Rapoo(99); }).Level == 51 && noFallback == 0, "working notifications retain priority");
+        foreach (var invalid in new byte[][] { null!, new byte[0], new byte[18], wrongId, offline, Rapoo(101), Rapoo(50, 0) })
+        {
+            int invalidCalls = 0;
+            Check(Reject(() => RapooVt3MaxProtocol.ReadWithSnapshot(new(new Link(), 19, 19),
+                () => ++invalidCalls == 1 ? Rapoo(60) : invalid)), "invalid/missing second current snapshot rejects previous reading");
+        }
+        Check(Reject(() => RapooVt3MaxProtocol.ReadWithSnapshot(new(new Link(offline), 19, 19),
+            () => { noFallback++; return Rapoo(90); })) && noFallback == 0, "invalid notification does not activate fallback");
+        Check(Reject(() => RapooVt3MaxProtocol.ReadWithSnapshot(new(new Link() { Flood = true }, 19, 19),
+            () => { noFallback++; return Rapoo(90); })) && noFallback == 0, "undrained queue does not activate fallback");
         var v9trace = new BatteryReplay.Trace(); var v9link = new Link(V9(70), V9(71));
         Check(HeadsetExpansionBolutek.ReadV9Passive(new(v9link, 64, 64, trace: v9trace)).Level == 71 && v9link.Writes == 0, "V9 input-only never writes");
         var frozen = new Link(V9(97, 3), V9(70));
@@ -86,6 +104,7 @@ internal static class ReportedTrioRegression
             Capture("r3", 3, bychannel, "MI_01/COL_01", 0x3000, "IN[13] OUT[13] FEATURE[]") };
         foreach (var (receiver, protocol, samples, expected) in new[] {
             ("r1", "ExtraMouse:RapooVt3Max", trace.Snapshot(), 45), ("r2", "ExtraHeadset:V9Pro", v9trace.Snapshot(), 71),
+            ("r1", "ExtraMouse:RapooVt3Max", snapshotTrace.Snapshot(), 45),
             ("r3", "ExtraKeyboard:MchoseBy", bytrace.Snapshot(), 82) })
         {
             var q = new BatteryReplay.Query(receiver, null, protocol, "Online", null, expected, samples);

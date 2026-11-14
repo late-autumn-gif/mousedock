@@ -90,6 +90,16 @@ internal static partial class VendorProtocol
             !rules.Passive && packet?.Length == Channel.Output && Channel.Output > 0 &&
             (rules.OutputAllowed?.Invoke(packet) ?? true) &&
             Transfer(handle, signal, packet, true, Math.Max(1, timeoutMs), out int count) && count == packet.Length;
+        internal byte[] GetRapooCurrentInput()
+        {
+            Require(rules.Passive && rules.Family == "RapooVt3Max", "Current input request requires VT3 MAX read-only route");
+            RapooVt3MaxProtocol.Validate(Channel, Metadata);
+            var b = new byte[19]; b[0] = 7;
+            bool ok = MouseExpansionGetInputReport(handle, b, b.Length);
+            int error = ok ? 0 : Marshal.GetLastWin32Error();
+            trace?.Add("vt3-get-input-result", ok, result: $"report=07;win32={error}");
+            return ok ? b : null;
+        }
         public bool SetOutputReport(byte[] packet) => !rules.Passive && packet?.Length == Channel.Output &&
             (rules.OutputAllowed?.Invoke(packet) ?? true) &&
             Channel.Output > 0 && Metadata.OutputIds.Contains(packet[0]) && HidD_SetOutputReport(handle, packet, packet.Length);

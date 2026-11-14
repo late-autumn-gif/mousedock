@@ -1,5 +1,7 @@
 # 测试
 
+2026-11-15 VT3 MAX 标准当前输入报告实验：`--verify-reported-trio` 586 项、全量协议/集成 26710 条，旧偏好 10 项、K87 13 项通过。覆盖通知优先、无通知补偿、第二份无效/缺失、RF 离线、包长/编号/范围错误、禁止无效通知和未清队列触发补偿，以及新事务回放拒绝路径。均为离线；真实报告仍三轮未知，目标固件 GetInputReport 支持待验证，见 [说明](docs/VT3MAX-INPUT-SNAPSHOT.md)。
+
 2026-11-15 Xbox 无线适配器：`--verify-xbox-wireless` 80 项、全量协议 26693 条，另 10 项旧偏好和 13 项 K87 检查通过；`MouseDock.Checks --xbox-ui <PNG>` 覆盖系统读数经完整刷新/选择到 WPF 卡片及七种任务栏样式、缓存转换。均为离线，目标无线适配器待实机验证，见 [记录](docs/XBOX-WIRELESS.md)。
 
 2026-11-15 SCYROX V6/V8 旧代接收器：`--verify-scyrox-legacy` 268 项、全量协议 26613 条、模拟完整显示链路及相关界面/路由 5 项通过。旧报告仍零查询，不能标为实机通过。见 [验证范围](docs/SCYROX-V6-V8-LEGACY.md)。
