@@ -19,7 +19,7 @@ internal sealed class ExpansionHidMetadata
 internal sealed record ExpansionHidRules(string Family,
     Func<HidDiscovery.VendorCollectionInfo, bool> Matches,
     Action<HidDiscovery.VendorCollectionInfo, ExpansionHidMetadata> Validate,
-    bool Passive = false, bool UnnumberedInput = false);
+    bool Passive = false, bool UnnumberedInput = false, Func<byte[], bool> OutputAllowed = null);
 
 internal interface IExpansionOutputReport
 {

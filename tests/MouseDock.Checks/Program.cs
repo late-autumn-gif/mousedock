@@ -16,6 +16,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 3 && args[0] == "--mchose-report-ui")
+        {
+            MchoseFeedbackUiChecks.Run(args[1], args[2]);
+            Console.WriteLine("PASS captured MCHOSE report through visible WPF battery card.");
+            return 0;
+        }
         if (args.Contains("--settings-drag-fixture")) return LightUiChecks.RunDragFixture(true);
         if (args.Contains("--card-drag-fixture")) return LightUiChecks.RunDragFixture();
         if (args.Length == 2 && args[0] == "--startup-surface")
@@ -41,6 +47,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("MCHOSE reported keyboard battery remains visible in the normal card", () => MchoseFeedbackUiChecks.Run()),
             ("Light UI appearance grid retains themes modes and persistence", LightUiChecks.AppearanceLayout),
             ("Light UI floating digits stay readable on light and dark desktops", LightUiChecks.FloatingContrast),
             ("Light UI light theme controls retain contrast and working interaction", LightUiChecks.SettingsContrast),

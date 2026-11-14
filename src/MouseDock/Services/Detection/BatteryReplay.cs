@@ -101,7 +101,7 @@ internal static partial class BatteryReplay
                         device.Level is >= 0 and <= 100 ? device.Level : null, device.IsStale,
                         device.Connected, device.IsStale || (!device.Charging &&
                             !queries.Any(q => q.Receiver == receivers[device.Id] &&
-                                (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
+                                (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or "ExtraKeyboard:MchoseBy" or "ExtraMouse:RapooVt3Max" or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
                             ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
                         device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
                         SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") : "unknown")).ToArray());

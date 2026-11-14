@@ -39,6 +39,20 @@ internal static partial class BatteryReplay
             ReferenceBatteryProtocol.Reading result = null;
             if (rapoo || v9)
             {
+                if (v9 && samples.Any(s => s.Stage == "expansion-output"))
+                {
+                    var exchanges = samples.Where(s => s.Stage == "expansion-output" || s.Stage == "expansion-input" && s.Ok).ToArray();
+                    if (exchanges.Length != 4) return Missing();
+                    for (int i = 0; i < 4; i += 2)
+                    {
+                        if (exchanges[i].Stage != "expansion-output" || exchanges[i + 1].Stage != "expansion-input" ||
+                            !HeadsetExpansionBolutek.IsV9BatteryQuery(Bytes(exchanges[i]))) return Missing();
+                        result = HeadsetExpansionBolutek.Decode(Bytes(exchanges[i + 1]), v9Pro: true);
+                        if (result.Level < 0) return Missing();
+                    }
+                    return new(query.Receiver, candidates[0].Interface, query.Protocol, query.Status,
+                        result.Model, result.Level, result.ChargingKnown ? result.Charging : null, "captured");
+                }
                 int start = Array.FindIndex(samples, s => s.Stage == "battery-passive-drained" && s.Ok);
                 int end = Array.FindIndex(samples, s => s.Stage == "battery-passive-complete" && s.Ok);
                 if (start < 0 || end <= start || samples.Any(s => s.Stage.Contains("output") || s.Stage.Contains("feature")))

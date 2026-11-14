@@ -82,11 +82,13 @@ internal static class KeyboardExpansionTransactions
         {
             if (packet.Length != 20 || !packet.AsSpan(0,3).SequenceEqual(new byte[] {19,74,1}) ||
                 packet[19] != 94) throw new InvalidDataException("Wrong BY query");
-            return [Frame(20,(0,19),(1,74),(2,1),(5,(byte)(80 + ++byReads)),(6,0x11))];
+            var reply = Frame(20,(0,19),(1,74),(2,1),(4,2),(5,(byte)(80 + ++byReads)),(6,0x11));
+            reply[19] = unchecked((byte)reply.Take(19).Sum(v => (int)v));
+            return [reply];
         });
         var byResult = KeyboardExpansionMchoseBy.Read(Wire(by,20,20,19));
-        Check(byResult.Level == 82 && !byResult.ChargingKnown && byResult.Model == null,
-            "MCHOSE BY uses two fresh replies without guessing charge or model");
+        Check(byResult.Level == 82 && byResult.ChargingKnown && byResult.Charging && byResult.Model == null,
+            "MCHOSE BY uses two checksummed fresh replies with documented high-nibble charging");
 
         Input Glw(bool change)
         {

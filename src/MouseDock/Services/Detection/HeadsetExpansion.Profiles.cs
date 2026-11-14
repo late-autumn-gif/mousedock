@@ -7,7 +7,7 @@ namespace MouseDock.Services.Detection;
 internal static class HeadsetExpansionProfiles
 {
     internal static void ValidateV9Passive(HidDiscovery.VendorCollectionInfo c, ExpansionHidMetadata m) =>
-        Require(Matches("V9Pro", c) && c.Feature == 0 && m.Revision == 0x12 &&
+        Require(Matches("V9Pro", c) && Col(c, 5) && c.Feature == 0 && m.Revision == 0x12 &&
             m.HasInput(0x55, 64) && m.OutputIds.Count == 0 && m.FeatureIds.Count == 0,
             "V9 Pro input-only report55 layout not proven");
 

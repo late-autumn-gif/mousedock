@@ -78,6 +78,7 @@ public static partial class HidDiscovery
             bool active = reading.Status is ReferenceBatteryProtocol.State.Online or
                 ReferenceBatteryProtocol.State.Charging or ReferenceBatteryProtocol.State.Full;
             bool valid = reading.Level is >= 0 and <= 100 && active;
+            trace.Add("reader-result", active, result: BatteryReplay.SafeLabel(reading.Diagnostic));
             Record(reading.Status.ToString(), reading.Model, valid ? reading.Level : -1);
             if (active && (valid || reading.ChargingKnown))
             {

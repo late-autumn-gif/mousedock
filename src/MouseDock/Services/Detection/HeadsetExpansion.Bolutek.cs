@@ -5,6 +5,25 @@ namespace MouseDock.Services.Detection;
 
 internal static class HeadsetExpansionBolutek
 {
+    internal static bool IsV9BatteryQuery(byte[] packet) => packet != null &&
+        packet.AsSpan().SequenceEqual(Request());
+
+    internal static ReferenceBatteryProtocol.Reading ReadV9Reported(ExpansionWire wire)
+    {
+        // Official BLK readBattery uses report55 + 65 01. The reported Windows
+        // layout has output capacity but no enumerated output value/button IDs;
+        // the native link restricts every byte to this known battery query.
+        wire.TraceInput = b => PassiveBatteryNotifications.Mask(b, 0, 1, 2, 3);
+        ReferenceBatteryProtocol.Reading result = null;
+        for (int i = 0; i < 2; i++)
+        {
+            var raw = wire.Exchange(Request(), b => b.Length == 64 && b[0] == 0x55 && b[1] == 0x65, 1500);
+            result = Decode(raw, v9Pro: true);
+            if (result.Level < 0) return result;
+        }
+        return result;
+    }
+
     internal static ReferenceBatteryProtocol.Reading ReadV9Passive(ExpansionWire wire)
     {
         wire.TraceInput = b => PassiveBatteryNotifications.Mask(b, 0, 1, 2, 3);

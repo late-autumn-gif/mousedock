@@ -21,6 +21,8 @@ internal static class KeyboardExpansionRegression
         {
             var b = new byte[size];
             foreach (var (at, value) in fields) b[at] = value;
+            if (size == 20 && b[0] == 19 && b[1] == 74)
+            { b[4] = 2; b[19] = unchecked((byte)b.Take(19).Sum(v => (int)v)); }
             return b;
         }
         var fixtures = new (string Family, byte[] Frame, int Level, bool? Charge)[]
@@ -32,7 +34,7 @@ internal static class KeyboardExpansionRegression
             ("Irok", Frame(65,(2,63)),63,null),
             ("Neon", Frame(65,(2,62),(10,1)),62,true),
             ("RoyuanLegacy", Frame(65,(2,44),(4,1)),44,null),
-            ("MchoseBy", Frame(20,(0,19),(1,74),(2,1),(5,82)),82,null),
+            ("MchoseBy", Frame(20,(0,19),(1,74),(2,1),(5,82)),82,false),
             ("VgnV4", Frame(64,(0,1),(1,0x87),(4,1),(6,2),(7,66)),66,null),
             ("Exx", Frame(64,(0,1),(1,0x87),(4,1),(6,2),(7,55),(8,0x10)),55,true),
             ("Langtu", Frame(64,(0,0xAA),(1,0x55),(2,0xCC),(3,0x33),(4,0x0E),(5,57),(6,1)),57,null),

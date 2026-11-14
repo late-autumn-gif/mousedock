@@ -5,6 +5,11 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Contains("--verify-mchose-feedback"))
+{
+    Console.WriteLine($"PASS {MchoseFeedbackRegression.Run()} G89/V9 Pro feedback checks; no hardware I/O.");
+    return;
+}
 if (args.Contains("--verify-reported-trio"))
 {
     Console.WriteLine($"PASS {ReportedTrioRegression.Run()} G89/V9 Pro/VT3 MAX offline checks; no hardware I/O.");
@@ -364,6 +369,7 @@ assertions += OfficialInphicAulaRegression.Run();
 assertions += AulaScopedRegression.Run();
 assertions += AtkOfficialRegression.Run();
 assertions += MchoseRapooRegression.Run();
+assertions += MchoseFeedbackRegression.Run();
 assertions += ReportedTrioRegression.Run();
 assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();

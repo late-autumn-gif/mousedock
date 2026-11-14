@@ -88,8 +88,10 @@ internal static partial class VendorProtocol
         }
         public bool Write(byte[] packet, int timeoutMs) =>
             !rules.Passive && packet?.Length == Channel.Output && Channel.Output > 0 &&
+            (rules.OutputAllowed?.Invoke(packet) ?? true) &&
             Transfer(handle, signal, packet, true, Math.Max(1, timeoutMs), out int count) && count == packet.Length;
         public bool SetOutputReport(byte[] packet) => !rules.Passive && packet?.Length == Channel.Output &&
+            (rules.OutputAllowed?.Invoke(packet) ?? true) &&
             Channel.Output > 0 && Metadata.OutputIds.Contains(packet[0]) && HidD_SetOutputReport(handle, packet, packet.Length);
         public bool SetFeature(byte[] packet) => !rules.Passive && packet?.Length == Channel.Feature &&
             Channel.Feature > 0 && Metadata.FeatureIds.Contains(packet[0]) && HidD_SetFeature(handle, packet, packet.Length);

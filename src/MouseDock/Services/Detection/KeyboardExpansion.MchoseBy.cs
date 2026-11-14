@@ -10,11 +10,16 @@ internal static class KeyboardExpansionMchoseBy
         Require(raw.Length is >= 20 and <= 65 && raw.AsSpan(20).IndexOfAnyExcept((byte)0) < 0,
             "Invalid MCHOSE report19 padding");
         var b = raw.AsSpan(0, 20);
-        Require(b[0] == 19 && b[1] == 74 && b[2] == 1 && b[3] == 0 && b[5] <= 100 &&
+        int sum = 0;
+        for (int i = 0; i < 19; i++) sum += b[i];
+        Require(b[0] == 19 && b[1] == 74 && b[2] == 1 && b[3] == 0 && b[4] == 2 && b[5] <= 100 &&
+            b[7..19].IndexOfAnyExcept((byte)0) < 0 && b[19] == (byte)(sum & 255) &&
             (b[6] & 15) <= 1 && (b[6] >> 4) <= 1 &&
             !b.SequenceEqual(Packet(20, 19, 74, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 94)),
             "Invalid MCHOSE report19 battery");
-        return Value(b[5]);
+        // Official Parser().endianness("little"): fullStatus is the LOW nibble,
+        // chargeStatus is the HIGH nibble. 0x01 means full, not charging.
+        return Value(b[5], (b[6] >> 4) == 1);
     }
     internal static byte[] Request(int output)
     {

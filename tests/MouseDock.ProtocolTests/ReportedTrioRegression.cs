@@ -12,7 +12,7 @@ internal static class ReportedTrioRegression
         bool Reject(Action action) { try { action(); return false; } catch (Exception ex) when (ex is InvalidDataException or IOException or ArgumentException) { return true; } }
         byte[] Rapoo(int pct, int status = 1) { var b = new byte[19]; b[0] = 7; b[7] = (byte)status; b[8] = (byte)pct; b[18] = 0x80; return b; }
         byte[] V9(int pct, int status = 2) { var b = new byte[64]; b[0] = 0x55; b[1] = 0x65; b[2] = (byte)pct; b[3] = (byte)status; return b; }
-        byte[] By(int pct) { var b = new byte[20]; b[0] = 19; b[1] = 74; b[2] = 1; b[5] = (byte)pct; return b; }
+        byte[] By(int pct) { var b = new byte[20]; b[0] = 19; b[1] = 74; b[2] = 1; b[4] = 2; b[5] = (byte)pct; b[19] = unchecked((byte)b.Take(19).Sum(v => (int)v)); return b; }
         Check(ExtraDeviceRoutes.Find(0x24AE, 0x1417, "Rapoo Gaming Device") is
             { Family: "RapooVt3Max", Kind: DeviceKind.Mouse, Transport: "2.4G" }, "VT3 MAX own route");
         Check(!RapooVt3MaxProtocol.IsCandidate(0x24AE, 0x1413) && !RapooVt3MaxProtocol.IsCandidate(0x24AF, 0x1417) &&

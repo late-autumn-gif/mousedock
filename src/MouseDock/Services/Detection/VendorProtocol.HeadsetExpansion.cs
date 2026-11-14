@@ -36,13 +36,14 @@ internal static partial class VendorProtocol
                     {
                         try
                         {
-                            links.Add(new ExpansionHidLink(new("V9ProPassive",
+                            links.Add(new ExpansionHidLink(new("V9ProKnownBatteryQuery",
                                 candidate => HeadsetExpansionProfiles.Matches("V9Pro", candidate),
-                                HeadsetExpansionProfiles.ValidateV9Passive, Passive: true), c, trace));
+                                HeadsetExpansionProfiles.ValidateV9Passive,
+                                OutputAllowed: HeadsetExpansionBolutek.IsV9BatteryQuery), c, trace));
                             continue;
                         }
                         catch (Exception ex)
-                        { trace?.Add("v9-passive-channel-rejected", false, result: ex.Message); }
+                        { trace?.Add("v9-reported-channel-rejected", false, result: ex.Message); }
                     }
                     try { links.Add(new ExpansionHidLink(rules, c, trace)); }
                     catch (Exception ex)
@@ -71,8 +72,8 @@ internal static partial class VendorProtocol
                 }
                 Require(links.Count == 1, "No unique verified headset battery collection");
                 var wire = links[0].Wire(family == "Epos" ? 14000 : 10000);
-                if (family == "V9Pro" && links[0].Passive)
-                    return HeadsetExpansionBolutek.ReadV9Passive(wire);
+                if (family == "V9Pro" && links[0].Metadata.OutputIds.Count == 0)
+                    return HeadsetExpansionBolutek.ReadV9Reported(wire);
                 return family switch
                 {
                     "AtkN9V2" or "Bolutek" or "Mhub" or "V9Pro" or "Zhou" => HeadsetExpansionBolutek.Read(wire, family),
