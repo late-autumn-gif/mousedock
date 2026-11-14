@@ -64,6 +64,7 @@ internal sealed class ExpansionWire
     internal readonly ExpansionHidMetadata Metadata;
     internal readonly BatteryReplay.Trace Trace;
     internal Action<byte[]> CheckInput;
+    internal Func<byte[], byte[]> TraceInput;
     private readonly long deadline;
     internal ExpansionWire(ReferenceBatteryProtocol.ILink link, int input, int output, int feature = 0,
         ushort revision = 0, ExpansionHidMetadata metadata = null, BatteryReplay.Trace trace = null, int budget = 10000)
@@ -92,7 +93,7 @@ internal sealed class ExpansionWire
             CheckTime();
             if (b is not { Length: > 0 }) continue;
             CheckInput?.Invoke(b);
-            bool ok = accept(b); Trace?.Add("expansion-input", ok, raw: b, keep: true);
+            bool ok = accept(b); Trace?.Add("expansion-input", ok, raw: TraceInput?.Invoke(b) ?? b, keep: true);
             if (ok) return b;
         }
         throw new IOException("Fresh matching device response not received");

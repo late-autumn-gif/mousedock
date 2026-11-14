@@ -17,6 +17,7 @@ internal static partial class VendorProtocol
         internal readonly ExpansionHidMetadata Metadata;
         private readonly ExpansionHidRules rules;
         private readonly BatteryReplay.Trace trace;
+        internal bool Passive => rules.Passive;
 
         internal ExpansionHidLink(ExpansionHidRules rules, HidDiscovery.VendorCollectionInfo channel,
             BatteryReplay.Trace trace)

@@ -269,6 +269,8 @@ internal static partial class BatteryReplay
 
     internal static Result Replay(Query query, Collection[] collections)
     {
+        if (query.Protocol is "ExtraMouse:RapooVt3Max" or "ExtraHeadset:V9Pro" or "ExtraKeyboard:MchoseBy")
+            return ReplayReportedTrio(query, collections);
         var channel = collections.FirstOrDefault(c => c.Interface == query.Interface &&
             c.Receiver == query.Receiver && !c.Excluded);
         if (query.Protocol == VendorProtocol.Zg4Protocol)

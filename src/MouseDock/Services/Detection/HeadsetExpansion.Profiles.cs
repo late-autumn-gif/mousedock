@@ -6,6 +6,11 @@ namespace MouseDock.Services.Detection;
 
 internal static class HeadsetExpansionProfiles
 {
+    internal static void ValidateV9Passive(HidDiscovery.VendorCollectionInfo c, ExpansionHidMetadata m) =>
+        Require(Matches("V9Pro", c) && c.Feature == 0 && m.Revision == 0x12 &&
+            m.HasInput(0x55, 64) && m.OutputIds.Count == 0 && m.FeatureIds.Count == 0,
+            "V9 Pro input-only report55 layout not proven");
+
     internal static string Find(ushort vid, ushort pid, string product) => (vid, pid) switch
     {
         (0x373B, 0x1262 or 0x12D6) => "AtkN9V2",

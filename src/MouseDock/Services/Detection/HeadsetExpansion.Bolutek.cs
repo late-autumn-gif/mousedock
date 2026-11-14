@@ -5,6 +5,13 @@ namespace MouseDock.Services.Detection;
 
 internal static class HeadsetExpansionBolutek
 {
+    internal static ReferenceBatteryProtocol.Reading ReadV9Passive(ExpansionWire wire)
+    {
+        wire.TraceInput = b => PassiveBatteryNotifications.Mask(b, 0, 1, 2, 3);
+        return PassiveBatteryNotifications.Read(wire, b => b.Length >= 2 && b[0] == 0x55 && b[1] == 0x65,
+            b => Decode(b, v9Pro: true));
+    }
+
     internal static byte[] Request(int size = 64) => Packet(size, 0x55, 0x65, 1);
     internal static ReferenceBatteryProtocol.Reading Decode(byte[] raw, bool v9Pro = false, bool zhou = false)
     {

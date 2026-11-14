@@ -28,6 +28,8 @@ ZIP 保存在用户所选位置。实例编号仅在报告内有效。报告保�
 
 ## 离线重放
 
+2026-11-15 增加 [G89 / V9 Pro / VT3 MAX](G89-V9PRO-VT3MAX.md) 的三组精确报告布局回放。新被动路径须记录清队列、两份有效新通知及事务完成，G89 须记录两组正确请求/响应。没有样本的旧报告继续保持未知。
+
 ```powershell
 Start-Process -FilePath '.\MouseDock.exe' -Wait -ArgumentList '--replay-report ".\报告.zip" ".\重放结果.json"'
 ```

@@ -32,6 +32,18 @@ internal static partial class VendorProtocol
                     family is "AulaG9" or "Jbl" or "SonyH9Serial" or "AtkN9Serial");
                 foreach (var c in selected)
                 {
+                    if (family == "V9Pro")
+                    {
+                        try
+                        {
+                            links.Add(new ExpansionHidLink(new("V9ProPassive",
+                                candidate => HeadsetExpansionProfiles.Matches("V9Pro", candidate),
+                                HeadsetExpansionProfiles.ValidateV9Passive, Passive: true), c, trace));
+                            continue;
+                        }
+                        catch (Exception ex)
+                        { trace?.Add("v9-passive-channel-rejected", false, result: ex.Message); }
+                    }
                     try { links.Add(new ExpansionHidLink(rules, c, trace)); }
                     catch (Exception ex)
                     {
@@ -59,6 +71,8 @@ internal static partial class VendorProtocol
                 }
                 Require(links.Count == 1, "No unique verified headset battery collection");
                 var wire = links[0].Wire(family == "Epos" ? 14000 : 10000);
+                if (family == "V9Pro" && links[0].Passive)
+                    return HeadsetExpansionBolutek.ReadV9Passive(wire);
                 return family switch
                 {
                     "AtkN9V2" or "Bolutek" or "Mhub" or "V9Pro" or "Zhou" => HeadsetExpansionBolutek.Read(wire, family),
