@@ -66,8 +66,6 @@ namespace MouseDock
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            Exit += (_, _) => Services.Detection.RapooAhubSessions.Reconcile(
-                Array.Empty<Services.Detection.HidDiscovery.VendorCollectionInfo>(), true);
 
             // 更新模式排在单实例锁之前：这一步要替换正在运行的 exe，
             // 和主实例抢 mutex 只会让流程卡住。

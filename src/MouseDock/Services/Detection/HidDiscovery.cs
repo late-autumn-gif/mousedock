@@ -350,7 +350,6 @@ namespace MouseDock.Services.Detection
             bool readLogitechDpi = BatteryReplay.Current == null;
             QueryOriginalGpwCollections(legacyBuckets, vendorCollections, safeMode, preferences,
                 (path, vid, pid) => VendorProtocol.ReadOriginalGpw(path, vid, pid, readLogitechDpi, dpiChange));
-            RapooAhubSessions.Reconcile(vendorCollections, safeMode);
             QueryExtraDevices(buckets, vendorCollections, safeMode, preferences, ExtraDeviceRoutes.Read);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。

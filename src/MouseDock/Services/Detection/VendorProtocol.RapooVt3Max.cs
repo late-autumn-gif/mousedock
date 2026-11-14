@@ -12,7 +12,7 @@ internal static partial class VendorProtocol
             return ReferenceBatteryProtocol.Reading.Failed("VT3 MAX physical instance missing");
         var selected = channels?.Where(c => RapooVt3MaxProtocol.Matches(c) && InstanceScope.Allows(c.Path)).ToArray();
         if (selected?.Length != 1) return ReferenceBatteryProtocol.Reading.Failed("VT3 MAX missing/ambiguous report7 channel");
-        return RapooAhubSessions.Read(InstanceScope.Current,
+        return RapooAhubReader.Read(InstanceScope.Current,
             channels.Where(c => InstanceScope.Allows(c.Path)).ToArray(), trace);
     }
 }

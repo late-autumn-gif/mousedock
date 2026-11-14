@@ -32,20 +32,39 @@ internal static class RapooAhubProtocol
 
     internal static byte[] ValidateReply(byte[] request, byte[] b)
     {
-        Require(Allowed(request) && b is { Length: 33 } && b[0] == 8 && b[1] == 1, "AHUB invalid Feature08 acknowledgement");
-        if (request[2] == 164)
-            Require(b[2] == 164 && b[3] == request[3] && b[4] == 0, "AHUB memory response mismatch");
-        return b;
+        Require(Allowed(request), "AHUB non-whitelisted request");
+        var payload = Payload(b);
+        // Official Nx checks payload[0] ACK; at()/qx/Gx read data at payload[4].
+        // Real receiver returns zero reserved bytes, not an echoed command/length.
+        Require(payload[0] == 1 && payload.Length >= (request[2] == 164 ? 4 + request[3] : 9),
+            "AHUB invalid Feature08 acknowledgement/payload length");
+        return payload;
+    }
+    internal static byte[] Payload(byte[] raw)
+    {
+        Require(raw is { Length: 33 }, "AHUB invalid native Feature08 length");
+        // Exact, separately validated Feature08 collection only. The user report
+        // proves ACK-first native data; preserve report-ID-prefixed compatibility.
+        Require(raw[0] is 8 or 1 or 2, "AHUB unexpected Feature08 framing");
+        return raw[0] == 8 ? raw.AsSpan(1).ToArray() : raw;
+    }
+    internal static bool Busy(byte[] raw) => raw is { Length: 33 } &&
+        (raw[0] == 2 || raw[0] == 8 && raw[1] == 2);
+    internal static byte[] MaskReply(byte[] raw, bool keepValue)
+    {
+        int offset = raw is { Length: > 0 } && raw[0] == 8 ? 1 : 0;
+        return keepValue ? PassiveBatteryNotifications.Mask(raw, 0, offset, offset + 1, offset + 2, offset + 3, offset + 4)
+            : PassiveBatteryNotifications.Mask(raw, 0, offset, offset + 1, offset + 2, offset + 3);
     }
     internal static void Initialize(Func<byte[], byte[]> exchange)
     {
         foreach (var request in Names) ValidateReply(request, exchange(request));
         var current = ReadMemory(268, 1);
-        int slot = ValidateReply(current, exchange(current))[5];
+        int slot = ValidateReply(current, exchange(current))[4];
         Require(slot < 8, "AHUB configuration index out of range");
         var name = Names[slot]; ValidateReply(name, exchange(name));
         var dpi = ReadMemory(2200, 1);
-        Require(ValidateReply(dpi, exchange(dpi))[5] < 7, "AHUB DPI gear out of range");
+        Require(ValidateReply(dpi, exchange(dpi))[4] < 7, "AHUB DPI gear out of range");
         foreach (var request in Firmware) ValidateReply(request, exchange(request));
     }
 }

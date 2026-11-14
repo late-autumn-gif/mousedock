@@ -29,7 +29,7 @@ Services/UpdateService（自更新）
 
 ## 识别链路
 
-VT3 MAX `24AE:1417/0105` 的扩展路由使用 `RapooAhubProtocol`（纯只读初始化协议）及 `RapooAhubSessions`（每物理实例有界持续通知会话），连接报告 06 输出/Feature08 控制应答与独立报告 07 电量。每次刷新消费未使用且最多 30 秒的通知，失败保持未知；发现链路撤销断开/安全模式/禁用会话。该方案待实机验证，详见 [限制](docs/RAPOO-AHUB-SESSION.md)。
+VT3 MAX `24AE:1417/0105` 沿用原 HidDiscovery → InstanceScope → ExtraDeviceRoutes → BatteryService 链路。`RapooAhubReader` 在原 ReferenceQueryGate 中按次刷新打开、校验及释放接口，使用 `RapooAhubProtocol` 执行只读初始化并读取新报告 07。Feature08 兼容实机 ACK-first 布局；没有独立常驻会话或跨轮电量缓存。该方案待实机验证，详见 [限制](docs/RAPOO-AHUB-SESSION.md)。
 
 1. `HidDiscovery.Enumerate` 用 SetupAPI + hid.dll 枚举所有 HID 顶层集合，按 `InstanceScope` 把同一物理设备的多个接口归并成 `Bucket`。
 2. 每个集合先判类型（`TryDeviceKind` / `RefineKind`），并累计到 `Bucket.Counts`。
