@@ -35,7 +35,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         _floatingColors[solid.Color] = corrected;
         return corrected;
     }
-    private double StaleOpacity(bool stale) => !stale ? 1 : TransparentFloating ? .85 : .45;
+    private static double StaleOpacity(bool stale) => stale ? .45 : 1;
     private void LegibleText(DrawingContext dc, FormattedText value, Point point)
     {
         if (TransparentFloating)
@@ -177,7 +177,6 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 Bar(dc, new Rect(18, 76, 60, 2.5), drawn, item.Charging && !item.Stale ? _phase : -1);
                 break;
         }
-        if (item.Stale && TransparentFloating) Text(dc, "旧", 9, new Point(78, 14), StatusBrush(-1, true), 14);
         // The source single-device styles signal charging through color, with a separate pulse in styles without a charging ring.
         if (_models != null && slot < _models.Count && _models[slot].IsFullActive)
             Text(dc, "✓", 11, new Point(70, 62), Accent, 15);
@@ -228,7 +227,6 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (style != "ring" && IsFull(i))
                 Text(dc, "✓", 9, new Point(width - 20, y + rowHeight * .23), Accent, 13);
             else if (style != "ring" && item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(width - 20, y + rowHeight * .23), 9);
-            if (item.Stale && TransparentFloating) Text(dc, "旧", 9, new Point(width - 12, y - rowHeight * .3), StatusBrush(-1, true), 14);
             dc.Pop();
         }
     }
@@ -253,7 +251,6 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             Text(dc, item.Level < 0 ? "\u2014" : item.Level.ToString(CultureInfo.InvariantCulture),
                 Math.Min(31, cell.Width * .58), new Point(center, cell.Y + cell.Height * .73),
                 StatusBrush(item.Level, true), cell.Width - 4);
-            if (item.Stale && TransparentFloating) Text(dc, "旧", 9, new Point(center + 14, cell.Y + 27), StatusBrush(-1, true), 14);
             if (item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(center + 14, cell.Y + 27), 9);
             dc.Pop();
         }

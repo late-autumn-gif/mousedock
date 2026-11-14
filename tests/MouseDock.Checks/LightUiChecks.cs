@@ -39,8 +39,23 @@ internal static class LightUiChecks
                 }
                 return count;
             }
-            Require(Visible(16, background == System.Windows.Media.Colors.Black) > 40 && Visible(76, background == System.Windows.Media.Colors.Black) > 40,
-                "Fresh or stale floating digits vanish on a light/dark desktop.");
+            Require(Visible(16, background == System.Windows.Media.Colors.Black) > 40,
+                "Live floating digits vanish on a light/dark desktop.");
+            long Difference(byte[] image)
+            {
+                long total = 0;
+                for (int y = 76; y < 113; y++) for (int x = 60; x < 142; x++)
+                {
+                    int offset = (y * 160 + x) * 4;
+                    total += Math.Abs(image[offset] - background.B) + Math.Abs(image[offset+1] - background.G) + Math.Abs(image[offset+2] - background.R);
+                }
+                return total;
+            }
+            keyboard.IsStale = false; icon.InvalidateVisual(); canvas.UpdateLayout();
+            var live = new byte[pixels.Length]; Snapshot().CopyPixels(live, 160 * 4, 0);
+            double faded = Difference(pixels) / (double)Math.Max(1, Difference(live));
+            Require(faded > .40 && faded < .50, "Sleeping readings must retain their original 45% fade rather than a new label or boosted opacity.");
+            keyboard.IsStale = true; icon.InvalidateVisual(); canvas.UpdateLayout();
             Require(mouse.Level == 99 && keyboard.Level == 54 && keyboard.IsStale && !keyboard.IsChargingActive, "Readability changed battery evidence.");
             var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(Snapshot()));
             using (var file = File.Create($"artifacts/light-controls/floating-{background.R}-{hide}.png")) encoder.Save(file);
