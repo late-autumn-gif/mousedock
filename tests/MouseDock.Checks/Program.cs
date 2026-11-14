@@ -16,6 +16,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--card-drag-fixture")) return LightUiChecks.RunDragFixture();
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
         if (args.Length == 1 && args[0] == "--dock-dpi")
@@ -39,6 +40,7 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
+            ("Light UI card gestures separate dragging clicks and diagnostic text", LightUiChecks.CardGestures),
             ("Light UI settings navigation retains controls and applies density", LightUiChecks.Navigation),
             ("Light UI save feedback reports real success and write failure", LightUiChecks.SaveFailure),
             ("Light UI six tray choices retain selection and invoke exact modes", LightUiChecks.TrayChoices),

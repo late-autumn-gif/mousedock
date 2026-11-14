@@ -276,18 +276,65 @@ namespace MouseDock.Views
         {
             if (e.Key == Key.Escape) { DetailPanel.Visibility = Visibility.Collapsed; e.Handled = true; }
         }
-        private void OnDeviceClick(object sender, MouseButtonEventArgs e)
+        private Point? _cardPointerStart;
+        private DeviceInfo _cardPointerDevice;
+
+        internal bool BeginCardGesture(DependencyObject source, Point point)
         {
-            if (sender is not FrameworkElement { DataContext: DeviceInfo device }) return;
-            DependencyObject current = e.OriginalSource as DependencyObject;
-            while (current != null && current != sender)
+            _cardPointerStart = null;
+            _cardPointerDevice = null;
+            for (var node = source; node != null; node = VisualTreeHelper.GetParent(node))
             {
-                if (current is System.Windows.Controls.Primitives.ButtonBase) return;
-                current = VisualTreeHelper.GetParent(current);
+                if (node is System.Windows.Controls.Primitives.ButtonBase || node is TextBox ||
+                    node is System.Windows.Controls.Primitives.Selector || node is System.Windows.Controls.Primitives.ScrollBar)
+                    return false;
+                if (node is FrameworkElement { DataContext: DeviceInfo device }) _cardPointerDevice = device;
+                if (ReferenceEquals(node, Root)) break;
             }
-            DetailPanel.DataContext = device;
-            DetailPanel.Visibility = Visibility.Visible;
+            _cardPointerStart = point;
+            return true;
+        }
+        internal bool TryStartCardDrag(Point point)
+        {
+            if (_cardPointerStart is not Point start ||
+                (Math.Abs(point.X - start.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                 Math.Abs(point.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance)) return false;
+            _cardPointerStart = null;
+            _cardPointerDevice = null;
+            return true;
+        }
+        internal void CompleteCardGesture()
+        {
+            if (_cardPointerStart != null && _cardPointerDevice != null)
+            {
+                DetailPanel.DataContext = _cardPointerDevice;
+                DetailPanel.Visibility = Visibility.Visible;
+            }
+            _cardPointerStart = null;
+            _cardPointerDevice = null;
+        }
+        private void OnCardPointerDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left) return;
+            Point start = e.GetPosition(this);
+            if (!BeginCardGesture(e.OriginalSource as DependencyObject, start)) return;
             e.Handled = true;
+            Activate();
+            double left = Left, top = Top;
+            try
+            {
+                // Enter the native move loop on button-down, before queued mouse-up events.
+                DragMove();
+            }
+            catch (InvalidOperationException)
+            {
+                _cardPointerStart = null;
+                _cardPointerDevice = null;
+                return;
+            }
+            bool moved = TryStartCardDrag(new Point(start.X + Left - left, start.Y + Top - top));
+            if (moved && ReferenceEquals(App.Dock, this)) App.SaveWindowPositions();
+            CompleteCardGesture();
         }
         private void OnDeviceKeyDown(object sender, KeyEventArgs e)
         {
@@ -297,33 +344,6 @@ namespace MouseDock.Views
             DetailPanel.Visibility = Visibility.Visible;
             e.Handled = true;
         }
-        private void OnDragWindow(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton != MouseButton.Left) return;
-
-            // 点在齿轮等可交互元素上时不拖动
-            if (e.OriginalSource is DependencyObject src)
-            {
-                while (src != null)
-                {
-                    if (src is System.Windows.Controls.Primitives.ButtonBase) return;
-                    src = VisualTreeHelper.GetParent(src);
-                }
-            }
-
-            try { DragMove(); } catch { }
-        }
-
-        private static bool IsInside(DependencyObject child, DependencyObject parent)
-        {
-            while (child != null)
-            {
-                if (ReferenceEquals(child, parent)) return true;
-                child = System.Windows.Media.VisualTreeHelper.GetParent(child);
-            }
-            return false;
-        }
-
         private void OnGearClick(object sender, MouseButtonEventArgs e)
         {
             // 齿轮必须在按下阶段就拦下来，否则会被窗口的 DragMove 吃

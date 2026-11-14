@@ -9,6 +9,66 @@ using Forms = System.Windows.Forms;
 
 internal static class LightUiChecks
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr handle, int index);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr handle, int index, int value);
+    internal static int RunDragFixture()
+    {
+        using var fixture = new AppearanceFixture();
+        fixture.Battery.VisibleDevices[0].Note = "RX=synthetic-private-diagnostic";
+        var window = new DockWindow { Title = "MouseDock drag verification", Left = 240, Top = 160, ShowInTaskbar = true };
+        fixture.Set("Dock", window);
+        window.ApplyTheme(MouseDock.App.Theme, false);
+        window.Show();
+        string result = Path.Combine(Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR")!, "native-drag.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(result)!);
+        File.WriteAllText(result, $"start {window.Left},{window.Top}\n");
+        window.LocationChanged += (_, _) => File.AppendAllText(result, $"move {window.Left},{window.Top}\n");
+        var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+        SetWindowLong(handle, -20, (GetWindowLong(handle, -20) & ~0x80) | 0x40000);
+        window.Closed += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Background);
+        System.Windows.Threading.Dispatcher.Run();
+        return 0;
+    }
+    internal static void CardGestures()
+    {
+        using var fixture = new AppearanceFixture();
+        var device = fixture.Battery.VisibleDevices[0];
+        device.Note = "MHUB4D/0900 connectStatus RX=4D0101100009000373826400";
+        var window = new DockWindow { Left = -2000, ShowActivated = false };
+        fixture.Set("Dock", window);
+        window.Show(); window.UpdateLayout();
+        var row = Descendants<Border>((DependencyObject)window.Content).Single(b => b.Name == "Row");
+        var detail = (Border)window.FindName("DetailPanel");
+        foreach (string style in new[] { "standard", "compact", "bare" })
+        {
+            window.ApplyDensity(style); window.UpdateLayout();
+            Require(Equals(row.ToolTip, device.Name), "A card tooltip exposed raw diagnostics.");
+            Require(window.BeginCardGesture(row, new Point(10, 10)), "Device rows must be draggable.");
+            Require(!window.TryStartCardDrag(new Point(11, 10)), "A small click movement started a drag.");
+            window.CompleteCardGesture();
+            Require(detail.Visibility == Visibility.Visible && ReferenceEquals(detail.DataContext, device), "Click no longer opens device details.");
+            Require(!Descendants<TextBlock>(detail).Any(t => t.Text.Contains("RX=") || t.Text.Contains("connectStatus")), "Device details exposed raw protocol bytes.");
+            detail.Visibility = Visibility.Collapsed;
+            window.BeginCardGesture(row, new Point(10, 10));
+            Require(window.TryStartCardDrag(new Point(40, 10)), "Crossing the drag threshold was ignored.");
+            window.CompleteCardGesture();
+            Require(detail.Visibility == Visibility.Collapsed, "Dragging accidentally opened device details.");
+            Require(!window.BeginCardGesture((Button)window.FindName("PinButton"), new Point(10, 10)), "A toolbar button was taken over by dragging.");
+            Require(!window.TryStartCardDrag(new Point(40, 40)), "Canceled button gestures retained an old drag.");
+        }
+        Require(device.Note.Contains("RX="), "UI cleanup deleted diagnostic evidence.");
+    }
+    private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is T match) yield return match;
+            foreach (var descendant in Descendants<T>(child)) yield return descendant;
+        }
+    }
     internal static void Navigation()
     {
         using var fixture = new AppearanceFixture();
