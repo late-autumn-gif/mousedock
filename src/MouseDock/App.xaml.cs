@@ -426,11 +426,12 @@ namespace MouseDock
         private static WinForms.ContextMenuStrip CreateTrayMenu(DeviceInfo device = null)
         {
             var menu = new WinForms.ContextMenuStrip { Tag = device };
-            var title = new WinForms.ToolStripMenuItem(device?.Name ?? "MouseDock · 1.2.1") { Enabled = false };
+            var title = new WinForms.ToolStripLabel(device?.Name ?? "MouseDock · " + typeof(App).Assembly.GetName().Version?.ToString(3)) { TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
             menu.Items.Add(title);
             menu.Items.Add("显示电量窗", null, (_, _) => ShowCurrentSurface());
             menu.Items.Add("收起电量窗", null, (_, _) => Surfaces.Apply(Settings.SurfaceMode, false));
             menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add(new WinForms.ToolStripLabel("显示方式") { TextAlign = System.Drawing.ContentAlignment.MiddleLeft });
             var picker = new TraySurfacePicker(SetSurface);
             menu.Items.Add(picker);
             menu.Items.Add(new WinForms.ToolStripSeparator());

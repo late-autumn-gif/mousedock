@@ -46,7 +46,7 @@ internal static class TrayInteractionChecks
         command.DropDownItems.Add(child);
         menu.Items.Add(command);
         var apply = type!.GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
-        foreach (var theme in new[] { ThemePreset.ById("cloud"), ThemePreset.ById("reference-mint") })
+        foreach (var theme in new[] { ThemePreset.ById("cloud"), ThemePreset.ById("reference-mint"), MouseDock.Services.ReferenceThemes.Resolve("rose", "light") })
         {
             apply.Invoke(null, [menu, theme]);
             Require(menu.BackColor.R == theme.Surface.R && menu.ForeColor.G == theme.Text.G,
@@ -57,6 +57,15 @@ internal static class TrayInteractionChecks
             using var bitmap = new System.Drawing.Bitmap(menu.Width, menu.Height);
             menu.DrawToBitmap(bitmap, menu.ClientRectangle);
             Require(bitmap.GetPixel(2, 2).A != 0, "The tray menu rendered blank.");
+            int blueBoxPixels = 0;
+            for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < System.Math.Min(30, bitmap.Width); x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.B > 180 && pixel.G > 100 && pixel.R < 180 && pixel.B - pixel.R > 25) blueBoxPixels++;
+            }
+            Require(blueBoxPixels < 70, "Checked tray items still paint a large system-blue box.");
+            System.IO.Directory.CreateDirectory("artifacts/tray-renderer");
+            bitmap.Save("artifacts/tray-renderer/" + theme.Id + ".png");
         }
         command.PerformClick();
         Require(clicks == 1, "The renderer changed command invocation.");
