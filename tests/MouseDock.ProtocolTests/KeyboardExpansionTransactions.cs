@@ -29,6 +29,46 @@ internal static class KeyboardExpansionTransactions
             int feature = 0,byte featureId = 0,ushort revision = 0) =>
             new(link,input,output,feature,id,id,featureId,revision);
 
+        ReferenceBatteryProtocol.Reading Logitech(bool identityChanges, bool twoKeyboards)
+        {
+            int samples = 0, identities = 0;
+            var longInput = new Input(_ => throw new InvalidDataException("Unexpected long-channel write"));
+            var shortInput = new Input(packet =>
+            {
+                if (packet.Length != 7 || packet[0] != 0x10 || (packet[3] & 0x0f) == 0)
+                    throw new InvalidDataException("Invalid HID++ request");
+                int slot = packet[1];
+                if (slot != 2 && !(twoKeyboards && slot == 5)) return [];
+
+                byte feature = packet[2], function = (byte)(packet[3] >> 4);
+                byte[] parameters = (feature, function) switch
+                {
+                    (0, 1) => [2, 0, packet[6]],
+                    (0, 0) when packet[4] == 0 && packet[5] == 5 => [8],
+                    (0, 0) when packet[4] == 0 && packet[5] == 3 => [9],
+                    (0, 0) when packet[4] == 0x10 && packet[5] == 4 => [10],
+                    (8, 2) => [0],
+                    (9, 0) => [1, 2, 3, 4, (byte)(identityChanges ? ++identities : 5)],
+                    (10, 1) => [(byte)(60 + ++samples), 4, 2, 0],
+                    _ => throw new InvalidDataException("Unexpected HID++ keyboard feature")
+                };
+                var reply = Frame(20, (0, 0x11), (1, packet[1]), (2, feature), (3, packet[3]));
+                parameters.CopyTo(reply, 4);
+                var oldReply = reply.ToArray();
+                oldReply[3] ^= 1;
+                oldReply[4] = 99;
+                longInput.Enqueue(oldReply);
+                longInput.Enqueue(reply);
+                return [];
+            });
+            return KeyboardExpansionLogitech.Read(Wire(shortInput, 7, 7, 0x10), Wire(longInput, 20, 20, 0x11));
+        }
+
+        Check(Logitech(false, false) is { Level: 62, Charging: true, Identity: not null },
+            "HID++ correlates long replies and takes the second fresh battery sample");
+        Check(Reject(() => Logitech(true, false)), "HID++ rejects a replaced paired keyboard");
+        Check(Reject(() => Logitech(false, true)), "HID++ refuses to merge two keyboard slots");
+
         int statusCount = 0,batteryCount = 0;
         var atk = new Input(packet =>
         {
@@ -273,6 +313,7 @@ internal static class KeyboardExpansionTransactions
         internal bool Flood;
         internal readonly List<byte[]> Outputs = new();
         public long Now { get; private set; }
+        internal void Enqueue(byte[] report) => queue.Enqueue(report);
         public byte[]? Read(int timeoutMs)
         {
             Now += Math.Max(1,queue.Count == 0 ? timeoutMs : 1);
