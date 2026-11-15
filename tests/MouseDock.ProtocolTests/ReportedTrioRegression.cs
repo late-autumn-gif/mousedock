@@ -132,6 +132,11 @@ internal static class ReportedTrioRegression
         HidDiscovery.QueryExtraDevices(buckets, channels, false, null, Query);
         var shown = new AutoDetectSource().UpdateFromDetection(new[] { bucket.ToDevice() }.ToList()).Single();
         Check(calls == 1 && shown.Level == 65 && shown.Kind == DeviceKind.Mouse && shown.Name == RapooVt3MaxProtocol.Model, "normal DeviceInfo display pipeline");
+        var receiverOnly = new HidDiscovery.Bucket { Vid = 0x24AE, Pid = 0x1417, Product = "Rapoo Gaming Device",
+            Kind = DeviceKind.Mouse, ExtraRoute = ExtraDeviceRoutes.Find(0x24AE, 0x1417, "Rapoo Gaming Device"), Battery = -1 }.ToDevice();
+        Check(receiverOnly.Name == "雷柏 VT3 MAX 接收器" && receiverOnly.RawName == "Rapoo Gaming Device" &&
+            receiverOnly.Level == -1 && !receiverOnly.PeripheralConfirmed && receiverOnly.ConfirmedModel == "",
+            "known receiver label does not depend on battery or confirm the mouse is online");
         HidDiscovery.QueryExtraDevices(buckets, channels, true, null, Query);
         Check(calls == 1 && bucket.ToDevice().Level == -1, "safe mode clears reading without I/O");
         HidDiscovery.QueryExtraDevices(buckets, channels, false, new DevicePreferences(new AppSettings { DisabledRecognitionDeviceIds = new() { a } }), Query);

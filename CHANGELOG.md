@@ -1,5 +1,7 @@
 # MouseDock 更新日志
 
+- VT3 MAX `24AE:1417` 在电量未知时显示「雷柏 VT3 MAX 接收器」，诊断保留原始 USB 产品名。收到有效电量后仍显示鼠标型号。
+
 ## 手柄电量协议复核（2026-11-15）
 
 - 对照 Sony 公开驱动、Nintendo HID 协议记录及 SDL 设备代码重做 DualShock 4、DualSense、Nintendo 与 8BitDo 的电量解码。保留 USB/蓝牙报告、校验、档位、百分比和充电显示规则。
