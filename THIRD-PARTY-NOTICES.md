@@ -5,6 +5,10 @@
 The six verified battery profiles, request/response rules, and ATK CID/MID names
 were adapted into new battery-only C# code in ReferenceProfiles,
 ReferenceBatteryProtocol, VendorProtocol.Reference and ReferenceIdentityNames.
+The current Sora V2 battery transaction in SoraV2BatteryProtocol is based on
+Ninjutso's official NinjaForce driver. The historical receiver profile and
+oracle fixtures are still attributed here.
+
 The explicitly requested X23SE adaptation also uses the reference's FREQ
 scheme-a request/decoder rules, reimplemented in VendorProtocol.Freq and
 VendorProtocol.ReportedX23Se. It is protocol-supported, not an upstream

@@ -35,9 +35,7 @@ internal static class ReferenceBatteryProtocol
                 scyrox[0] = 8; scyrox[1] = 1; scyrox[63] = 9;
                 return scyrox;
             case ReferenceProfiles.Protocol.SoraV2:
-                var sora = new byte[32];
-                sora[0] = 5; sora[1] = 0x15; sora[4] = 1;
-                return sora;
+                return SoraV2BatteryProtocol.CreateQuery();
             case ReferenceProfiles.Protocol.Rapoo:
                 return null; // Passive. Never replace this with a different Rapoo query.
             default:
@@ -83,14 +81,7 @@ internal static class ReferenceBatteryProtocol
                     "Scyrox 当前配置电量；协议未提供已确认的充电字段");
                 return true;
             case ReferenceProfiles.Protocol.SoraV2:
-                if (b.Length != 32 || b[0] != 5 || b[1] != 0x15) return false;
-                if (b[12] == 0)
-                {
-                    reading = new(-1, false, false, State.Sleep, "Sora 外设休眠或离线，未采用电量字节");
-                    return true;
-                }
-                level = b[9]; charging = b[10] != 0;
-                break;
+                return SoraV2BatteryProtocol.TryDecode(b, out reading);
             case ReferenceProfiles.Protocol.Rapoo:
                 if (b.Length is 19 or 20 && b[0] == 7 && (b[1] & 15) <= 2 && b[7] <= 2)
                 {
@@ -137,15 +128,10 @@ internal static class ReferenceBatteryProtocol
         if (profile == null) return Reading.Failed("未匹配有限设备配置，未发送命令");
         try
         {
-            byte[] request = Request(profile.Battery);
             if (profile.Battery == ReferenceProfiles.Protocol.SoraV2)
-            {
-                if (!link.SetFeature(request)) return Reading.Failed("Sora Feature 查询发送失败");
-                link.Delay(100);
-                byte[] reply = link.GetFeature(5, 32);
-                return reply != null && TryDecode(profile.Battery, reply, out var result)
-                    ? result : Reading.Failed("Sora Feature 应答缺失或无效");
-            }
+                return SoraV2BatteryProtocol.Read(link);
+
+            byte[] request = Request(profile.Battery);
             if (request != null)
             {
                 if (!Drain(link)) return Reading.Failed("旧输入队列未清空，取消本次查询");

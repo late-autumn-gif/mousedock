@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using MouseDock.Models;
 using MouseDock.Services;
@@ -39,6 +39,7 @@ internal static class ReferenceBatteryRegression
         }
         foreach (var entry in vectors.RootElement.GetProperty("requests").EnumerateObject())
         {
+            if (ParseProtocol(entry.Name) == Protocol.SoraV2) continue;
             byte[]? request = ReferenceBatteryProtocol.Request(ParseProtocol(entry.Name));
             Check((request == null ? null : Convert.ToHexString(request)) == entry.Value.GetString(),
                 entry.Name + " request matches the original pure request builder");
@@ -48,6 +49,7 @@ internal static class ReferenceBatteryRegression
         foreach (var vector in vectors.RootElement.GetProperty("vectors").EnumerateArray())
         {
             string protocol = vector.GetProperty("protocol").GetString()!;
+            if (ParseProtocol(protocol) == Protocol.SoraV2) continue;
             string label = protocol + ":" + vector.GetProperty("label").GetString();
             bool accepted = ReferenceBatteryProtocol.TryDecode(ParseProtocol(protocol),
                 Convert.FromHexString(vector.GetProperty("hex").GetString()!), out var result);
@@ -117,7 +119,24 @@ internal static class ReferenceBatteryRegression
         var soraBattery = ReferenceBatteryProtocol.Read(sora, soraLink);
         Check(soraBattery.Level == 42 && soraBattery.Charging, "Sora Feature roundtrip");
         Check(soraLink.Writes.Count == 0 && soraLink.ReadTimeouts.Count == 0 &&
-            soraLink.FeatureCalls.SequenceEqual(new[] { "set:32", "delay:100", "get:5:32" }), "Sora exact Feature ordering and delay");
+            soraLink.FeatureCalls.SequenceEqual(new[] { "set:32", "delay:15", "get:5:32" }), "Sora exact Feature ordering and delay");
+        var expectedQuery = new byte[32];
+        expectedQuery[0] = 5;
+        expectedQuery[1] = 0x15;
+        expectedQuery[4] = 1;
+        expectedQuery[7] = 4;
+        Check(SoraV2BatteryProtocol.CreateQuery().SequenceEqual(expectedQuery), "Official battery query including native report ID");
+        var zero = new ScriptedLink { FeatureReply = SoraReply(0) };
+        Check(ReferenceBatteryProtocol.Read(sora, zero).Level == 0 &&
+            zero.FeatureCalls.SequenceEqual(new[] { "set:32", "delay:15", "get:5:32", "delay:15", "set:32", "delay:5", "get:5:32" }),
+            "Sora rechecks zero exactly once and preserves confirmed zero");
+        var badCharge = SoraReply(25);
+        badCharge[10] = 2;
+        var wrongCommand = SoraReply(25);
+        wrongCommand[1] = 0x14;
+        foreach (var invalid in new[] { expectedQuery, SoraReply(255), badCharge, wrongCommand, new byte[8] })
+            Check(!SoraV2BatteryProtocol.TryDecode(invalid, out var rejected) && rejected.Level == -1,
+                "Malformed or echoed Sora report cannot become a reading");
         var soraSleep = new ScriptedLink { FeatureReply = SoraReply(255, true, false) };
         Check(ReferenceBatteryProtocol.Read(sora, soraSleep).Status == State.Sleep, "Offline Sora does not expose its stale percentage byte");
         var soraFailure = new ScriptedLink { FeatureOk = false };
