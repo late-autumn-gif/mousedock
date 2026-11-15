@@ -20,9 +20,10 @@ public sealed class CharacterDeviceBadge : Grid
         Height = compact ? vertical ? 68 : 40 : 158;
         double artHeight = compact ? vertical ? 36 : 18 : 112;
         double nameHeight = compact ? vertical ? 12 : 10 : 18;
+        double readingHeight = Height - artHeight - nameHeight;
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(artHeight) });
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(nameHeight) });
-        RowDefinitions.Add(new RowDefinition { Height = new GridLength(Height - artHeight - nameHeight) });
+        RowDefinitions.Add(new RowDefinition { Height = new GridLength(readingHeight) });
         SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
 
         artwork.DataContext = device;
@@ -39,6 +40,7 @@ public sealed class CharacterDeviceBadge : Grid
         {
             Name = "CharacterDeviceName", FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             FontSize = compact ? vertical ? 9 : 8 : 11, Foreground = ink,
+            LineHeight = nameHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 2, 0)
         };
@@ -55,7 +57,7 @@ public sealed class CharacterDeviceBadge : Grid
         {
             Name = "BatteryNumber", FontFamily = new FontFamily("Segoe UI"), Foreground = ink,
             FontSize = compact ? vertical ? 15 : 10 : 19, FontWeight = FontWeights.SemiBold,
-            LineHeight = compact && !vertical ? 12 : double.NaN, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+            LineHeight = readingHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
         };
         number.SetBinding(TextBlock.TextProperty, compact
