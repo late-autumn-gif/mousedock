@@ -24,6 +24,41 @@
         </Style>
         <SolidColorBrush x:Key="ThemeChoiceBrush" Color="#293A35"/>
 
+        <Style x:Key="EdgeStyleChoice" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Margin" Value="0,0,8,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Tile" Background="{DynamicResource ControlFillBrush}"
+                                BorderBrush="Transparent" BorderThickness="1" CornerRadius="10" Padding="7,5">
+                            <Grid>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                                <Path x:Name="Check" Data="M 0,4 L 3,7 L 8,1"
+                                      Stroke="{DynamicResource ControlAccentBrush}" StrokeThickness="1.5"
+                                      HorizontalAlignment="Right" VerticalAlignment="Top"
+                                      Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Tile" Property="Background" Value="{DynamicResource ButtonHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Tile" Property="Background" Value="{DynamicResource ThemeChoiceBrush}"/>
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Tile" Property="BorderBrush" Value="{DynamicResource ControlAccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ComboBox">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Background" Value="{DynamicResource ButtonBrush}"/>
@@ -363,7 +398,7 @@
                             </StackPanel>
                             <StackPanel x:Name="EdgeOptionsPanel" Margin="0,12,0,0">
                                 <TextBlock Text="屏幕右侧样式" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                                <UniformGrid x:Name="EdgeStyleChoices" Columns="3" Margin="0,0,0,12"/>
+                                <UniformGrid x:Name="EdgeStyleChoices" Columns="3" Margin="0,2,-8,8"/>
                                 <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/>

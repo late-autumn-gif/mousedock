@@ -959,32 +959,51 @@ namespace MouseDock.Views
         private void RebuildEdgeStyles()
         {
             EdgeStyleChoices.Children.Clear();
-            var foreground = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, App.Theme));
+            var theme = App.Theme;
+            var settings = App.Settings;
+            var backdrop = Palette.Mix(theme.Surface, theme.Text, .035);
+            var ink = ScreenEdgeWindow.ResolveForeground(settings, theme);
+            var foreground = new SolidColorBrush(ColorContrast.Legible(ink, new[] { backdrop }, 4.5));
+            var accent = ScreenEdgeWindow.ResolveBatteryBrush(settings, theme) as SolidColorBrush;
+            var battery = new SolidColorBrush(ColorContrast.Legible(accent?.Color ?? ink, new[] { backdrop }, 3));
+            var previewBackground = new SolidColorBrush(backdrop);
             foreach (var (style, label) in TaskbarBatteryStrip.Styles(true))
             {
                 var device = new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 80 };
-                FrameworkElement preview = style == "ring"
-                    ? ScreenEdgeWindow.CreateRingBadge(device, App.Settings, App.Theme)
-                    : new TaskbarBatteryStrip(new[] { device }, style, App.Settings.ShowBatteryNumber, true,
-                        foreground, App.Settings.LowBatteryWarn, "", "",
-                        ScreenEdgeWindow.ResolveBatteryBrush(App.Settings, App.Theme), App.Settings, App.Theme, screenEdge: true);
-                var content = new StackPanel();
-                bool lightInk = foreground.Color.R * .2126 + foreground.Color.G * .7152 + foreground.Color.B * .0722 > 128;
+                FrameworkElement preview;
+                if (style == "ring")
+                {
+                    var badge = new DeviceBatteryBadge(device, foreground, settings.ShowBatteryNumber, true, settings.LowBatteryWarn);
+                    badge.Ring.BatteryBrush = battery;
+                    badge.Ring.GlyphBrush = battery;
+                    preview = badge;
+                }
+                else
+                {
+                    preview = new TaskbarBatteryStrip(new[] { device }, style, settings.ShowBatteryNumber, true,
+                        foreground, settings.LowBatteryWarn, "", "", battery, settings, theme, screenEdge: true);
+                }
+
+                var name = style == "ring" ? "电量圆环" : label;
+                var content = new DockPanel { IsHitTestVisible = false };
                 content.Children.Add(new Border
                 {
-                    Width = 64, Height = 64, CornerRadius = new CornerRadius(4),
-                    Background = lightInk ? new SolidColorBrush(Color.FromRgb(48, 51, 55)) : Brushes.WhiteSmoke,
-                    Child = new Viewbox { Margin = new Thickness(4), Child = preview, IsHitTestVisible = false }
+                    Width = 46, Height = 48, CornerRadius = new CornerRadius(7),
+                    Background = previewBackground,
+                    Child = new Viewbox { Margin = new Thickness(3), Child = preview }
                 });
-                content.Children.Add(new TextBlock { Text = style == "ring" ? "电量圆环" : label, FontSize = 11,
-                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0) });
+                content.Children.Add(new TextBlock
+                {
+                    Text = name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(7, 0, 9, 0), TextWrapping = TextWrapping.Wrap
+                });
                 var choice = new RadioButton
                 {
                     Tag = style, GroupName = "EdgeStyle", Content = content,
-                    Margin = new Thickness(3), Padding = new Thickness(4),
-                    IsChecked = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle) == style
+                    Style = (Style)FindResource("EdgeStyleChoice"),
+                    IsChecked = TaskbarBatteryStrip.NormalizeStyle(settings.EdgeStyle) == style
                 };
-                choice.SetResourceReference(Control.ForegroundProperty, "TextBrush");
+                System.Windows.Automation.AutomationProperties.SetName(choice, name);
                 choice.Checked += (_, __) =>
                 {
                     if (!_loading) App.SetEdgeStyle(style);
