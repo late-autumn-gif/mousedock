@@ -2,6 +2,24 @@
 
 更新：2026-11-15。唯一项目根目录：`D:\mousedock`。
 
+## 协议来源替换与兼容验收
+
+最终本地归档仍使用项目自己的 MouseDock.exe。来源审计包含源码、外置许可和 EXE 内嵌许可。现阶段仍含旧适配和对应归属，因此此轮未生成满足最终归档条件的包。
+
+| 范围 | 已验证 | 剩余证据 |
+| --- | --- | --- |
+| Ninjutso Sora V2 | 厂商电量 Feature 事务已替换，离线覆盖回显、0%、休眠和无效应答。 | 原接收器识别配置和历史向量仍有旧来源，厂商请求与历史请求存在一字节差异。 |
+| Scyrox V12M | 厂商配置查询与电量字段已复核，现有离线行为一致。 | 仍需复核历史识别配置。 |
+| COMPX | ATK HUB 厂商快照核对通用请求、百分比和充电字段。历史离线向量校验通过。 | EWEADN Z7、ATK ZERO、ATK F1 V3 Ultimate+ 的精确集合与动态型号映射尚不能仅由通用协议推导。 |
+| Rapoo VT9S V2 | 厂商清单确认精确 ID 和集合，报告 07 长帧解析已替换。 | 厂商 BB 解析对电量标志的取值与旧短报告规则有差异，旧路径仍保留。 |
+| EWEADN X23SE | 官方 X23 SE 1.2.4 的配置与静态查询路径核对完成。 | 官方请求使用零号缓冲区，旧路径要求非零 HID 报告编号。缺少同一布局支持两者的独立证据。 |
+| 手柄 | Sony、Nintendo、8BitDo 独立核对并通过相应离线断言。 | 飞智、LeadJoy 和其余扩展分支仍需独立证据。 |
+| 其他扩展 | 既有测试继续通过。 | DPI、耳机、键盘、鼠标扩展中的旧适配及归属仍在。 |
+
+Sony 帧字段来源为 [Sony 的 Linux HID 驱动](https://raw.githubusercontent.com/torvalds/linux/master/drivers/hid/hid-playstation.c)，Nintendo 状态位来自 [Linux HID Nintendo](https://raw.githubusercontent.com/torvalds/linux/master/drivers/hid/hid-nintendo.c)，8BitDo 百分比字段来自 [SDL 设备驱动](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_8bitdo.c)。这些来源用于确认报文事实，状态映射保留本项目原行为。
+
+验证命令为 dotnet run --project tests/MouseDock.ProtocolTests -c Release、同项目追加 -- --verify-feedback-report，以及 dotnet run --project tests/MouseDock.Checks -c Release。分别通过 26,579 条协议及集成断言、34 项诊断检查、161 项桌面检查。
+
 最新修正 6：原生托盘菜单使用主题细线勾选，移除系统蓝色框；轻淡圆角悬停、分组说明、快选及命令行间距统一。保留所有命令和设备状态逻辑，未改变电量/休眠/DPI。托盘相关 11/11；完整界面 156/158，原两项字幕问题仍在。技术与验证记录见 `UI-1.2.1-TEST.md` 顶部。
 
 最新修正 5：优化外观栏目为分段明暗模式、两列主题色板、独立配色分组及折叠窗口背景；修复模式标签发黑，保留原主题和所有处理器。本轮未改电量/休眠/DPI。专项 8/8，完整界面 156/158，只有既有两项角色/照片字幕失败；本轮任务栏透明采样通过，历史失败记录保留。深浅截图与技术说明见 `UI-1.2.1-TEST.md` 顶部。

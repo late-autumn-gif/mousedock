@@ -59,6 +59,22 @@ internal static class ControllerExpansionRegression
             ReferenceBatteryProtocol.State.Failed, "Nintendo ACK validated");
         Check(Read("Nintendo", Frame(49, (0, 0x30), (2, 0x80))).Status ==
             ReferenceBatteryProtocol.State.Failed, "Nintendo Bluetooth only");
+        for (byte band = 0; band <= 4; band++)
+        {
+            foreach (bool charging in new[] { false, true })
+            {
+                byte power = (byte)((band << 5) | (charging ? 0x10 : 0));
+                var reading = Read("Nintendo", Frame(49, (0, 0x21), (2, power), (13, 0x82), (14, 2)), true);
+                Check(reading.Level == -1 && reading.Charging == charging &&
+                    reading.Diagnostic == $"device-band={band}/4", "Nintendo valid device-info battery band");
+            }
+        }
+        var btDs4 = Frame(78, (0, 0x11), (32, 0x1a));
+        BitConverter.GetBytes(Crc([0xa1, .. btDs4.Take(74)])).CopyTo(btDs4, 74);
+        Check(Read("SonyDs4", btDs4, true) is { Level: -1, Charging: true, Diagnostic: "device-band=10/10" },
+            "DualShock Bluetooth uses the reported capacity band");
+        Check(Read("EightBitDo", Frame(15, (0, 1), (14, 0xe4)), true) is { Level: 100, Charging: false },
+            "8BitDo Bluetooth full capacity clears active charging");
         Check(Read("Vader5", Frame(31, (0, 0x5A), (1, 0xA5), (2, 1), (5, 130), (11, 0x12))) is
             { Level: -1, Charging: true, Diagnostic: "device-band=3/5" }, "Vader band is not exact percent");
         Check(Read("Vader5", Frame(31, (0, 0x5A), (1, 0xA5), (2, 1), (5, 129))).Status ==

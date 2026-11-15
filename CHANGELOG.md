@@ -1,5 +1,10 @@
 # MouseDock 更新日志
 
+## 手柄电量协议复核（2026-11-15）
+
+- 对照 Sony 公开驱动、Nintendo HID 协议记录及 SDL 设备代码重做 DualShock 4、DualSense、Nintendo 与 8BitDo 的电量解码。保留 USB/蓝牙报告、校验、档位、百分比和充电显示规则。
+- 增加 12 条手柄断言。全量协议与集成 26,579 项、诊断 34 项、桌面 161/161 通过。
+
 ## Scyrox、COMPX 与雷柏电量路径复核（2026-11-15）
 
 - Scyrox V12M 电量与 DPI 共用官方 S-Center 配置查询组帧，电量按官方配置字段解析，保留活动配置检查。
