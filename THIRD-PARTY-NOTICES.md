@@ -2,9 +2,11 @@
 
 ## MouseDock 1.0.2 reference (a different author's program)
 
-The six verified battery profiles, request/response rules, and ATK CID/MID names
-were adapted into new battery-only C# code in ReferenceProfiles,
-ReferenceBatteryProtocol, VendorProtocol.Reference and ReferenceIdentityNames.
+The six receiver profiles and portions of their request/response rules
+were adapted in ReferenceProfiles, ReferenceBatteryProtocol and
+VendorProtocol.Reference. The ATK identity catalog and command fields are
+now sourced from ATK HUB 3.2.28 device manifests and its COMPX codec.
+
 The current Sora V2 battery transaction in SoraV2BatteryProtocol is based on
 Ninjutso's official NinjaForce driver. The historical receiver profile and
 oracle fixtures are still attributed here.

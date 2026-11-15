@@ -34,8 +34,8 @@ internal static class ReferenceBatteryRegression
         foreach (var name in vectors.RootElement.GetProperty("identityNames").EnumerateObject())
         {
             string[] pair = name.Name.Split(',');
-            Check(ReferenceIdentityNames.Find(byte.Parse(pair[0]), byte.Parse(pair[1])) == name.Value.GetString(),
-                "CID/MID mapping matches reference database: " + name.Name);
+            Check(AtkMouseIdentityCatalog.Find(byte.Parse(pair[0]), byte.Parse(pair[1])) == name.Value.GetString(),
+                "Official CID/MID entry preserves the existing display name: " + name.Name);
         }
         foreach (var entry in vectors.RootElement.GetProperty("requests").EnumerateObject())
         {

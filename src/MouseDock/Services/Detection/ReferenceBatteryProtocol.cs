@@ -43,7 +43,7 @@ internal static class ReferenceBatteryProtocol
 
     internal static byte[] CompxCommand(byte command)
     {
-        if (command is not (4 or 0x10)) throw new ArgumentOutOfRangeException(nameof(command));
+        if (command is not (4 or CompxMouseBattery.ReadIdentity)) throw new ArgumentOutOfRangeException(nameof(command));
         return CompxMouseBattery.CreateCommand(command);
     }
 
@@ -91,14 +91,8 @@ internal static class ReferenceBatteryProtocol
         return true;
     }
 
-    internal static bool TryIdentity(ReadOnlySpan<byte> b, out byte cid, out byte mid)
-    {
-        cid = mid = 0;
-        if (b.Length != 17 || b[0] != 8 || b[1] != 0x10 || b[2] != 0 ||
-            b[5] is < 2 or > 10 || !CompxMouseBattery.HasChecksum(b)) return false;
-        cid = b[6]; mid = b[7];
-        return true;
-    }
+    internal static bool TryIdentity(ReadOnlySpan<byte> report, out byte cid, out byte mid) =>
+        CompxMouseBattery.TryReadIdentity(report, out cid, out mid);
 
     private static bool Drain(ILink link)
     {
@@ -143,14 +137,14 @@ internal static class ReferenceBatteryProtocol
         // This is optional enrichment on 373B:1278, not a requirement for a valid battery.
         try
         {
-            if (!Drain(link) || !link.Write(CompxCommand(0x10), 300))
+            if (!Drain(link) || !link.Write(CompxCommand(CompxMouseBattery.ReadIdentity), 300))
                 return battery with { Diagnostic = battery.Diagnostic + "；型号身份查询未完成" };
             long deadline = link.Now + 1500;
             while (link.Now < deadline)
             {
                 byte[] reply = link.Read((int)Math.Min(100, deadline - link.Now));
                 if (reply != null && TryIdentity(reply, out byte cid, out byte mid))
-                    return battery with { Model = ReferenceIdentityNames.Find(cid, mid), Identity = $"{cid},{mid}",
+                    return battery with { Model = AtkMouseIdentityCatalog.Find(cid, mid), Identity = $"{cid},{mid}",
                         Diagnostic = battery.Diagnostic + $"；本次身份 CID={cid}/MID={mid}" };
             }
         }

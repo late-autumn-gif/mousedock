@@ -10,11 +10,13 @@
 | --- | --- | --- |
 | Ninjutso Sora V2 | 厂商电量 Feature 事务已替换，离线覆盖回显、0%、休眠和无效应答。 | 原接收器识别配置和历史向量仍有旧来源，厂商请求与历史请求存在一字节差异。 |
 | Scyrox V12M | 厂商配置查询与电量字段已复核，现有离线行为一致。 | 仍需复核历史识别配置。 |
-| COMPX | ATK HUB 厂商快照核对通用请求、百分比和充电字段。历史离线向量校验通过。 | EWEADN Z7、ATK ZERO、ATK F1 V3 Ultimate+ 的精确集合与动态型号映射尚不能仅由通用协议推导。 |
+| COMPX | ATK HUB 厂商快照核对通用请求、百分比和充电字段。历史离线向量校验通过。 | 118 条 ATK 动态型号已按厂商清单重建；EWEADN Z7、ATK ZERO、ATK F1 V3 Ultimate+ 仍保留旧版精确集合判定。 |
 | Rapoo VT9S V2 | 厂商清单确认精确 ID 和集合，报告 07 长帧解析已替换。 | 厂商 BB 解析对电量标志的取值与旧短报告规则有差异，旧路径仍保留。 |
 | EWEADN X23SE | 官方 X23 SE 1.2.4 的配置与静态查询路径核对完成。 | 官方请求使用零号缓冲区，旧路径要求非零 HID 报告编号。缺少同一布局支持两者的独立证据。 |
 | 手柄 | Sony、Nintendo、8BitDo 独立核对并通过相应离线断言。 | 飞智、LeadJoy 和其余扩展分支仍需独立证据。 |
 | 其他扩展 | 既有测试继续通过。 | DPI、耳机、键盘、鼠标扩展中的旧适配及归属仍在。 |
+
+ATK 证据为 [COMPX 清单](https://bpcdn.atkgear.com/hub-v3/production/3.2.28/static/filter-8vgh_F2N.js)、[BITMOUSE 清单](https://bpcdn.atkgear.com/hub-v3/production/3.2.28/static/filter-CO7zKClF.js)。SHA-256 分别为 `2cf87651b394d8b1729e6f8763db6baf4b818cc62129c811552df7c751302020`、`a16c37fd3d91f2e0b066fbc1468f64b682657918a2b4f9a0374f3ce53b87dbf1`。92 条名称逐字相同，25 条仅大小写或空格不同，另将 `01:37` 的官方 PHANTOM 名称继续显示为既有中文名“ATK 幻影 Ultimate”。保留旧型号回归向量用于验证显示等价性。厂商清单的相关接收器还列有 FF04 集合，不能以此替换当前 FF02 路由。
 
 Sony 帧字段来源为 [Sony 的 Linux HID 驱动](https://raw.githubusercontent.com/torvalds/linux/master/drivers/hid/hid-playstation.c)，Nintendo 状态位来自 [Linux HID Nintendo](https://raw.githubusercontent.com/torvalds/linux/master/drivers/hid/hid-nintendo.c)，8BitDo 百分比字段来自 [SDL 设备驱动](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_8bitdo.c)。这些来源用于确认报文事实，状态映射保留本项目原行为。
 
