@@ -68,7 +68,7 @@ public sealed class CharacterEditorWindow : Window
         };
         panel.Children.Add(_deviceChoices);
         _characters = new ComboBox { Name = "CharacterArtworkChoices", Margin = new Thickness(0, 12, 0, 6) };
-        foreach (var (key, label) in new[] { ("rei", "绫波丽"), ("asuka", "明日香"), ("peek", "趴趴款"), ("photo", "我的照片") })
+        foreach (var (key, label) in new[] { ("rei", "蓝耳兔"), ("asuka", "橘耳狐"), ("peek", "薄荷熊"), ("photo", "我的照片") })
             _characters.Items.Add(new ComboBoxItem { Tag = key, Content = label });
         _characters.SelectedItem = _characters.Items.OfType<ComboBoxItem>().FirstOrDefault(item =>
             (string)item.Tag == (Draft.IconStyle == "portrait" ? "photo" :

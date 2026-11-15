@@ -266,9 +266,9 @@
                                 <Grid Margin="0,8,0,0">
                                     <TextBlock Text="默认角色" Style="{StaticResource RowText}"/>
                                     <ComboBox x:Name="ReferenceCharacterChoices" Width="160" HorizontalAlignment="Right" SelectionChanged="OnReferenceCharacterChanged">
-                                        <ComboBoxItem Content="绫波丽" Tag="rei"/>
-                                        <ComboBoxItem Content="明日香" Tag="asuka"/>
-                                        <ComboBoxItem Content="趴趴款" Tag="peek"/>
+                                        <ComboBoxItem Content="蓝耳兔" Tag="rei"/>
+                                        <ComboBoxItem Content="橘耳狐" Tag="asuka"/>
+                                        <ComboBoxItem Content="薄荷熊" Tag="peek"/>
                                     </ComboBox>
                                 </Grid>
                                 <Grid Margin="0,8,0,0">
