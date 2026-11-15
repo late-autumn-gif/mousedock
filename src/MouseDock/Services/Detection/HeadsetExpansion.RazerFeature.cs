@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using static MouseDock.Services.Detection.ExpansionFacts;
 
 namespace MouseDock.Services.Detection;
@@ -39,24 +38,22 @@ internal static class HeadsetExpansionRazerFeature
     }
     internal static ReferenceBatteryProtocol.Reading Read2023(ExpansionWire wire)
     {
+        const byte transaction = 0x3f;
+        var packet = RazerBatteryFeature.Request(transaction, RazerBatteryFeature.BatteryLevel);
         ReferenceBatteryProtocol.Reading result = null;
         for (int round = 0; round < 2; round++)
         {
-            var packet = Packet(91, 0, 0, 0x3F, 0, 0, 0, 2, 7, 0x80);
-            for (int i = 3; i < 89; i++) packet[89] ^= packet[i];
             Require(wire.Link.SetFeature(packet), "Razer control query failed");
             wire.Trace?.Add("expansion-set-feature", true, raw: packet, keep: true);
             result = null;
             for (int poll = 0; poll < 8; poll++)
             {
                 wire.Link.Delay(80); wire.CheckTime();
-                var b = wire.Link.GetFeature(0, 91); wire.CheckTime();
-                if (b?.Length != 91 || !b.AsSpan(0, 9).SequenceEqual(
-                    new byte[] { 0, 2, 0x3F, 0, 0, 0, 2, 7, 0x80 }) || b[90] != 0) continue;
-                byte xor = 0; for (int i = 3; i < 89; i++) xor ^= b[i];
-                if (xor != b[89]) continue;
+                var b = wire.Link.GetFeature(0, RazerBatteryFeature.ReportLength); wire.CheckTime();
+                if (!RazerBatteryFeature.TryRead(b, transaction, RazerBatteryFeature.BatteryLevel, out byte scale) ||
+                    b[^1] != 0) continue;
                 wire.Trace?.Add("expansion-get-feature", true, raw: b, keep: true);
-                result = Value(-1, diagnostic: $"device-scale={b[10]}/255; exact percentage unavailable");
+                result = Value(-1, diagnostic: $"device-scale={scale}/255; exact percentage unavailable");
                 break;
             }
             Require(result != null, "No valid Razer control battery response");

@@ -4,6 +4,8 @@
 
 ## 协议来源替换与兼容验收
 
+雷蛇标准 Feature 帧依据 [OpenRazer 帧定义](https://github.com/openrazer/openrazer/blob/master/driver/razercommon.h)及[校验实现](https://github.com/openrazer/openrazer/blob/master/driver/razercommon.c)核对。鼠标、键盘和耳机的此类请求共用帧编码及解析，保留各型号事务号及既有输出规则。专用 BlackShark 2020、V3 和 PA 帧仍待替换，标准帧设备级识别仍沿用现有配置。全量离线 26,603 条通过。
+
 核对 HP Cloud II Wireless 的 52 字节查询、20 字节应答和电量字段。Alpha 2 的两份 NGENUITY 样本确认同一个 `50 02` 请求及 `51 02` 应答，分别显示 51% 未充电和 67% 正在充电。新增离线回放覆盖第二份读数、无关 `61 02` 帧及 Cloud II 请求回显。全量协议与集成回归 26,599 条通过。[Cloud II 协议实现](https://github.com/Sapd/HeadsetControl/blob/master/lib/devices/hyperx_cloud_2_wireless.hpp) · [Alpha 2 原始样本](https://github.com/HeyOkay/HaloBattery/issues/26)
 
 最终本地归档仍使用项目自己的 MouseDock.exe。来源审计包含源码、外置许可和 EXE 内嵌许可。现阶段仍含旧适配和对应归属，因此此轮未生成满足最终归档条件的包。

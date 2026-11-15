@@ -168,15 +168,11 @@ internal static partial class VendorProtocol
                 transaction=(byte)RandomNumberGenerator.GetInt32(31);
                 if(transaction==previous[2])transaction=(byte)((transaction+1)%31);
             }
-            var packet=MouseExpansionPacket(91,0,0,transaction,0,0,0,2,7,command);
-            byte checksum=0;
-            foreach(byte value in packet.AsSpan(3,86))checksum^=value;
-            packet[89]=checksum;
+            var packet = RazerBatteryFeature.Request(transaction, command);
             var raw=l.FeatureExchange(packet,b=>
             {
-                if(b.Length!=91||b[0]!=0||b[1]!=2||b[2]!=transaction||!b.AsSpan(3,6).SequenceEqual(packet.AsSpan(3,6)))return false;
-                byte xor=0;foreach(byte value in b.AsSpan(3,86))xor^=value;
-                if(xor!=b[89]||family=="razer-carbon"&&b[9]!=0)return false;
+                if (!RazerBatteryFeature.TryRead(b, transaction, command, out _) ||
+                    family == "razer-carbon" && b[9] != 0) return false;
                 if(pid==0xA4&&b.AsSpan().SequenceEqual(previous))return false;
                 return true;
             },family=="razer-carbon"?40:50,5);
@@ -184,10 +180,10 @@ internal static partial class VendorProtocol
         }
         if(family=="razer-carbon")
         {
-            int charge=Read(0x84);
+            int charge=Read(RazerBatteryFeature.ChargingStatus);
             if(charge is <0 or >1)return ReferenceBatteryProtocol.Reading.Failed("Razer Carbon charging state unavailable");
         }
-        int level=Read(0x80);
+        int level=Read(RazerBatteryFeature.BatteryLevel);
         if(level<0)return ReferenceBatteryProtocol.Reading.Failed("Razer battery response unavailable");
         if(family=="razer-carbon"&&level==255)return MouseExpansionSleep("Razer Carbon battery unavailable");
         return MouseExpansionValue(family=="razer-carbon"?level*100/255:(int)Math.Round(level*100.0/255),

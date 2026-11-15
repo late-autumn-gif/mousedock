@@ -83,6 +83,22 @@ internal static class HeadsetExpansionTransactions
             "Cloud III S battery response matches the NGENUITY sample");
         Check(Reject(() => HeadsetExpansionCloud3S.Decode(HeadsetExpansionCloud3S.Request(6), 6)),
             "Cloud III S request echo is not a zero reading");
+        byte[] razerRequest = Frame(91, (2, 0x3f), (6, 2), (7, 7), (8, 0x80), (89, 0x85));
+        Check(RazerBatteryFeature.Request(0x3f, RazerBatteryFeature.BatteryLevel).SequenceEqual(razerRequest),
+            "Razer battery command and checksum match the standard control report");
+        byte[] razerReport = Frame(91, (1, 2), (2, 0x3f), (6, 2), (7, 7), (8, 0x80), (10, 128), (89, 5));
+        var razer = new Input(_ => []) { FeatureReply = razerReport };
+        Check(HeadsetExpansionRazerFeature.Read2023(Wire(razer, feature: 91)) is
+            { Level: -1, ChargingKnown: false, Diagnostic: "device-scale=128/255; exact percentage unavailable" } &&
+            razer.Features.Count == 2 && razer.Features.All(frame => frame.SequenceEqual(razerRequest)),
+            "Razer headset keeps two Feature reads and its raw scale");
+        Check(!RazerBatteryFeature.TryRead(razerReport, 0x9f, 0x80, out _) &&
+            !RazerBatteryFeature.TryRead(razerReport, 0x3f, 0x84, out _),
+            "Razer ignores unrelated transaction and command");
+        razerReport[89] ^= 1;
+        Check(!RazerBatteryFeature.TryRead(razerReport, 0x3f, 0x80, out _),
+            "Razer rejects corrupted checksum");
+
         int cloud2Samples = 0;
         var cloud2 = new Input(packet =>
         {
