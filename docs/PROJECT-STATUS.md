@@ -4,6 +4,8 @@
 
 ## 协议来源替换与兼容验收
 
+核对 HP Cloud II Wireless 的 52 字节查询、20 字节应答和电量字段。Alpha 2 的两份 NGENUITY 样本确认同一个 `50 02` 请求及 `51 02` 应答，分别显示 51% 未充电和 67% 正在充电。新增离线回放覆盖第二份读数、无关 `61 02` 帧及 Cloud II 请求回显。全量协议与集成回归 26,599 条通过。[Cloud II 协议实现](https://github.com/Sapd/HeadsetControl/blob/master/lib/devices/hyperx_cloud_2_wireless.hpp) · [Alpha 2 原始样本](https://github.com/HeyOkay/HaloBattery/issues/26)
+
 最终本地归档仍使用项目自己的 MouseDock.exe。来源审计包含源码、外置许可和 EXE 内嵌许可。现阶段仍含旧适配和对应归属，因此此轮未生成满足最终归档条件的包。
 
 | 范围 | 已验证 | 剩余证据 |

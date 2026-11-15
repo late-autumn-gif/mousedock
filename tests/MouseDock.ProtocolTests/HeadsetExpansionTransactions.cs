@@ -83,6 +83,30 @@ internal static class HeadsetExpansionTransactions
             "Cloud III S battery response matches the NGENUITY sample");
         Check(Reject(() => HeadsetExpansionCloud3S.Decode(HeadsetExpansionCloud3S.Request(6), 6)),
             "Cloud III S request echo is not a zero reading");
+        int cloud2Samples = 0;
+        var cloud2 = new Input(packet =>
+        {
+            Check(packet.Length == 52 && packet.AsSpan().StartsWith(new byte[] { 6, 255, 187, 2 }) &&
+                packet.AsSpan(4).IndexOfAnyExcept((byte)0) < 0, "Cloud II sends the padded level query");
+            return [Frame(20, (0, 6), (1, 255), (2, 187), (3, 2), (5, 1), (7, (byte)(48 + ++cloud2Samples)))];
+        });
+        Check(HeadsetExpansionHyperX.Read(Wire(cloud2, 20, 52), "Cloud2") is
+            { Level: 50, ChargingKnown: false }, "Cloud II keeps the second percentage and unknown charging");
+        Check(Reject(() => HeadsetExpansionHyperX.DecodeCloud2(Frame(20, (0, 6), (1, 255), (2, 187), (3, 2)))),
+            "Cloud II rejects a zero-filled command echo");
+
+        int alpha2Samples = 0;
+        var alpha2 = new Input(packet =>
+        {
+            Check(packet.Length == 64 && packet[0] == 0x50 && packet[1] == 0x02 &&
+                packet.AsSpan(2).IndexOfAnyExcept((byte)0) < 0, "Cloud Alpha 2 sends the captured NGENUITY battery query");
+            // Preserve only battery-related fields from the two public captures.
+            byte[] reply = ++alpha2Samples == 1 ? Frame(64, (0, 0x51), (1, 2), (2, 51))
+                : Frame(64, (0, 0x51), (1, 2), (2, 67), (6, 0x86));
+            return [Frame(64, (0, 0x61), (1, 2), (2, 90)), reply];
+        });
+        Check(HeadsetExpansionHyperX.Read(Wire(alpha2), "Alpha2") is { Level: 67, Charging: true } &&
+            alpha2Samples == 2, "Cloud Alpha 2 ignores the unrelated 61 report and uses the second capture");
         int cloudReads = 0;
         var cloud = new Input(packet => [Frame(64,(0,12),(1,2),(2,3),(3,1),(5,packet[5]),
             (6,packet[5] == 6 ? (byte)(70 + ++cloudReads) : (byte)1))]);

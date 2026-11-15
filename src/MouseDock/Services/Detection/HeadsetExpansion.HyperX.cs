@@ -45,32 +45,45 @@ internal static class HeadsetExpansionHyperX
         return reading;
     }
 
-    internal static ReferenceBatteryProtocol.Reading DecodeCloud2(byte[] b)
+    private static ReadOnlySpan<byte> Cloud2BatteryHeader => [0x06, 0xff, 0xbb, 0x02];
+    private static ReadOnlySpan<byte> Alpha2BatteryQuery => [0x50, 0x02];
+    private static ReadOnlySpan<byte> Alpha2BatteryHeader => [0x51, 0x02];
+
+    internal static ReferenceBatteryProtocol.Reading DecodeCloud2(byte[] report)
     {
-        Require(b.Length == 20 && b.AsSpan(0, 4).SequenceEqual(new byte[] { 6, 255, 187, 2 }) &&
-            b.AsSpan(4).ContainsAnyExcept((byte)0) && b[7] <= 100, "Invalid HyperX Cloud II battery response");
-        return Value(b[7]);
+        Require(report.Length == 20 && report.AsSpan().StartsWith(Cloud2BatteryHeader),
+            "Invalid HyperX Cloud II battery response");
+        var payload = report.AsSpan(Cloud2BatteryHeader.Length);
+        int percentage = payload[3];
+        Require(payload.ContainsAnyExcept((byte)0) && percentage <= 100,
+            "Invalid HyperX Cloud II battery response");
+        return Value(percentage);
     }
-    internal static ReferenceBatteryProtocol.Reading DecodeAlpha2(byte[] b)
+
+    internal static ReferenceBatteryProtocol.Reading DecodeAlpha2(byte[] report)
     {
-        Require(b.Length is >= 7 and <= 64 && b[0] == 0x51 && b[1] == 2 && b[2] <= 100,
+        Require(report.Length is >= 7 and <= 64 && report.AsSpan().StartsWith(Alpha2BatteryHeader),
             "Invalid HyperX Cloud Alpha2 battery response");
-        return Value(b[2], (b[6] & 128) != 0);
+        var payload = report.AsSpan(Alpha2BatteryHeader.Length);
+        int percentage = payload[0];
+        Require(percentage <= 100, "Invalid HyperX Cloud Alpha2 battery response");
+        bool charging = (payload[4] & 0x80) != 0;
+        return Value(percentage, charging);
     }
+
     internal static ReferenceBatteryProtocol.Reading Read(ExpansionWire wire, string family)
     {
         if (family == "Cloud3") return ReadCloud3(wire);
         bool cloud2 = family == "Cloud2";
+        byte[] request = cloud2 ? Packet(wire.Output, 0x06, 0xff, 0xbb, 0x02, 0)
+            : Packet(wire.Output, Alpha2BatteryQuery[0], Alpha2BatteryQuery[1]);
         ReferenceBatteryProtocol.Reading result = null;
         for (int round = 0; round < 2; round++)
         {
-            var request = cloud2 ? Packet(wire.Output, 6, 255, 187, 2, 0)
-                : Packet(wire.Output, 0x50, 2);
             wire.Drain();
             wire.Send(request);
             if (cloud2) wire.Link.Delay(100);
-            var reply = wire.Wait(b => b.Length >= 2 && (cloud2 ? b[0] == 6 && b[1] == 255 :
-                b[0] == 0x51 && b[1] == 2), 2000);
+            var reply = wire.Wait(b => b.AsSpan().StartsWith(cloud2 ? Cloud2BatteryHeader[..2] : Alpha2BatteryHeader), 2000);
             result = cloud2 ? DecodeCloud2(reply) : DecodeAlpha2(reply);
         }
         return result;
