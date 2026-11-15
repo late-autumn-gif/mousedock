@@ -28,6 +28,29 @@ internal static class ScyroxV12Dpi
         return report;
     }
 
+    internal static byte[] RequestProfiles() => Request([ReadProfiles]);
+
+    internal static bool TryReadBattery(ReadOnlySpan<byte> report, out int percentage)
+    {
+        // S-Center's configuration payload puts the battery after five 16-bit
+        // DPI values and the polling rate. The native buffer includes ReportId.
+        const int batteryOffset = 1 + 7 + (5 * sizeof(ushort)) + sizeof(ushort);
+        percentage = -1;
+        if (report.Length != 64 || report[0] != ReportId || report[1] != ReadProfiles ||
+            report[3] == 0 || report[62] == 1)
+            return false;
+
+        int selectedProfile = report[4];
+        int profileInReply = report[5];
+        int dpiCount = report[7];
+        if (selectedProfile > 3 || profileInReply != selectedProfile || dpiCount is < 1 or > 5 ||
+            report[batteryOffset] > 100)
+            return false;
+
+        percentage = report[batteryOffset];
+        return true;
+    }
+
     private static int ReadWord(byte[] frame, int offset) =>
         BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(offset, 2));
 
@@ -70,7 +93,7 @@ internal static class ScyroxV12Dpi
 
         MouseDpiState ReadState()
         {
-            if (!Send(Request([ReadProfiles]))) return null;
+            if (!Send(RequestProfiles())) return null;
             var configs = new byte[4][];
             var flags = new byte[4][];
             var axes = new byte[4][];

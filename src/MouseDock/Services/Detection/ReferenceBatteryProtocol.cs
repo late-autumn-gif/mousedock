@@ -29,11 +29,9 @@ internal static class ReferenceBatteryProtocol
         switch (protocol)
         {
             case ReferenceProfiles.Protocol.Compx:
-                return CompxCommand(4);
+                return CompxMouseBattery.CreateQuery();
             case ReferenceProfiles.Protocol.ScyroxV12:
-                var scyrox = new byte[64];
-                scyrox[0] = 8; scyrox[1] = 1; scyrox[63] = 9;
-                return scyrox;
+                return ScyroxV12Dpi.RequestProfiles();
             case ReferenceProfiles.Protocol.SoraV2:
                 return SoraV2BatteryProtocol.CreateQuery();
             case ReferenceProfiles.Protocol.Rapoo:
@@ -46,17 +44,7 @@ internal static class ReferenceBatteryProtocol
     internal static byte[] CompxCommand(byte command)
     {
         if (command is not (4 or 0x10)) throw new ArgumentOutOfRangeException(nameof(command));
-        var request = new byte[17];
-        request[0] = 8; request[1] = command;
-        request[16] = unchecked((byte)(0x55 - 8 - command));
-        return request;
-    }
-
-    private static bool CompxChecksum(ReadOnlySpan<byte> report)
-    {
-        int sum = 0;
-        foreach (byte value in report) sum += value;
-        return (sum & 255) == 0x55;
+        return CompxMouseBattery.CreateCommand(command);
     }
 
     internal static bool TryDecode(ReferenceProfiles.Protocol protocol, ReadOnlySpan<byte> b,
@@ -68,29 +56,25 @@ internal static class ReferenceBatteryProtocol
         switch (protocol)
         {
             case ReferenceProfiles.Protocol.Compx:
-                if (b.Length != 17 || b[0] != 8 || b[1] != 4 || b[2] == 255 ||
-                    !CompxChecksum(b) || b.SequenceEqual(Request(protocol))) return false;
-                level = b[6]; charging = (b[7] & 1) != 0;
+                if (!CompxMouseBattery.TryRead(b, out level, out charging)) return false;
                 break;
             case ReferenceProfiles.Protocol.ScyroxV12:
-                if (b.Length != 64 || b[0] != 8 || b[1] != 1 || b[3] == 0 ||
-                    b[4] != b[5] || b[4] > 3 || b[7] is < 1 or > 5 || b[62] == 1) return false;
-                level = b[20]; charging = false;
-                if (level > 100) return false;
+                if (!ScyroxV12Dpi.TryReadBattery(b, out level)) return false;
                 reading = new(level, false, false, State.Online,
                     "Scyrox 当前配置电量；协议未提供已确认的充电字段");
                 return true;
             case ReferenceProfiles.Protocol.SoraV2:
                 return SoraV2BatteryProtocol.TryDecode(b, out reading);
             case ReferenceProfiles.Protocol.Rapoo:
-                if (b.Length is 19 or 20 && b[0] == 7 && (b[1] & 15) <= 2 && b[7] <= 2)
+                if (b.Length is 19 or 20)
                 {
-                    if (b[7] == 0)
+                    if (!RapooVt9sBattery.TryReadReport7(b, out level, out var batteryState)) return false;
+                    if (batteryState == 0)
                     {
                         reading = new(-1, false, false, State.Sleep, "雷柏状态为休眠，未采用电量字节");
                         return true;
                     }
-                    level = b[8]; charging = b[7] == 2;
+                    charging = batteryState == 2;
                 }
                 else if (b.Length == 7 && b[0] == 0xBB && b[1] == 0xB0 && b[5] is 1 or 2)
                 {
@@ -111,7 +95,7 @@ internal static class ReferenceBatteryProtocol
     {
         cid = mid = 0;
         if (b.Length != 17 || b[0] != 8 || b[1] != 0x10 || b[2] != 0 ||
-            b[5] is < 2 or > 10 || !CompxChecksum(b)) return false;
+            b[5] is < 2 or > 10 || !CompxMouseBattery.HasChecksum(b)) return false;
         cid = b[6]; mid = b[7];
         return true;
     }
