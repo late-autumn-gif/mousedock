@@ -65,6 +65,24 @@ internal static class HeadsetExpansionTransactions
         var failedOutput = new Input(_ => []) { CompleteWrites = false };
         Check(Reject(() => HeadsetExpansionHyperX.Read(Wire(failedOutput,feature:64), "Cloud3")) &&
             failedOutput.Features.Count == 0, "ambiguous output failure never causes a second transport write");
+        int cloud3Samples = 0;
+        var cloud3Output = new Input(packet =>
+        {
+            Check(packet.Length == 62 && packet[0] == 0x66 && packet[1] == 0x89 &&
+                packet.AsSpan(2).IndexOfAnyExcept((byte)0) < 0, "Cloud III sends only a battery query");
+            return [Frame(62, (0, 0x66), (1, 0x0d), (3, 1), (4, (byte)(40 + ++cloud3Samples)))];
+        });
+        Check(HeadsetExpansionHyperX.Read(Wire(cloud3Output, 62, 62), "Cloud3")
+            is { Level: 42, ChargingKnown: false }, "Cloud III event uses the second valid reading");
+        Check(Reject(() => HeadsetExpansionHyperX.DecodeCloud3(Frame(62, (0, 0x66), (1, 0x0d), (4, 88)))),
+            "Cloud III status bytes both zero reject stale percentage");
+
+        // Keep only the verified protocol fields of the public NGENUITY capture.
+        var capturedCloud3S = Frame(64, (0, 0x0c), (1, 2), (2, 3), (3, 1), (5, 6), (6, 47));
+        Check(HeadsetExpansionCloud3S.Decode(capturedCloud3S, 6) == 47,
+            "Cloud III S battery response matches the NGENUITY sample");
+        Check(Reject(() => HeadsetExpansionCloud3S.Decode(HeadsetExpansionCloud3S.Request(6), 6)),
+            "Cloud III S request echo is not a zero reading");
         int cloudReads = 0;
         var cloud = new Input(packet => [Frame(64,(0,12),(1,2),(2,3),(3,1),(5,packet[5]),
             (6,packet[5] == 6 ? (byte)(70 + ++cloudReads) : (byte)1))]);

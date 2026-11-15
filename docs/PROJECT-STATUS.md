@@ -16,6 +16,8 @@
 | 手柄 | Sony、Nintendo、8BitDo 独立核对并通过相应离线断言。 | 飞智、LeadJoy 和其余扩展分支仍需独立证据。 |
 | 其他扩展 | 既有测试继续通过。 | DPI、耳机、键盘、鼠标扩展中的旧适配及归属仍在。 |
 
+HyperX Cloud III 的 0x66 报告、0x89 读取、0x0D 通知、状态字节和百分比依据 [Linux HID 驱动补丁](https://lists.openwall.net/linux-kernel/2026/06/27/570)核对。Cloud III S 从[公开的 NGENUITY USB 抓包](https://github.com/LennardKittner/HyperHeadset/issues/36)确认 64 字节电量回包，0x06 应答载荷位置 6 为 47。ZIP SHA-256 为 `ab3ef1d357b2388979265459e0492c4e4733536b526ba31658206fce78ae95d6`。抓包在内存中分析，仓库断言仅使用协议字段构造样本。此次未从该抓包确认 0x48 充电回包，原规则保留。全量离线协议与集成 26,592 条通过。
+
 罗技键盘的 HID++ 2.0 报文结构已依据 [Logitech 官方协议](https://github.com/Logitech/cpg-docs/blob/master/hidpp20/README.rst#packet-structure)重做。专用读数状态的历史映射保持，其他键盘分支的归属仍在。完整双通道事务通过模拟，最终全量协议与集成 26,586 条通过。
 
 ATK 证据为 [COMPX 清单](https://bpcdn.atkgear.com/hub-v3/production/3.2.28/static/filter-8vgh_F2N.js)、[BITMOUSE 清单](https://bpcdn.atkgear.com/hub-v3/production/3.2.28/static/filter-CO7zKClF.js)。SHA-256 分别为 `2cf87651b394d8b1729e6f8763db6baf4b818cc62129c811552df7c751302020`、`a16c37fd3d91f2e0b066fbc1468f64b682657918a2b4f9a0374f3ce53b87dbf1`。92 条名称逐字相同，25 条仅大小写或空格不同，另将 `01:37` 的官方 PHANTOM 名称继续显示为既有中文名“ATK 幻影 Ultimate”。保留旧型号回归向量用于验证显示等价性。厂商清单的相关接收器还列有 FF04 集合，不能以此替换当前 FF02 路由。

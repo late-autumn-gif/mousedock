@@ -1,17 +1,50 @@
 using System;
-using System.Linq;
 using static MouseDock.Services.Detection.ExpansionFacts;
 
 namespace MouseDock.Services.Detection;
 
 internal static class HeadsetExpansionHyperX
 {
-    internal static ReferenceBatteryProtocol.Reading DecodeCloud3(byte[] b)
+    private const byte Cloud3ReportId = 0x66;
+    private const byte Cloud3BatteryRequest = 0x89;
+    private const byte Cloud3BatteryEvent = 0x0d;
+
+    private static bool IsCloud3BatteryReport(byte[] report) =>
+        report.Length >= 2 && report[0] == Cloud3ReportId &&
+        report[1] is Cloud3BatteryRequest or Cloud3BatteryEvent;
+
+    internal static ReferenceBatteryProtocol.Reading DecodeCloud3(byte[] report)
     {
-        Require(b.Length is >= 5 and <= 64 && b[0] == 0x66 && b[1] is 0x89 or 0x0D &&
-            (b[2] != 0 || b[3] != 0) && b[4] <= 100, "Invalid HyperX Cloud III battery response");
-        return Value(b[4]);
+        Require(report.Length is >= 5 and <= 64 && IsCloud3BatteryReport(report),
+            "Invalid HyperX Cloud III battery response");
+        ReadOnlySpan<byte> data = report.AsSpan(2);
+        Require((data[0] | data[1]) != 0 && data[2] <= 100,
+            "Invalid HyperX Cloud III battery response");
+        return Value(data[2]);
     }
+
+    private static ReferenceBatteryProtocol.Reading ReadCloud3(ExpansionWire wire)
+    {
+        bool useOutput = wire.Output is >= 62 and <= 64;
+        byte[] request = Packet(useOutput ? wire.Output : wire.Feature, Cloud3ReportId, Cloud3BatteryRequest);
+        int samples = 2;
+        ReferenceBatteryProtocol.Reading reading = null;
+        while (samples-- > 0)
+        {
+            wire.Drain();
+            if (useOutput)
+                wire.Send(request);
+            else
+            {
+                Require(wire.Link.SetFeature(request), "HyperX Feature query failed");
+                wire.Trace?.Add("expansion-set-feature", true, raw: request, keep: true);
+            }
+            wire.Link.Delay(100);
+            reading = DecodeCloud3(wire.Wait(IsCloud3BatteryReport, 2000));
+        }
+        return reading;
+    }
+
     internal static ReferenceBatteryProtocol.Reading DecodeCloud2(byte[] b)
     {
         Require(b.Length == 20 && b.AsSpan(0, 4).SequenceEqual(new byte[] { 6, 255, 187, 2 }) &&
@@ -26,30 +59,19 @@ internal static class HeadsetExpansionHyperX
     }
     internal static ReferenceBatteryProtocol.Reading Read(ExpansionWire wire, string family)
     {
+        if (family == "Cloud3") return ReadCloud3(wire);
+        bool cloud2 = family == "Cloud2";
         ReferenceBatteryProtocol.Reading result = null;
-        for (int i = 0; i < 2; i++)
+        for (int round = 0; round < 2; round++)
         {
-            byte[] packet = family switch
-            {
-                "Cloud3" => Packet(wire.Output is >= 62 and <= 64 ? wire.Output : wire.Feature, 0x66, 0x89),
-                "Cloud2" => Packet(wire.Output, 6, 255, 187, 2, 0),
-                _ => Packet(wire.Output, 0x50, 2)
-            };
+            var request = cloud2 ? Packet(wire.Output, 6, 255, 187, 2, 0)
+                : Packet(wire.Output, 0x50, 2);
             wire.Drain();
-            if (family == "Cloud3" && wire.Output is < 62 or > 64)
-            {
-                packet = Packet(wire.Feature, 0x66, 0x89);
-                Require(wire.Link.SetFeature(packet), "HyperX Feature query failed");
-                wire.Trace?.Add("expansion-set-feature", true, raw: packet, keep: true);
-            }
-            else wire.Send(packet);
-            if (family is "Cloud3" or "Cloud2") wire.Link.Delay(100);
-            var b = wire.Wait(b => b.Length >= 2 && (family == "Cloud3" ? b[0] == 0x66 && b[1] is 0x89 or 0x0D :
-                family == "Cloud2" ? b[0] == 6 && b[1] == 255 : b[0] == 0x51 && b[1] == 2), 2000);
-            result = family switch
-            {
-                "Cloud3" => DecodeCloud3(b), "Cloud2" => DecodeCloud2(b), _ => DecodeAlpha2(b)
-            };
+            wire.Send(request);
+            if (cloud2) wire.Link.Delay(100);
+            var reply = wire.Wait(b => b.Length >= 2 && (cloud2 ? b[0] == 6 && b[1] == 255 :
+                b[0] == 0x51 && b[1] == 2), 2000);
+            result = cloud2 ? DecodeCloud2(reply) : DecodeAlpha2(reply);
         }
         return result;
     }

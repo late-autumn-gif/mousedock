@@ -7,19 +7,34 @@ namespace MouseDock.Services.Detection;
 
 internal static class HeadsetExpansionCloud3S
 {
+    private const byte Battery = 0x06;
+    private const byte Charging = 0x48;
+    private const int ValueOffset = 6;
+    private static ReadOnlySpan<byte> ReadHeader => [0x0c, 0x02, 0x03, 0x01, 0x00];
+
     internal static byte[] Request(byte command)
     {
-        Require(command is 6 or 0x48, "Unsupported Cloud III S query");
-        return Packet(64, 12, 2, 3, 1, 0, command);
+        Require(command is Battery or Charging, "Unsupported Cloud III S query");
+        var report = new byte[64];
+        ReadHeader.CopyTo(report);
+        report[ValueOffset - 1] = command;
+        return report;
     }
-    internal static int Decode(byte[] b, byte command)
+
+    private static bool Matches(byte[] report, byte command) =>
+        report is { Length: >= ValueOffset + 1 } &&
+        report.AsSpan(0, ReadHeader.Length).SequenceEqual(ReadHeader) && report[ValueOffset - 1] == command;
+
+    internal static int Decode(byte[] report, byte command)
     {
-        var packet = Request(command);
-        Require(b.Length is >= 7 and <= 64 && b.AsSpan(0, 6).SequenceEqual(packet.AsSpan(0, 6)) &&
-            !b.AsSpan().SequenceEqual(packet.AsSpan(0, b.Length)), "Cloud III S frame/echo mismatch");
-        Require(command == 6 ? b[6] <= 100 : b[6] <= 2, "Cloud III S power value unknown");
-        return b[6];
+        byte[] request = Request(command);
+        Require(Matches(report, command) && report.Length <= request.Length &&
+            !report.AsSpan().SequenceEqual(request.AsSpan(0, report.Length)), "Cloud III S frame/echo mismatch");
+        int value = report[ValueOffset];
+        Require(value <= (command == Battery ? 100 : 2), "Cloud III S power value unknown");
+        return value;
     }
+
     internal static ReferenceBatteryProtocol.Reading Read(ExpansionWire writer, IReadOnlyList<ExpansionWire> readers)
     {
         int Get(byte command)
@@ -32,14 +47,14 @@ internal static class HeadsetExpansionCloud3S
                 {
                     reader.CheckTime();
                     var b = reader.Link.Read(20);
-                    if (b?.Length < 7 || b == null || !b.AsSpan(0, 6).SequenceEqual(Request(command).AsSpan(0, 6))) continue;
+                    if (!Matches(b, command)) continue;
                     reader.Trace?.Add("expansion-input", true, raw: b, keep: true);
                     return Decode(b, command);
                 }
             throw new IOException("Cloud III S response timeout");
         }
-        Get(6); int level = Get(6);
-        try { return Value(level, Get(0x48) is 1 or 2); }
+        Get(Battery); int level = Get(Battery);
+        try { return Value(level, Get(Charging) is 1 or 2); }
         catch (Exception ex) when (ex is IOException or InvalidDataException) { return Value(level); }
     }
 }
