@@ -96,34 +96,13 @@ public sealed class CharacterBatteryIcon : FrameworkElement
     {
         if (kind is not ("rei" or "asuka" or "peek")) kind = "rei";
         if (Artwork.TryGetValue(kind, out var image)) return image;
-        var (color, ears) = kind switch
+        var asset = kind switch
         {
-            "asuka" => ("#FFC695", Geometry.Parse("M115,245 L100,88 Q100,74 115,83 L241,171 M359,171 L485,83 Q500,74 500,88 L485,245")),
-            "peek" => ("#B0DDBD", Geometry.Parse("M125,225 A74,74 0 1 1 229,146 M371,146 A74,74 0 1 1 475,225")),
-            _ => ("#A8CBF4", Geometry.Parse("M164,219 C105,37 190,22 245,164 M355,164 C410,22 495,37 436,219"))
+            "asuka" => "widget-orange.png",
+            "peek" => "widget-mint.png",
+            _ => "widget-blue.png"
         };
-        var fur = new SolidColorBrush(ThemePreset.C(color));
-        var outline = new Pen(new SolidColorBrush(ThemePreset.C("#263447")), 14)
-        {
-            LineJoin = PenLineJoin.Round,
-            StartLineCap = PenLineCap.Round,
-            EndLineCap = PenLineCap.Round
-        };
-        var drawing = new DrawingVisual();
-        using (var dc = drawing.RenderOpen())
-        {
-            dc.DrawGeometry(fur, outline, ears);
-            dc.DrawEllipse(fur, outline, new Point(300, 286), 199, 149);
-            dc.DrawEllipse(outline.Brush, null, new Point(239, 285), 13, 18);
-            dc.DrawEllipse(outline.Brush, null, new Point(361, 285), 13, 18);
-            dc.DrawGeometry(null, outline, Geometry.Parse("M277,327 Q300,353 323,327"));
-            dc.DrawRoundedRectangle(outline.Brush, null, new Rect(54, 402, 492, 124), 35, 35);
-            dc.DrawEllipse(fur, outline, new Point(111, 413), 26, 17);
-            dc.DrawEllipse(fur, outline, new Point(489, 413), 26, 17);
-        }
-        var bitmap = new RenderTargetBitmap(600, 600, 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(drawing);
-        image = bitmap;
+        image = new BitmapImage(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{asset}"));
         image.Freeze();
         Artwork[kind] = image;
         return image;
@@ -153,9 +132,8 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         dc.PushOpacity(Stale ? .45 : 1);
         RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality);
         dc.DrawImage(image, bounds);
-        var original = new Rect(74, 438, 452, 68);
-        var plate = new Rect(bounds.X + original.X * scale, bounds.Y + original.Y * scale,
-            original.Width * scale, original.Height * scale);
+        var plate = new Rect(bounds.X + bounds.Width * .13, bounds.Y + bounds.Height * .79,
+            bounds.Width * .74, bounds.Height * .12);
         _chargeSweep ??= new ChargeSweep(this);
         double phase = _chargeSweep.Phase(AnimateCharge && Charging && !Stale && Level > 0);
         double drawn = _chargeSweep.Follow(0, Level, phase >= 0);
