@@ -57,6 +57,7 @@ internal static class Program
             ("Light UI light theme controls retain contrast and working interaction", LightUiChecks.SettingsContrast),
             ("Light UI card gestures separate dragging clicks and diagnostic text", LightUiChecks.CardGestures),
             ("Light UI settings navigation retains controls and applies density", LightUiChecks.Navigation),
+            ("Light UI tray device editing switches from follow to a saved selection", LightUiChecks.TrayDeviceEditing),
             ("Light UI save feedback reports real success and write failure", LightUiChecks.SaveFailure),
             ("Light UI isolated startup preference can be checked and saved", LightUiChecks.IsolatedAutoStart),
             ("Light UI six tray choices retain selection and invoke exact modes", LightUiChecks.TrayChoices),

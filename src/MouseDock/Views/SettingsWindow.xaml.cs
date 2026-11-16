@@ -1080,8 +1080,8 @@ namespace MouseDock.Views
             {
                 if (btn == null) continue;
                 bool on = m == mode;
-                btn.Background = new SolidColorBrush(Color.FromArgb(
-                    on ? (byte)0x46 : (byte)0x16, 0xFF, 0xFF, 0xFF));
+                btn.SetResourceReference(Control.ForegroundProperty, on ? "ControlAccentBrush" : "TextBrush");
+                System.Windows.Automation.AutomationProperties.SetItemStatus(btn, on ? "当前显示方式" : "");
                 btn.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
             }
         }

@@ -36,7 +36,6 @@ public partial class SettingsWindow
                 row.Unchecked += (_, _) => SetTrayTarget(id, false);
                 TrayDeviceRows.Children.Add(row);
             }
-            TrayDeviceRows.IsEnabled = App.Settings.MultiTray && App.Settings.TrayDeviceIds != null;
         }
         finally { _loading = previous; }
     }
@@ -65,10 +64,22 @@ public partial class SettingsWindow
 
     private void SetTrayTarget(string id, bool selected)
     {
-        if (_loading || App.Settings.TrayDeviceIds == null) return;
-        App.Settings.TrayDeviceIds.RemoveAll(existing => string.Equals(existing, id, StringComparison.OrdinalIgnoreCase));
-        if (selected) App.Settings.TrayDeviceIds.Add(id);
-        SaveTraySelection();
+        if (_loading) return;
+        var targets = App.Settings.TrayDeviceIds ??= App.Battery.Devices
+            .Where(d => d.Selected).Select(d => d.Id).ToList();
+        targets.RemoveAll(existing => string.Equals(existing, id, StringComparison.OrdinalIgnoreCase));
+        if (selected) targets.Add(id);
+        App.Settings.MultiTray = true;
+        _loading = true;
+        try
+        {
+            MultiTrayCheck.IsChecked = true;
+            TrayFollowMainCheck.IsEnabled = true;
+            TrayFollowMainCheck.IsChecked = false;
+        }
+        finally { _loading = false; }
+        App.RefreshTray();
+        App.SaveSettings();
     }
 
     private void SaveTraySelection()

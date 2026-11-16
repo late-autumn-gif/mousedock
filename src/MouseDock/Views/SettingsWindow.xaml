@@ -268,8 +268,33 @@
                         <StackPanel>
                             <UniformGrid Columns="3" Margin="-4,0">
                                 <UniformGrid.Resources>
-                                    <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
-                                        <Setter Property="MinHeight" Value="56"/>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="MinHeight" Value="48"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Surface" Background="Transparent" CornerRadius="9"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource ButtonHoverBrush}"/>
+                                                            <Setter TargetName="Surface" Property="RenderTransform"><Setter.Value><TranslateTransform Y="-2"/></Setter.Value></Setter>
+                                                            <Setter TargetName="Surface" Property="Effect"><Setter.Value><DropShadowEffect ShadowDepth="3" BlurRadius="9" Opacity="0.24"/></Setter.Value></Setter>
+                                                        </Trigger>
+                                                        <Trigger Property="IsKeyboardFocused" Value="True">
+                                                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource ThemeChoiceBrush}"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsPressed" Value="True">
+                                                            <Setter TargetName="Surface" Property="RenderTransform" Value="{x:Static Transform.Identity}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                         <Setter Property="Margin" Value="4"/>
                                         <Setter Property="Padding" Value="6,7"/>
                                         <EventSetter Event="Click" Handler="OnSurfaceClick"/>

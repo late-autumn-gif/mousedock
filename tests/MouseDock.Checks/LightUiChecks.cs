@@ -245,6 +245,34 @@ internal static class LightUiChecks
             "Existing device or independent tray controls were lost.");
     }
 
+    internal static void TrayDeviceEditing()
+    {
+        using var fixture = new AppearanceFixture();
+        fixture.Battery.Devices.Add(new DeviceInfo { Id = "mouse", Name = "Mouse", Selected = true });
+        fixture.Battery.Devices.Add(new DeviceInfo { Id = "keyboard", Name = "Keyboard", Selected = true });
+        var window = new SettingsWindow { ShowActivated = false, Left = -2000 };
+        fixture.Set("SettingsView", window);
+        window.Show();
+        window.SelectSection("devices");
+        var rows = (StackPanel)window.FindName("TrayDeviceRows");
+        var row = (CheckBox)rows.Children[0];
+        var follow = (CheckBox)window.FindName("TrayFollowMainCheck");
+        var multi = (CheckBox)window.FindName("MultiTrayCheck");
+        var click = typeof(CheckBox).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Require(row.IsEnabled && row.IsChecked == true && follow.IsChecked == true && multi.IsChecked == false,
+            "A device must be directly editable while following the main panel.");
+        click.Invoke(row, null);
+        var saved = SettingsStore.Load();
+        Require(row.IsChecked == false && follow.IsChecked == false && multi.IsChecked == true &&
+            saved.MultiTray && saved.TrayDeviceIds!.SequenceEqual(new[] { "keyboard" }),
+            "Direct editing must switch to explicit tray selection and preserve the other selected devices.");
+        click.Invoke(follow, null);
+        Require(SettingsStore.Load().TrayDeviceIds == null && ((CheckBox)rows.Children[0]).IsChecked == true,
+            "Resuming follow must restore the main panel preview.");
+        File.Delete(SettingsStore.FilePath);
+        Directory.Delete(SettingsStore.Dir);
+    }
+
     internal static void SaveFailure()
     {
         using var fixture = new AppearanceFixture();
