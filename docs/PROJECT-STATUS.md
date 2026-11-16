@@ -2,6 +2,14 @@
 
 更新：2026-11-15。唯一项目根目录：`D:\mousedock`。
 
+## 六款接收器及 X23SE 来源复核（2026-11-16）
+
+VT9S V2 的长短帧解析已集中到型号模块。26,603 条离线协议与集成断言、旧偏好 10 项、K87 13 项通过。历史 BB 短帧和相关归属继续保留，仍需实机样本确认状态 2。
+
+[NinjaForce Sora V2 页面脚本](https://ninjaforce.co/_nuxt/CF1K2IOL.js)已核对：驱动以 VID 6421 过滤设备，将 PID 44682 列为无线，并选择有 Feature 报告的集合。可独立确认 1915:AE8A 和 Feature 路径。脚本未单独限定 FFA0/0001，因此保留现有精确集合门禁，尚需原始 HID 描述符或厂商集合定义。
+
+[前行者官网下载页](https://www.eweadn.com/pages/driver-download)单列 X23 (SE) 驱动。现有证据缺少 65/65 接口使用零号与非零报告的等价性，替换仍需同一接收器的报告描述符和官方驱动查询、响应记录。Z7、ATK ZERO、F1 V3 Ultimate+ 和 Scyrox V12M 的精确识别条件仍逐条待核对。
+
 ## 协议来源替换与兼容验收
 
 雷蛇标准 Feature 帧依据 [OpenRazer 帧定义](https://github.com/openrazer/openrazer/blob/master/driver/razercommon.h)及[校验实现](https://github.com/openrazer/openrazer/blob/master/driver/razercommon.c)核对。鼠标、键盘和耳机的此类请求共用帧编码及解析，保留各型号事务号及既有输出规则。专用 BlackShark 2020、V3 和 PA 帧仍待替换，标准帧设备级识别仍沿用现有配置。全量离线 26,603 条通过。

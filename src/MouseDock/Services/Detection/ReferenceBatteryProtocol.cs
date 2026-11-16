@@ -66,22 +66,7 @@ internal static class ReferenceBatteryProtocol
             case ReferenceProfiles.Protocol.SoraV2:
                 return SoraV2BatteryProtocol.TryDecode(b, out reading);
             case ReferenceProfiles.Protocol.Rapoo:
-                if (b.Length is 19 or 20)
-                {
-                    if (!RapooVt9sBattery.TryReadReport7(b, out level, out var batteryState)) return false;
-                    if (batteryState == 0)
-                    {
-                        reading = new(-1, false, false, State.Sleep, "雷柏状态为休眠，未采用电量字节");
-                        return true;
-                    }
-                    charging = batteryState == 2;
-                }
-                else if (b.Length == 7 && b[0] == 0xBB && b[1] == 0xB0 && b[5] is 1 or 2)
-                {
-                    level = b[6]; charging = b[5] == 2;
-                }
-                else return false;
-                break;
+                return RapooVt9sBattery.TryDecode(b, out reading);
             default:
                 return false;
         }
