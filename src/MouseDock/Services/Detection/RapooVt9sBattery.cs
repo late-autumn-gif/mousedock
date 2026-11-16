@@ -11,27 +11,32 @@ internal static class RapooVt9sBattery
     {
         reading = new(-1, false, false, State.Invalid, "应答不符合所选协议");
         int level;
-        byte batteryState;
-        if (report.Length == 7)
+        byte status;
+        switch (report.Length)
         {
-            // Historical receiver format. Its charging state is not established by A HUB.
-            if (report[0] != 0xBB || report[1] != 0xB0 || report[5] is not (1 or 2))
+            case 7:
+                // A HUB confirms the BB/B0 marker and percentage position.
+                // Status 2 remains a compatibility rule for older receivers.
+                if (report[0] != 0xBB || report[1] != 0xB0) return false;
+                status = report[5];
+                if (status is not (1 or 2)) return false;
+                level = report[6];
+                break;
+            case 19:
+            case 20:
+                if (!TryReadReport7(report, out level, out status)) return false;
+                if (status == 0)
+                {
+                    reading = new(-1, false, false, State.Sleep, "雷柏状态为休眠，未采用电量字节");
+                    return true;
+                }
+                break;
+            default:
                 return false;
-            batteryState = report[5];
-            level = report[6];
-        }
-        else if (!TryReadReport7(report, out level, out batteryState))
-        {
-            return false;
-        }
-        else if (batteryState == 0)
-        {
-            reading = new(-1, false, false, State.Sleep, "雷柏状态为休眠，未采用电量字节");
-            return true;
         }
 
         if (level > 100) return false;
-        bool charging = batteryState == 2;
+        bool charging = status == 2;
         reading = new(level, charging, true, charging ? State.Charging : State.Online,
             "本次事务取得有效电量应答");
         return true;

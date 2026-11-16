@@ -8,8 +8,8 @@ VendorProtocol.Reference. The ATK identity catalog and command fields are
 now sourced from ATK HUB 3.2.28 device manifests and its COMPX codec.
 
 The current Sora V2 battery transaction in SoraV2BatteryProtocol is based on
-Ninjutso's official NinjaForce driver. The historical receiver profile and
-oracle fixtures are still attributed here.
+Ninjutso's official NinjaForce driver. The historical receiver profile
+remains attributed here.
 
 The earlier X23SE adaptation used the reference's FREQ scheme-A rules.
 The current packet encoder, decoder, and six X23 product mappings are
@@ -69,13 +69,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## Synthetic compatibility fixtures
+## Historical compatibility behavior
 
-`tests/MouseDock.ProtocolTests/Fixtures/reference-1.0.2-vectors.json` contains
-synthetic VT9S V2 reports and expected facts obtained from the reference's
-pure decoder, plus historical receiver comparison data. It contains no application bytecode, user settings, device
-paths, firmware, or hardware captures. The regeneration script requires the
-user's own exact reference binary and disables hardware entrypoints.
+The current tests construct synthetic reports directly. The earlier oracle
+fixtures and generation tool remain available in Git history. The six exact
+receiver profiles and VT9S V2 short-report charging interpretation still
+retain historical compatibility rules.
 
 ## NAudio.Wasapi / NAudio.Core 2.2.1
 

@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text.Json;
 using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
@@ -18,19 +17,26 @@ internal static class ReferenceBatteryRegression
             if (!value) throw new Exception("Reference port: " + reason);
         }
 
-        using var vectors = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
-            "Fixtures", "reference-1.0.2-vectors.json")));
-        Check(vectors.RootElement.GetProperty("sourceSha256").GetString() ==
-            "DE9A0C6B8680ADE90CBC9B1A82DBDBAACAD88C302176D52099327ED75838BD8A", "Oracle source identity");
-        Check(vectors.RootElement.GetProperty("verifiedProfiles").GetArrayLength() == ReferenceProfiles.All.Count,
-            "Every explicitly verified reference profile is ported, with no extra candidate profiles");
-        foreach (var profile in vectors.RootElement.GetProperty("verifiedProfiles").EnumerateArray())
+        // Match the public device identities where independently documented,
+        // with exact collection and length constraints from the compatibility contract.
+        var expectedProfiles = new (ushort Vid, ushort Pid, ushort Page, ushort Usage, Protocol Protocol, bool ReadIdentity)[]
         {
-            ushort Number(string key) => Convert.ToUInt16(profile.GetProperty(key).GetString()![2..], 16);
-            var ported = ReferenceProfiles.Find(Number("vid"), Number("pid"));
-            Check(ported != null && ported.Page == Number("page") && ported.Usage == profile.GetProperty("usage").GetUInt16() &&
-                ported.Battery == ParseProtocol(profile.GetProperty("battery").GetString()!), "Original verified descriptor and protocol retained");
+            (0x3554, 0xF517, 0xFF02, 2, Protocol.Compx, false),
+            (0x395A, 0x0006, 0xFF00, 2, Protocol.ScyroxV12, false),
+            (0x373B, 0x11D8, 0xFF02, 2, Protocol.Compx, false),
+            (0x373B, 0x1278, 0xFF02, 2, Protocol.Compx, true),
+            (0x24AE, 0x1453, 0xFF00, 2, Protocol.Rapoo, false),
+            (0x1915, 0xAE8A, 0xFFA0, 1, Protocol.SoraV2, false)
+        };
+        Check(ReferenceProfiles.All.Count == expectedProfiles.Length, "Receiver allowlist size");
+        foreach (var expected in expectedProfiles)
+        {
+            var profile = ReferenceProfiles.Find(expected.Vid, expected.Pid);
+            Check(profile != null && profile.Page == expected.Page && profile.Usage == expected.Usage &&
+                profile.Battery == expected.Protocol && profile.ReadIdentity == expected.ReadIdentity,
+                $"Exact receiver route {expected.Vid:X4}:{expected.Pid:X4}");
         }
+
         var identityRows = File.ReadLines(Path.Combine(AppContext.BaseDirectory,
             "Fixtures", "atk-hub-3.2.28-identities.tsv")).Skip(1).ToArray();
         Check(identityRows.Length == 118, "ATK HUB identity coverage");
@@ -54,22 +60,7 @@ internal static class ReferenceBatteryRegression
         Check(ReferenceBatteryProtocol.Request(Protocol.Rapoo) == null,
             "VT9S V2 uses passive battery reports");
         CheckVendorBatteryFrames(Check);
-        foreach (var vector in vectors.RootElement.GetProperty("vectors").EnumerateArray())
-        {
-            string label = "VT9S V2: " + vector.GetProperty("label").GetString();
-            bool accepted = ReferenceBatteryProtocol.TryDecode(Protocol.Rapoo,
-                Convert.FromHexString(vector.GetProperty("hex").GetString()!), out var result);
-            Check(accepted == vector.GetProperty("accepted").GetBoolean(), label + " acceptance differs from original decoder");
-            if (!accepted)
-            {
-                Check(result.Level == -1 && !result.Charging && !result.ChargingKnown, label + " rejected bytes never become battery");
-                continue;
-            }
-            Check(result.Level == vector.GetProperty("level").GetInt32() &&
-                result.Status.ToString().ToLowerInvariant() == vector.GetProperty("state").GetString() &&
-                result.Charging == vector.GetProperty("charging").GetBoolean() &&
-                result.ChargingKnown == vector.GetProperty("chargingKnown").GetBoolean(), label + " decoded evidence differs");
-        }
+        CheckRapooBatteryFrames(Check);
 
         foreach (var profile in ReferenceProfiles.All)
         {
@@ -346,11 +337,58 @@ internal static class ReferenceBatteryRegression
         }
     }
 
-    private static Protocol ParseProtocol(string name) => name switch
+    private static void CheckRapooBatteryFrames(Action<bool, string> check)
     {
-        "compx" => Protocol.Compx, "scyrox12" => Protocol.ScyroxV12,
-        "sora" => Protocol.SoraV2, "rapoo" => Protocol.Rapoo, _ => throw new Exception(name)
-    };
+        void Expect(byte[] report, State status, int level)
+        {
+            bool accepted = RapooVt9sBattery.TryDecode(report, out var result);
+            string label = $"VT9S V2 {Convert.ToHexString(report)}";
+            check(accepted == (status != State.Invalid), label + " acceptance");
+            check(result.Status == status && result.Level == level &&
+                result.Charging == (status == State.Charging) &&
+                result.ChargingKnown == (status is State.Online or State.Charging),
+                label + " decoded evidence");
+        }
+
+        foreach (int length in new[] { 7, 19, 20 })
+        for (int level = 0; level <= byte.MaxValue; level++)
+        foreach (byte flag in new byte[] { 0, 1, 2, 3, 255 })
+        {
+            State status = flag switch
+            {
+                0 when length != 7 => State.Sleep,
+                1 when level <= 100 => State.Online,
+                2 when level <= 100 => State.Charging,
+                _ => State.Invalid
+            };
+            Expect(RapooReply(length, (byte)level, flag), status,
+                status is State.Online or State.Charging ? level : -1);
+        }
+
+        foreach (int length in new[] { 7, 19, 20 })
+        {
+            var wrongReportId = RapooReply(length, 42, 1);
+            wrongReportId[0] = 0;
+            Expect(wrongReportId, State.Invalid, -1);
+        }
+        var wrongMarker = RapooReply(7, 42, 1);
+        wrongMarker[1] = 0xB1;
+        Expect(wrongMarker, State.Invalid, -1);
+        for (byte transport = 0; transport < 16; transport++)
+        {
+            var report = RapooReply(20, 42, 1);
+            report[1] = (byte)(0xF0 | transport);
+            Expect(report, transport <= 2 ? State.Online : State.Invalid, transport <= 2 ? 42 : -1);
+        }
+        for (int size = 0; size < 22; size++)
+        {
+            if (size is 7 or 19 or 20) continue;
+            var report = new byte[size];
+            RapooReply(20, 42, 1).AsSpan(0, Math.Min(20, size)).CopyTo(report);
+            Expect(report, State.Invalid, -1);
+        }
+    }
+
     private static (ushort Input, ushort Output, ushort Feature) Lengths(Protocol protocol) => protocol switch
     {
         Protocol.Compx => (17,17,0), Protocol.ScyroxV12 => (64,64,0),
