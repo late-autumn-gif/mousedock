@@ -111,6 +111,22 @@ internal static class AuditChecks
             Require(image.Source is System.Windows.Media.Imaging.BitmapSource bitmapSource &&
                 bitmapSource.PixelWidth == frameSize && bitmapSource.PixelHeight == frameSize,
                 "The embedded atlas must load in the real window.");
+            if (SystemParameters.ClientAreaAnimation)
+            {
+                var idleStart = typeof(DesktopPetWindow).GetField("_idleSince", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                var render = typeof(DesktopPetWindow).GetMethod("RenderPose", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                var framesForIdle = (ImageSource[])typeof(DesktopPetWindow)
+                    .GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                int period = character switch { "shin-chan" => 6800, "xin-yue-hu" => 7700, "rikka" => 8300, _ => 9100 };
+                idleStart.SetValue(pet, Environment.TickCount64 - period - 400);
+                render.Invoke(pet, null);
+                Require(ReferenceEquals(image.Source, framesForIdle[1]), $"{character} must play its idle gesture.");
+                settings.DesktopPetReduceMotion = true;
+                render.Invoke(pet, null);
+                Require(ReferenceEquals(image.Source, framesForIdle[0]), $"{character} must stop idle gestures with reduced motion.");
+                settings.DesktopPetReduceMotion = false;
+                render.Invoke(pet, null);
+            }
             if (character == "shin-chan")
             {
                 var list = (StackPanel)typeof(DesktopPetWindow).GetField("_deviceList", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;

@@ -69,6 +69,7 @@ internal sealed class DesktopPetWindow : Window
     private DeviceInfo _device;
     private Pose _action;
     private long _actionUntil;
+    private long _idleSince;
     private bool _charging;
     private bool _refreshQueued;
     private bool _closed;
@@ -184,6 +185,7 @@ internal sealed class DesktopPetWindow : Window
             else
             {
                 if (_action is Pose.Skill or Pose.Burst) _actionUntil = 0;
+                _idleSince = 0;
                 _timer.Stop();
             }
         };
@@ -215,6 +217,7 @@ internal sealed class DesktopPetWindow : Window
 
         _character.Source = _frames[0];
         _skin = skin;
+        _idleSince = 0;
         _actionUntil = 0;
         Title = $"MouseDock · {skin.Name}桌宠";
         _bubble.Background = skin.Surface;
@@ -327,9 +330,39 @@ internal sealed class DesktopPetWindow : Window
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
         Pose pose = inAction ? _action : _charging ? Pose.Charging :
             IsLow && (_skin.HasBlink || !Motion || now % 5500 < 1350) ? Pose.Low : Pose.Idle;
-        if (pose == Pose.Idle && _skin.HasBlink && Motion && now % 5400 < 170) pose = Pose.Transition;
         if (Motion && _dragging) pose = Pose.Drag;
         else if (Motion && !inAction && _hovering) pose = Pose.Hover;
+        // Idle gestures never replace a battery or pointer pose.
+        double idleTilt = 0;
+        double idleLift = 0;
+        if (Motion && pose == Pose.Idle && !IsLow)
+        {
+            if (_idleSince == 0) _idleSince = now;
+            var (period, angle, lift) = _skin.Id switch
+            {
+                "shin-chan" => (6800, -7d, 6d),
+                "xin-yue-hu" => (7700, 5d, 2d),
+                "rikka" => (8300, -8d, 3d),
+                _ => (9100, 4d, 4d)
+            };
+            long elapsed = now - _idleSince;
+            long phase = elapsed % period;
+            if (_skin.HasBlink && phase is >= 2800 and < 3000)
+                pose = Pose.Transition;
+            if (elapsed >= period && phase < 850)
+            {
+                double progress = phase / 850d;
+                double envelope = Math.Sin(progress * Math.PI);
+                idleTilt = angle * Math.Sin(progress * 2 * Math.PI) * envelope;
+                idleLift = -lift * envelope;
+                if (progress is > .22 and < .78) pose = Pose.Wave;
+            }
+        }
+        else
+        {
+            _idleSince = 0;
+        }
+
         ImageSource[] combatFrames = pose switch
         {
             Pose.Skill => _skillFrames,
@@ -350,9 +383,10 @@ internal sealed class DesktopPetWindow : Window
             Pose.Drag => Math.Sin(dragTime * Math.PI / 175) * 7,
             Pose.Hover => _look * 5,
             Pose.Click => (_skin.Id == "rikka" ? 5 : -3) * clickMotion,
-            _ => 0
+            Pose.Wave when inAction => 7 * Math.Sin((_actionUntil - now) / 95d),
+            _ => idleTilt
         };
-        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion;
+        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion + idleLift;
         bool sparkling = (_skin.Id is "rikka" or KeqingId) && Motion && pose is Pose.Charging or Pose.Celebrate;
         _sparks.Visibility = sparkling ? Visibility.Visible : Visibility.Collapsed;
         if (sparkling)
@@ -465,6 +499,15 @@ internal sealed class DesktopPetWindow : Window
             Add(actions.Items, "星斗归位（元素战技）", () => Play(Pose.Skill, _skillFrames.Length * CombatFrameMilliseconds));
             Add(actions.Items, "天街巡游（元素爆发）", () => Play(Pose.Burst, _burstFrames.Length * CombatFrameMilliseconds));
             Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
+            Add(actions.Items, "打招呼", () => Play(Pose.Click, ClickDuration));
+            ContextMenu.Items.Add(actions);
+        }
+
+        else
+        {
+            var actions = new MenuItem { Header = "桌宠动作", IsEnabled = Motion };
+            Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
+            Add(actions.Items, "打招呼", () => Play(Pose.Click, ClickDuration));
             ContextMenu.Items.Add(actions);
         }
 
