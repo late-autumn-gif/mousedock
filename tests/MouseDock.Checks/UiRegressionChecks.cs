@@ -32,6 +32,13 @@ internal static class UiRegressionChecks
             var popupField = typeof(DockWindow).GetField("_legacyDpiWindow", BindingFlags.Instance | BindingFlags.NonPublic)!;
             var popup = (Window)popupField.GetValue(window)!;
             Require(popup.IsVisible && popup.Title.Contains("DPI"), "DPI area did not open a settings window.");
+            popup.UpdateLayout();
+            var actions = Descendants<Button>(popup).ToArray();
+            Require(actions.Length == 3 && actions.All(action =>
+                action.Template.FindName("ActionSurface", action) is Border { Background: System.Windows.Media.SolidColorBrush fill }
+                && fill.Color.A == 0), "DPI stages and close action must blend into the background at rest.");
+            Require(System.Windows.Automation.AutomationProperties.GetItemStatus(actions[1]) == "当前 DPI 档位"
+                && actions[1].FontWeight == FontWeights.SemiBold, "The confirmed DPI stage must remain identifiable.");
             popup.Close();
             mouse.DpiSettings = new MouseDpiState(0, 0, 1, false, [1600], MouseDpiProtocol.Hidpp, "Logitech G603", Writable: false);
             window.UpdateLayout();

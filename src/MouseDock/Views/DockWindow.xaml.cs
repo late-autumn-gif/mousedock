@@ -61,6 +61,9 @@ namespace MouseDock.Views
             if (App.SupportsDpi(device)) { App.ShowDpi(device); return; }
             _legacyDpiWindow?.Close();
             var theme = App.Theme;
+            var actionStyle = (Style)FindResource("DpiAction");
+            var hoverBrush = new SolidColorBrush(Palette.Mix(theme.Surface, theme.Text, .12));
+            var activeBrush = new SolidColorBrush(ColorContrast.Ratio(theme.Accent, theme.Surface) >= 4.5 ? theme.Accent : theme.Text);
             var body = new StackPanel { Margin = new Thickness(22) };
             var status = new TextBlock { Text = device.DpiLabel, FontSize = 24, Margin = new Thickness(0,12,0,16) };
             body.Children.Add(new TextBlock { Text = device.Name + " · DPI 设置", FontSize = 16, TextWrapping = TextWrapping.Wrap });
@@ -74,7 +77,12 @@ namespace MouseDock.Views
             for (int index = 0; index < state.Count; index++)
             {
                 int target = index;
-                var choice = new Button { Content = state.OptionLabel(index), IsEnabled = writable, Margin = new Thickness(4), Padding = new Thickness(10) };
+                var choice = new Button
+                {
+                    Content = state.OptionLabel(index), IsEnabled = writable, Style = actionStyle,
+                    BorderBrush = hoverBrush, Margin = new Thickness(4), Padding = new Thickness(5, 8, 5, 8)
+                };
+                SetActiveStage(choice, index == state.Index);
                 choice.Click += async (_, _) =>
                 {
                     if (App.Settings.SafeMode || !device.CanChangeDpi || !ReferenceEquals(device.DpiSettings, state) || !App.Battery.Devices.Contains(device))
@@ -87,7 +95,13 @@ namespace MouseDock.Views
                         var preferences = App.Battery.Preferences;
                         string id = device.Id;
                         var result = await Task.Run(() => HidDiscovery.ReadOrChangeMouseDpi(preferences, id, new(state, target)));
-                        if (result != null) { device.Dpi = result.Dpi; device.DpiSettings = result.DpiSettings; }
+                        if (result != null)
+                        {
+                            device.Dpi = result.Dpi;
+                            device.DpiSettings = result.DpiSettings;
+                            for (int i = 0; i < choices.Children.Count; i++)
+                                SetActiveStage((Button)choices.Children[i], i == result.DpiSettings?.Index);
+                        }
                         status.Text = result == null ? "未能确认更改，请刷新后重试" : device.DpiLabel;
                     }
                     catch (Exception) { status.Text = "未能确认更改，请刷新后重试"; }
@@ -95,13 +109,26 @@ namespace MouseDock.Views
                 };
                 choices.Children.Add(choice);
             }
-            var close = new Button { Content = "关闭", Padding = new Thickness(12,7,12,7), Margin = new Thickness(0,16,0,0), HorizontalAlignment = HorizontalAlignment.Right };
+            var close = new Button
+            {
+                Content = "关闭", Style = actionStyle, BorderBrush = hoverBrush,
+                Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 16, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
             body.Children.Add(close);
             _legacyDpiWindow = new Window { Title = device.Name + " · DPI 设置", Owner = this, Width = 430, SizeToContent = SizeToContent.Height, MaxHeight = Math.Max(300, SystemParameters.WorkArea.Height - 40), WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = new SolidColorBrush(theme.Surface), Foreground = new SolidColorBrush(theme.Text), Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, FontFamily = FontFamily };
             var popup = _legacyDpiWindow;
             close.Click += (_, _) => popup.Close();
             popup.Closed += (_, _) => { if (ReferenceEquals(_legacyDpiWindow, popup)) _legacyDpiWindow = null; };
             popup.Show();
+
+            void SetActiveStage(Button button, bool active)
+            {
+                if (active) button.Foreground = activeBrush;
+                else button.ClearValue(ForegroundProperty);
+                button.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+                System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "当前 DPI 档位" : "");
+            }
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)

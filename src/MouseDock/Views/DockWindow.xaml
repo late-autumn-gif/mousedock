@@ -18,6 +18,46 @@
             <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="FontSize" Value="12"/><Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="ActionSurface" Background="{TemplateBinding Background}" CornerRadius="7" BorderThickness="1" BorderBrush="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionSurface" Property="Background" Value="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ActionSurface" Property="BorderBrush" Value="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
+        <Style x:Key="DpiAction" TargetType="Button" BasedOn="{StaticResource DockAction}">
+            <Setter Property="MinHeight" Value="42"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate><TextBlock Text="{Binding}" TextAlignment="Center" TextWrapping="Wrap"/></DataTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <Border x:Name="ActionSurface" Background="Transparent" CornerRadius="9" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ActionSurface" Property="Background" Value="{Binding BorderBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                <Setter TargetName="ActionSurface" Property="RenderTransform">
+                                    <Setter.Value><TranslateTransform Y="-2"/></Setter.Value>
+                                </Setter>
+                                <Setter TargetName="ActionSurface" Property="Effect">
+                                    <Setter.Value><DropShadowEffect ShadowDepth="3" BlurRadius="9" Opacity="0.24"/></Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ActionSurface" Property="Background" Value="{Binding BorderBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ActionSurface" Property="RenderTransform" Value="{x:Static Transform.Identity}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ActionSurface" Property="Opacity" Value="0.65"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <v:PercentageWarningConverter x:Key="PercentageWarning" />
     </Window.Resources>
 
