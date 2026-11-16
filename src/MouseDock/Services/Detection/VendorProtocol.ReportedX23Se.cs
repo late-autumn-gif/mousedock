@@ -43,36 +43,66 @@ internal static partial class VendorProtocol
         if (inputId == 0 || outputId == 0)
             return ReferenceBatteryProtocol.Reading.Failed("65/65 接口没有明确的非零报告编号，未猜测对齐或发送查询");
         var packet = BuildFreqSchemeAPacket(outputId, X23SeCompatibilityReportLength);
-        int level = -1, rejected = 0, echoes = 0;
-        bool charging = false;
-        string acceptedFrames = "";
         string prefix = $"FREQ a in=0x{inputId:X2}/65 out=0x{outputId:X2}/65";
-        for (int attempt = 0; attempt < 2; attempt++)
-        {
-            bool drained = false;
-            for (int i = 0; i < 32; i++) if (link.Read(1) is not { Length: > 0 }) { drained = true; break; }
-            if (!drained) return ReferenceBatteryProtocol.Reading.Failed(prefix + "；旧队列未清空，停止查询");
-            if (!link.Write(packet, 300)) return ReferenceBatteryProtocol.Reading.Failed(prefix + "；电量请求未完整发送");
-            long deadline = link.Now + 1200;
-            bool found = false;
-            string last = "无";
-            while (link.Now < deadline)
-            {
-                var raw = link.Read((int)Math.Max(1, Math.Min(100, deadline - link.Now)));
-                if (raw is not { Length: > 0 }) continue;
-                if (raw.AsSpan().SequenceEqual(packet)) { echoes++; continue; }
-                if (!TryParseFreqFrame(raw, "a", inputId, X23SeCompatibilityReportLength, out level, out charging))
-                { rejected++; last = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, X23SeCompatibilityReportLength))); continue; }
-                found = true;
-                acceptedFrames += $" RX{attempt + 1}=" + Convert.ToHexString(raw);
-                break;
-            }
-            if (!found) return ReferenceBatteryProtocol.Reading.Failed(prefix +
-                $"；第 {attempt + 1}/2 次无有效应答；回显={echoes} 无效={rejected} 最近拒绝帧={last}" + acceptedFrames);
-        }
+        int rejected = 0;
+        int echoes = 0;
+        string lastRejectedFrame = "无";
+
+        // The device can queue reports before we poll. Validate two separately
+        // requested samples and publish only the most recent one.
+        var first = Poll(out var failure);
+        if (first == null) return FailedSample(1, failure, "");
+        string firstTrace = " RX1=" + first.Value.Frame;
+
+        var latest = Poll(out failure);
+        if (latest == null) return FailedSample(2, failure, firstTrace);
+        var (level, charging, frame) = latest.Value;
         return new(level, charging, true,
             charging ? ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
-            prefix + $"；本轮两次有效接收器应答，回显={echoes} 无效={rejected}；不据此推断无线外设在线状态" + acceptedFrames);
+            prefix + $"；本轮两次有效接收器应答，回显={echoes} 无效={rejected}；不据此推断无线外设在线状态" +
+            firstTrace + " RX2=" + frame);
+
+        ReferenceBatteryProtocol.Reading FailedSample(int index, string reason, string previousTrace) =>
+            ReferenceBatteryProtocol.Reading.Failed(prefix + (reason ??
+                $"；第 {index}/2 次无有效应答；回显={echoes} 无效={rejected} 最近拒绝帧={lastRejectedFrame}") +
+                (reason == null ? previousTrace : ""));
+
+        (int Level, bool Charging, string Frame)? Poll(out string failureReason)
+        {
+            lastRejectedFrame = "无";
+            failureReason = "；旧队列未清空，停止查询";
+            for (int i = 0; i < 32; i++)
+            {
+                if (link.Read(1) is { Length: > 0 }) continue;
+                failureReason = null;
+                break;
+            }
+            if (failureReason != null) return null;
+            if (!link.Write(packet, 300))
+            {
+                failureReason = "；电量请求未完整发送";
+                return null;
+            }
+
+            long deadline = link.Now + 1200;
+            while (link.Now < deadline)
+            {
+                var raw = link.Read((int)Math.Clamp(deadline - link.Now, 1, 100));
+                if (raw is not { Length: > 0 }) continue;
+                if (raw.AsSpan().SequenceEqual(packet))
+                {
+                    echoes++;
+                    continue;
+                }
+                if (TryParseFreqFrame(raw, "a", inputId, X23SeCompatibilityReportLength,
+                    out int sampleLevel, out bool sampleCharging))
+                    return (sampleLevel, sampleCharging, Convert.ToHexString(raw));
+
+                rejected++;
+                lastRejectedFrame = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, X23SeCompatibilityReportLength)));
+            }
+            return null;
+        }
     }
 
     private sealed class ReportedFreqLink : ReferenceBatteryProtocol.ILink, IDisposable

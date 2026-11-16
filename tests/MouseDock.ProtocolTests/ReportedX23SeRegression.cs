@@ -66,7 +66,7 @@ internal static class ReportedX23SeRegression
             link.Input.Enqueue(Raw(link.Writes.Count==1?(byte)17:(byte)42,link.Writes.Count==1?(byte)0:(byte)1));
         };
         var reading=VendorProtocol.ReadReportedFreqExchange(link,7,42);
-        Check(reading.Level==42 && reading.Charging && link.Writes.Count==root.GetProperty("transactionWrites").GetInt32(),"Two new exchanges required; stale, echo and unrelated frames skipped");
+        Check(reading.Level==42 && reading.Charging && link.Writes.Count==2,"Two new exchanges required; stale, echo and unrelated frames skipped");
         Check(link.Writes.All(p=>p.Length==65 && p[0]==42 && p[1]==0x55 && p[2]==0x30),"Only the descriptor-numbered read-only battery request is written");
         var zero=new Link(); zero.OnWrite=_=>zero.Input.Enqueue(Raw(0,0));
         Check(VendorProtocol.ReadReportedFreqExchange(zero,7,42).Level==0,"0% is a valid battery, not offline");
