@@ -13,6 +13,11 @@ internal static class BatteryRingDrawing
         Brush track, Brush fill, Brush plug, Brush bottomFill = null)
     {
         if (radius <= 0) return;
+        if (level < 0)
+        {
+            track = track.CloneCurrentValue();
+            track.Opacity *= .45;
+        }
         var trackPen = RoundedPen(track, radius * .18);
         var fillPen = RoundedPen(fill, trackPen.Thickness);
         var bottomPen = bottomFill == null ? fillPen : RoundedPen(bottomFill, trackPen.Thickness);
