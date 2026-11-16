@@ -12,9 +12,10 @@ Ninjutso's official NinjaForce driver. The historical receiver profile and
 oracle fixtures are still attributed here.
 
 The earlier X23SE adaptation used the reference's FREQ scheme-A rules.
-The current packet encoder and decoder are implemented from EWEADN E HUB's
-FREQ protocol evidence. Historical product/scheme mappings, compatibility
-transaction rules, and synthetic comparison fixtures remain attributed here.
+The current packet encoder, decoder, and six X23 product mappings are
+implemented from EWEADN E HUB's FREQ protocol and catalog evidence.
+Historical compatibility transaction rules and synthetic comparison fixtures
+remain attributed here.
 Physical-device equivalence has not been verified locally.
 The supplied reference binary identifies its license as follows. The original
 application and its binary/runtime are not included in this distribution.

@@ -81,13 +81,15 @@ internal static partial class VendorProtocol
 
     private static string MouseExpansionFreq(string name)
     {
-        string[] a={"EWEADN X23","EWEADN X23Max","EWEADN X23L carbon","EWEADN A6Pro","EWEADN A6Max",
-            "EWEADN A7SE","EWEADN A7","EWEADN A7Pro","EWEADN S7","EWEADN S7SE","EWEADN G5"};
-        string[] c={"EWEADN X23Pro","EWEADN S9SE","EWEADN E7","EWEADN E7 PRO","E9Carbon","E9ProCarbon",
+        string x23Scheme = SelectEHubX23Scheme(name?.Trim(' ', '\t', '\r', '\n'));
+        if (x23Scheme != null) return x23Scheme;
+
+        string[] a={"EWEADN A6Pro","EWEADN A6Max","EWEADN A7SE","EWEADN A7","EWEADN A7Pro",
+            "EWEADN S7","EWEADN S7SE","EWEADN G5"};
+        string[] c={"EWEADN S9SE","EWEADN E7","EWEADN E7 PRO","E9Carbon","E9ProCarbon",
             "EWEADN E9","EWEADN E11","EWEADN E11 PRO","EWEADN A6","EWEADN G2SE A","S7 Plus","EWEADN S2"};
         foreach(string value in a)if(MouseExpansionName(name,value))return "a";
         foreach(string value in c)if(MouseExpansionName(name,value))return "c";
-        if(MouseExpansionName(name,"EWEADN X23SE")||MouseExpansionName(name,"EWEADN X23 carbon"))return "dual";
         return MouseExpansionName(name,"LTM8 2.4G")?"m8":null;
     }
     private static string MouseExpansionMloong(string value)

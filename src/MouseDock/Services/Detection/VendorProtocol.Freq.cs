@@ -12,8 +12,8 @@ namespace MouseDock.Services.Detection
     /// - E HUB FREQ SDK 给出了 0x30 电量命令、方案 a/c 的应答字段及输出编号选择；
     /// - 官方 E HUB 目录 + FREQ SDK 把 A8A4/A8A5:2255 的 X23 系列标成 `x23_freq`，
     ///   页面 FF01/0010、接口 2，产品串必须精确匹配；
-    /// - 参考设备表里 A8A5:2255 / “EWEADN X23SE”是 `freq_scheme = dual`：
-    ///   64/64 的 F0 描述符先用 0x52 读一代信息决定 a/c，其它尺寸按 a 方案。
+    /// - E HUB 的 X23SE 和 X23 Carbon 各有无提示和 c 提示版。现有兼容选路在
+    ///   64/64 的 F0 集合通过 0x52 查询区分，其余集合继续用 a。
     ///
     /// 用户报告（2026-11-05 09:23）里 A8A5:2255 EWEADN X23SE 的 FF01/0010 是 65/65，
     /// 说明输出报告带 1 字节编号、载荷 64 字节。这里从 HID 描述符（HidP_GetValueCaps）
@@ -29,28 +29,23 @@ namespace MouseDock.Services.Detection
         [DllImport("hid.dll")] private static extern int HidP_GetValueCaps(int reportType, byte[] caps, ref ushort length, IntPtr prep);
         [DllImport("hid.dll")] private static extern int HidP_GetButtonCaps(int reportType, byte[] caps, ref ushort length, IntPtr prep);
 
-        /// <summary>参考设备表里的 freq_scheme，键是 USB 产品串（大小写不敏感）。</summary>
-        private static readonly Dictionary<string, string> FreqSchemes =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["EWEADN X23"] = "a",
-                ["EWEADN X23Max"] = "a",
-                ["EWEADN X23SE"] = "dual",
-                ["EWEADN X23Pro"] = "c",
-                ["EWEADN X23 carbon"] = "dual",
-                ["EWEADN X23L carbon"] = "a"
-            };
-
         internal static bool IsFreqMouse(ushort vid, ushort pid, string product) =>
             (vid == 0xA8A4 || vid == 0xA8A5) && pid == 0x2255 &&
             FreqSchemeFor(product) != null;
 
-        internal static string FreqSchemeFor(string product)
+        internal static string FreqSchemeFor(string product) =>
+            string.IsNullOrWhiteSpace(product) ? null : SelectEHubX23Scheme(NormalizeProduct(product));
+
+        // E HUB assigns a by default and c when its product entry has a c hint.
+        // Two USB product names have both variants, so preserve our descriptor/serial
+        // disambiguation for those names.
+        private static string SelectEHubX23Scheme(string product) => product?.ToUpperInvariant() switch
         {
-            if (string.IsNullOrWhiteSpace(product)) return null;
-            string key = NormalizeProduct(product);
-            return FreqSchemes.TryGetValue(key, out string scheme) ? scheme : null;
-        }
+            "EWEADN X23" or "EWEADN X23MAX" or "EWEADN X23L CARBON" => "a",
+            "EWEADN X23PRO" => "c",
+            "EWEADN X23SE" or "EWEADN X23 CARBON" => "dual",
+            _ => null
+        };
 
         private static string NormalizeProduct(string product)
         {

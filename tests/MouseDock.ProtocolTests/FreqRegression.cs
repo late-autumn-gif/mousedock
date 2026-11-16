@@ -47,6 +47,10 @@ internal static class FreqRegression
         Check(!VendorProtocol.IsFreqMouse(0x3837, 0x100B, "MCHOSE A7 V2 Ultra+"), "Other vendor/PID pairs are untouched");
         Check(VendorProtocol.FreqSchemeFor("EWEADN X23SE") == "dual", "X23SE uses the dual generation probe profile");
         Check(VendorProtocol.FreqSchemeFor("EWEADN X23Pro") == "c", "X23Pro profile stays on scheme c");
+        Check(VendorProtocol.FreqSchemeFor("EWEADN X23") == "a", "E HUB X23 defaults to scheme a");
+        Check(VendorProtocol.FreqSchemeFor("EWEADN X23Max") == "a", "E HUB X23 Max defaults to scheme a");
+        Check(VendorProtocol.FreqSchemeFor("EWEADN X23L carbon") == "a", "E HUB X23L Carbon defaults to scheme a");
+        Check(VendorProtocol.FreqSchemeFor("EWEADN X23 carbon") == "dual", "Both E HUB X23 Carbon variants require disambiguation");
         Check(VendorProtocol.FreqSchemeFor("unknown") == null, "Unknown products have no scheme");
 
         // ── 请求组帧：完全照参考实现 ──
