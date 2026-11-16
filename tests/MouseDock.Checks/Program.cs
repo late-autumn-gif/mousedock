@@ -92,6 +92,7 @@ internal static class Program
             ("Device photo floating wheel edits only the targeted crop", DevicePhotoChecks.FloatingWheel),
             ("Device photo floating drag edits artwork without moving the window", DevicePhotoChecks.FloatingDrag),
             ("Only one of the six display modes is visible", UiRegressionChecks.ExclusiveSurfaces),
+            ("Desktop pet behavior schedules idle interaction rest and landing", AuditChecks.DesktopPetBehaviorSchedule),
             ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),

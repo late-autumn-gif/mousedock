@@ -33,6 +33,37 @@ internal static class AuditChecks
         ChargingLineGeometry();
     }
 
+    internal static void DesktopPetBehaviorSchedule()
+    {
+        var behavior = new DesktopPetBehavior(new Random(413));
+        DesktopPetBehavior.Sample Read(long time, bool pointer = false, bool moving = false,
+            bool blocked = false, bool autonomous = true, bool rest = true, bool blink = true) =>
+            behavior.Update(time, pointer, moving, blocked, autonomous, rest, blink, 100, 100);
+        Require(Read(0).State == DesktopPetBehavior.State.Idle, "Start neutral.");
+        bool sawBlink = false, sawGesture = false;
+        for (long t = 33; t < 90000; t += 33)
+        {
+            var sample = Read(t);
+            sawBlink |= sample.Blink;
+            sawGesture |= sample.State == DesktopPetBehavior.State.RandomAction;
+            Require(Math.Abs(sample.Tilt) <= 4 && Math.Abs(sample.Lift) <= 6, "Autonomous poses stay within render bounds.");
+        }
+        Require(sawBlink && sawGesture, "Seeded schedule exercises both behavior layers.");
+        Require(Read(90000, pointer: true).State == DesktopPetBehavior.State.Interaction, "Pointer interrupts idle activity.");
+        Require(Read(90010, moving: true).State == DesktopPetBehavior.State.Moving, "Drag has priority.");
+        behavior.Land(90020);
+        Require(Read(90020).Lift == -6 && Read(90500).Lift == 0, "Landing starts at the drag elevation and resolves.");
+        Require(Read(90510, blocked: true).State == DesktopPetBehavior.State.Transition, "Battery and explicit actions suspend autonomy.");
+        Read(100000);
+        Require(Read(340000).State == DesktopPetBehavior.State.Sleep, "Long idle enters rest.");
+        Require(Read(340010, pointer: true).State == DesktopPetBehavior.State.WakeUp, "Pointer wakes the resting pet.");
+        Require(Read(340600, pointer: true).State == DesktopPetBehavior.State.Interaction, "Wake resolves to interaction.");
+        behavior.Reset();
+        for (long t = 0; t < 260000; t += 93)
+            Require(Read(t, autonomous: false, rest: false, blink: false).State == DesktopPetBehavior.State.Idle,
+                "Disabling each category keeps the idle state.");
+    }
+
     private static void DesktopPetSizing()
     {
         using var fixture = new AppearanceFixture();
@@ -98,7 +129,7 @@ internal static class AuditChecks
                 new DeviceInfo { Id = $"pet-device-{i}", Name = $"测试设备 {i}", Level = 40 + i })).ToArray();
         SetSource(battery, source);
         Wait(battery.PollAsync());
-        var pet = new DesktopPetWindow(battery, settings);
+        var pet = new DesktopPetWindow(battery, settings, new Random(413));
         void Flush() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
         var image = (Image)typeof(DesktopPetWindow).GetField("_character", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
         DeviceInfo Followed() => (DeviceInfo)typeof(DesktopPetWindow).GetField("_device", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
@@ -113,19 +144,21 @@ internal static class AuditChecks
                 "The embedded atlas must load in the real window.");
             if (SystemParameters.ClientAreaAnimation)
             {
-                var idleStart = typeof(DesktopPetWindow).GetField("_idleSince", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                var render = typeof(DesktopPetWindow).GetMethod("RenderPose", BindingFlags.NonPublic | BindingFlags.Instance)!;
                 var framesForIdle = (ImageSource[])typeof(DesktopPetWindow)
                     .GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-                int period = character switch { "shin-chan" => 6800, "xin-yue-hu" => 7700, "rikka" => 8300, _ => 9100 };
-                idleStart.SetValue(pet, Environment.TickCount64 - period - 400);
-                render.Invoke(pet, null);
-                Require(ReferenceEquals(image.Source, framesForIdle[1]), $"{character} must play its idle gesture.");
+                long now = Environment.TickCount64;
+                bool waved = false;
+                for (int elapsed = 0; elapsed < 180000 && !waved; elapsed += 100)
+                {
+                    pet.RenderPoseAt(now + elapsed);
+                    waved = ReferenceEquals(image.Source, framesForIdle[1]);
+                }
+                Require(waved, $"{character} must use its wave art during an autonomous gesture.");
                 settings.DesktopPetReduceMotion = true;
-                render.Invoke(pet, null);
+                pet.RenderPoseAt(now);
                 Require(ReferenceEquals(image.Source, framesForIdle[0]), $"{character} must stop idle gestures with reduced motion.");
                 settings.DesktopPetReduceMotion = false;
-                render.Invoke(pet, null);
+                pet.RenderPoseAt(now);
             }
             if (character == "shin-chan")
             {
