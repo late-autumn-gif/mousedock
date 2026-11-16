@@ -172,12 +172,7 @@ internal static class SharedDisplayStyleChecks
                 edge.UpdateDevices();
                 Require(ReferenceEquals(original, Children<TaskbarBatteryStrip>(content).Single()),
                     "An unchanged edge scan recreated the selected style.");
-                fixture.Settings.ShowBatteryNumber = false;
-                edge.UpdateDevices();
-                Arrange(content);
-                Require(Children<TextBlock>(content).Where(t => t.Name == "BatteryNumber").All(t => t.Visibility == Visibility.Collapsed),
-                    "The edge style ignored the number toggle.");
-                fixture.Settings.ShowBatteryNumber = true;
+                Require(number.Visibility == Visibility.Visible, "The edge style hid its battery number.");
             }
         }
         finally { edge.Close(); }

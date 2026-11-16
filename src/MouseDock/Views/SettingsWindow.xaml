@@ -318,7 +318,6 @@
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
-                            <CheckBox x:Name="BatteryNumberBox" Content="显示电量数字" Margin="0,12,0,0" Checked="OnBatteryNumberChanged" Unchecked="OnBatteryNumberChanged"/>
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <TextBlock Text="充电动效" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <ComboBox x:Name="ChargeEffectChoice" Width="110" SelectionChanged="OnChargeEffectChanged">

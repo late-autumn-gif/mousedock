@@ -139,6 +139,9 @@ internal static class ReferenceStyleChecks
                 Arrange(strip);
                 var numbers = Children<TextBlock>(strip).Where(n => n.Name == "BatteryNumber").ToArray();
                 Require(numbers.Select(n => n.Text).SequenceEqual(new[] { "100", "0", "\u2014" }), $"{style} lost values.");
+                foreach (var glyph in Children<DeviceGlyph>(strip).Where(g => g.IsVisible))
+                    Require(((SolidColorBrush)glyph.GlyphBrush).Color == ThemePreset.C("#FFCC00"),
+                        $"{style} device glyph must use the number color.");
                 foreach (var number in numbers)
                 {
                     Require(((SolidColorBrush)number.Foreground).Color == ThemePreset.C("#FFCC00"), $"{style} lost manual color.");
@@ -264,12 +267,15 @@ internal static class ReferenceStyleChecks
     private static void CheckEdgeInk(FrameworkElement surface, Color expected, string style)
     {
         var brushes = Children<DeviceBatteryRing>(surface).Select(r => r.BatteryBrush)
-            .Concat(Children<DeviceGlyph>(surface).Select(g => g.GlyphBrush))
             .Concat(Children<ReferenceBatteryIcon>(surface).Select(i => i.Accent))
-            .Concat(Children<CharacterBatteryIcon>(surface).Select(i => i.Accent)).ToArray();
-        Require(brushes.Length > 0 && brushes.All(b => b is SolidColorBrush solid && solid.Color == expected),
-            $"{style} edge glyph or progress ignores its effective color.");
+            .Concat(Children<CharacterBatteryIcon>(surface).Select(i => i.Accent));
+        Require(brushes.All(b => b is SolidColorBrush solid && solid.Color == expected),
+            $"{style} edge progress ignores its effective color.");
+        var number = Children<TextBlock>(surface).First(t => t.Name == "BatteryNumber");
+        Require(Children<DeviceGlyph>(surface).Where(g => g.IsVisible).All(g => ((SolidColorBrush)g.GlyphBrush).Color == ((SolidColorBrush)number.Foreground).Color),
+            $"{style} edge device glyph must use the number color.");
     }
+
 
     private static IEnumerable<T> Children<T>(DependencyObject root) where T : DependencyObject
     {

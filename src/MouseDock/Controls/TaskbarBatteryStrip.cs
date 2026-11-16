@@ -129,8 +129,7 @@ public sealed class TaskbarBatteryStrip : Border
                 });
             if (card)
             {
-                stack.Children.Add(CreateCard(items[i], showNumber, vertical, foreground, lowThreshold,
-                    textBrush, batteryBrush));
+                stack.Children.Add(CreateCard(items[i], showNumber, vertical, textBrush));
                 continue;
             }
             stack.Children.Add(CreateBadge(items[i], StyleName, cell, showNumber, vertical, foreground,
@@ -142,8 +141,7 @@ public sealed class TaskbarBatteryStrip : Border
     /// 迷你卡片：半透明圆角底（任务栏透出来）、左上角图标、粗体百分比、底部型号。
     /// 全部用矢量元素，不做图片缩放，所以缩小后不糊。
     /// </summary>
-    private static Border CreateCard(DeviceInfo device, bool showNumber, bool vertical, Brush foreground,
-        int lowThreshold, Brush textBrush, Brush batteryBrush)
+    private static Border CreateCard(DeviceInfo device, bool showNumber, bool vertical, Brush textBrush)
     {
         var size = CardSize(vertical);
         var card = new Border
@@ -187,7 +185,7 @@ public sealed class TaskbarBatteryStrip : Border
         var glyph = new DeviceGlyph
         {
             Width = vertical ? 22 : 20, Height = vertical ? 22 : 20, Thickness = 2.1,
-            GlyphBrush = batteryBrush ?? foreground,
+            GlyphBrush = textBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false
@@ -269,7 +267,7 @@ public sealed class TaskbarBatteryStrip : Border
         {
             ring = new DeviceBatteryRing
             {
-                GlyphBrush = batteryBrush ?? foreground, BatteryBrush = batteryBrush, LowBatteryThreshold = lowThreshold,
+                GlyphBrush = textBrush, BatteryBrush = batteryBrush, LowBatteryThreshold = lowThreshold,
                 ShowGlyph = false, AnimateCharge = true
             };
             ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
@@ -341,7 +339,7 @@ public sealed class TaskbarBatteryStrip : Border
         {
             Width = showNumber ? (panel ? 13 : 14) : 21,
             Height = showNumber ? (panel ? 13 : 14) : 21,
-            Thickness = 1.8, GlyphBrush = batteryBrush ?? (panel ? Brushes.White : foreground),
+            Thickness = 1.8, GlyphBrush = textBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false

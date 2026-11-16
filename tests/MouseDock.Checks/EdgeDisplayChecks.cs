@@ -86,7 +86,6 @@ internal static class EdgeDisplayChecks
     public static void SettingsRoundTrip()
     {
         var settings = new AppSettings();
-        Set(settings, "ShowBatteryNumber", false);
         Set(settings, "EdgeGlyphColor", "#39A9F0");
         Set(settings, "EdgeVerticalPosition", 0.8);
         Set(settings, "EdgeInset", 24d);
@@ -96,9 +95,8 @@ internal static class EdgeDisplayChecks
         {
             NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
         };
-        var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings.Clone(), options), options)!;
-        Require((bool)restored.GetType().GetProperty("ShowBatteryNumber")!.GetValue(restored)! == false,
-            "Number preference lost during clone/save.");
+        var json = JsonSerializer.Serialize(settings.Clone(), options).Insert(1, "\"ShowBatteryNumber\":false,");
+        var restored = JsonSerializer.Deserialize<AppSettings>(json, options)!;
         Require((string)restored.GetType().GetProperty("EdgeGlyphColor")!.GetValue(restored)! == "#39A9F0",
             "Color preference lost during clone/save.");
         Require((double)restored.GetType().GetProperty("EdgeVerticalPosition")!.GetValue(restored)! == 0.8 &&
@@ -216,10 +214,8 @@ internal static class EdgeDisplayChecks
             Require(badges.All(b => ((SolidColorBrush)b.Ring.GlyphBrush).Color == Color.FromRgb(57, 169, 240)),
                 "Custom color was not applied.");
             Require(edge.ActualWidth > 0 && edge.ActualHeight > 0, "Edge native window has no size.");
-            settings.ShowBatteryNumber = false;
-            edge.UpdateDevices();
-            Require(Children<TextBlock>(edge).Where(t => t.Name == "BatteryNumber").All(t => t.Visibility == Visibility.Collapsed),
-                "Live number setting ignored.");
+            Require(Children<TextBlock>(edge).Count(t => t.Name == "BatteryNumber" && t.Visibility == Visibility.Visible) == 2,
+                "The edge must show both battery readings.");
             settings.EdgeGlyphColor = "invalid saved color";
             edge.UpdateDevices();
             Require(Children<DeviceBatteryRing>(edge).All(r => ((SolidColorBrush)r.GlyphBrush).Color == Colors.WhiteSmoke),

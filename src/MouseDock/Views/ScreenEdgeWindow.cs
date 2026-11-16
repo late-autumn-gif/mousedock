@@ -16,7 +16,7 @@ namespace MouseDock.Views
         private readonly StackPanel _devices = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
         private readonly DispatcherTimer _anchorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         private DeviceInfo[] _renderedDevices = Array.Empty<DeviceInfo>();
-        private (string Style, bool Numbers, Color Foreground, string Battery, int Low, string Appearance) _presentation;
+        private (string Style, Color Foreground, string Battery, int Low, string Appearance) _presentation;
 
         public ScreenEdgeWindow()
         {
@@ -91,10 +91,9 @@ namespace MouseDock.Views
         public static DeviceBatteryBadge CreateRingBadge(DeviceInfo device, AppSettings settings, ThemePreset theme)
         {
             var badge = new DeviceBatteryBadge(device, new SolidColorBrush(ResolveForeground(settings, theme)),
-                settings.ShowBatteryNumber, true, settings.LowBatteryWarn);
+                true, true, settings.LowBatteryWarn);
             var battery = ResolveBatteryBrush(settings, theme);
             badge.Ring.BatteryBrush = battery;
-            if (battery != null) badge.Ring.GlyphBrush = battery;
             return badge;
         }
 
@@ -106,7 +105,7 @@ namespace MouseDock.Views
                 App.SaveSettings();
             var color = ResolveForeground(App.Settings, App.Theme);
             var battery = ResolveBatteryBrush(App.Settings, App.Theme);
-            var presentation = (style, App.Settings.ShowBatteryNumber, color, battery?.ToString() ?? "", App.Settings.LowBatteryWarn,
+            var presentation = (style, color, battery?.ToString() ?? "", App.Settings.LowBatteryWarn,
                 TaskbarBatteryStrip.AppearanceKey(App.Settings, App.Theme));
             if (presentation != _presentation || !_renderedDevices.SequenceEqual(devices))
             {
@@ -120,7 +119,7 @@ namespace MouseDock.Views
                         _devices.Children.Add(badge);
                     }
                 else if (devices.Length > 0)
-                    _devices.Children.Add(new TaskbarBatteryStrip(devices, style, App.Settings.ShowBatteryNumber, true,
+                    _devices.Children.Add(new TaskbarBatteryStrip(devices, style, true, true,
                         foreground, App.Settings.LowBatteryWarn, "", "",
                         battery, App.Settings, App.Theme, screenEdge: true));
                 _renderedDevices = devices;

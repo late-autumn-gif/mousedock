@@ -144,7 +144,6 @@ namespace MouseDock.Views
                 TaskbarIconOffsetSlider.Value = TaskbarPlacement.NormalizeIconOffset(s.TaskbarIconOffset);
                 TaskbarIconOffsetInput.Text = TaskbarIconOffsetSlider.Value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
                 RebuildTaskbarStyles();
-                BatteryNumberBox.IsChecked = s.ShowBatteryNumber;
                 ChargeEffectChoice.SelectedIndex = s.ChargeEffect == "wave" ? 1 : 0;
                 RebuildEdgeStyles();
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(s, App.Theme));
@@ -815,17 +814,6 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        private void OnBatteryNumberChanged(object sender, RoutedEventArgs e)
-        {
-            if (_loading) return;
-            App.Settings.ShowBatteryNumber = BatteryNumberBox.IsChecked == true;
-            App.Taskbar?.UpdateDevices();
-            App.Edge?.UpdateDevices();
-            RebuildTaskbarStyles();
-            RebuildEdgeStyles();
-            App.SaveSettings();
-        }
-
         private void OnEdgePositionChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_loading || EdgePositionValue == null) return;
@@ -946,7 +934,7 @@ namespace MouseDock.Views
                 {
                     new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Keyboard, Level = 28 },
                     new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Mouse, Level = 90 }
-                }, style, App.Settings.ShowBatteryNumber, false, new SolidColorBrush(theme.Text),
+                }, style, true, false, new SolidColorBrush(theme.Text),
                     App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor,
                     new SolidColorBrush(theme.Accent), App.Settings, theme);
                 var content = new StackPanel();
@@ -985,14 +973,13 @@ namespace MouseDock.Views
                 FrameworkElement preview;
                 if (style == "ring")
                 {
-                    var badge = new DeviceBatteryBadge(device, foreground, settings.ShowBatteryNumber, true, settings.LowBatteryWarn);
+                    var badge = new DeviceBatteryBadge(device, foreground, true, true, settings.LowBatteryWarn);
                     badge.Ring.BatteryBrush = battery;
-                    badge.Ring.GlyphBrush = battery;
                     preview = badge;
                 }
                 else
                 {
-                    preview = new TaskbarBatteryStrip(new[] { device }, style, settings.ShowBatteryNumber, true,
+                    preview = new TaskbarBatteryStrip(new[] { device }, style, true, true,
                         foreground, settings.LowBatteryWarn, "", "", battery, settings, theme, screenEdge: true);
                 }
 
@@ -1085,7 +1072,6 @@ namespace MouseDock.Views
             ReferenceAppearanceOptions.Visibility = mode is "icon" or "taskbar" or "edge" ? Visibility.Visible : Visibility.Collapsed;
             TaskbarStylePanel.Visibility = mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             EdgeOptionsPanel.Visibility = mode == "edge" ? Visibility.Visible : Visibility.Collapsed;
-            BatteryNumberBox.Visibility = mode == "edge" || mode == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
             var buttons = new[] { (SurfaceDock, "dock"), (SurfaceMini, "mini"), (SurfaceIcon, "icon"),
                 (SurfaceTaskbar, "taskbar"), (SurfaceEdge, "edge"), (SurfacePet, "pet") };
             foreach (var (btn, m) in buttons)
