@@ -121,9 +121,9 @@ namespace MouseDock.Views
                 ScaleValue.Text = $"{s.Scale * 100:0}%";
                 RefreshSlider.Value = Math.Clamp(s.RefreshSeconds, 5, 120);
                 RefreshValue.Text = $"{s.RefreshSeconds}s";
-                AutoStartCheck.IsChecked = !App.IsTestProfile && AutoStart.IsEnabled();
-                AutoStartCheck.IsEnabled = !App.IsTestProfile;
-                AutoStartCheck.ToolTip = App.IsTestProfile ? "隔离测试版不修改开机启动项" : null;
+                AutoStartCheck.IsChecked = App.IsTestProfile ? s.AutoStart : AutoStart.IsEnabled();
+                AutoStartCheck.Content = App.IsTestProfile ? "开机自启（仅测试交互）" : "开机自启";
+                AutoStartCheck.ToolTip = App.IsTestProfile ? "开关仅保存在隔离配置中，不修改 Windows 启动项" : null;
                 DockDensityChoice.SelectedIndex = s.DockStyle == "compact" ? 1 : s.DockStyle == "bare" ? 2 : 0;
                 SafeModeChoice.IsChecked = s.SafeMode;
                 ApplyWarnButtons(s.LowBatteryWarn);
@@ -457,6 +457,18 @@ namespace MouseDock.Views
         {
             if (_loading) return;
             bool on = AutoStartCheck.IsChecked == true;
+            if (App.IsTestProfile)
+            {
+                bool previous = App.Settings.AutoStart;
+                App.Settings.AutoStart = on;
+                if (!SettingsStore.TrySave(App.Settings))
+                {
+                    App.Settings.AutoStart = previous;
+                    AutoStartCheck.IsChecked = previous;
+                    MessageBox.Show(this, "无法保存开机自启测试设置。", "MouseDock");
+                }
+                return;
+            }
             AutoStart.Set(on);
             App.Settings.AutoStart = on;
             App.SaveSettings();

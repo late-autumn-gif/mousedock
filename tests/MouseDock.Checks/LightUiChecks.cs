@@ -267,6 +267,41 @@ internal static class LightUiChecks
         finally { directory.SetValue(null, original); }
     }
 
+    internal static void IsolatedAutoStart()
+    {
+        const string variable = "MOUSEDOCK_DATA_DIR";
+        string? previous = Environment.GetEnvironmentVariable(variable);
+        using var fixture = new AppearanceFixture();
+        string directory = SettingsStore.Dir;
+        fixture.Settings.AutoStart = false;
+        Environment.SetEnvironmentVariable(variable, directory);
+        try
+        {
+            var window = new SettingsWindow { ShowActivated = false, Left = -2000 };
+            fixture.Set("SettingsView", window);
+            window.Show();
+            window.SelectSection("behavior");
+            var check = (CheckBox)window.FindName("AutoStartCheck");
+            var click = typeof(CheckBox).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Require(check.IsVisible && check.IsEnabled && check.IsChecked == false, "The isolated startup control must start visible, enabled and unchecked.");
+            click.Invoke(check, null);
+            Require(check.IsChecked == true && SettingsStore.Load().AutoStart, "Checking startup must persist the isolated preference.");
+            window.Reload();
+            Require(check.IsChecked == true, "Reload must display the isolated startup preference.");
+            click.Invoke(check, null);
+            Require(check.IsChecked == false && !SettingsStore.Load().AutoStart, "Unchecking startup must clear the isolated preference.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, previous);
+            if (Directory.Exists(directory))
+            {
+                File.Delete(Path.Combine(directory, "settings.json"));
+                Directory.Delete(directory);
+            }
+        }
+    }
+
     internal static void TrayChoices()
     {
         var type = typeof(AppSettings).Assembly.GetType("MouseDock.Services.TraySurfacePicker")!;

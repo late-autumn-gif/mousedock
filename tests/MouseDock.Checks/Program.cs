@@ -58,6 +58,7 @@ internal static class Program
             ("Light UI card gestures separate dragging clicks and diagnostic text", LightUiChecks.CardGestures),
             ("Light UI settings navigation retains controls and applies density", LightUiChecks.Navigation),
             ("Light UI save feedback reports real success and write failure", LightUiChecks.SaveFailure),
+            ("Light UI isolated startup preference can be checked and saved", LightUiChecks.IsolatedAutoStart),
             ("Light UI six tray choices retain selection and invoke exact modes", LightUiChecks.TrayChoices),
             ("Light UI compact cards preserve unknown and stale battery states", LightUiChecks.BatteryStates),
             ("DPI stages fit compact windows and retain theme changes", DpiWindowChecks.Layout),
