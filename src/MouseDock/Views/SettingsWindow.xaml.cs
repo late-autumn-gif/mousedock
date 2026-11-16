@@ -124,7 +124,6 @@ namespace MouseDock.Views
                 AutoStartCheck.IsChecked = App.IsTestProfile ? s.AutoStart : AutoStart.IsEnabled();
                 AutoStartCheck.Content = App.IsTestProfile ? "开机自启（仅测试交互）" : "开机自启";
                 AutoStartCheck.ToolTip = App.IsTestProfile ? "开关仅保存在隔离配置中，不修改 Windows 启动项" : null;
-                DockDensityChoice.SelectedIndex = s.DockStyle == "compact" ? 1 : s.DockStyle == "bare" ? 2 : 0;
                 SafeModeChoice.IsChecked = s.SafeMode;
                 ApplyWarnButtons(s.LowBatteryWarn);
                 SelectSection(_section);
@@ -182,13 +181,6 @@ namespace MouseDock.Views
         private void OnSectionClick(object sender, RoutedEventArgs e) => SelectSection((string)((Button)sender).Tag);
         private void OnCloseButtonClick(object sender, RoutedEventArgs e) => Hide();
         private void OnSettingsSaveCompleted(bool success) => SaveStateText.Text = success ? $"已保存 · {DateTime.Now:HH:mm:ss}" : "保存失败，请检查数据目录是否可写";
-        private void OnDockDensityChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_loading || DockDensityChoice.SelectedItem is not ComboBoxItem { Tag: string style }) return;
-            App.Settings.DockStyle = style;
-            App.Dock?.ApplyDensity(style);
-            App.SaveSettings();
-        }
         private void OnSafeModeChoice(object sender, RoutedEventArgs e)
         {
             if (_loading) return;

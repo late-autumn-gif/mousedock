@@ -1079,7 +1079,7 @@ namespace MouseDock
 
         private static void ApplyAllStyles()
         {
-            Dock?.ApplyDensity(Settings.DockStyle);
+            Dock?.ApplyDensity("standard");
             Mini?.ApplyDensity(Settings.MiniStyle);
             Icon?.ApplyShape(Settings.IconShape, false);
         }
@@ -1087,7 +1087,7 @@ namespace MouseDock
         /// <summary>设置页改样式后统一重贴。</summary>
         public static void ApplySurfaceStyles()
         {
-            Dock?.ApplyDensity(Settings.DockStyle);
+            Dock?.ApplyDensity("standard");
             Mini?.ApplyDensity(Settings.MiniStyle);
             Icon?.ApplyShape(Settings.IconShape, false);
             Icon?.ApplyStyle(Settings.IconStyle, false);

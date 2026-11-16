@@ -237,9 +237,7 @@ internal static class LightUiChecks
             Require(((FrameworkElement)window.FindName("Page" + panel)).IsVisible, "Selected settings page is inaccessible.");
         }
         window.SelectSection("display");
-        var density = (ComboBox)window.FindName("DockDensityChoice");
-        density.SelectedIndex = 1;
-        Require(fixture.Settings.DockStyle == "compact", "Density selection did not reach the real settings.");
+        Require(window.FindName("DockDensityChoice") == null, "Card density must no longer appear in settings.");
         window.SelectSection("devices");
         Require(window.FindName("DeviceChecks") != null && window.FindName("TrayHoverCheck") != null,
             "Existing device or independent tray controls were lost.");

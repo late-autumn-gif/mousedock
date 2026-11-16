@@ -136,7 +136,6 @@ namespace MouseDock.Models
         public bool ClickThrough { get; set; } = false;
 
         /// <summary>卡片窗样式：standard（标准）/ compact（紧凑）/ bare（极简无底色）。</summary>
-        public string DockStyle { get; set; } = "standard";
 
         /// <summary>迷你窗样式：standard / compact / bare。</summary>
         public string MiniStyle { get; set; } = "standard";
@@ -232,7 +231,6 @@ namespace MouseDock.Models
                 IconBackground = IconBackground,
                 AlwaysOnTop = AlwaysOnTop,
                 ClickThrough = ClickThrough,
-                DockStyle = DockStyle,
                 MiniStyle = MiniStyle,
                 DockX = DockX, DockY = DockY,
                 MiniX = MiniX, MiniY = MiniY,

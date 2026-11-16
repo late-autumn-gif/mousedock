@@ -56,7 +56,7 @@ internal static class Program
             ("Light UI floating digits stay readable on light and dark desktops", LightUiChecks.FloatingContrast),
             ("Light UI light theme controls retain contrast and working interaction", LightUiChecks.SettingsContrast),
             ("Light UI card gestures separate dragging clicks and diagnostic text", LightUiChecks.CardGestures),
-            ("Light UI settings navigation retains controls and applies density", LightUiChecks.Navigation),
+            ("Light UI settings navigation retains controls without card density", LightUiChecks.Navigation),
             ("Light UI tray device editing switches from follow to a saved selection", LightUiChecks.TrayDeviceEditing),
             ("Light UI save feedback reports real success and write failure", LightUiChecks.SaveFailure),
             ("Light UI isolated startup preference can be checked and saved", LightUiChecks.IsolatedAutoStart),
