@@ -76,12 +76,9 @@ internal static partial class VendorProtocol
             {
                 try
                 {
-                    var b=MouseExpansionExchange(link,MouseExpansionPacket(64,0xF0,0x52),
-                        b=>b.Length==64&&b[0]==0xF0&&b[1]==0x52,600);
-                    var name=b.AsSpan(9,24);
-                    int zero=name.IndexOf((byte)0);
-                    if(zero>=0)name=name[..zero];
-                    if(name.Length>0&&name.ToArray().All(v=>v is >=32 and <=126))scheme="c";
+                    var serial = MouseExpansionExchange(link, BuildFreqGenerationPacket(),
+                        report => IsFreqSerialResponse(report), 600);
+                    if (HasFreqGenerationSerial(serial)) scheme = "c";
                 }
                 catch(IOException) { }
             }

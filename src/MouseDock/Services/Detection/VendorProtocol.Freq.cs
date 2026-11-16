@@ -102,6 +102,24 @@ namespace MouseDock.Services.Detection
             return report;
         }
 
+        // E HUB parses 0x52 as a 24-byte serial field starting at payload byte 8.
+        // The Windows report adds the F0 ID; the compatibility selector requires a
+        // nonempty printable serial rather than accepting a partially corrupt one.
+        private static bool IsFreqSerialResponse(ReadOnlySpan<byte> report) =>
+            report.Length == 64 && report[0] == 0xF0 && report[1] == 0x52;
+
+        internal static bool HasFreqGenerationSerial(ReadOnlySpan<byte> report)
+        {
+            if (!IsFreqSerialResponse(report)) return false;
+            ReadOnlySpan<byte> field = report.Slice(9, 24);
+            int terminator = field.IndexOf((byte)0);
+            ReadOnlySpan<byte> serial = terminator < 0 ? field : field[..terminator];
+            if (serial.IsEmpty) return false;
+            foreach (byte value in serial)
+                if (value is < 32 or > 126) return false;
+            return true;
+        }
+
         private static bool HasFreqSchemeAMarker(ReadOnlySpan<byte> payload) =>
             payload.Length >= 2 && payload[0] is (0xAA or 0xF0) && payload[1] == FreqBatteryCommand;
 
@@ -314,7 +332,7 @@ namespace MouseDock.Services.Detection
             return -1;
         }
 
-        /// <summary>0x52 一代信息查询：应答第 10 字节起是可打印型号串就按方案 c 走。</summary>
+        /// <summary>0x52 序列信息查询：应答含有效 ASCII 序列字段时使用方案 c。</summary>
         private static bool TryGenerationProbe(IntPtr h, IntPtr signal, int inputSize, out bool printable, out string diagnostic)
         {
             printable = false;
@@ -330,16 +348,8 @@ namespace MouseDock.Services.Detection
             {
                 var raw = ReadReport(h, signal, Math.Max(1, Math.Min(200, deadline - Environment.TickCount)));
                 if (raw == null) continue;
-                if (raw.Length != 64 || raw[0] != 0xF0 || raw[1] != 0x52) continue;
-                if (raw[9] == 0) return true; // 空串：按方案 a
-                int end = 9;
-                while (end < raw.Length && end < 33 && raw[end] != 0) end++;
-                if (end == 9) return true;
-                for (int i = 9; i < end; i++)
-                {
-                    if (raw[i] < 32 || raw[i] > 126) return true;
-                }
-                printable = true;
+                if (!IsFreqSerialResponse(raw)) continue;
+                printable = HasFreqGenerationSerial(raw);
                 return true;
             }
             diagnostic = "0x52 一代信息查询无应答";

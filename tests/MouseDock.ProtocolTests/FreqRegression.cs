@@ -67,6 +67,23 @@ internal static class FreqRegression
               c[5] == 1 && c[6] == 1 && c[7] == 1 && c[8] == 0 && c[9] == 0 && c[63] == 0,
             "Scheme c packet must be F0 30 A5 0B 2E 01 01 01, zero padded to 64");
 
+        var serialReport = new byte[64];
+        serialReport[0] = 0xF0;
+        serialReport[1] = 0x52;
+        serialReport[8] = (byte)'X';
+        Check(!VendorProtocol.HasFreqGenerationSerial(serialReport), "Fields before serial do not select scheme c");
+        "X23-20261116"u8.CopyTo(serialReport.AsSpan(9));
+        serialReport[30] = 0xFF;
+        Check(VendorProtocol.HasFreqGenerationSerial(serialReport), "Ignore bytes after the serial terminator");
+        serialReport[10] = 0x7F;
+        Check(!VendorProtocol.HasFreqGenerationSerial(serialReport), "Corrupt serial is rejected");
+        serialReport.AsSpan(9, 24).Fill((byte)'A');
+        serialReport[33] = 0xFF;
+        Check(VendorProtocol.HasFreqGenerationSerial(serialReport), "Full serial excludes next field");
+        Check(!VendorProtocol.HasFreqGenerationSerial(serialReport[..63]), "Reject truncated 0x52 reports");
+        serialReport[1] = 0x30;
+        Check(!VendorProtocol.HasFreqGenerationSerial(serialReport), "Unrelated command does not identify generation");
+
         var gen = VendorProtocol.BuildFreqGenerationPacket();
         Check(gen.Length == 64 && gen[0] == 0xF0 && gen[1] == 0x52 && gen[2] == 0,
             "Dual profile generation probe must be F0 52 + zeros");
