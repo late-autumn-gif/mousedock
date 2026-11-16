@@ -150,6 +150,35 @@ internal static class ReferenceStyleChecks
             }
         }
 
+        foreach (bool grouped in new[] { false, true })
+        {
+            var icon = new ReferenceBatteryIcon
+            {
+                StyleName = "battery", Width = grouped ? 144 : 96, Height = grouped ? 160 : 96,
+                Accent = Brushes.DodgerBlue, Ink = Brushes.Black, LowBatteryThreshold = 30
+            };
+            var device = new DeviceInfo { Kind = DeviceKind.Mouse, Level = 31 };
+            icon.DeviceModels = grouped ? new[] { device, new DeviceInfo { Level = -1 } } : new[] { device };
+            Arrange(icon);
+            Require(HasPixel(Snapshot(icon, 3), Colors.DodgerBlue), "Floating battery lost its selected normal fill.");
+            device.Level = 30;
+            Arrange(icon);
+            var low = Snapshot(icon, 3);
+            Require(HasPixel(low, ThemePreset.C("#B42332")) && HasPixel(low, Colors.White),
+                "Floating battery must draw the red low fill and white foreground at the configured threshold.");
+            device.Level = 80;
+            Arrange(icon);
+            Require(HasPixel(Snapshot(icon, 3), Colors.DodgerBlue), "Floating battery did not restore its selected fill.");
+        }
+
+        static bool HasPixel(BitmapSource bitmap, Color color)
+        {
+            var pixels = Pixels(bitmap);
+            return Enumerable.Range(0, pixels.Length / 4).Any(i =>
+                pixels[i * 4] == color.B && pixels[i * 4 + 1] == color.G &&
+                pixels[i * 4 + 2] == color.R && pixels[i * 4 + 3] == 255);
+        }
+
         var gallery = new StackPanel { Background = new SolidColorBrush(Color.FromRgb(34, 38, 41)), Margin = new Thickness(12) };
         foreach (string style in new[] { "ring", "tile", "pill", "battery", "plain", "multi", "character", "portrait" })
         {
