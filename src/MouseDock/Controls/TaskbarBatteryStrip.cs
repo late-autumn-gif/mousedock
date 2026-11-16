@@ -7,6 +7,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using MouseDock.Models;
 using MouseDock.Services;
 
@@ -253,6 +254,7 @@ public sealed class TaskbarBatteryStrip : Border
                 Width = 36, Height = 36, Character = style == "portrait" ? "photo" : CharacterAssignments.Resolve(appearance, device),
                 PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
                 ShowNumber = false, ShowGlyph = false, CompactPhotoBar = style == "portrait", Accent = batteryBrush ?? foreground,
+                CompactLowBatteryThreshold = lowThreshold,
                 TransparentBackground = appearance.CharacterTransparentBackground,
                 Surface = ResolveBrush(appearance.CharacterBackgroundColor, theme != null ? new SolidColorBrush(theme.Surface) : Brushes.Black),
                 Low = theme?.Low.A > 0 ? new SolidColorBrush(theme.Low) : Brushes.IndianRed,
@@ -360,6 +362,8 @@ public sealed class TaskbarBatteryStrip : Border
             IsHitTestVisible = false
         };
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
+        if (style == "battery")
+            ApplyBatteryFillContrast(row, glyph, number, textBrush, lowThreshold);
         if (stacked) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         row.Children.Add(number);
         badge.Children.Add(row);
@@ -394,6 +398,37 @@ public sealed class TaskbarBatteryStrip : Border
         }
         ToolTipService.SetInitialShowDelay(badge, 300);
         return badge;
+    }
+
+    private static void ApplyBatteryFillContrast(Grid row, DeviceGlyph glyph, TextBlock number,
+        Brush textBrush, int lowThreshold)
+    {
+        // The icon and number can cross the edge between the fill and the desktop.
+        var lowBattery = new Binding(nameof(DeviceInfo.Level)) { Converter = new LowBatteryConverter(lowThreshold) };
+        var outline = new DropShadowEffect { Color = Colors.Black, ShadowDepth = 0, BlurRadius = 2, Opacity = 1 };
+        outline.Freeze();
+        row.Style = WithLowBatterySetter(typeof(Grid), EffectProperty, outline);
+        glyph.ClearValue(DeviceGlyph.GlyphBrushProperty);
+        glyph.Style = WithLowBatterySetter(typeof(DeviceGlyph), DeviceGlyph.GlyphBrushProperty, Brushes.White, textBrush);
+        number.ClearValue(TextBlock.ForegroundProperty);
+        number.Style = WithLowBatterySetter(typeof(TextBlock), TextBlock.ForegroundProperty, Brushes.White, textBrush);
+
+        Style WithLowBatterySetter(Type target, DependencyProperty property, object low, object normal = null)
+        {
+            var style = new Style(target);
+            if (normal != null) style.Setters.Add(new Setter(property, normal));
+            var trigger = new DataTrigger { Binding = lowBattery, Value = true };
+            trigger.Setters.Add(new Setter(property, low));
+            style.Triggers.Add(trigger);
+            return style;
+        }
+    }
+
+    private sealed class LowBatteryConverter(int threshold) : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+            value is int level && AppearanceColors.IsLowBattery(level, threshold);
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
 
     private sealed class NumberConverter : IValueConverter

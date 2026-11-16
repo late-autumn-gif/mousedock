@@ -28,6 +28,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
     public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
     public bool CompactPhotoBar { get; set; }
+    internal int? CompactLowBatteryThreshold { get; set; }
 
     public static readonly DependencyProperty StaleProperty = DependencyProperty.Register(nameof(Stale), typeof(bool),
         typeof(CharacterBatteryIcon), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
@@ -137,7 +138,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         _chargeSweep ??= new ChargeSweep(this);
         double phase = _chargeSweep.Phase(AnimateCharge && Charging && !Stale && Level > 0);
         double drawn = _chargeSweep.Follow(0, Level, phase >= 0);
-        ChargeSweep.Fill(dc, plate, drawn / 100, 2, StatusBrush(Level), phase);
+        ChargeSweep.Fill(dc, plate, drawn / 100, 2, ProgressBrush(), phase);
         var numberBounds = plate;
         if (ShowGlyph)
         {
@@ -192,7 +193,7 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             var bar = new Rect(bounds.X + 2, bounds.Bottom - 3, Math.Max(1, bounds.Width - 4), 2);
             dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar, 1, 1);
             double drawn = _chargeSweep.Follow(0, Level, phase >= 0);
-            ChargeSweep.HorizontalLine(dc, bar, drawn / 100, 1, StatusBrush(Level), phase);
+            ChargeSweep.HorizontalLine(dc, bar, drawn / 100, 1, ProgressBrush(), phase);
         }
         if (count > 0 && photoBounds.Bottom < bounds.Bottom)
         {
@@ -240,6 +241,10 @@ public sealed class CharacterBatteryIcon : FrameworkElement
         }
         dc.Pop();
     }
+
+    private Brush ProgressBrush() => CompactLowBatteryThreshold is int threshold
+        ? Level < 0 ? Muted : AppearanceColors.IsLowBattery(Level, threshold) ? AppearanceColors.LowBatteryFill : Accent
+        : StatusBrush(Level);
 
     private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
 

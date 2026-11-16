@@ -110,6 +110,46 @@ internal static class ReferenceStyleChecks
             return pixel[3];
         }
 
+        foreach (string style in new[] { "ring", "battery", "tile", "plain" })
+        {
+            var device = new DeviceInfo { Kind = DeviceKind.Mouse, Level = 80, Connected = true };
+            var strip = new TaskbarBatteryStrip(new[] { device }, style, true, false, Brushes.WhiteSmoke, 30, "#B42332", "#00AAFF");
+            Arrange(strip);
+            FrameworkElement fill = style == "ring"
+                ? Children<DeviceBatteryRing>(strip).Single()
+                : Children<ReferenceBatteryIcon>(strip).Single();
+            var number = Children<TextBlock>(strip).Single(n => n.Name == "BatteryNumber");
+            CheckColor(ThemePreset.C("#00AAFF"), "high");
+            device.Level = 31;
+            CheckColor(ThemePreset.C("#00AAFF"), "medium");
+            device.Level = 30;
+            device.Charging = true;
+            CheckColor(ThemePreset.C("#B42332"), "low while charging");
+            if (style == "battery")
+            {
+                var glyph = Children<DeviceGlyph>(strip).Single();
+                Require(((SolidColorBrush)number.Foreground).Color == Colors.White &&
+                    ((SolidColorBrush)glyph.GlyphBrush).Color == Colors.White &&
+                    ColorContrast.Ratio(Colors.White, ThemePreset.C("#B42332")) >= 4.5,
+                    "The low battery fill must remain readable with red selected as the text color.");
+            }
+            device.Charging = false;
+            device.Level = 55;
+            CheckColor(ThemePreset.C("#00AAFF"), "recovered");
+            Require(((SolidColorBrush)number.Foreground).Color == ThemePreset.C("#B42332"),
+                "Recovering from low battery must restore the selected text color.");
+
+            void CheckColor(Color expected, string state)
+            {
+                Arrange(strip);
+                var pixels = Pixels(Snapshot(fill, 3));
+                Require(Enumerable.Range(0, pixels.Length / 4).Any(i =>
+                    pixels[i * 4] == expected.B && pixels[i * 4 + 1] == expected.G &&
+                    pixels[i * 4 + 2] == expected.R && pixels[i * 4 + 3] == 255),
+                    $"{style} {state} fill does not render the expected color.");
+            }
+        }
+
         var gallery = new StackPanel { Background = new SolidColorBrush(Color.FromRgb(34, 38, 41)), Margin = new Thickness(12) };
         foreach (string style in new[] { "ring", "tile", "pill", "battery", "plain", "multi", "character", "portrait" })
         {
@@ -139,12 +179,15 @@ internal static class ReferenceStyleChecks
                 Arrange(strip);
                 var numbers = Children<TextBlock>(strip).Where(n => n.Name == "BatteryNumber").ToArray();
                 Require(numbers.Select(n => n.Text).SequenceEqual(new[] { "100", "0", "\u2014" }), $"{style} lost values.");
-                foreach (var glyph in Children<DeviceGlyph>(strip).Where(g => g.IsVisible))
-                    Require(((SolidColorBrush)glyph.GlyphBrush).Color == ThemePreset.C("#FFCC00"),
-                        $"{style} device glyph must use the number color.");
-                foreach (var number in numbers)
+                var glyphs = Children<DeviceGlyph>(strip).Where(g => g.IsVisible).ToArray();
+                for (int i = 0; i < numbers.Length; i++)
                 {
-                    Require(((SolidColorBrush)number.Foreground).Color == ThemePreset.C("#FFCC00"), $"{style} lost manual color.");
+                    var number = numbers[i];
+                    var expectedColor = style == "battery" && i == 1 ? Colors.White : ThemePreset.C("#FFCC00");
+                    Require(((SolidColorBrush)number.Foreground).Color == expectedColor, $"{style} number uses the wrong color.");
+                    if (glyphs.Length == numbers.Length)
+                        Require(((SolidColorBrush)glyphs[i].GlyphBrush).Color == expectedColor,
+                            $"{style} device glyph must use the number color.");
                     Require(new Rect(strip.RenderSize).Contains(number.TransformToAncestor(strip).TransformBounds(new Rect(number.RenderSize))),
                         $"{style} clips numbers in {(vertical ? "vertical" : "horizontal")} orientation.");
                 }

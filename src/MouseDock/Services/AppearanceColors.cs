@@ -7,6 +7,17 @@ namespace MouseDock.Services;
 
 public static class AppearanceColors
 {
+    internal static readonly SolidColorBrush LowBatteryFill = CreateLowBatteryFill();
+
+    internal static bool IsLowBattery(int level, int threshold) => level >= 0 && level <= threshold;
+
+    private static SolidColorBrush CreateLowBatteryFill()
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(180, 35, 50));
+        brush.Freeze();
+        return brush;
+    }
+
     public static T Battery<T>(int level, T normal, T low, T unknown) =>
         level < 0 ? unknown : level <= 20 ? low : normal;
 

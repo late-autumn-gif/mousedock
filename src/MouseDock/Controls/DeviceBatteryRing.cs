@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using MouseDock.Models;
+using MouseDock.Services;
 
 namespace MouseDock.Controls
 {
@@ -87,10 +88,10 @@ namespace MouseDock.Controls
             if (CompletionVisible != showCheck) SetValue(CompletionVisiblePropertyKey, showCheck);
             double drawnLevel = _sweep.Follow(0, Full ? 100 : Level, AnimateCharge);
             _sweep.Phase(_sweep.IsFollowing(0), showCheck);
-            var color = !Full && Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
-                : Color.FromRgb(52, 211, 153);
-            var fill = BatteryBrush ?? new SolidColorBrush(color);
-            var bottom = BatteryBrush ?? (!Full && Level <= LowBatteryThreshold ? fill : Brushes.DodgerBlue);
+            bool low = !Full && AppearanceColors.IsLowBattery(Level, LowBatteryThreshold);
+            var fill = low ? AppearanceColors.LowBatteryFill
+                : BatteryBrush ?? new SolidColorBrush(Color.FromRgb(52, 211, 153));
+            var bottom = low ? fill : BatteryBrush ?? Brushes.DodgerBlue;
             BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill,
                 ShowChargingMark && Charging ? GlyphBrush : null, bottom);
             if (showCheck)

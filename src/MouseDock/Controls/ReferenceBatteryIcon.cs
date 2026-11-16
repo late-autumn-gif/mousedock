@@ -103,7 +103,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         if (Compact)
         {
             _sweep ??= new ChargeSweep(this);
-            _phase = _sweep.Phase(AnimateCompactCharge && CompactCharging && CompactLevel > 0 && StyleName is "battery" or "plain" or "tile");
+            _phase = _sweep.Phase(AnimateCompactCharge && CompactCharging && CompactLevel > LowBatteryThreshold &&
+                StyleName is "battery" or "plain" or "tile");
             DrawCompact(drawing);
         }
         else
@@ -301,8 +302,9 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     {
         var outline = Alpha(Ink, .3);
         var background = HideBackground ? Brushes.Transparent : Alpha(Surface, .85);
-        Brush accent = UseStatusColors ? Brush(CompactCharging ? "#38BDF8"
-            : CompactLevel is >= 0 && CompactLevel <= LowBatteryThreshold ? "#F85D68" : "#34D399") : Accent;
+        bool low = AppearanceColors.IsLowBattery(CompactLevel, LowBatteryThreshold);
+        Brush accent = low ? AppearanceColors.LowBatteryFill
+            : UseStatusColors ? Brush(CompactCharging ? "#38BDF8" : "#34D399") : Accent;
         var track = new Pen(outline, 1);
         if (CompactLevel < 0) track.DashStyle = DashStyles.Dash;
         double width = ActualWidth, height = ActualHeight;
@@ -323,7 +325,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             {
                 var inside = body;
                 inside.Inflate(-3, -3);
-                ChargeSweep.Fill(drawing, inside, fraction, 2, Alpha(accent, .65), _phase, Vertical);
+                ChargeSweep.Fill(drawing, inside, fraction, 2, low ? accent : Alpha(accent, .65), low ? -1 : _phase, Vertical);
             }
         }
         if (StyleName is "tile" or "plain")
@@ -334,7 +336,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (CompactLevel > 0)
             {
                 ChargeSweep.HorizontalLine(drawing, new Rect(from.X, from.Y - 1, Math.Max(1, to.X - from.X), 2),
-                    fraction, 1, accent, _phase);
+                    fraction, 1, accent, low ? -1 : _phase);
             }
         }
     }
