@@ -87,7 +87,6 @@ for pct in (0,42,100,255):
     add('rapoo',rapoo(pct,0),'sleep-must-not-use-battery')
 output=dict(source='MouseDock-1.0.2.exe',sourceSha256='DE9A0C6B8680ADE90CBC9B1A82DBDBAACAD88C302176D52099327ED75838BD8A',
             deviceDbSha256=sha256(members['devices.json']).hexdigest().upper(),
-            identityNames=database['brand_ids']['atk_identity']['compx_cid_mid'],
             verifiedProfiles=[{k:p[k] for k in ('vid','pid','page','usage','battery')} for p in database['devices'] if p.get('verified') is True],
             method='Original Rapoo decoder under bundled CPython 3.12; hardware entrypoints disabled; synthetic reports, not hardware captures.',
             vectors=vectors)

@@ -31,12 +31,26 @@ internal static class ReferenceBatteryRegression
             Check(ported != null && ported.Page == Number("page") && ported.Usage == profile.GetProperty("usage").GetUInt16() &&
                 ported.Battery == ParseProtocol(profile.GetProperty("battery").GetString()!), "Original verified descriptor and protocol retained");
         }
-        foreach (var name in vectors.RootElement.GetProperty("identityNames").EnumerateObject())
+        var identityRows = File.ReadLines(Path.Combine(AppContext.BaseDirectory,
+            "Fixtures", "atk-hub-3.2.28-identities.tsv")).Skip(1).ToArray();
+        Check(identityRows.Length == 118, "ATK HUB identity coverage");
+        foreach (string row in identityRows)
         {
-            string[] pair = name.Name.Split(',');
-            Check(AtkMouseIdentityCatalog.Find(byte.Parse(pair[0]), byte.Parse(pair[1])) == name.Value.GetString(),
-                "Official CID/MID entry preserves the existing display name: " + name.Name);
+            var columns = row.Split('\t');
+            byte cid = byte.Parse(columns[0]);
+            byte mid = byte.Parse(columns[1]);
+            string display = AtkMouseIdentityCatalog.Find(cid, mid);
+            if (cid == 1 && mid == 55)
+                Check(columns[2] == "ATK PHANTOM ULTIMATE" && display == "ATK 幻影 Ultimate",
+                    "Preserve the localized PHANTOM display name");
+            else
+                Check(string.Equals(WithoutWhitespace(display), WithoutWhitespace(columns[2]),
+                    StringComparison.OrdinalIgnoreCase), $"ATK HUB identity {cid},{mid}");
         }
+
+        static string? WithoutWhitespace(string? value) =>
+            value == null ? null : string.Concat(value.Where(c => !char.IsWhiteSpace(c)));
+
         Check(ReferenceBatteryProtocol.Request(Protocol.Rapoo) == null,
             "VT9S V2 uses passive battery reports");
         CheckVendorBatteryFrames(Check);
