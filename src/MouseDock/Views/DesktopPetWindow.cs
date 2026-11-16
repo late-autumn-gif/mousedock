@@ -203,6 +203,11 @@ internal sealed class DesktopPetWindow : Window
             _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
             _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
         }
+        else if (skin.Id == "shin-chan")
+        {
+            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
+            _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
+        }
         else
         {
             LoadBuiltInCharacter(skin);
