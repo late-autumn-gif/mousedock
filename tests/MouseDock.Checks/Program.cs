@@ -176,6 +176,7 @@ internal static class Program
                 Require(new AppSettings().SurfaceMode == "taskbar", "Expected the taskbar surface.")),
             ("Taskbar placement stays inside a scaled taskbar", CheckPlacement),
             ("Taskbar placement clamps offset and supports vertical taskbars", CheckEdges),
+            ("Battery ring drains left bottom and right in order", CheckThreeSegmentRing),
             ("Headset ring drains the left arc first and scopes volume", CheckHeadsetRing),
             ("Battery ring preserves transparency and renders full/empty/unknown distinctly", CheckRing),
             ("Each connected selected device keeps its own glyph and battery", CheckDevices),
@@ -321,6 +322,31 @@ internal static class Program
             "At half battery the right is filled and the left is depleted.");
         int y = (int)(bar.Y + bar.Height / 2);
         Require(At(42, y) == Colors.Lime && At(59, y) == Colors.Gray, "Volume fills its own bar from the left.");
+    }
+
+    private static void CheckThreeSegmentRing()
+    {
+        bool FilledAt(double level, double angle)
+        {
+            var image = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+                BatteryRingDrawing.Draw(dc, new Point(50, 50), 30, level, Brushes.Gray, Brushes.Red, null);
+            image.Render(visual);
+            double radians = angle * Math.PI / 180;
+            int x = (int)Math.Floor(50 + 30 * Math.Sin(radians));
+            int y = (int)Math.Floor(50 - 30 * Math.Cos(radians));
+            var pixel = new byte[4];
+            image.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+            return pixel[2] == 255 && pixel[1] == 0;
+        }
+
+        Require(FilledAt(80, 255) && !FilledAt(80, 320) && FilledAt(80, 200),
+            "Left arc must run out from top to bottom before the bottom arc.");
+        Require(FilledAt(50, 160) && !FilledAt(50, 200) && FilledAt(50, 108) && !FilledAt(50, 255),
+            "Bottom arc must run out from left to right before the right arc.");
+        Require(FilledAt(20, 40) && !FilledAt(20, 108) && !FilledAt(20, 160),
+            "Right arc must run out from bottom to top.");
     }
 
     private static void CheckRing()

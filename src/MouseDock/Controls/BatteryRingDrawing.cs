@@ -22,8 +22,8 @@ internal static class BatteryRingDrawing
         var fillPen = RoundedPen(fill, trackPen.Thickness);
         var bottomPen = bottomFill == null ? fillPen : RoundedPen(bottomFill, trackPen.Thickness);
         double progress = Math.Clamp(level, 0, 100) * (headset ? 1.84 : 2.44);
-        if (!headset) DrawSegment(150, 60, bottomPen);
         DrawSegment(28, 92, fillPen);
+        if (!headset) DrawSegment(150, 60, bottomPen);
         DrawSegment(240, 92, fillPen);
         if (headset)
         {
