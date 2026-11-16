@@ -76,6 +76,8 @@ namespace MouseDock.Controls
             glyph.Style = glyphStyle;
         }
 
+        private RingVolumeInput _volume;
+
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
@@ -92,8 +94,13 @@ namespace MouseDock.Controls
             var fill = low ? AppearanceColors.LowBatteryFill
                 : BatteryBrush ?? new SolidColorBrush(Color.FromRgb(52, 211, 153));
             var bottom = low ? fill : BatteryBrush ?? Brushes.DodgerBlue;
+            _volume?.Clear();
+            bool headset = Kind == DeviceKind.Headset;
+            int? volume = headset && radius > 0 && DataContext is DeviceInfo device
+                ? (_volume ??= new RingVolumeInput(this)).Track(BatteryRingDrawing.VolumeBounds(center, radius), device)
+                : null;
             BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill,
-                ShowChargingMark && Charging ? GlyphBrush : null, bottom);
+                ShowChargingMark && Charging ? GlyphBrush : null, headset ? GlyphBrush : bottom, headset, volume);
             if (showCheck)
             {
                 var check = new FormattedText("✓", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,

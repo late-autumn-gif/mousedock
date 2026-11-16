@@ -96,9 +96,12 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     private double _phase;
     private readonly long[] _completed = new long[6];
 
+    private RingVolumeInput _volume;
+
     protected override void OnRender(DrawingContext drawing)
     {
         base.OnRender(drawing);
+        _volume?.Clear();
         if (ActualWidth < 1 || ActualHeight < 1) return;
         drawing.PushClip(new RectangleGeometry(new Rect(RenderSize)));
         if (Compact)
@@ -148,7 +151,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         {
             case "ring":
                 dc.DrawEllipse(background, null, new Point(48, 48), 45, 45);
-                DrawRing(dc, new Point(48, 48), 37, IsFull(slot) ? 100 : drawn, item.Charging && !item.Stale);
+                DrawRing(dc, new Point(48, 48), 37, IsFull(slot) ? 100 : drawn, item.Charging && !item.Stale, item.Kind, slot, scale);
                 if (_completed[0] < ChargeSweep.CompletionDuration) Text(dc, "✓", 25, new Point(48, 48), Accent, 68);
                 else Number(dc, IsFull(0) ? 100 : item.Level, 25, new Point(48, 48), 68);
                 break;
@@ -209,7 +212,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (style == "ring")
             {
                 double radius = Math.Min(17, rowHeight * .3);
-                DrawRing(dc, new Point(31, y), radius, drawn, item.Charging && !item.Stale);
+                DrawRing(dc, new Point(31, y), radius, drawn, item.Charging && !item.Stale, item.Kind, i);
             }
             if (style == "ring" && _completed[i] < ChargeSweep.CompletionDuration)
                 Text(dc, "✓", glyphSize, new Point(31, y), Accent, glyphSize + 4);
@@ -282,10 +285,21 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         LegibleText(dc, suffix, new Point(left + digits.Width + 2, center.Y + digits.Height * .36 - suffix.Height), outline);
     }
 
-    private void DrawRing(DrawingContext dc, Point center, double radius, double level, bool charging)
+    private void DrawRing(DrawingContext dc, Point center, double radius, double level, bool charging,
+        DeviceKind kind, int slot, double scale = 0)
     {
+        bool headset = kind == DeviceKind.Headset;
+        int? volume = null;
+        if (headset && radius > 0 && _models != null && slot < _models.Count)
+        {
+            Rect hit = BatteryRingDrawing.VolumeBounds(center, radius);
+            if (scale > 0)
+                hit = new Rect((ActualWidth - 96 * scale) / 2 + hit.X * scale,
+                    (ActualHeight - 96 * scale) / 2 + hit.Y * scale, hit.Width * scale, hit.Height * scale);
+            volume = (_volume ??= new RingVolumeInput(this)).Track(hit, _models[slot]);
+        }
         BatteryRingDrawing.Draw(dc, center, radius, level, Outline, StatusBrush((int)Math.Round(level)),
-            charging ? FloatingContrast(Ink) : null);
+            charging ? FloatingContrast(Ink) : null, headset ? FloatingContrast(Ink) : null, headset, volume);
     }
 
     private void Bar(DrawingContext dc, Rect bounds, double level, double phase = -1, Brush fill = null)

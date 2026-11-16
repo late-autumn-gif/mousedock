@@ -176,6 +176,7 @@ internal static class Program
                 Require(new AppSettings().SurfaceMode == "taskbar", "Expected the taskbar surface.")),
             ("Taskbar placement stays inside a scaled taskbar", CheckPlacement),
             ("Taskbar placement clamps offset and supports vertical taskbars", CheckEdges),
+            ("Headset ring drains the left arc first and scopes volume", CheckHeadsetRing),
             ("Battery ring preserves transparency and renders full/empty/unknown distinctly", CheckRing),
             ("Each connected selected device keeps its own glyph and battery", CheckDevices),
             ("Saved selection survives asynchronous discovery", CheckSelection),
@@ -288,6 +289,38 @@ internal static class Program
         var pixels = new byte[40 * 40 * 4];
         bitmap.CopyPixels(pixels, 160, 0);
         return pixels;
+    }
+
+    private static void CheckHeadsetRing()
+    {
+        var headset = new DeviceInfo { Kind = DeviceKind.Headset, Name = "HyperX Cloud III Wireless" };
+        var output = new AudioEndpointInfo("render-a", "Headphones (HyperX Cloud III Wireless)", false, Guid.Empty, 3, 44, false);
+        var unrelated = output with { Id = "render-b", Name = "Speakers (Other device)" };
+        Require(RingVolumeInput.Endpoint(headset, [output, unrelated])?.Id == "render-a", "Volume resolves a single matching output.");
+        Require(RingVolumeInput.Endpoint(headset, [output, output with { Id = "duplicate" }]) == null,
+            "Ambiguous matches never receive a volume change.");
+        Require(RingVolumeInput.Endpoint(headset, [output with { Capture = true }]) == null,
+            "Microphone inputs are ineligible.");
+        headset.Connected = false;
+        Require(RingVolumeInput.Endpoint(headset, [output]) == null, "Disconnected headsets are ineligible.");
+
+        var center = new Point(50, 50);
+        var bar = BatteryRingDrawing.VolumeBounds(center, 30);
+        var bitmap = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+        var drawing = new DrawingVisual();
+        using (var dc = drawing.RenderOpen())
+            BatteryRingDrawing.Draw(dc, center, 30, 50, Brushes.Gray, Brushes.Red, null, Brushes.Lime, true, 50);
+        bitmap.Render(drawing);
+        var pixel = new byte[4];
+        Color At(int x, int y)
+        {
+            bitmap.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+            return Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
+        }
+        Require(At(79, 50) == Colors.Red && At(20, 50) == Colors.Gray,
+            "At half battery the right is filled and the left is depleted.");
+        int y = (int)(bar.Y + bar.Height / 2);
+        Require(At(42, y) == Colors.Lime && At(59, y) == Colors.Gray, "Volume fills its own bar from the left.");
     }
 
     private static void CheckRing()
