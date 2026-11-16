@@ -9,8 +9,15 @@ namespace MouseDock.Services
     public static class SettingsStore
     {
         internal static string TestDirectory { get; set; }
-        public static bool IsPortableTest => File.Exists(Path.Combine(AppContext.BaseDirectory, "test-portable.flag"));
-        public static string Dir => TestDirectory ?? Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR") ?? (IsPortableTest ? Path.Combine(AppContext.BaseDirectory, "data") : Path.Combine(
+#if MOUSEDOCK_PORTABLE_TEST
+        // Single-file resource extraction can relocate AppContext.BaseDirectory.
+        private static string PortableDirectory => Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        public static bool IsPortableTest => true;
+#else
+        private static string PortableDirectory => AppContext.BaseDirectory;
+        public static bool IsPortableTest => File.Exists(Path.Combine(PortableDirectory, "test-portable.flag"));
+#endif
+        public static string Dir => TestDirectory ?? Environment.GetEnvironmentVariable("MOUSEDOCK_DATA_DIR") ?? (IsPortableTest ? Path.Combine(PortableDirectory, "data") : Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseDock"));
 
         public static string FilePath => Path.Combine(Dir, "settings.json");
