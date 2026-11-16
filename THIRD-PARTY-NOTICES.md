@@ -11,10 +11,11 @@ The current Sora V2 battery transaction in SoraV2BatteryProtocol is based on
 Ninjutso's official NinjaForce driver. The historical receiver profile and
 oracle fixtures are still attributed here.
 
-The explicitly requested X23SE adaptation also uses the reference's FREQ
-scheme-a request/decoder rules, reimplemented in VendorProtocol.Freq and
-VendorProtocol.ReportedX23Se. It is protocol-supported, not an upstream
-verified=true profile or a locally verified physical-device result.
+The earlier X23SE adaptation used the reference's FREQ scheme-A rules.
+The current packet encoder and decoder are implemented from EWEADN E HUB's
+FREQ protocol evidence. Historical product/scheme mappings, compatibility
+transaction rules, and synthetic comparison fixtures remain attributed here.
+Physical-device equivalence has not been verified locally.
 The supplied reference binary identifies its license as follows. The original
 application and its binary/runtime are not included in this distribution.
 

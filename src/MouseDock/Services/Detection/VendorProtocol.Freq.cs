@@ -9,8 +9,7 @@ namespace MouseDock.Services.Detection
     /// 前行者（EWEADN）/ FREQ 方案鼠标的 2.4G 电量查询。
     ///
     /// 证据链（都不需要真机就能核对）：
-    /// - 参考实现 `wireless_x23_family.py`（另一作者 MouseDock 1.0.2 的 FREQ 传输）：
-    ///   `_freq_read` 发 0x30 电量命令，`freq_decode` 校验方案 a/c 的应答；
+    /// - E HUB FREQ SDK 给出了 0x30 电量命令、方案 a/c 的应答字段及输出编号选择；
     /// - 官方 E HUB 目录 + FREQ SDK 把 A8A4/A8A5:2255 的 X23 系列标成 `x23_freq`，
     ///   页面 FF01/0010、接口 2，产品串必须精确匹配；
     /// - 参考设备表里 A8A5:2255 / “EWEADN X23SE”是 `freq_scheme = dual`：
@@ -18,7 +17,7 @@ namespace MouseDock.Services.Detection
     ///
     /// 用户报告（2026-11-05 09:23）里 A8A5:2255 EWEADN X23SE 的 FF01/0010 是 65/65，
     /// 说明输出报告带 1 字节编号、载荷 64 字节。这里从 HID 描述符（HidP_GetValueCaps）
-    /// 读真实报告编号，再按参考实现组帧；不猜编号、不猜字节。
+    /// 读取实报编号，再用 E HUB 已核对的电量载荷组帧。
     /// </summary>
     internal static partial class VendorProtocol
     {
@@ -71,84 +70,92 @@ namespace MouseDock.Services.Detection
             return sb.ToString().TrimEnd();
         }
 
-        /// <summary>参考实现的方案 a 请求头（连同报告编号一起写入）。</summary>
+        // E HUB FREQ payloads use command 0x30 and selector 0x2E for battery polling.
+        // Windows HID stores the report ID in byte zero of the report buffer.
         internal static byte[] BuildFreqSchemeAPacket(byte outputReportId, int outputSize)
         {
-            if (outputReportId == 0 || outputSize < 11 || outputSize > 65) return null;
-            var packet = new byte[outputSize];
-            packet[0] = outputReportId;
-            new byte[] { 0x55, 0x30, 0x01, 0x0B, 0x2E, 0x01, 0x01, 0x01, 0x00, 0x00 }
-                .CopyTo(packet, 1);
-            return packet;
+            if (outputReportId == 0 || outputSize is < 11 or > 65) return null;
+            var report = new byte[outputSize];
+            report[0] = outputReportId;
+            report[1] = 0x55;
+            WriteFreqBatteryPoll(report.AsSpan(2), 0x01);
+            return report;
         }
 
-        /// <summary>参考实现的方案 c 请求：报告编号 F0 + 30 A5 0B 2E 01 01 01，补零到 64。</summary>
         internal static byte[] BuildFreqSchemeCPacket()
         {
-            var packet = new byte[64];
-            new byte[] { 0xF0, 0x30, 0xA5, 0x0B, 0x2E, 0x01, 0x01, 0x01, 0x00, 0x00 }.CopyTo(packet, 0);
-            return packet;
+            var report = new byte[64];
+            report[0] = 0xF0;
+            WriteFreqBatteryPoll(report.AsSpan(1), 0xA5);
+            return report;
         }
 
-        /// <summary>参考实现的 0x52 一代信息查询（只用于 64/64 的 F0 布局）。</summary>
+        private static void WriteFreqBatteryPoll(Span<byte> payload, byte variant)
+        {
+            payload[0] = FreqBatteryCommand;
+            payload[1] = variant;
+            payload[2] = 11;
+            payload[3] = 0x2E;
+            payload.Slice(4, 3).Fill(1);
+        }
+
         internal static byte[] BuildFreqGenerationPacket()
         {
-            var packet = new byte[64];
-            packet[0] = 0xF0;
-            packet[1] = 0x52;
-            return packet;
+            var report = new byte[64];
+            report[0] = 0xF0;
+            report[1] = 0x52; // E HUB scheme C generation/serial query.
+            return report;
         }
 
-        /// <summary>应答是否是电量帧：方案 c 看 body[0]==0x30；方案 a 看 body[0..1] 里出现 AA 30 或 F0 30。</summary>
+        private static bool HasFreqSchemeAMarker(ReadOnlySpan<byte> payload) =>
+            payload.Length >= 2 && payload[0] is (0xAA or 0xF0) && payload[1] == FreqBatteryCommand;
+
+        private static ReadOnlySpan<byte> FreqInputPayload(ReadOnlySpan<byte> report, byte reportId)
+        {
+            if (reportId == 0) return report;
+            return !report.IsEmpty && report[0] == reportId ? report[1..] : default;
+        }
+
         internal static bool IsFreqBatteryFrame(ReadOnlySpan<byte> raw, string scheme, byte inputReportId)
         {
-            int at = inputReportId != 0 ? 1 : 0;
-            if (scheme is not ("a" or "c") || raw.Length <= at || (inputReportId != 0 && raw[0] != inputReportId)) return false;
-            var body = raw.Slice(at);
-            if (scheme == "c") return body[0] == FreqBatteryCommand;
-            for (int i = 0; i <= 1 && i + 1 < body.Length; i++)
+            var payload = FreqInputPayload(raw, inputReportId);
+            return scheme switch
             {
-                if ((body[i] == 0xAA || body[i] == 0xF0) && body[i + 1] == FreqBatteryCommand) return true;
-            }
-            return false;
+                "a" => HasFreqSchemeAMarker(payload) || (!payload.IsEmpty && HasFreqSchemeAMarker(payload[1..])),
+                "c" => !payload.IsEmpty && payload[0] == FreqBatteryCommand,
+                _ => false
+            };
         }
 
-        /// <summary>严格解析参考实现的 freq_decode：长度、报告编号、命令标记、电量/充电范围。</summary>
         internal static bool TryParseFreqFrame(ReadOnlySpan<byte> raw, string scheme, byte inputReportId, int inputSize,
             out int level, out bool charging)
         {
             level = -1;
             charging = false;
-            if (scheme is not ("a" or "c") || inputSize <= 0 || raw.IsEmpty || raw.Length != inputSize) return false;
-            if (inputReportId != 0 && raw[0] != inputReportId) return false;
-            var body = inputReportId != 0 ? raw.Slice(1) : raw;
+            if (raw.Length != inputSize) return false;
+            var payload = FreqInputPayload(raw, inputReportId);
 
-            int percent;
-            int charge;
-            if (scheme == "c")
+            int batteryField;
+            if (scheme == "c" && inputReportId == 0xF0 && payload.Length >= 9 &&
+                payload[0] == FreqBatteryCommand)
             {
-                if (inputReportId != 0xF0 || body.Length < 9 || body[0] != FreqBatteryCommand) return false;
-                percent = body[7];
-                charge = body[8];
+                batteryField = 7;
+            }
+            else if (scheme == "a")
+            {
+                bool direct = payload.Length >= 10 && HasFreqSchemeAMarker(payload);
+                bool shifted = payload.Length >= 11 && HasFreqSchemeAMarker(payload[1..]);
+                if (direct == shifted) return false;
+                batteryField = direct ? 8 : 9;
             }
             else
             {
-                int found = -1;
-                for (int i = 0; i <= 1; i++)
-                {
-                    if (body.Length < i + 10) continue;
-                    if ((body[i] == 0xAA || body[i] == 0xF0) && body[i + 1] == FreqBatteryCommand)
-                    {
-                        if (found >= 0) return false; // 两个偏移都像标记：歧义，拒绝
-                        found = i;
-                    }
-                }
-                if (found < 0) return false;
-                percent = body[found + 8];
-                charge = body[found + 9];
+                return false;
             }
 
-            if (percent < 0 || percent > 100 || charge is not (0 or 1)) return false;
+            byte percent = payload[batteryField];
+            byte charge = payload[batteryField + 1];
+            if (percent > 100 || charge > 1) return false;
             level = percent;
             charging = charge == 1;
             return true;
