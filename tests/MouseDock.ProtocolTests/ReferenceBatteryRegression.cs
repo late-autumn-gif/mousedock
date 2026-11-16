@@ -37,21 +37,13 @@ internal static class ReferenceBatteryRegression
             Check(AtkMouseIdentityCatalog.Find(byte.Parse(pair[0]), byte.Parse(pair[1])) == name.Value.GetString(),
                 "Official CID/MID entry preserves the existing display name: " + name.Name);
         }
-        foreach (var entry in vectors.RootElement.GetProperty("requests").EnumerateObject())
-        {
-            if (ParseProtocol(entry.Name) == Protocol.SoraV2) continue;
-            byte[]? request = ReferenceBatteryProtocol.Request(ParseProtocol(entry.Name));
-            Check((request == null ? null : Convert.ToHexString(request)) == entry.Value.GetString(),
-                entry.Name + " request matches the original pure request builder");
-        }
-        Check(Convert.ToHexString(ReferenceBatteryProtocol.CompxCommand(0x10)) ==
-            vectors.RootElement.GetProperty("identityRequest").GetString(), "ATK identity request matches original builder");
+        Check(ReferenceBatteryProtocol.Request(Protocol.Rapoo) == null,
+            "VT9S V2 uses passive battery reports");
+        CheckVendorBatteryFrames(Check);
         foreach (var vector in vectors.RootElement.GetProperty("vectors").EnumerateArray())
         {
-            string protocol = vector.GetProperty("protocol").GetString()!;
-            if (ParseProtocol(protocol) == Protocol.SoraV2) continue;
-            string label = protocol + ":" + vector.GetProperty("label").GetString();
-            bool accepted = ReferenceBatteryProtocol.TryDecode(ParseProtocol(protocol),
+            string label = "VT9S V2: " + vector.GetProperty("label").GetString();
+            bool accepted = ReferenceBatteryProtocol.TryDecode(Protocol.Rapoo,
                 Convert.FromHexString(vector.GetProperty("hex").GetString()!), out var result);
             Check(accepted == vector.GetProperty("accepted").GetBoolean(), label + " acceptance differs from original decoder");
             if (!accepted)
@@ -259,6 +251,85 @@ internal static class ReferenceBatteryRegression
         check(SpinWait.SpinUntil(() => ReferenceQueryGate.PendingCount == 0, 3000), "Native worker tasks actually completed before a new poll");
         var fresh = ReferenceQueryGate.Run(key + 0, () => new(42, false, true, State.Online, "fresh"), 1000);
         check(fresh.Level == 42, "A later poll starts a fresh transaction rather than promoting the late 99% result");
+    }
+
+    private static void CheckVendorBatteryFrames(Action<bool, string> check)
+    {
+        // ATK HUB COMPX and Scyrox S-Center report fields, with Windows report IDs.
+        check(ReferenceBatteryProtocol.Request(Protocol.Compx).AsSpan().SequenceEqual(
+            Convert.FromHexString("0804000000000000000000000000000049")), "COMPX battery request");
+        check(ReferenceBatteryProtocol.CompxCommand(0x10).AsSpan().SequenceEqual(
+            Convert.FromHexString("081000000000000000000000000000003D")), "COMPX identity request");
+        var scyroxQuery = new byte[64];
+        scyroxQuery[0] = 8;
+        scyroxQuery[1] = 1;
+        scyroxQuery[^1] = 9;
+        check(ReferenceBatteryProtocol.Request(Protocol.ScyroxV12).AsSpan().SequenceEqual(scyroxQuery),
+            "S-Center current configuration request");
+
+        void Expect(Protocol protocol, byte[] report, int level, State status, bool chargingKnown, string label)
+        {
+            bool accepted = ReferenceBatteryProtocol.TryDecode(protocol, report, out var result);
+            check(accepted == (level >= 0), label + " acceptance");
+            check(result.Level == level && result.Status == status &&
+                result.ChargingKnown == chargingKnown && result.Charging == (status == State.Charging),
+                label + " decoded evidence");
+        }
+
+        for (int level = 0; level <= byte.MaxValue; level++)
+        {
+            bool valid = level <= 100;
+            for (byte flags = 0; flags < 4; flags++)
+            {
+                var report = CompxReply((byte)level);
+                report[7] = flags;
+                report[^1] = unchecked((byte)(report[^1] - flags));
+                State status = !valid ? State.Invalid : (flags & 1) == 0 ? State.Online : State.Charging;
+                Expect(Protocol.Compx, report, valid ? level : -1, status, valid,
+                    $"COMPX level={level}, flags={flags}");
+            }
+            Expect(Protocol.ScyroxV12, ScyroxReply((byte)level), valid ? level : -1,
+                valid ? State.Online : State.Invalid, false, $"Scyrox level={level}");
+        }
+
+        foreach (Protocol protocol in new[] { Protocol.Compx, Protocol.ScyroxV12 })
+        {
+            var good = protocol == Protocol.Compx ? CompxReply(42) : ScyroxReply(42);
+            Expect(protocol, ReferenceBatteryProtocol.Request(protocol), -1, State.Invalid, false, $"{protocol} echo");
+            for (int size = 0; size < good.Length; size++)
+                Expect(protocol, good[..size], -1, State.Invalid, false, $"{protocol} truncated size={size}");
+            foreach (int field in new[] { 0, 1 })
+            {
+                var wrongHeader = good.ToArray();
+                wrongHeader[field] = 0;
+                if (protocol == Protocol.Compx)
+                    wrongHeader[^1] = unchecked((byte)(wrongHeader[^1] + good[field]));
+                Expect(protocol, wrongHeader, -1, State.Invalid, false, $"{protocol} wrong header byte {field}");
+            }
+        }
+
+        var corrupt = CompxReply(42);
+        corrupt[^1] ^= 1;
+        Expect(Protocol.Compx, corrupt, -1, State.Invalid, false, "COMPX checksum");
+        var failed = CompxReply(42);
+        failed[2] = 255;
+        failed[^1] = unchecked((byte)(failed[^1] + 1));
+        Expect(Protocol.Compx, failed, -1, State.Invalid, false, "COMPX failure response");
+
+        for (byte profile = 0; profile < 4; profile++)
+        for (byte dpiCount = 1; dpiCount <= 5; dpiCount++)
+        {
+            var report = ScyroxReply(42);
+            report[4] = report[5] = profile;
+            report[7] = dpiCount;
+            Expect(Protocol.ScyroxV12, report, 42, State.Online, false, "Scyrox active profile");
+        }
+        foreach (var (field, value) in new (int, byte)[] { (3, 0), (4, 4), (5, 1), (7, 0), (7, 6), (62, 1) })
+        {
+            var report = ScyroxReply(42);
+            report[field] = value;
+            Expect(Protocol.ScyroxV12, report, -1, State.Invalid, false, $"Scyrox invalid field {field}={value}");
+        }
     }
 
     private static Protocol ParseProtocol(string name) => name switch

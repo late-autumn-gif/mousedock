@@ -1,5 +1,7 @@
 # 1.0.2 六款已验证设备的电量移植
 
+2026-11-16：当前旧对照数据只保留 VT9S V2 解码样本、六款识别配置及 ATK 名称兼容对照。COMPX 与 Scyrox 电量回归已改用按厂商字段独立生成的报文。全量 33,640 条离线断言通过，未进行实机测试。
+
 > 2026-11-15 更新：本页记录历史移植。Sora V2 的运行时电量事务已改为依据 [NinjaForce 的 Sora V2 页面逻辑](https://ninjaforce.co/_nuxt/CF1K2IOL.js) 与[电量查询模块](https://ninjaforce.co/_nuxt/BiYPX5p0.js)编写的独立实现。厂商的 31 字节 WebHID 载荷在 Windows 下前置报告编号 05。电量、充电字段取自厂商页面，保留现有离线保护及 AE8A 精确实例门禁。26,567 条离线断言通过，新版请求待实机。历史配置及其余路径继续保留来源记录。
 
 > 同日复核：Scyrox V12M 的组帧与电量字段来自 [S-Center 2.0 传输](https://gaming.scyrox.net/assets/index-CGLY9Ain.js) 和[配置解析](https://gaming.scyrox.net/assets/next-kzItA4cS.js)。通用 COMPX 电量帧来自 ATK HUB 官方网页快照 filter-BXbdU8AT.js，验证了报告编号、命令、校验和两个电量字段。雷柏 VT9S V2 的 24AE:1453、FF00/2 和长报告 07 字段由 [A HUB 驱动](https://hid.rapoo.cn/AHUB_WEB/dist/assets/js/index-exv-sdE5.js)核对。官方 BB 布局将电量标志限定在 0/1，未证实旧七字节路径的状态 2，因此暂保持历史行为和归属。各路径的型号映射及其他派生代码仍需逐条核对。

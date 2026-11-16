@@ -68,49 +68,29 @@ def add(kind, data, label):
         accepted=False;level=-1;state='invalid';charging=False;known=False
     vectors.append(dict(protocol=kind,hex=bytes(data).hex().upper(),accepted=accepted,
                         level=level,state=state,charging=charging,chargingKnown=known,label=label))
-def compx(pct,flag=0,status=0):
-    b=bytearray(17);b[0]=8;b[1]=4;b[2]=status;b[5]=2;b[6]=pct;b[7]=flag;b[16]=(0x55-sum(b[:16]))&255
-    return b
-def scyrox(pct):
-    b=bytearray(64);b[0]=8;b[1]=1;b[3]=1;b[7]=1;b[20]=pct;return b
-def sora(pct,flag=0,online=1):
-    b=bytearray(32);b[0]=5;b[1]=0x15;b[9]=pct;b[10]=flag;b[12]=online;return b
 def rapoo(pct,flag=1,n=20):
     b=bytearray(n)
     if n==7:b[0]=0xBB;b[1]=0xB0;b[5]=flag;b[6]=pct
     else:b[0]=7;b[1]=1;b[7]=flag;b[8]=pct
     return b
-for pct in range(0,102):
-    for flag in (0,1,2,3):add('compx',compx(pct,flag),f'percent-{pct}-flags-{flag}')
-    add('scyrox12',scyrox(pct),f'percent-{pct}')
-    for flag in (0,1,2):add('sora',sora(pct,flag),f'percent-{pct}-flags-{flag}')
+for pct in range(102):
     for n in (7,19,20):
         for flag in (0,1,2):add('rapoo',rapoo(pct,flag,n),f'percent-{pct}-status-{flag}-length-{n}')
-for kind,base,indices in [('compx',compx(42),[0,1,2,6,7,16]),
-                          ('scyrox12',scyrox(42),[0,1,3,4,5,7,20,62]),
-                          ('sora',sora(42),[0,1,9,10,12]),
-                          ('rapoo',rapoo(42),[0,1,7,8])]:
-    for index in indices:
-        for value in (0,1,2,3,4,5,6,7,8,9,15,100,101,127,128,254,255):
-            b=bytearray(base);b[index]=value
-            add(kind,b,f'byte-{index}-value-{value}')
-    for length in (0,1,2,6,7,16,len(base)-1):
-        if length<len(base):add(kind,base[:length],f'truncated-{length}')
-    req=protocols.request(kind)
-    if req is not None:add(kind,req,'request-echo')
-for g in range(4):
-    for dpi_stage in range(1,6):
-        b=scyrox(42);b[4]=b[5]=g;b[7]=dpi_stage;add('scyrox12',b,f'valid-group-{g}-dpi-{dpi_stage}')
+base=rapoo(42)
+for index in (0,1,7,8):
+    for value in (0,1,2,3,4,5,6,7,8,9,15,100,101,127,128,254,255):
+        b=bytearray(base);b[index]=value
+        add('rapoo',b,f'byte-{index}-value-{value}')
+for length in (0,1,2,6,7,16,len(base)-1):
+    add('rapoo',base[:length],f'truncated-{length}')
 for pct in (0,42,100,255):
-    add('sora',sora(pct,1,0),'sleep-must-not-use-battery')
     add('rapoo',rapoo(pct,0),'sleep-must-not-use-battery')
 output=dict(source='MouseDock-1.0.2.exe',sourceSha256='DE9A0C6B8680ADE90CBC9B1A82DBDBAACAD88C302176D52099327ED75838BD8A',
             deviceDbSha256=sha256(members['devices.json']).hexdigest().upper(),
             identityNames=database['brand_ids']['atk_identity']['compx_cid_mid'],
             verifiedProfiles=[{k:p[k] for k in ('vid','pid','page','usage','battery')} for p in database['devices'] if p.get('verified') is True],
-            method='Original protocols.decode/request and dpi.atk_packet under bundled CPython 3.12; hardware entrypoints disabled; synthetic reports, not hardware captures.',
-            requests={k:(protocols.request(k).hex().upper() if protocols.request(k) is not None else None) for k in ['compx','scyrox12','sora','rapoo']},
-            identityRequest=dpi.atk_packet(0x10).hex().upper(),vectors=vectors)
+            method='Original Rapoo decoder under bundled CPython 3.12; hardware entrypoints disabled; synthetic reports, not hardware captures.',
+            vectors=vectors)
 path=sys.argv[2]
 with open(path,'w',encoding='utf8') as f:json.dump(output,f,ensure_ascii=False,indent=2)
-print('Oracle vectors:',len(vectors),'identity request:',output['identityRequest'])
+print('Rapoo oracle vectors:',len(vectors))

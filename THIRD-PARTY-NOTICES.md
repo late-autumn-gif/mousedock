@@ -72,8 +72,8 @@ SOFTWARE.
 ## Synthetic compatibility fixtures
 
 `tests/MouseDock.ProtocolTests/Fixtures/reference-1.0.2-vectors.json` contains
-synthetic report bytes and expected facts obtained from the reference's pure
-packet functions. It contains no application bytecode, user settings, device
+synthetic VT9S V2 reports and expected facts obtained from the reference's
+pure decoder, plus historical receiver and ATK name comparison data. It contains no application bytecode, user settings, device
 paths, firmware, or hardware captures. The regeneration script requires the
 user's own exact reference binary and disables hardware entrypoints.
 
