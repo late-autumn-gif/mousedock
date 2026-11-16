@@ -90,6 +90,26 @@ internal static class ReferenceStyleChecks
 
     internal static void Rendering()
     {
+        var ring = new DeviceBatteryRing { Level = 100, ShowGlyph = false, AnimateCharge = false };
+        Arrange(ring);
+        var idle = Snapshot(ring, 3);
+        Require(AlphaAt(idle, 20, 7) == 0 && AlphaAt(idle, 20, 33) > 0 &&
+            AlphaAt(idle, 7, 20) > 0 && AlphaAt(idle, 33, 20) > 0,
+            "The battery ring must leave a top gap and render three separate arcs.");
+        ring.Charging = true;
+        Arrange(ring);
+        Require(AlphaAt(Snapshot(ring, 3), 20, 7) > 0, "Charging must show the plug in the top gap.");
+        ring.Charging = false;
+        Arrange(ring);
+        Require(AlphaAt(Snapshot(ring, 3), 20, 7) == 0, "Stopping charging must hide the plug.");
+
+        static byte AlphaAt(RenderTargetBitmap bitmap, int x, int y)
+        {
+            byte[] pixel = new byte[4];
+            bitmap.CopyPixels(new Int32Rect(x * 3, y * 3, 1, 1), pixel, 4, 0);
+            return pixel[3];
+        }
+
         var gallery = new StackPanel { Background = new SolidColorBrush(Color.FromRgb(34, 38, 41)), Margin = new Thickness(12) };
         foreach (string style in new[] { "ring", "tile", "pill", "battery", "plain", "multi", "character", "portrait" })
         {

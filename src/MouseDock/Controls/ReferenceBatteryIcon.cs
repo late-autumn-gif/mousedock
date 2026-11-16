@@ -146,9 +146,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         {
             case "ring":
                 dc.DrawEllipse(background, null, new Point(48, 48), 45, 45);
-                DrawRing(dc, new Point(48, 48), 37, drawn, 3);
-                if ((item.Charging && !item.Stale) || _completed[0] < ChargeSweep.FadeDuration)
-                    ChargeSweep.RingEffect(dc, new Point(48, 48), 37, drawn, 3, _phase, _completed[0]);
+                DrawRing(dc, new Point(48, 48), 37, IsFull(slot) ? 100 : drawn, item.Charging && !item.Stale);
                 if (_completed[0] < ChargeSweep.CompletionDuration) Text(dc, "✓", 25, new Point(48, 48), Accent, 68);
                 else Number(dc, IsFull(0) ? 100 : item.Level, 25, new Point(48, 48), 68);
                 break;
@@ -210,9 +208,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (style == "ring")
             {
                 double radius = Math.Min(17, rowHeight * .3);
-                DrawRing(dc, new Point(31, y), radius, drawn, 2.8);
-                if ((item.Charging && !item.Stale) || _completed[i] < ChargeSweep.FadeDuration)
-                    ChargeSweep.RingEffect(dc, new Point(31, y), radius, drawn, 2.8, _phase, _completed[i]);
+                DrawRing(dc, new Point(31, y), radius, drawn, item.Charging && !item.Stale);
             }
             if (style == "ring" && _completed[i] < ChargeSweep.CompletionDuration)
                 Text(dc, "✓", glyphSize, new Point(31, y), Accent, glyphSize + 4);
@@ -275,20 +271,10 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         LegibleText(dc, suffix, new Point(left + digits.Width + 2, center.Y + digits.Height * .36 - suffix.Height));
     }
 
-    private void DrawRing(DrawingContext dc, Point center, double radius, double level, double thickness)
+    private void DrawRing(DrawingContext dc, Point center, double radius, double level, bool charging)
     {
-        dc.DrawEllipse(null, new Pen(Outline, thickness), center, radius, radius);
-        if (level <= 0) return;
-        if (level >= 100) { dc.DrawEllipse(null, new Pen(StatusBrush((int)Math.Round(level)), thickness), center, radius, radius); return; }
-        double angle = level * 3.6 * Math.PI / 180;
-        var geometry = new StreamGeometry();
-        using (var context = geometry.Open())
-        {
-            context.BeginFigure(new Point(center.X, center.Y - radius), false, false);
-            context.ArcTo(new Point(center.X + radius * Math.Sin(angle), center.Y - radius * Math.Cos(angle)),
-                new Size(radius, radius), 0, level > 50, SweepDirection.Clockwise, true, false);
-        }
-        dc.DrawGeometry(null, new Pen(StatusBrush((int)Math.Round(level)), thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geometry);
+        BatteryRingDrawing.Draw(dc, center, radius, level, Outline, StatusBrush((int)Math.Round(level)),
+            charging ? FloatingContrast(Ink) : null);
     }
 
     private void Bar(DrawingContext dc, Rect bounds, double level, double phase = -1)

@@ -33,7 +33,7 @@ namespace MouseDock.Controls
             nameof(Full), typeof(bool), typeof(DeviceBatteryRing), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
         public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
         public static readonly DependencyProperty ShowChargingMarkProperty = DependencyProperty.Register(
-            nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(true));
+            nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public DeviceKind Kind { get => (DeviceKind)GetValue(KindProperty); set => SetValue(KindProperty, value); }
         public int Level { get => (int)GetValue(LevelProperty); set => SetValue(LevelProperty, value); }
@@ -82,18 +82,17 @@ namespace MouseDock.Controls
             double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - 7);
             var trackBrush = GlyphBrush.Clone();
             trackBrush.Opacity = 0.28;
-            var track = new Pen(trackBrush, 2.5);
-            if (Level < 0) track.DashStyle = new DashStyle(new double[] { 1, 2 }, 0);
-            dc.DrawEllipse(null, track, center, radius, radius);
             long completed = _sweep.Completion(0, Charging, Full);
             bool showCheck = ShowChargingMark && completed < ChargeSweep.CompletionDuration;
             if (CompletionVisible != showCheck) SetValue(CompletionVisiblePropertyKey, showCheck);
-            bool animateCharge = AnimateCharge && (Charging || completed < ChargeSweep.FadeDuration);
             double drawnLevel = _sweep.Follow(0, Full ? 100 : Level, AnimateCharge);
-            double phase = _sweep.Phase(animateCharge || _sweep.IsFollowing(0), showCheck);
-            if (drawnLevel > 0) DrawProgress(dc, center, radius, drawnLevel);
-            if (animateCharge)
-                ChargeSweep.RingEffect(dc, center, radius, drawnLevel, 2.5, phase, completed);
+            _sweep.Phase(_sweep.IsFollowing(0), showCheck);
+            var color = !Full && Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
+                : Color.FromRgb(52, 211, 153);
+            var fill = BatteryBrush ?? new SolidColorBrush(color);
+            var bottom = BatteryBrush ?? (!Full && Level <= LowBatteryThreshold ? fill : Brushes.DodgerBlue);
+            BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill,
+                ShowChargingMark && Charging ? GlyphBrush : null, bottom);
             if (showCheck)
             {
                 var check = new FormattedText("✓", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
@@ -102,31 +101,5 @@ namespace MouseDock.Controls
             }
         }
 
-        private void DrawProgress(DrawingContext dc, Point center, double radius, double drawnLevel)
-        {
-            var color = Charging ? Color.FromRgb(56, 189, 248)
-                : !Full && Level <= LowBatteryThreshold ? Color.FromRgb(248, 93, 104)
-                : Color.FromRgb(52, 211, 153);
-            var pen = new Pen(BatteryBrush ?? new SolidColorBrush(color), 2.5)
-            {
-                StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round
-            };
-            if (drawnLevel >= 100)
-            {
-                dc.DrawEllipse(null, pen, center, radius, radius);
-                return;
-            }
-            double angle = drawnLevel * 3.6;
-            double radians = (angle - 90) * Math.PI / 180;
-            var figure = new PathFigure
-            {
-                StartPoint = new Point(center.X, center.Y - radius),
-                IsClosed = false, IsFilled = false
-            };
-            figure.Segments.Add(new ArcSegment(
-                new Point(center.X + radius * Math.Cos(radians), center.Y + radius * Math.Sin(radians)),
-                new Size(radius, radius), 0, angle > 180, SweepDirection.Clockwise, true));
-            dc.DrawGeometry(null, pen, new PathGeometry(new[] { figure }));
-        }
     }
 }
