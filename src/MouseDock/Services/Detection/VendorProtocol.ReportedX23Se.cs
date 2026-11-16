@@ -6,16 +6,26 @@ namespace MouseDock.Services.Detection;
 
 internal static partial class VendorProtocol
 {
-    // Report evidence: 2026-11-05 09:23; no report IDs or battery responses were supplied.
+    // X23 SE 1.2.4 config.xml identifies the wireless model and MI_02.
+    // E HUB lists FF01/0010 for this identity, including more than one hardware variant.
+    private const ushort X23SeReceiverVid = 0xA8A5;
+    private const ushort X23SeReceiverPid = 0x2255;
+    private const ushort X23SeUsagePage = 0xFF01;
+    private const ushort X23SeUsage = 0x0010;
+
+    // The existing compatibility transaction applies only to the observed 65-byte interface.
+    private const int X23SeCompatibilityReportLength = 65;
+
     internal static bool IsReportedX23Se(ushort vid, ushort pid, string product) =>
-        vid == 0xA8A5 && pid == 0x2255 && !string.IsNullOrWhiteSpace(product) &&
+        vid == X23SeReceiverVid && pid == X23SeReceiverPid && !string.IsNullOrWhiteSpace(product) &&
         string.Equals(NormalizeProduct(product), "EWEADN X23SE", StringComparison.OrdinalIgnoreCase);
 
     internal static bool IsReportedX23SeCollection(ushort vid, ushort pid, string product, string path,
         ushort page, ushort usage, int input, int output, int feature) =>
-        IsReportedX23Se(vid, pid, product) && page == 0xFF01 && usage == 0x10 &&
-        input == 65 && output == 65 && feature == 0 && path != null &&
-        (path.Contains("&mi_02#", StringComparison.OrdinalIgnoreCase) || path.Contains("&mi_02&", StringComparison.OrdinalIgnoreCase));
+        IsReportedX23Se(vid, pid, product) && page == X23SeUsagePage && usage == X23SeUsage &&
+        input == X23SeCompatibilityReportLength && output == X23SeCompatibilityReportLength && feature == 0 &&
+        path != null && (path.Contains("&mi_02#", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("&mi_02&", StringComparison.OrdinalIgnoreCase));
 
     internal static ReferenceBatteryProtocol.Reading ReadReportedX23Se(string path)
     {
@@ -32,7 +42,7 @@ internal static partial class VendorProtocol
     {
         if (inputId == 0 || outputId == 0)
             return ReferenceBatteryProtocol.Reading.Failed("65/65 接口没有明确的非零报告编号，未猜测对齐或发送查询");
-        var packet = BuildFreqSchemeAPacket(outputId, 65);
+        var packet = BuildFreqSchemeAPacket(outputId, X23SeCompatibilityReportLength);
         int level = -1, rejected = 0, echoes = 0;
         bool charging = false;
         string acceptedFrames = "";
@@ -51,8 +61,8 @@ internal static partial class VendorProtocol
                 var raw = link.Read((int)Math.Max(1, Math.Min(100, deadline - link.Now)));
                 if (raw is not { Length: > 0 }) continue;
                 if (raw.AsSpan().SequenceEqual(packet)) { echoes++; continue; }
-                if (!TryParseFreqFrame(raw, "a", inputId, 65, out level, out charging))
-                { rejected++; last = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, 65))); continue; }
+                if (!TryParseFreqFrame(raw, "a", inputId, X23SeCompatibilityReportLength, out level, out charging))
+                { rejected++; last = Convert.ToHexString(raw.AsSpan(0, Math.Min(raw.Length, X23SeCompatibilityReportLength))); continue; }
                 found = true;
                 acceptedFrames += $" RX{attempt + 1}=" + Convert.ToHexString(raw);
                 break;
