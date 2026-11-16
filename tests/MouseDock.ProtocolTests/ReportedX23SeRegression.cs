@@ -1,6 +1,4 @@
-﻿using System.IO;
-using System.Text.Json;
-using MouseDock.Models;
+﻿using MouseDock.Models;
 using MouseDock.Services;
 using MouseDock.Services.Detection;
 
@@ -10,17 +8,48 @@ internal static class ReportedX23SeRegression
     {
         int count=0;
         void Check(bool ok,string reason) { count++; if (!ok) throw new Exception("X23SE: "+reason); }
-        using var oracle=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Fixtures","x23se-freq-oracle.json")));
-        var root=oracle.RootElement;
-        Check(root.GetProperty("sourceSha256").GetString()=="DE9A0C6B8680ADE90CBC9B1A82DBDBAACAD88C302176D52099327ED75838BD8A","Trusted reference identity");
-        Check(Convert.ToHexString(VendorProtocol.BuildFreqSchemeAPacket(42,65))==root.GetProperty("requestHex").GetString(),"65/65 dual selects scheme a and matches original transaction bytes");
-        foreach (var vector in root.GetProperty("vectors").EnumerateArray())
+        // E HUB FREQ scheme A: ten-byte command payload and one Windows report ID.
+        var expectedRequest = new byte[65];
+        Convert.FromHexString("2A5530010B2E0101010000").CopyTo(expectedRequest, 0);
+        Check(expectedRequest.AsSpan().SequenceEqual(VendorProtocol.BuildFreqSchemeAPacket(42, 65)),
+            "The descriptor-numbered report contains the official payload and zero padding");
+
+        void CheckFrame(byte[] report, int expectedLevel, bool expectedCharging, string description)
         {
-            bool accepted=VendorProtocol.TryParseFreqFrame(Convert.FromHexString(vector.GetProperty("hex").GetString()!),"a",7,65,out int level,out bool charging);
-            Check(accepted==vector.GetProperty("accepted").GetBoolean(),"Original decoder acceptance: "+vector.GetProperty("label").GetString());
-            if (accepted) Check(level==vector.GetProperty("level").GetInt32() && charging==vector.GetProperty("charging").GetBoolean(),"Original percentage/charging semantics");
-            else Check(level==-1 && !charging,"Rejected bytes cannot become percentages");
+            bool accepted = VendorProtocol.TryParseFreqFrame(report, "a", 7, 65, out int level, out bool charging);
+            Check(accepted == (expectedLevel >= 0), description);
+            Check(level == expectedLevel && charging == expectedCharging, "Battery result: " + description);
         }
+
+        // Official markers can start the payload or follow one prefix byte.
+        foreach (byte marker in new byte[] { 0xAA, 0xF0 })
+        foreach (int offset in new[] { 0, 1 })
+        foreach (byte charge in new byte[] { 0, 1, 2, 255 })
+        for (int percent = 0; percent <= byte.MaxValue; percent++)
+        {
+            var report = new byte[65];
+            report[0] = 7;
+            report[1 + offset] = marker;
+            report[2 + offset] = 0x30;
+            report[9 + offset] = (byte)percent;
+            report[10 + offset] = charge;
+            bool valid = percent <= 100 && charge <= 1;
+            CheckFrame(report, valid ? percent : -1, valid && charge == 1,
+                $"marker={marker:X2}, offset={offset}, level={percent}, charge={charge}");
+        }
+
+        var sample = Raw(42, 1);
+        for (int length = 0; length < sample.Length; length++)
+            CheckFrame(sample[..length], -1, false, $"truncated report length {length}");
+        CheckFrame(new byte[66], -1, false, "oversized report");
+        CheckFrame(expectedRequest, -1, false, "request echo");
+        CheckFrame(Raw(42, 1, 8), -1, false, "wrong input report ID");
+        var wrongCommand = Raw(42, 1);
+        wrongCommand[2] = 0x31;
+        CheckFrame(wrongCommand, -1, false, "wrong response command");
+        CheckFrame(Raw(42, 0).Select((value, index) => index == 1 ? (byte)0x55 : value).ToArray(),
+            -1, false, "request marker in an input report");
+
         Check(DeviceRoutes.IsKnown(0xA8A5,0x2255,"EWEADN X23SE"),"Explicit requested profile enabled");
         Check(VendorProtocol.IsReportedX23Se(0xA8A5,0x2255,"  eweadn  x23se  "),"Harmless case/space differences accepted");
         foreach (string name in new[] { "EWEADN X23E","EWEADN X23Pro","EWEADN X23","USB Receiver","EWEADN X23SE V2" })

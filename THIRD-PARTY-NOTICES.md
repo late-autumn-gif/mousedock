@@ -14,8 +14,7 @@ oracle fixtures are still attributed here.
 The earlier X23SE adaptation used the reference's FREQ scheme-A rules.
 The current packet encoder, decoder, and six X23 product mappings are
 implemented from EWEADN E HUB's FREQ protocol and catalog evidence.
-Historical compatibility transaction rules and synthetic comparison fixtures
-remain attributed here.
+Historical compatibility transaction rules remain attributed here.
 Physical-device equivalence has not been verified locally.
 The supplied reference binary identifies its license as follows. The original
 application and its binary/runtime are not included in this distribution.
@@ -77,11 +76,6 @@ synthetic report bytes and expected facts obtained from the reference's pure
 packet functions. It contains no application bytecode, user settings, device
 paths, firmware, or hardware captures. The regeneration script requires the
 user's own exact reference binary and disables hardware entrypoints.
-
-`tests/MouseDock.ProtocolTests/Fixtures/x23se-freq-oracle.json` similarly holds
-1260 synthetic FREQ reports and a fake-I/O transaction oracle, obtained only
-from the reference's pure decoder and battery transaction function. It contains
-no physical device captures or original application bytecode.
 
 ## NAudio.Wasapi / NAudio.Core 2.2.1
 
