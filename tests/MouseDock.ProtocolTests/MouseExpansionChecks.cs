@@ -34,6 +34,24 @@ internal static class MouseExpansionChecks
         Check(!VendorProtocol.ExtraMouseCandidate(0x248A, 0x5C2F, "AJ159 Receiver") &&
             !VendorProtocol.ExtraMouseCandidate(0x249A, 0x5C2F, "DELUX Receiver"),
             "GET10 retains explicit foreign product exclusions on shared IDs");
+        var vt7 = new HidDiscovery.VendorCollectionInfo
+        {
+            Vid = 0x24AE, Pid = 0x1413, Path = "fixture&mi_01&col09",
+            Product = "Rapoo Gaming Device", UsagePage = 0xFF00, Usage = 2, Input = 19, Output = 19, Feature = 0
+        };
+        Check(VendorProtocol.ExtraMouseFamily(vt7.Vid, vt7.Pid, vt7.Product) == "rapoo-vt7", "VT7 must avoid the 13-byte route");
+        Check(VendorProtocol.ExtraMouseFamily(0x24AE, 0x1423, vt7.Product) == "rapoo-short", "VT2 route stays separate");
+        Check(VendorProtocol.MouseExpansionChannel("rapoo-vt7", vt7), "Reported VT7 collection");
+        vt7.Input = 13;
+        Check(!VendorProtocol.MouseExpansionChannel("rapoo-vt7", vt7), "Legacy length rejected");
+        var vt7Frame = new byte[19];
+        vt7Frame[0] = 7;
+        vt7Frame[7] = 2;
+        vt7Frame[8] = 42;
+        Check(VendorProtocol.MouseExpansionDecode("rapoo-vt7", vt7Frame) is { Level: 42, Charging: true }, "VT7 charging report");
+        vt7Frame[7] = 0;
+        Check(VendorProtocol.MouseExpansionDecode("rapoo-vt7", vt7Frame) == null, "VT7 offline percent rejected");
+
         var hechi = new byte[64];
         hechi[0] = 11; hechi[1] = 19; hechi[18] = 57;
         Check(VendorProtocol.MouseExpansionDecode("hechi", hechi)?.Level == 57, "HECHI percent18");

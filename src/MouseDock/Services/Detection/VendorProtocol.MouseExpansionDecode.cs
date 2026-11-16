@@ -111,6 +111,10 @@ internal static partial class VendorProtocol
                 }
                 return b.Length == 8 && b[0] == 9 ?
                     MouseExpansionValue(b[1] & 127,"PixArt fresh input percentage") : null;
+            case "rapoo-vt7":
+                return b.Length == 19 && TryParseRapooVt7Battery(b, out int vt7Level, out bool vt7Charging)
+                    ? MouseExpansionValue(vt7Level, "Rapoo VT7 Report 07", vt7Charging, "雷柏 VT7")
+                    : null;
             case "rapoo-short":
                 if (b.Length != 13 || b[0] != 7 || (b[1] & 15) > 2 || b[7] > 2) return null;
                 return b[7] == 0 ? MouseExpansionSleep("Rapoo mouse offline") :

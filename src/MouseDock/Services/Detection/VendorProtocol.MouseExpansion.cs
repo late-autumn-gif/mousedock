@@ -31,6 +31,7 @@ internal static partial class VendorProtocol
         ExtraMouseFamily(vid,pid,product) switch
         {
             "freq" or "freq-sc311" or "mloong" => vid == 0xA8A4 ? "USB" : "2.4G",
+            "rapoo-vt7" => "2.4G",
             "nzxt" => pid == 0x2129 ? "USB" : "2.4G",
             "keychron" => pid == 0xD048 ? "USB" : "2.4G",
             "sora-v3" => pid == 0xE010 ? "USB" : "2.4G",
@@ -126,7 +127,7 @@ internal static partial class VendorProtocol
         "vgn-ld" or "vgn-master" or "vgn-se" or "keychron" or "nzxt" or
         "hecate" or "aula-v9" or "delux" or "x7" or "mchose4d" =>
             MouseExpansionReadOutput(family, vid, pid, link),
-        "rapoo" or "rapoo-short" or "incott" or "sc900" or "delux-pro" or "x23-pro" =>
+        "rapoo" or "rapoo-short" or "rapoo-vt7" or "incott" or "sc900" or "delux-pro" or "x23-pro" =>
             MouseExpansionReadPassive(family, pid, link),
         _ => MouseExpansionReadSession(family, vid, pid, product, link)
     };
@@ -152,7 +153,7 @@ internal static partial class VendorProtocol
         {
             Channel = channel;
             Trace = trace;
-            bool passive = family is "incott" or "sc900" or "rapoo" or "rapoo-short" or "delux-pro" or "x23-pro" or "mchose-l7";
+            bool passive = family is "incott" or "sc900" or "rapoo" or "rapoo-short" or "rapoo-vt7" or "delux-pro" or "x23-pro" or "mchose-l7";
             handle = CreateFile(channel.Path, GENERIC_READ | (passive ? 0 : GENERIC_WRITE),
                 FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
             if (handle == IntPtr.Zero || handle == new IntPtr(-1))

@@ -68,7 +68,8 @@ internal static partial class VendorProtocol
         if (vid == 0x5253 && pid==0x1020 && MouseExpansionName(product,"MCHOSE L7 Pro"))
             return "mchose-l7";
         if (vid == 0x24AE && MouseExpansionPid(pid,0x1870,0x1871,0x1872,0x1874,0x1876,0x186C)) return "rapoo-office";
-        if (vid == 0x24AE && MouseExpansionPid(pid,0x1423,0x1413)) return "rapoo-short";
+        if (vid == 0x24AE && pid == 0x1413) return "rapoo-vt7";
+        if (vid == 0x24AE && pid == 0x1423) return "rapoo-short";
         if (vid == 0x24AE && pid == 0x14A5) return "rapoo-active";
         if (vid == 0x24AE && MouseExpansionPid(pid,0x1470,0x1412,0x14A2,0x14A7,0x1B0D,0x14A1,0x185A)) return "rapoo";
         if (vid == 0x3434 && MouseExpansionPid(pid,0xD028,0xD048)) return "keychron";
@@ -109,7 +110,7 @@ internal static partial class VendorProtocol
         product?.Contains("DELUX", StringComparison.OrdinalIgnoreCase) == true ||
         product?.Contains("多彩", StringComparison.Ordinal) == true;
 
-    private static bool MouseExpansionChannel(string family, HidDiscovery.VendorCollectionInfo c)
+    internal static bool MouseExpansionChannel(string family, HidDiscovery.VendorCollectionInfo c)
     {
         bool At(int mi, int page, int usage) => MouseExpansionMi(c.Path, mi) && c.UsagePage == page && c.Usage == usage;
         return family switch
@@ -133,6 +134,7 @@ internal static partial class VendorProtocol
             "infinity100" or "aj159-pro" => At(2,0xFFFF,2),
             "infinity97" => MouseExpansionMi(c.Path,1) && c.Usage == 1 && c.UsagePage is 0xFF13 or 0xFF14,
             "steel" => At(3,0xFFC0,1), "incott" or "sc900" => At(-1,0xFF05,1),
+            "rapoo-vt7" => At(1,0xFF00,2) && c.Input == 19 && c.Output == 19 && c.Feature == 0,
             "rapoo" or "rapoo-short" or "rapoo-active" => At(1,0xFF00,c.Usage) && c.Usage is 2 or 0x14,
             "rapoo-office" => At(1,0xFF00,0xE),
             "keychron" => MouseExpansionMi(c.Path,4), "nzxt" => At(-1,0xFFCA,1),
@@ -206,6 +208,7 @@ internal static partial class VendorProtocol
             "mchose-old" => l.Revision==0x1437&&F(21,0x11),
             "mchose-l7" => l.Input is 16 or 64&&l.Inputs.SetEquals(new byte[]{0x13}),
             "incott" or "sc900" => l.Input is 8 or 33 && l.Inputs.SetEquals(new byte[]{9}),
+            "rapoo-vt7" => l.Inputs.SetEquals(new byte[]{7}) && l.Outputs.SetEquals(new byte[]{7}),
             "rapoo-short" => l.Input == 13 && l.Inputs.SetEquals(new byte[]{7}),
             "rapoo" => l.Input is 7 or 19 or 20 && l.Inputs.Count == 1,
             "rapoo-active" => l.Channel.Usage==2&&l.Input==19&&l.Inputs.SetEquals(new byte[]{7})&&l.Output==0&&l.Feature==0 ||
