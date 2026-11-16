@@ -30,7 +30,7 @@ internal sealed class DesktopPetWindow : Window
 
     private static readonly Character[] Characters =
     {
-        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), false),
+        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), true),
         new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
         new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true),
         new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true)
@@ -339,7 +339,7 @@ internal sealed class DesktopPetWindow : Window
         bool inAction = Motion && now < _actionUntil &&
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
         Pose pose = inAction ? _action : _charging ? Pose.Charging :
-            IsLow && (_skin.HasBlink || !Motion || now % 5500 < 1350) ? Pose.Low : Pose.Idle;
+            IsLow && (_skin.Id != "shin-chan" || !Motion || now % 5500 < 1350) ? Pose.Low : Pose.Idle;
         if (Motion && _dragging) pose = Pose.Drag;
         else if (Motion && !inAction && _hovering) pose = Pose.Hover;
         var sample = default(DesktopPetBehavior.Sample);
