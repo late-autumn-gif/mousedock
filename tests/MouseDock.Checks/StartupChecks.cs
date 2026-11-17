@@ -40,21 +40,28 @@ internal static class StartupChecks
         typeof(App).GetProperty(nameof(App.Settings))!.SetValue(null, settings);
         typeof(App).GetProperty(nameof(App.Battery))!.SetValue(null, battery);
         typeof(App).GetProperty(nameof(App.QuietStartup))!.SetValue(null, true);
-        typeof(App).GetMethod("BuildWindows", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(app, null);
-        var surfaces = new Dictionary<string, Window>
-        {
-            ["dock"] = App.Dock, ["mini"] = App.Mini, ["icon"] = App.Icon,
-            ["taskbar"] = App.Taskbar, ["edge"] = App.Edge
-        };
-        if (mode == "pet")
-            surfaces["pet"] = (Window)typeof(App).GetField("_desktopPet", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
         try
         {
-            if (!surfaces[mode].IsVisible || surfaces.Count(pair => pair.Value.IsVisible) != 1)
-                throw new InvalidOperationException($"Startup must show only the saved {mode} surface before device discovery.");
-            if (App.SettingsView.IsVisible)
-                throw new InvalidOperationException("Startup must not open settings.");
-            if (surfaces[mode].ShowActivated)
+            settings.SurfaceHidden = true;
+            App.RestoreStartupSurface();
+            if (app.Windows.Count != 0)
+                throw new InvalidOperationException("A hidden startup must not create any surface or settings window.");
+
+            settings.SurfaceHidden = false;
+            App.RestoreStartupSurface();
+            Window? surface = mode switch
+            {
+                "dock" => App.Dock, "mini" => App.Mini, "icon" => App.Icon,
+                "taskbar" => App.Taskbar, "edge" => App.Edge,
+                "pet" => app.Windows.OfType<Window>().Single(w => w.GetType().Name == "DesktopPetWindow"),
+                _ => throw new ArgumentOutOfRangeException(nameof(mode))
+            };
+            int expectedWindows = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? 2 : 1;
+            if (surface?.IsVisible != true || app.Windows.Count != expectedWindows)
+                throw new InvalidOperationException($"Startup must create only the saved {mode} surface and any required taskbar overflow.");
+            if (App.SettingsView != null)
+                throw new InvalidOperationException("Startup must not create settings.");
+            if (surface.ShowActivated)
                 throw new InvalidOperationException("Startup must not steal keyboard focus.");
             source.Discovered = true;
             var poll = battery.PollAsync();
@@ -70,18 +77,18 @@ internal static class StartupChecks
             timer.Stop();
             if (!poll.IsCompleted) throw new InvalidOperationException("Battery discovery timed out.");
             poll.GetAwaiter().GetResult();
-            if (!surfaces[mode].IsVisible || battery.VisibleDevices.Count != 1)
-                throw new InvalidOperationException($"Late discovery: visible={surfaces[mode].IsVisible}, devices={battery.Devices.Count}, displayed={battery.VisibleDevices.Count}.");
+            if (!surface.IsVisible || battery.VisibleDevices.Count != 1)
+                throw new InvalidOperationException($"Late discovery: visible={surface.IsVisible}, devices={battery.Devices.Count}, displayed={battery.VisibleDevices.Count}.");
             if (mode == "pet")
             {
                 App.SetSurface("mini");
-                if (surfaces["pet"].IsVisible || !App.Mini.IsVisible)
+                if (surface.IsVisible || !App.Mini.IsVisible)
                     throw new InvalidOperationException("Switching to mini must hide the desktop pet.");
                 App.SetSurface("pet");
-                if (!surfaces["pet"].IsVisible || surfaces.Count(pair => pair.Value.IsVisible) != 1)
+                if (!surface.IsVisible || app.Windows.OfType<Window>().Count(w => w.IsVisible) != 1)
                     throw new InvalidOperationException("Switching back to pet must hide every other display mode.");
             }
-            var pinnedSurface = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? App.Edge : surfaces[mode];
+            var pinnedSurface = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? App.Edge : surface;
             if (mode == "taskbar" && App.Taskbar.UsesScreenEdge && !App.Edge.IsVisible)
                 throw new InvalidOperationException("Automatic taskbar overflow did not show the right-edge surface.");
             bool usesEdge = mode == "edge" || (mode == "taskbar" && App.Taskbar.UsesScreenEdge);

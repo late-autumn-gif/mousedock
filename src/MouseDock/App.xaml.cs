@@ -290,8 +290,7 @@ namespace MouseDock
                 return;
             }
 
-            SyncSurfaceFlags();
-            if (!Settings.SurfaceHidden) ApplySurface();
+            RestoreStartupSurface();
             SessionEnding += (_, _) => SaveWindowPositions();
             if (!IsTestProfile && !QuietStartup)
                 Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
@@ -317,6 +316,12 @@ namespace MouseDock
 
             string bg = Path.Combine(assets, "demo-bg.png");
             DefaultBackgroundAsset = File.Exists(bg) ? bg : null;
+        }
+
+        internal static void RestoreStartupSurface()
+        {
+            SyncSurfaceFlags();
+            if (!Settings.SurfaceHidden) ApplySurface();
         }
 
         private static Window EnsureSurface(string mode)
