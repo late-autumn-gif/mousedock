@@ -62,13 +62,20 @@ namespace MouseDock.Services
 
         public static bool TrySave(AppSettings settings)
         {
+            string path = FilePath;
+            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                Directory.CreateDirectory(Dir);
-                File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, Options));
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(temporary, JsonSerializer.Serialize(settings, Options));
+                File.Move(temporary, path, overwrite: true);
                 return true;
             }
             catch { return false; }
+            finally
+            {
+                try { File.Delete(temporary); } catch { }
+            }
         }
     }
 
@@ -94,7 +101,7 @@ namespace MouseDock.Services
             if (App.IsTestProfile) return;
             try
             {
-                using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+                using var key = enabled ? Registry.CurrentUser.CreateSubKey(RunKey) : Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
                 if (key == null) return;
                 if (enabled)
                     key.SetValue(ValueName, "\"" + Environment.ProcessPath + "\" --tray");
@@ -119,7 +126,7 @@ namespace MouseDock.Services
                 string current = Environment.ProcessPath;
                 if (string.IsNullOrEmpty(current) || !File.Exists(current)) return;
 
-                using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+                using var key = enabled ? Registry.CurrentUser.CreateSubKey(RunKey) : Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
                 if (key == null) return;
 
                 if (!enabled)

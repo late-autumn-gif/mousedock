@@ -110,13 +110,14 @@ namespace MouseDock
                 return;
             }
 
+            QuietStartup = e.Args.Contains("--tray") && !e.Args.Contains("--settings");
             _mutex = new Mutex(true, "MouseDock.SingleInstance" + InstanceName, out bool isNew);
             if (!isNew && !IsDiagnosticCommand(e.Args))
             {
                 // 已有实例常驻后台：发唤醒信号让它显示面板，本实例随即退出。
                 try
                 {
-                    if (EventWaitHandle.TryOpenExisting("MouseDock.ShowPanel" + InstanceName, out var wake))
+                    if (!QuietStartup && EventWaitHandle.TryOpenExisting("MouseDock.ShowPanel" + InstanceName, out var wake))
                     {
                         wake.Set();
                         wake.Dispose();
@@ -137,7 +138,7 @@ namespace MouseDock
 
             // 启动时校正自启动项：开关开着就把 Run 项指到当前 exe，关了就删掉。
             // 搬过目录、换过版本、或上次被别的测试改坏，都能在这一步自动纠回来。
-            Services.AutoStart.Sync(Settings.AutoStart);
+            if (!IsDiagnosticCommand(e.Args)) Services.AutoStart.Sync(Settings.AutoStart);
 
             // Provider 选择已从界面撤掉，统一走自动检测；
             // 旧 settings.json 里残留的 "json"/"demo"/"hid" 会让面板显示假数据，这里强制覆盖。
@@ -162,8 +163,6 @@ namespace MouseDock
             })
             { IsBackground = true, Name = "MouseDock.Wake" };
             wakeThread.Start();
-            // Keep existing startup entries: --tray skips launch settings, not battery surfaces.
-            QuietStartup = e.Args.Contains("--tray");
             if (Settings.Version < 4)
             {
                 // 老配置默认是演示数据；升级到自动检测真实设备
@@ -291,7 +290,12 @@ namespace MouseDock
                 return;
             }
 
-            BuildWindows();
+            SyncSurfaceFlags();
+            if (!Settings.SurfaceHidden) ApplySurface();
+            SessionEnding += (_, _) => SaveWindowPositions();
+            if (!IsTestProfile && !QuietStartup)
+                Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
+            _ = CheckUpdateOnStartupAsync();
             BuildTray();
             StartLowBatteryWatcher();
             ApplyTheme(false);
@@ -315,63 +319,60 @@ namespace MouseDock
             DefaultBackgroundAsset = File.Exists(bg) ? bg : null;
         }
 
-        private void BuildWindows()
+        private static Window EnsureSurface(string mode)
         {
-            Dock = new DockWindow();
-            Mini = new MiniWindow();
-            Icon = new IconWindow();
-            Taskbar = CreateTaskbarWindow();
-            Edge = new ScreenEdgeWindow();
-            SettingsView = new SettingsWindow();
+            if (Surfaces.GetWindow(mode) is Window existing) return existing;
 
-            PlaceWindow(Dock, Settings.DockX, Settings.DockY, 0.72, 0.30);
-            PlaceWindow(Mini, Settings.MiniX, Settings.MiniY, 0.72, 0.62);
-            PlaceWindow(Icon, Settings.IconX, Settings.IconY, 0.90, 0.34);
+            Window window = mode switch
+            {
+                "dock" => Dock = new DockWindow(),
+                "mini" => Mini = new MiniWindow(),
+                "icon" => Icon = new IconWindow(),
+                "taskbar" => Taskbar = CreateTaskbarWindow(),
+                "edge" => Edge = new ScreenEdgeWindow(),
+                "pet" => _desktopPet = new DesktopPetWindow(Battery, Settings),
+                _ => throw new ArgumentOutOfRangeException(nameof(mode))
+            };
+            window.ShowActivated = !QuietStartup;
+            switch (window)
+            {
+                case DockWindow dock:
+                    PlaceWindow(dock, Settings.DockX, Settings.DockY, 0.72, 0.30);
+                    dock.ApplyTheme(Theme, false);
+                    ApplyIcon(dock);
+                    break;
+                case MiniWindow mini:
+                    PlaceWindow(mini, Settings.MiniX, Settings.MiniY, 0.72, 0.62);
+                    mini.ApplyTheme(Theme, false);
+                    ApplyIcon(mini);
+                    break;
+                case IconWindow icon:
+                    PlaceWindow(icon, Settings.IconX, Settings.IconY, 0.90, 0.34);
+                    icon.ApplyTheme(Theme, false);
+                    ApplyIcon(icon);
+                    break;
+            }
 
-            ApplyIcon(Dock);
-            ApplyIcon(Mini);
-            ApplyIcon(Icon);
-            ApplyIcon(SettingsView);
+            if (mode is "dock" or "mini" or "icon" or "pet")
+            {
+                window.Closing += (_, args) =>
+                {
+                    if (_exiting) return;
+                    args.Cancel = true;
+                    if (mode == "dock") return;
+                    HideCurrentSurface();
+                    if (mode is "mini" or "icon") NotifyStillRunning();
+                };
+            }
+            if (mode is "dock" or "mini" or "icon" or "edge")
+                window.SourceInitialized += (_, _) => SetClickThrough(window, Settings.ClickThrough);
+
             ApplyAllBackgrounds();
             ApplyAllStyles();
             ApplyWindowBehavior();
-
-            if (QuietStartup)
-                foreach (var window in new Window[] { Dock, Mini, Icon, Taskbar, Edge })
-                    window.ShowActivated = false;
-            ApplySurface();
-
-
-            // 第一次启动弹「关于」通告
-            if (!IsTestProfile) Dispatcher.BeginInvoke(new Action(ShowAboutIfFirstRun), DispatcherPriority.ApplicationIdle);
-
-            // 启动后延迟检查更新。无网直接放弃，不打扰用户。
-            _ = CheckUpdateOnStartupAsync();
-
-            // 关闭只隐藏到后台，程序继续跑；只有托盘「退出」才真正结束
-            Dock.Closing += (_, args) =>
-            {
-                // 桌面型态：任务栏关闭 / Alt+F4 一律忽略，面板始终留在桌面
-                args.Cancel = true;
-                SaveWindowPositions();
-            };
-            Mini.Closing += (_, args) =>
-            {
-                args.Cancel = true;
-                SaveWindowPositions();
-                Mini.Hide();
-                NotifyStillRunning();
-            };
-            Icon.Closing += (_, args) =>
-            {
-                args.Cancel = true;
-                SaveWindowPositions();
-                Icon.Hide();
-                NotifyStillRunning();
-            };
-
             ApplyOpacity();
             ApplyScale();
+            return window;
         }
 
         /// <summary>窗口图标从磁盘读，避免 XAML 里当嵌入资源找不到。</summary>
@@ -404,12 +405,14 @@ namespace MouseDock
             catch { }
         }
 
-        private void PlaceWindow(Window w, double savedX, double savedY, double rx, double ry)
+        private static void PlaceWindow(Window w, double savedX, double savedY, double rx, double ry)
         {
             var area = SystemParameters.WorkArea;
-            bool valid = !double.IsNaN(savedX) && !double.IsNaN(savedY) &&
-                         savedX > area.Left - 300 && savedX < area.Right + 100 &&
-                         savedY > area.Top - 300 && savedY < area.Bottom + 100;
+            double virtualLeft = SystemParameters.VirtualScreenLeft;
+            double virtualTop = SystemParameters.VirtualScreenTop;
+            bool valid = double.IsFinite(savedX) && double.IsFinite(savedY) &&
+                         savedX >= virtualLeft && savedX < virtualLeft + SystemParameters.VirtualScreenWidth - 24 &&
+                         savedY >= virtualTop && savedY < virtualTop + SystemParameters.VirtualScreenHeight - 24;
 
             if (valid)
             {
@@ -429,7 +432,7 @@ namespace MouseDock
             var title = new WinForms.ToolStripLabel(device?.Name ?? "MouseDock · " + typeof(App).Assembly.GetName().Version?.ToString(3)) { TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
             menu.Items.Add(title);
             menu.Items.Add("显示电量窗", null, (_, _) => ShowCurrentSurface());
-            menu.Items.Add("收起电量窗", null, (_, _) => Surfaces.Apply(Settings.SurfaceMode, false));
+            menu.Items.Add("收起电量窗", null, (_, _) => HideCurrentSurface());
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add(new WinForms.ToolStripLabel("显示方式") { TextAlign = System.Drawing.ContentAlignment.MiddleLeft });
             var picker = new TraySurfacePicker(SetSurface);
@@ -723,23 +726,35 @@ namespace MouseDock
             }
             var active = Surfaces.GetWindow(Settings.SurfaceMode);
             bool visible = active?.IsVisible == true;
-            SaveWindowPositions();
-            if (visible) Surfaces.Apply(Settings.SurfaceMode, false);
+            if (visible) HideCurrentSurface();
             else ShowCurrentSurface();
+        }
+
+        private static void HideCurrentSurface()
+        {
+            _trayHover?.Pin();
+            Settings.SurfaceHidden = true;
+            SaveWindowPositions();
+            Surfaces.Apply(Settings.SurfaceMode, false);
         }
 
         // An explicit launch must expose a usable window even with an empty,
         // transparent taskbar/edge surface or stale device selection.
         public static void ShowLaunchSurface()
         {
-            ShowCurrentSurface();
-            if (Settings.SurfaceMode is "taskbar" or "edge" || Battery?.VisibleDevices.Count == 0)
+            if (!Settings.SurfaceHidden) ShowCurrentSurface();
+            if (Settings.SurfaceHidden || Settings.SurfaceMode is "taskbar" or "edge" || Battery?.VisibleDevices.Count == 0)
                 ShowSettings(Dock);
         }
 
         public static void ShowCurrentSurface()
         {
             _trayHover?.Pin();
+            if (Settings.SurfaceHidden)
+            {
+                Settings.SurfaceHidden = false;
+                SaveSettings();
+            }
             ApplySurface();
             if (Settings.SurfaceMode != "taskbar" && Settings.SurfaceMode != "edge")
                 BringToFront(Surfaces.GetWindow(Settings.SurfaceMode));
@@ -780,16 +795,7 @@ namespace MouseDock
         public static void ApplySurface()
         {
             SyncSurfaceFlags();
-            if (Settings.SurfaceMode == "pet" && _desktopPet == null)
-            {
-                _desktopPet = new DesktopPetWindow(Battery, Settings);
-                _desktopPet.Closing += (_, args) =>
-                {
-                    if (_exiting) return;
-                    args.Cancel = true;
-                    _desktopPet.Hide();
-                };
-            }
+            EnsureSurface(Settings.SurfaceMode);
             RefreshDeviceViews();
             Surfaces.Apply(Settings.SurfaceMode, true);
             if (Settings.ShowIcon) Icon?.ApplyStyle(Settings.IconStyle, false);
@@ -800,13 +806,14 @@ namespace MouseDock
 
         private static void UpdateTaskbarOverflow()
         {
-            if (Settings.SurfaceMode != "taskbar" || Edge == null) return;
+            if (Settings.SurfaceMode != "taskbar") return;
             if (Taskbar?.IsVisible == true && Taskbar.UsesScreenEdge)
             {
+                EnsureSurface("edge");
                 Edge.UpdateDevices();
                 if (!Edge.IsVisible) Edge.Show();
             }
-            else if (Edge.IsVisible) Edge.Hide();
+            else if (Edge?.IsVisible == true) Edge.Hide();
         }
 
         /// <summary>切换任务栏样式，立即重绘并保存。</summary>
@@ -820,7 +827,6 @@ namespace MouseDock
 
         public static void ShowIconIfNeeded()
         {
-            if (Icon == null) return;
             SetSurface("icon");
         }
 
@@ -836,7 +842,11 @@ namespace MouseDock
         public static void ShowSettings(Window owner)
         {
             _trayHover?.Pin();
-            if (SettingsView == null) SettingsView = new SettingsWindow();
+            if (SettingsView == null)
+            {
+                SettingsView = new SettingsWindow();
+                ApplyIcon(SettingsView);
+            }
             SettingsView.Reload();
             SettingsView.Show();
             SettingsView.Activate();
@@ -937,7 +947,8 @@ namespace MouseDock
         {
             _trayHover?.Pin();
             Settings.SurfaceMode = mode;
-            SaveSettings();
+            Settings.SurfaceHidden = false;
+            SaveWindowPositions();
             ApplySurface();
             SettingsView?.Reload();
         }
@@ -1200,7 +1211,8 @@ namespace MouseDock
             {
                 if (_exiting || window.Dispatcher.HasShutdownStarted || Taskbar != window) return;
                 Taskbar = CreateTaskbarWindow();
-                if (Settings.SurfaceMode == "taskbar") Taskbar.Show();
+                Taskbar.ShowActivated = false;
+                if (Settings.SurfaceMode == "taskbar" && !Settings.SurfaceHidden) Taskbar.Show();
             };
             return window;
         }

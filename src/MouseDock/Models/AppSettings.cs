@@ -59,9 +59,7 @@ namespace MouseDock.Models
         public bool ShowMini { get; set; } = true;
         public bool ShowIcon { get; set; } = true;
 
-        // 默认开启：绿色版解压就能用的人，通常就是希望它一直在托盘里显示电量。
-        // 启动时会由 AutoStart.Sync 把 Run 项对齐到当前 exe，搬目录也跟得上。
-        public bool AutoStart { get; set; } = true;
+        public bool AutoStart { get; set; }
 
         // 面板背景：theme（主题渐变）/ image（自定义壁纸，可来自 Wallpaper Engine 项目预览图）
         // 安全模式：关闭所有厂商通道写操作，只走标准 HID / GATT 读取
@@ -85,6 +83,7 @@ namespace MouseDock.Models
         public bool HasShownAbout { get; set; }
 
         /// <summary>界面形态三选一：dock（主面板）/ mini（迷你）/ icon（悬浮图标）。</summary>
+        public bool SurfaceHidden { get; set; }
         public string SurfaceMode { get; set; } = "taskbar";
 
         /// <summary>任务栏左侧/底部偏移，相对任务栏可用长度的百分比（0-100，v6 起；旧版是 DIP，启动时迁移）。</summary>
@@ -204,6 +203,7 @@ namespace MouseDock.Models
                 RefreshSeconds = RefreshSeconds,
                 LowBatteryWarn = LowBatteryWarn,
                 SurfaceMode = SurfaceMode,
+                SurfaceHidden = SurfaceHidden,
                 TaskbarOffset = TaskbarOffset,
                 TaskbarFollowIcons = TaskbarFollowIcons,
                 TaskbarIconOffset = TaskbarIconOffset,

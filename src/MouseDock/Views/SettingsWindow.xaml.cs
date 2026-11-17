@@ -378,7 +378,7 @@ namespace MouseDock.Views
         private void SetMode(string mode)
         {
             App.Settings.IconMode = mode;
-            App.SaveSettings();
+            App.Settings.IconStyle = mode switch { "character" => "photo", "mini" => "tile", _ => mode };
             App.Icon?.ApplyMode(mode, true);
             App.ShowIconIfNeeded();
         }
@@ -392,6 +392,8 @@ namespace MouseDock.Views
             };
             if (dlg.ShowDialog(this) != true) return;
             App.Settings.CharacterAsset = dlg.FileName;
+            App.Settings.IconMode = "character";
+            App.Settings.IconStyle = "photo";
             App.SaveSettings();
             App.Icon?.LoadCharacter();
             App.Icon?.ApplyMode("character", true);
@@ -408,6 +410,8 @@ namespace MouseDock.Views
             if (dlg.ShowDialog(this) != true) return;
             App.Settings.AnimatedPhotoBackground = false;
             App.Settings.PhotoAsset = dlg.FileName;
+            App.Settings.IconMode = "photo";
+            App.Settings.IconStyle = "photo";
             App.Settings.PhotoZoom = 1.0;
             App.Settings.PhotoOffsetX = 0;
             App.Settings.PhotoOffsetY = 0;

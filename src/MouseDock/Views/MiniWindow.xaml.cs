@@ -188,6 +188,7 @@ namespace MouseDock.Views
         {
             if (e.ChangedButton != MouseButton.Left) return;
             try { DragMove(); } catch { }
+            if (ReferenceEquals(App.Mini, this)) App.SaveWindowPositions();
         }
 
         private void OnContextMenu(object sender, MouseButtonEventArgs e)
