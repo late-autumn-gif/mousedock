@@ -108,7 +108,7 @@ internal static partial class BatteryReplay
                         device.Level is >= 0 and <= 100 ? device.Level : null, device.IsStale,
                         device.Connected, device.IsStale || (!device.Charging &&
                             !queries.Any(q => q.Receiver == receivers[device.Id] &&
-                                (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or "ExtraKeyboard:MchoseBy" or "ExtraMouse:RapooVt3Max" or ScyroxLegacyProtocol.Reader or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
+                                (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or "ExtraKeyboard:MchoseBy" or "ExtraMouse:RapooVt3Max" or "ExtraMouse:mchose-g3a" or "ExtraMouse:rapoo-vt7" or ScyroxLegacyProtocol.Reader or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
                             ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
                         device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
                         SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") :
@@ -280,6 +280,8 @@ internal static partial class BatteryReplay
         if (query.Protocol == "WindowsGameController") return ReplaySystemController(query);
         if (query.Protocol == "XInputBatteryDiagnostics") return ReplayXInputBattery(query);
         if (query.Protocol == ScyroxLegacyProtocol.Reader) return ReplayScyroxLegacy(query,collections);
+        if (query.Protocol is "ExtraMouse:mchose-g3a" or "ExtraMouse:rapoo-vt7")
+            return ReplayG3AVt7(query, collections);
         if (query.Protocol is "ExtraMouse:RapooVt3Max" or "ExtraHeadset:V9Pro" or "ExtraKeyboard:MchoseBy")
             return ReplayReportedTrio(query, collections);
         var channel = collections.FirstOrDefault(c => c.Interface == query.Interface &&

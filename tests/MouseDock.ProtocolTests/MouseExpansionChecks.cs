@@ -52,6 +52,82 @@ internal static class MouseExpansionChecks
         vt7Frame[7] = 0;
         Check(VendorProtocol.MouseExpansionDecode("rapoo-vt7", vt7Frame) == null, "VT7 offline percent rejected");
 
+        const string g3a = "mchose-g3a";
+        const string g3aName = "MCHOSE G3 A";
+        Check(ExtraDeviceRoutes.Primary(0xA8A5, 0x2255, g3aName) is { Family: g3a, Transport: "2.4G" },
+            "G3 A runs through the production extra device route");
+        Check(DeviceRoutes.IsKnown(0xA8A5, 0x2255, g3aName), "G3 A is admitted by the recognition gate");
+        Check(VendorProtocol.ExtraMouseFamily(0xA8A5, 0x2255, "MCHOSE G3") != g3a &&
+            VendorProtocol.ExtraMouseFamily(0xA8A4, 0x2255, g3aName) != g3a,
+            "G3 A rejects the shared-ID product and undocumented wired identity");
+        var g3aChannel = new HidDiscovery.VendorCollectionInfo
+        {
+            Vid = 0xA8A5, Pid = 0x2255, Product = g3aName, Path = "fixture&mi_02",
+            UsagePage = 0xFF01, Usage = 0x10, Input = 65, Output = 65, Feature = 0
+        };
+        Check(VendorProtocol.MouseExpansionChannel(g3a, g3aChannel), "G3 A exact collection");
+        g3aChannel.Feature = 1;
+        Check(!VendorProtocol.MouseExpansionChannel(g3a, g3aChannel), "G3 A rejects altered descriptor");
+        var g3aFrame = new byte[64];
+        g3aFrame[0] = 0xAA;
+        g3aFrame[1] = 0x30;
+        g3aFrame[8] = 0;
+        g3aFrame[9] = 1;
+        var expectedRequest = new byte[65];
+        new byte[] { 0, 0x55, 0x30, 0xA5, 0x0B, 0x2E, 1, 1, 1 }.CopyTo(expectedRequest, 0);
+        var g3aLink = new ReplayLink(_ => g3aFrame);
+        Check(VendorProtocol.MouseExpansionTransaction(g3a, 0xA8A5, 0x2255, g3aName, g3aLink)
+            is { Level: 0, Charging: true }, "G3 A accepts a fresh real zero and charging");
+        Check(g3aLink.Writes.Count == 2 && g3aLink.Writes.TrueForAll(packet =>
+            packet.AsSpan().SequenceEqual(expectedRequest)), "G3 A sends only the packaged fixed battery request twice");
+        int replies = 0;
+        var incomplete = new ReplayLink(_ => replies++ == 0 ? g3aFrame : Array.Empty<byte>());
+        Check(VendorProtocol.MouseExpansionTransaction(g3a, 0xA8A5, 0x2255, g3aName, incomplete).Level < 0,
+            "G3 A cannot publish a single response");
+        Check(!VendorProtocol.TryMchoseG3ABattery(g3aFrame.AsSpan(0, 63), out _, out _), "G3 A rejects short frames");
+        g3aFrame[8] = 101;
+        Check(!VendorProtocol.TryMchoseG3ABattery(g3aFrame, out _, out _), "G3 A percent range");
+        g3aFrame[8] = 100;
+        g3aFrame[9] = 2;
+        Check(!VendorProtocol.TryMchoseG3ABattery(g3aFrame, out _, out _), "G3 A charging field range");
+        g3aFrame[9] = 1;
+
+        Check(ExtraDeviceRoutes.Primary(0x24AE, 0x4613, "Rapoo Gaming Device") is
+            { Family: "rapoo-vt7", Transport: "USB" }, "VT7 wired route uses the new passive reader");
+        Check(ExtraDeviceRoutes.Primary(0x24AE, 0x1413, "Rapoo Gaming Device") is
+            { Family: "rapoo-vt7", Transport: "2.4G" }, "VT7 receiver keeps its passive route");
+        vt7Frame[7] = 2;
+        var vt7Link = new ReplayLink(_ => Array.Empty<byte>());
+        vt7Link.Enqueue(vt7Frame);
+        Check(VendorProtocol.ReadRapooVt7Status(vt7Link) is { Level: 42, Charging: true } &&
+            vt7Link.Writes.Count == 0, "VT7 publishes one validated current report without writes");
+        vt7Frame[7] = 0;
+        vt7Link.Enqueue(vt7Frame);
+        Check(VendorProtocol.ReadRapooVt7Status(vt7Link) is { Level: -1, Status: ReferenceBatteryProtocol.State.Sleep } &&
+            vt7Link.Writes.Count == 0, "VT7 offline status ignores the stored percent");
+        Check(VendorProtocol.ReadRapooVt7Status(vt7Link).Level < 0, "VT7 silent channel yields unknown");
+        vt7Frame[7] = 2;
+
+        BatteryReplay.Sample Capture(string stage, byte[] bytes) =>
+            new(stage, true, Length: bytes.Length, Hex: Convert.ToHexString(bytes));
+        var requestSample = Capture("g3a-request", expectedRequest);
+        var responseSample = Capture("g3a-response", g3aFrame);
+        var g3aCapture = new BatteryReplay.Query("g3a", 1, "ExtraMouse:mchose-g3a", "Charging", g3aName, 100,
+            [new("g3a-open", true), requestSample, responseSample, requestSample, responseSample]);
+        var g3aDescriptor = new BatteryReplay.Collection("g3a", 1, 0xA8A5, 0x2255, g3aName, 0xFF01,
+            0x10, 65, 65, 0, false, true, InterfaceLabel: "MI_02", ReportIds: "IN[00] OUT[00] FEATURE[]");
+        Check(BatteryReplay.Replay(g3aCapture, [g3aDescriptor]) is { Percent: 100, Charging: true }, "G3 A report import");
+        Check(BatteryReplay.Replay(g3aCapture, [g3aDescriptor with { Receiver = "other" }]).Percent == null &&
+            BatteryReplay.Replay(g3aCapture with { Samples = g3aCapture.Samples[..3] }, [g3aDescriptor]).Percent == null,
+            "G3 A replay rejects foreign instances and incomplete transactions");
+        var vt7Capture = new BatteryReplay.Query("vt7", null, "ExtraMouse:rapoo-vt7", "Charging", "Rapoo VT7", 42,
+            [new("vt7-open", true), Capture("vt7-status", vt7Frame)]);
+        var vt7Descriptor = new BatteryReplay.Collection("vt7", 1, 0x24AE, 0x4613, "Rapoo Gaming Device",
+            0xFF00, 2, 19, 19, 0, false, false, InterfaceLabel: "MI_01/COL_09", ReportIds: "IN[07] OUT[07] FEATURE[]");
+        Check(BatteryReplay.Replay(vt7Capture, [vt7Descriptor]) is { Percent: 42, Charging: true }, "VT7 wired report import");
+        Check(BatteryReplay.Replay(vt7Capture, [vt7Descriptor with { ReportIds = "IN[07] OUT[] FEATURE[]" }]).Percent == null,
+            "VT7 replay rejects changed report layout");
+
         var hechi = new byte[64];
         hechi[0] = 11; hechi[1] = 19; hechi[18] = 57;
         Check(VendorProtocol.MouseExpansionDecode("hechi", hechi)?.Level == 57, "HECHI percent18");
@@ -298,6 +374,7 @@ internal static class MouseExpansionChecks
         private byte[] feature=Array.Empty<byte>();
         public long Now { get; private set; }
         internal List<byte[]> Writes { get; } = new();
+        internal void Enqueue(byte[] report) => pending.Enqueue(report);
         internal bool FailInfinityClose { get; init; }
         public byte[] Read(int timeoutMs)
         {

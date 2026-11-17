@@ -1548,6 +1548,8 @@ namespace MouseDock.Services.Detection
                 }
                 else if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product))
                 { name = "迈从 V9 Pro"; kind = DeviceKind.Headset; physicalKey = "mchose-v9pro"; }
+                else if (VendorProtocol.IsMchoseG3A(Vid, Pid, Product))
+                { name = VendorProtocol.MchoseG3AName; kind = DeviceKind.Mouse; physicalKey = "mchose-g3a"; }
                 else if (VendorProtocol.IsRapooVt7(Vid, Pid))
                 { name = "雷柏 VT7"; kind = DeviceKind.Mouse; physicalKey = "rapoo-vt7"; }
                 else if (VendorProtocol.IsAulaF99(Vid, Pid, Product))

@@ -31,7 +31,8 @@ internal static partial class VendorProtocol
         ExtraMouseFamily(vid,pid,product) switch
         {
             "freq" or "freq-sc311" or "mloong" => vid == 0xA8A4 ? "USB" : "2.4G",
-            "rapoo-vt7" => "2.4G",
+            "mchose-g3a" => "2.4G",
+            "rapoo-vt7" => pid == 0x1413 ? "2.4G" : "USB",
             "nzxt" => pid == 0x2129 ? "USB" : "2.4G",
             "keychron" => pid == 0xD048 ? "USB" : "2.4G",
             "sora-v3" => pid == 0xE010 ? "USB" : "2.4G",
@@ -127,7 +128,8 @@ internal static partial class VendorProtocol
         "vgn-ld" or "vgn-master" or "vgn-se" or "keychron" or "nzxt" or
         "hecate" or "aula-v9" or "delux" or "x7" or "mchose4d" =>
             MouseExpansionReadOutput(family, vid, pid, link),
-        "rapoo" or "rapoo-short" or "rapoo-vt7" or "incott" or "sc900" or "delux-pro" or "x23-pro" =>
+        "rapoo-vt7" => ReadRapooVt7Status(link, link.Trace),
+        "rapoo" or "rapoo-short" or "incott" or "sc900" or "delux-pro" or "x23-pro" =>
             MouseExpansionReadPassive(family, pid, link),
         _ => MouseExpansionReadSession(family, vid, pid, product, link)
     };
@@ -167,7 +169,7 @@ internal static partial class VendorProtocol
                 if (!HidD_GetAttributes(handle, ref attributes) || attributes.VendorID != channel.Vid ||
                     attributes.ProductID != channel.Pid) throw new IOException("Opened mouse identity changed");
                 Revision = attributes.VersionNumber;
-                if(family is "freq" or "mloong" or "s9")
+                if(family is "freq" or "mloong" or "s9" or "mchose-g3a")
                 {
                     string openedProduct=HidDiscovery.ReadHidProduct(handle,channel.Path);
                     if(!ExtraMouseCandidate(channel.Vid,channel.Pid,openedProduct)||

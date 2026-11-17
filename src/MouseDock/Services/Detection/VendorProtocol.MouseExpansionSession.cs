@@ -21,6 +21,7 @@ internal static partial class VendorProtocol
         {
             var result=family switch
             {
+                "mchose-g3a" when IsMchoseG3A(vid, pid, product) => ReadMchoseG3ABattery(link, (link as MouseExpansionLink)?.Trace),
                 "s9" or "vk-m2" => MouseExpansionS9(family,pid,link),
                 "aula-x5" => MouseExpansionAula(link,inputId),
                 "bragi" => MouseExpansionBragi(link),

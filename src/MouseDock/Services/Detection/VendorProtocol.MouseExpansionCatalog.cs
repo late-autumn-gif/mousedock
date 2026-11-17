@@ -68,7 +68,7 @@ internal static partial class VendorProtocol
         if (vid == 0x5253 && pid==0x1020 && MouseExpansionName(product,"MCHOSE L7 Pro"))
             return "mchose-l7";
         if (vid == 0x24AE && MouseExpansionPid(pid,0x1870,0x1871,0x1872,0x1874,0x1876,0x186C)) return "rapoo-office";
-        if (vid == 0x24AE && pid == 0x1413) return "rapoo-vt7";
+        if (IsRapooVt7(vid, pid)) return "rapoo-vt7";
         if (vid == 0x24AE && pid == 0x1423) return "rapoo-short";
         if (vid == 0x24AE && pid == 0x14A5) return "rapoo-active";
         if (vid == 0x24AE && MouseExpansionPid(pid,0x1470,0x1412,0x14A2,0x14A7,0x1B0D,0x14A1,0x185A)) return "rapoo";
@@ -97,6 +97,7 @@ internal static partial class VendorProtocol
         if (vid == 0x35BB && pid == 0xD3FB || vid == 0x3554 &&
             MouseExpansionPid(pid,0xF5A0,0xF59F,0xF5B2,0xF5B3,0xF5B5,0xFB35,0xFB36,0xF515,0xFB45,0xFB47,0xFB48))
             return "x23-compx";
+        if (IsMchoseG3A(vid, pid, product)) return "mchose-g3a";
         if (vid is 0xA8A4 or 0xA8A5 && pid == 0x2255 && MouseExpansionFreq(product) != null) return "freq";
         if (vid == 0xA8A5 && pid == 0x2255 && MouseExpansionMloong(product) != null) return "mloong";
         if (vid == 0xA8A5 && pid == 0x2255) return "freq-sc311";
@@ -134,7 +135,9 @@ internal static partial class VendorProtocol
             "infinity100" or "aj159-pro" => At(2,0xFFFF,2),
             "infinity97" => MouseExpansionMi(c.Path,1) && c.Usage == 1 && c.UsagePage is 0xFF13 or 0xFF14,
             "steel" => At(3,0xFFC0,1), "incott" or "sc900" => At(-1,0xFF05,1),
-            "rapoo-vt7" => At(1,0xFF00,2) && c.Input == 19 && c.Output == 19 && c.Feature == 0,
+            "rapoo-vt7" => IsRapooVt7(c.Vid, c.Pid) && At(1,0xFF00,2) && c.Input == 19 && c.Output == 19 && c.Feature == 0,
+            "mchose-g3a" => IsMchoseG3A(c.Vid, c.Pid, c.Product) && At(2,0xFF01,0x10) &&
+                c.Input == 65 && c.Output == 65 && c.Feature == 0,
             "rapoo" or "rapoo-short" or "rapoo-active" => At(1,0xFF00,c.Usage) && c.Usage is 2 or 0x14,
             "rapoo-office" => At(1,0xFF00,0xE),
             "keychron" => MouseExpansionMi(c.Path,4), "nzxt" => At(-1,0xFFCA,1),
@@ -208,7 +211,8 @@ internal static partial class VendorProtocol
             "mchose-old" => l.Revision==0x1437&&F(21,0x11),
             "mchose-l7" => l.Input is 16 or 64&&l.Inputs.SetEquals(new byte[]{0x13}),
             "incott" or "sc900" => l.Input is 8 or 33 && l.Inputs.SetEquals(new byte[]{9}),
-            "rapoo-vt7" => l.Inputs.SetEquals(new byte[]{7}) && l.Outputs.SetEquals(new byte[]{7}),
+            "rapoo-vt7" => Io(19, 7) && l.Features.Count == 0,
+            "mchose-g3a" => Io(65, 0) && l.Features.Count == 0,
             "rapoo-short" => l.Input == 13 && l.Inputs.SetEquals(new byte[]{7}),
             "rapoo" => l.Input is 7 or 19 or 20 && l.Inputs.Count == 1,
             "rapoo-active" => l.Channel.Usage==2&&l.Input==19&&l.Inputs.SetEquals(new byte[]{7})&&l.Output==0&&l.Feature==0 ||
