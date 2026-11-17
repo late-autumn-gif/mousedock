@@ -123,7 +123,8 @@ internal static class DeviceRoutes
         if (VendorProtocol.IsRogOmni(vid, pid))
             return new Route { Reader = "RogOmni", Kind = DeviceKind.Other, Transport = "2.4G" };
         if (VendorProtocol.IsMchoseA7V2(vid, pid))
-            return new Route { Reader = "MchoseA7V2", Kind = DeviceKind.Mouse, Transport = "2.4G" };
+            return new Route { Reader = "MchoseA7V2", Kind = DeviceKind.Mouse,
+                Transport = VendorProtocol.IsMchoseA7V2Wired(vid, pid) ? "有线" : "2.4G" };
         if (VendorProtocol.IsMchoseModern(vid, pid))
             return new Route { Reader = "MchoseModern", Kind = DeviceKind.Mouse, Transport = "2.4G" };
         if (M137FeatureProtocol.IsCandidate(vid, pid, product))

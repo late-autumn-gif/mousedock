@@ -68,6 +68,7 @@ public sealed class DpiService
     private static bool FreshScan(DateTimeOffset capturedAt) =>
         capturedAt!=default&&capturedAt<=DateTimeOffset.UtcNow&&DateTimeOffset.UtcNow-capturedAt<=TimeSpan.FromSeconds(90);
     private static bool ReadOnlyMchose(DeviceInfo device,ushort vid,ushort pid) =>
+        !VendorProtocol.IsMchoseA7V2Wired(vid,pid)&&
         device.Dpi is >=50 and <=32000&&FreshScan(device.DpiCapturedAt)&&
         (VendorProtocol.IsMchoseA7V2(vid,pid)||VendorProtocol.IsMchoseG7(vid,pid,device.RawName));
     public bool Supports(DeviceInfo device) => Identity(device,out _,out ushort vid,out ushort pid)&&

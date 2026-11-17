@@ -12,9 +12,12 @@ namespace MouseDock.Services.Detection
             vid == 0x3837 && (pid == 0x1014 || pid == 0x1018);
 
         // 100B = A7 V2 Ultra+（官方型号 4021）；100A = A7 V2 Pro（实测型号 4018）。
-        // 两者共用 11/F9 Legacy Feature 查询，只有接收器 PID 和型号码不同。
+        // 4021 是 Ultra+ 的有线接口，共用 11/F9，但连接状态不同。
         internal static bool IsMchoseA7V2(ushort vid, ushort pid) =>
-            vid == 0x3837 && (pid == 0x100A || pid == 0x100B);
+            vid == 0x3837 && (pid == 0x100A || pid == 0x100B || pid == 0x4021);
+
+        internal static bool IsMchoseA7V2Wired(ushort vid, ushort pid) =>
+            vid == 0x3837 && pid == 0x4021;
 
         internal static string MchoseA7V2ModelName(ushort pid) =>
             pid == 0x100A ? "MCHOSE A7 V2 Pro" : "MCHOSE A7 V2 Ultra+";
@@ -34,7 +37,7 @@ namespace MouseDock.Services.Detection
             diagnostic = "";
             // Different MHUB generations use different commands. Never probe arbitrary vendor collections.
             if (IsMchoseA7V2(vid, pid))
-                return ReadMchoseA7V2().CopyTo(out charging, out diagnostic);
+                return ReadMchoseA7V2(pid).CopyTo(out charging, out diagnostic);
             if (IsMchoseModern(vid, pid)) { diagnostic="MHUB需本实例专用读取，不走旧编号全局枚举"; return -1; }
             if (vid == 0x5253 && pid == 0x1021)
             {
@@ -111,8 +114,14 @@ namespace MouseDock.Services.Detection
             // 型号与接收器 PID 绑定，避免同系列其它型号借用这条通道。
             int modelId = body[2] | body[3] << 8;
             int expectedModel = pid == 0x100A ? 0x4018 : 0x4021;
+            // 接收器必须确认无线在线；4021 有线实机的 connectMode/status 为 0。
+            bool wired = IsMchoseA7V2Wired(vid, pid);
+            int expectedConnection = wired ? 0 : 9;
+            // 实机从 99%/状态 1 变为 100%/状态 2；百分比仍取电量字段。
+            bool wiredFullResponse = wired && body[9] == 100 && body[10] == 2;
             if (a7V2 && (report.Length != 21 || bodyVid != 0x3837 ||
-                modelId != expectedModel || (body[8] & 0x0F) != 9 || body[10] > 1)) return false;
+                modelId != expectedModel || (body[8] & 0x0F) != expectedConnection ||
+                (body[10] > 1 && !wiredFullResponse))) return false;
             if ((bodyVid != 0x5253 && bodyVid != 0x3837) ||
                 ((body[8] & 7) == 1 && (body[8] & 8) == 0) || body[9] > 100) return false;
             level = body[9];
@@ -130,45 +139,42 @@ namespace MouseDock.Services.Detection
             return request;
         }
 
-        private static MchoseResult ReadMchoseA7V2()
+        private static MchoseResult ReadMchoseA7V2(ushort pid)
         {
             string reason = "未找到 A7 V2 系列的 FF01/0001 接口";
-            foreach (ushort receiver in new ushort[] { 0x100B, 0x100A })
+            string model = MchoseA7V2ModelName(pid);
+            foreach (var node in HidProbe.Enumerate(0x3837, pid))
             {
-                string model = MchoseA7V2ModelName(receiver);
-                foreach (var node in HidProbe.Enumerate(0x3837, receiver))
+                if (!IsMchoseA7V2Interface(node)) continue;
+                IntPtr raw = CreateFile(node.Path, GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                if (raw == IntPtr.Zero || raw == new IntPtr(-1))
                 {
-                    if (!IsMchoseA7V2Interface(node)) continue;
-                    IntPtr raw = CreateFile(node.Path, GENERIC_READ | GENERIC_WRITE,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-                    if (raw == IntPtr.Zero || raw == new IntPtr(-1))
+                    reason = model + "：无法打开电量接口";
+                    continue;
+                }
+                using var handle = new SafeFileHandle(raw, ownsHandle: true);
+                var request = BuildMchoseA7V2Request();
+                reason = model + "：未取得有效状态应答（设备可能休眠或接口被占用）";
+                for (int attempt = 0; attempt < 6; attempt++)
+                {
+                    // 每次重试都重新发查询。本机实测第一次 GetFeature 常拿到缓存/垃圾帧，
+                    // 第二次才回有效状态；只在循环外发一次 SetFeature 会让重试永远读到旧内容。
+                    if (!HidD_SetFeature(raw, request, request.Length))
                     {
-                        reason = model + "：无法打开电量接口";
+                        reason = model + "：11/F9 电量查询发送失败";
+                        Thread.Sleep(80);
                         continue;
                     }
-                    using var handle = new SafeFileHandle(raw, ownsHandle: true);
-                    var request = BuildMchoseA7V2Request();
-                    reason = model + "：未取得有效状态应答（设备可能休眠或接口被占用）";
-                    for (int attempt = 0; attempt < 6; attempt++)
-                    {
-                        // 每次重试都重新发查询。本机实测第一次 GetFeature 常拿到缓存/垃圾帧，
-                        // 第二次才回有效状态；只在循环外发一次 SetFeature 会让重试永远读到旧内容。
-                        if (!HidD_SetFeature(raw, request, request.Length))
-                        {
-                            reason = model + "：11/F9 电量查询发送失败";
-                            Thread.Sleep(80);
-                            continue;
-                        }
-                        Thread.Sleep(100);
-                        // 集合的 Feature 报告是 65 字节；HidD_GetFeature 的缓冲区必须与
-                        // FeatureReportByteLength 一致，否则直接返回 Win32=87。
-                        var response = new byte[Math.Max(21, (int)node.Caps.FeatureReportByteLength)];
-                        response[0] = 0x11;
-                        if (HidD_GetFeature(raw, response, response.Length) &&
-                            TryParseMchoseLegacy(response.AsSpan(0, Math.Min(21, response.Length)),
-                                node.Vid, node.Pid, out int level, out bool charging))
-                            return new MchoseResult(level, charging, model + " Feature 11/F9");
-                    }
+                    Thread.Sleep(100);
+                    // 集合的 Feature 报告是 65 字节；HidD_GetFeature 的缓冲区必须与
+                    // FeatureReportByteLength 一致，否则直接返回 Win32=87。
+                    var response = new byte[Math.Max(21, (int)node.Caps.FeatureReportByteLength)];
+                    response[0] = 0x11;
+                    if (HidD_GetFeature(raw, response, response.Length) &&
+                        TryParseMchoseLegacy(response.AsSpan(0, Math.Min(21, response.Length)),
+                            node.Vid, node.Pid, out int level, out bool charging))
+                        return new MchoseResult(level, charging, model + " Feature 11/F9");
                 }
             }
             return new MchoseResult(-1, false, "MCHOSE " + reason);
