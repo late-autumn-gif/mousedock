@@ -61,6 +61,7 @@ namespace MouseDock.Services.Detection
                     device.Connected = merged.Connected;
                     device.Level = merged.Level >= 0 ? merged.Level : -1;
                     device.BatteryBand = merged.BatteryBand;
+                    device.Millivolts = merged.Millivolts;
                     // 换电池的型号（G304/G305、G602/G603、办公 Nano 鼠）没有充电状态，
                     // 别让任何读取路径把「电量低」画成「充电中」。
                     device.Charging = merged.Charging && !VendorMap.IsReplaceableBattery(merged.Name);
@@ -86,7 +87,7 @@ namespace MouseDock.Services.Detection
                         RawName = d.RawName, ConfirmedModel = d.ConfirmedModel, InterfaceDiscovered = d.InterfaceDiscovered, ReceiverDiscovered = d.ReceiverDiscovered, PeripheralConfirmed = d.PeripheralConfirmed, HandledByLabel = d.HandledByLabel, Dpi = d.Dpi,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
-                        Connected = d.Connected, Level = d.Level, BatteryBand = d.BatteryBand, Charging = d.Charging, ChargeFull = d.ChargeFull, IsStale = d.IsStale,
+                        Connected = d.Connected, Level = d.Level, BatteryBand = d.BatteryBand, Millivolts = d.Millivolts, Charging = d.Charging, ChargeFull = d.ChargeFull, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds.ToArray()
                     })
                     .ToList();
@@ -146,7 +147,7 @@ namespace MouseDock.Services.Detection
                 Kind = best.Kind,
                 Transport = best.Transport,
                 Level = best.Level,
-                BatteryBand = best.BatteryBand,
+                BatteryBand = best.BatteryBand, Millivolts = best.Millivolts,
                 Dpi = !best.IsStale && best.Dpi > 0 ? best.Dpi : -1,
                 DpiSettings = best.DpiSettings,
                 Charging = best.Charging,
