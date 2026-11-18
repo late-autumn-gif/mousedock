@@ -24,7 +24,7 @@ internal static partial class BatteryReplay
         int? ObservedPercent, Sample[] Samples);
     internal sealed record Observation(string Receiver, string Model, string Transport, int? Percent, bool Stale, bool Connected = true, bool? Charging = null, bool? Full = null,
         string Reader = null, bool ReceiverPresent = false, bool PeripheralConfirmed = false, string Product = null,
-        string Name = null, string Source = null, string BatteryBand = null);
+        string Name = null, string Source = null, string BatteryBand = null, int? Millivolts = null);
     internal sealed record Capture(int Schema, string AppVersion, Guid BuildId, string WindowsVersion, string ScanError,
         DateTimeOffset StartedAt, DateTimeOffset FinishedAt,
         Collection[] Collections, Query[] Queries, Observation[] Observations);
@@ -111,8 +111,8 @@ internal static partial class BatteryReplay
                                 (q.Protocol is "Sc580Receiver" or "Neon75Feature" or "Zg4" or "ExtraKeyboard:MchoseBy" or "ExtraMouse:RapooVt3Max" or "ExtraMouse:mchose-g3a" or "ExtraMouse:rapoo-vt7" or ScyroxLegacyProtocol.Reader or VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute) && q.ObservedPercent.HasValue))
                             ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
                         device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
-                        SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") :
-                            !string.IsNullOrEmpty(device.BatteryBand) ? "system-relative" : "unknown", device.BatteryBand)).ToArray());
+                        SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : device.Millivolts.HasValue ? "voltage-estimate" : "reader") :
+                            !string.IsNullOrEmpty(device.BatteryBand) ? "system-relative" : "unknown", device.BatteryBand, device.Millivolts)).ToArray());
         }
     }
 

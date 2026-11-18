@@ -21,6 +21,29 @@ internal static class OriginalGpwProtocol
         IsCandidate(vid,pid) && page == 0xFF00 && input == 20 && output == 20 && feature == 0 &&
         (pid == 0xC539 ? usage == 2 : usage is 1 or 2);
 
+    // Generic HID++ voltage landmarks from Solaar's estimate_battery_level_percentage.
+    // This is an approximation for the G403, rounded to 5% to reflect that uncertainty.
+    private static readonly (int Mv, int Percent)[] VoltageLandmarks =
+    [
+        (3500, 0), (3579, 2), (3646, 5), (3671, 10), (3717, 20), (3751, 30),
+        (3778, 40), (3811, 50), (3859, 60), (3922, 70), (3989, 80), (4067, 90), (4186, 100)
+    ];
+
+    internal static int EstimateG403Percent(int mv)
+    {
+        if (mv <= VoltageLandmarks[0].Mv) return 0;
+        for (int i = 1; i < VoltageLandmarks.Length; i++)
+        {
+            var upper = VoltageLandmarks[i];
+            if (mv > upper.Mv) continue;
+            var lower = VoltageLandmarks[i - 1];
+            double fraction = (double)(mv - lower.Mv) / (upper.Mv - lower.Mv);
+            double estimate = lower.Percent + fraction * (upper.Percent - lower.Percent);
+            return (int)Math.Round(estimate / 5, MidpointRounding.AwayFromZero) * 5;
+        }
+        return 100;
+    }
+
     internal static bool TryVoltage(ReadOnlySpan<byte> frame, out int level, out bool charging)
     {
         level = -1; charging = false;
@@ -155,12 +178,13 @@ internal static class OriginalGpwProtocol
             byte voltage = Feature(slot, 0x1001);
             if (voltage == 0) return reading;
             static int Millivolts(byte[] frame) => frame == null ? 0 : (frame[4] << 8) | frame[5];
-            if (Millivolts(Call(slot, voltage, 0)) is < 2800 or > 4500) return reading;
+            var first = Call(slot, voltage, 0);
+            if (Millivolts(first) is < 2800 or > 4500 || (first[6] & 0x40) != 0) return reading;
             var sample = Call(slot, voltage, 0);
             int mv = Millivolts(sample);
             if (mv is < 2800 or > 4500 || (sample[6] & 0x40) != 0) return reading;
-            return reading with { Millivolts = mv, Status = ReferenceBatteryProtocol.State.Online,
-                Diagnostic = $"G403 HID++ 1001 实测 {mv} mV" };
+            return reading with { Millivolts = mv, Level = EstimateG403Percent(mv), Status = ReferenceBatteryProtocol.State.Online,
+                Diagnostic = $"G403 HID++ 1001 电压估算，实测 {mv} mV" };
         }
 
         private ReferenceBatteryProtocol.Reading ReadG603(byte slot, string name)

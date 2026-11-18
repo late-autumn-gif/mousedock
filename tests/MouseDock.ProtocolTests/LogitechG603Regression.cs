@@ -46,8 +46,15 @@ internal static class LogitechG603Regression
         Check(sample.Model == OriginalGpwProtocol.G403Model && sample.Level == 90 && sample.Charging &&
             sample.Dpi is { Writable: false } && sample.Dpi.Values.Single() == 1600, "G403 percentage and current sensor DPI");
         sample = OriginalGpwProtocol.Read(new Link { Name = g403, HasBattery = false }, 0xC539, true);
-        Check(sample.Millivolts == 3860 && sample.Level == -1 && sample.Dpi?.Values.Single() == 1600,
-            "Voltage-only G403 preserves hardware units");
+        Check(sample.Millivolts == 3860 && sample.Level == 60 && sample.Dpi?.Values.Single() == 1600,
+            "Voltage-only G403 preserves mV and estimates percentage");
+        var card = new DeviceInfo { Level = sample.Level, Millivolts = sample.Millivolts };
+        Check(card.LevelText == "约60%" && card.MiniText == "约60%" && card.StatusText.Contains("3860"), "Estimated display and voltage detail");
+        card.Millivolts = null;
+        Check(card.LevelText == "60%", "Direct percentage stays unmarked");
+        Check(OriginalGpwProtocol.EstimateG403Percent(3400) == 0 &&
+              OriginalGpwProtocol.EstimateG403Percent(4200) == 100 &&
+              OriginalGpwProtocol.EstimateG403Percent(3890) == 65, "Endpoint clamp and interpolation");
         sample = OriginalGpwProtocol.Read(new Link { Name = g403, HasBattery = false, Voltage = 0 }, 0xC539, true);
         Check(sample.Millivolts == null && sample.Level == -1 && sample.Dpi?.Values.Single() == 1600,
             "No battery reading cannot hide valid DPI");

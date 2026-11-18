@@ -302,7 +302,7 @@ namespace MouseDock.Services
         private readonly List<DeviceInfo> _mirror = new List<DeviceInfo>();
         private readonly Dictionary<string, int> _misses = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _absent = new Dictionary<string, int>();
-        private readonly Dictionary<string, (int Level, DateTime At)> _lastKnown = new Dictionary<string, (int, DateTime)>();
+        private readonly Dictionary<string, (int Level, DateTime At, int? Millivolts)> _lastKnown = new();
         private int _refreshSeconds = 5;
         private DevicePreferences _preferences;
         private bool _applyingPreferences;
@@ -483,10 +483,11 @@ namespace MouseDock.Services
                     misses++;
                     _misses[incoming.Id] = misses;
                     incoming.Level = existing.Level;
+                    incoming.Millivolts = existing.Millivolts;
                     incoming.Charging = existing.Charging;
                     incoming.IsStale = true; // Cached charge flags must not keep a live charging animation running.
                 }
-                else if ((!string.IsNullOrEmpty(incoming.BatteryBand) || incoming.Millivolts.HasValue) && !incoming.Millivolts.HasValue && !incoming.IsStale)
+                else if (!string.IsNullOrEmpty(incoming.BatteryBand) && !incoming.IsStale)
                 {
                     _misses[incoming.Id] = 0;
                     _lastKnown.Remove(incoming.Id);
@@ -495,7 +496,7 @@ namespace MouseDock.Services
                 {
                     _misses[incoming.Id] = 0;
                     incoming.IsStale = false;
-                    _lastKnown[incoming.Id] = (incoming.Level, DateTime.UtcNow);
+                    _lastKnown[incoming.Id] = (incoming.Level, DateTime.UtcNow, incoming.Millivolts);
                 }
 
                 _absent[incoming.Id] = 0;
@@ -509,6 +510,7 @@ namespace MouseDock.Services
                         && (DateTime.UtcNow - last.At).TotalMinutes < 10)
                     {
                         incoming.Level = last.Level;
+                        incoming.Millivolts = last.Millivolts;
                         incoming.IsStale = true;
                     }
                     _mirror.Add(incoming);

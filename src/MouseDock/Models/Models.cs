@@ -146,7 +146,7 @@ namespace MouseDock.Models
                 Raise(nameof(BatteryBand)); Raise(nameof(LevelText)); Raise(nameof(MiniText)); Raise(nameof(StatusText)); }
         }
 
-        public string LevelText => !_connected ? "--" : (_level >= 0 ? _level + "%" : Millivolts.HasValue ? $"{Millivolts / 1000.0:F2} V" : _batteryBand.Length > 0 ? "档位" : "—");
+        public string LevelText => !_connected ? "--" : (_level >= 0 ? (Millivolts.HasValue ? "约" : "") + _level + "%" : _batteryBand.Length > 0 ? "档位" : "—");
 
         public double LevelFraction => _level >= 0 ? Math.Clamp(_level, 0, 100) / 100.0 : 0;
 
@@ -168,7 +168,7 @@ namespace MouseDock.Models
         public double ValueOpacity => _stale ? 0.45 : 1.0;
 
         /// <summary>迷你格用的短文案：有电量为 86%，否则明确写「未知」。</summary>
-        public string MiniText => !_connected ? "离线" : (_level >= 0 ? _level + "%" : Millivolts.HasValue ? $"{Millivolts / 1000.0:F2} V" : _batteryBand.Length > 0 ? "档位" : "未知");
+        public string MiniText => !_connected ? "离线" : (_level >= 0 ? (Millivolts.HasValue ? "约" : "") + _level + "%" : _batteryBand.Length > 0 ? "档位" : "未知");
 
         public string KindLabel => Kind switch
         {
@@ -197,7 +197,7 @@ namespace MouseDock.Models
         public bool HasChargeMark => IsFullActive;
         public string ChargeMark => IsFullActive ? "✓" : "";
         public string StatusText => !_connected ? "待机" : _stale ? "已过期 · 上次读数待刷新" :
-            _level < 0 && Millivolts.HasValue ? $"电池电压 {Millivolts} mV" :
+            Millivolts.HasValue ? $"电压估算 · {Millivolts} mV" :
             _level < 0 && _batteryBand.Length > 0 ? "系统电量读数 " + _batteryBand + (_charging ? " · 充电中" : " · 非精确百分比") :
             _chargeFull ? "已连接 · 已充满" : _charging ? "已连接 · 充电中" : _level < 0 ? "电量暂不可用" : "已连接";
 
