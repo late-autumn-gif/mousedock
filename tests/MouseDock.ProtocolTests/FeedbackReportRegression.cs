@@ -106,6 +106,25 @@ internal static class FeedbackReportRegression
             }
             finally { File.Delete(file); }
         }
+        string guidedPath = Path.Combine(Path.GetTempPath(), $"mousedock-guided-{Guid.NewGuid():N}.zip");
+        try
+        {
+            var note = new FeedbackService.PhaseNote("接入充电线后", "用户填写型号", "USB 有线", 37, "未知", DateTimeOffset.UtcNow);
+            var phase = new FeedbackService.AdaptationPhase(BatteryReplay.EntryName, note, null, true, new[] { query.Receiver });
+            var result = FeedbackService.TryExportReport(new AppSettings(), devices, guidedPath, devices[0],
+                new[] { single }, phases: new[] { phase });
+            Check(result.Succeeded && result.MailSubject!.Contains(note.Model), "Guided feedback subject");
+            using var archive = ZipFile.OpenRead(guidedPath);
+            using var manifest = JsonDocument.Parse(archive.GetEntry("report.json")!.Open());
+            var item = manifest.RootElement.GetProperty("AdaptationPhases")[0];
+            Check(manifest.RootElement.GetProperty("Schema").GetInt32() == 3 &&
+                archive.GetEntry(item.GetProperty("Entry").GetString()!) != null, "Phase resolves to archived sample");
+            Check(item.GetProperty("User").GetProperty("ReferencePercent").GetInt32() == 37 &&
+                item.GetProperty("User").GetProperty("PowerState").GetString() == "未知", "Reference stays separate from observed state");
+            using var replay = JsonDocument.Parse(BatteryReplay.ReplayFile(guidedPath));
+            Check(replay.RootElement.GetProperty("Results")[0].GetProperty("Percent").GetInt32() == 87, "Guided reports support offline replay");
+        }
+        finally { File.Delete(guidedPath); }
         return checks;
     }
 }

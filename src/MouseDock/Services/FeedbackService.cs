@@ -166,7 +166,7 @@ namespace MouseDock.Services
             Window owner, AppSettings settings, IEnumerable<DeviceInfo> detected)
         {
             var detectedList = detected?.ToList() ?? new List<DeviceInfo>();
-            var selected = Views.ReportDevicePicker.Pick(owner, detectedList, out bool canceled, out bool cableConnected);
+            var selected = Views.ReportDevicePicker.Pick(owner, detectedList, out bool canceled, out bool cableConnected, out bool guided);
             if (canceled) return ReportExportResult.CanceledByUser;
 
             string target = AskSavePath(owner, selected);
@@ -178,8 +178,63 @@ namespace MouseDock.Services
             var preferences = App.Battery?.Preferences ?? new DevicePreferences(settings ?? new AppSettings());
             var scope = selected == null ? null : DevicePreferences.Keys(selected);
             bool safeMode = settings?.SafeMode == true;
+            if (guided)
+            {
+                var rounds = new List<Detection.BatteryReplay.Capture>();
+                var phases = new List<AdaptationPhase>();
+                var phaseTarget = selected;
+                while (phases.Count < 3)
+                {
+                    PhaseNote note;
+                    try { note = Views.AdaptationPrompt.Show(owner, phases.Count, phaseTarget, phases.FirstOrDefault()?.User.Model, out phaseTarget); }
+                    catch (OperationCanceledException) { return ReportExportResult.CanceledByUser; }
+                    if (note == null) break;
+
+                    var phaseScope = phaseTarget == null ? null : DevicePreferences.Keys(phaseTarget);
+                    var capture = await Task.Run(() =>
+                    {
+                        lock (CaptureGate)
+                        {
+                            Detection.HidDiscovery.Enumerate(preferences, phaseScope, out var round, aliases, safeMode);
+                            return round;
+                        }
+                    });
+                    var ble = await ReadSelectedBleAsync(phaseTarget);
+                    bool fresh = capture.Observations.Any(o => o.Connected && !o.Stale && o.Percent.HasValue)
+                        || ble?.Percent != null;
+                    if (!fresh)
+                    {
+                        var action = MessageBox.Show("本阶段未取得新的百分比读数，接口及失败信息仍可用于适配。是否重新采集此阶段？",
+                            "适配新设备", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                        if (action == MessageBoxResult.Yes) continue;
+                    }
+                    phases.Add(new(ReplayEntry(rounds.Count), note, ble, fresh, phaseScope?.Select(k => Detection.BatteryReplay.Alias(aliases, k)).ToArray()));
+                    rounds.Add(capture);
+                    if (note.PowerState == "不支持充电") break;
+                }
+                return await Task.Run(() => TryExportReport(settings, null, target, selected,
+                    rounds.ToArray(), snapshot, snapshotAt, phases: phases.ToArray()));
+            }
             return await Task.Run(() => TryExportReport(settings, null, target, selected,
                 CaptureRounds(preferences, scope, safeMode, aliases), snapshot, snapshotAt, cableConnected)).ConfigureAwait(true);
+        }
+
+        internal sealed record PhaseNote(string Stage, string Model, string Transport, int? ReferencePercent,
+            string PowerState, DateTimeOffset MarkedAt);
+        internal sealed record BleSample(DateTimeOffset At, int? Percent, string Status);
+        internal sealed record AdaptationPhase(string Entry, PhaseNote User, BleSample UncachedGattBattery, bool AnyFreshPercent, string[] SelectedAliases);
+
+        private static async Task<BleSample> ReadSelectedBleAsync(DeviceInfo selected)
+        {
+            if (selected == null || !selected.RecognitionEnabled || selected.Transport != "蓝牙 LE") return null;
+            var ids = DevicePreferences.Keys(selected).Where(k => k.StartsWith("ble-", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (ids.Length != 1 || !ulong.TryParse(ids[0].Substring(4), System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out ulong address)) return null;
+            var reading = await Detection.BleBattery.ReadAsync(address, "");
+            int? percent = reading.Level is >= 0 and <= 100 ? reading.Level : null;
+            // Exception messages can contain OS device paths. Export the error category only.
+            return new(DateTimeOffset.UtcNow, percent, reading.Reason.Split(':')[0]);
         }
 
         internal static Detection.BatteryReplay.Capture[] CaptureRounds(
@@ -217,7 +272,7 @@ namespace MouseDock.Services
         /// </summary>
         public static ReportExportResult TryExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected,
                                                          string zipPath = null, DeviceInfo target = null,
-                                                         Detection.BatteryReplay.Capture[] rounds = null, DisplayReading[] snapshot = null, DateTimeOffset? snapshotAt = null, bool cableConnected = false)
+                                                         Detection.BatteryReplay.Capture[] rounds = null, DisplayReading[] snapshot = null, DateTimeOffset? snapshotAt = null, bool cableConnected = false, AdaptationPhase[] phases = null)
         {
             string resolvedTarget = null;
             string temporaryPath = null;
@@ -251,10 +306,12 @@ namespace MouseDock.Services
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    AddText(zip, "summary.txt", BuildSummary(settings, target != null, snapshot, rounds, series, cableConnected));
+                    AddText(zip, "summary.txt", BuildSummary(settings, target != null, snapshot, rounds, series, cableConnected) +
+                        (phases == null ? "" : string.Join(Environment.NewLine, phases.Select(p =>
+                            $"用户标注 {p.User.Stage}：{p.User.Model} / {p.User.Transport} / {p.User.PowerState} / 参考电量 {p.User.ReferencePercent?.ToString() ?? "未知"}；样本 {p.Entry}"))));
                     AddText(zip, "report.json", JsonSerializer.Serialize(new
                     {
-                        Schema = 2, Scope = target == null ? "all" : "single",
+                        Schema = phases == null ? 2 : 3, AdaptationPhases = phases, Scope = target == null ? "all" : "single",
                         AppVersion = UpdateService.CurrentVersionText,
                         WindowsVersion = Environment.OSVersion.VersionString,
                         SafeMode = settings?.SafeMode == true, RefreshSeconds = settings?.RefreshSeconds,
@@ -274,7 +331,9 @@ namespace MouseDock.Services
                 // 这里会抛 IOException，但至少不会留下一份半截的坏 zip。
                 File.Move(temporaryPath, resolvedTarget, overwrite: true);
                 temporaryPath = null;
-                return ReportExportResult.Ok(resolvedTarget);
+                var first = phases?.FirstOrDefault()?.User;
+                return ReportExportResult.Ok(resolvedTarget, first == null ? null :
+                    $"MouseDock 新设备适配｜{first.Model}｜{first.Transport}");
             }
             catch (Exception ex)
             {
@@ -339,12 +398,12 @@ namespace MouseDock.Services
             Detection.BatteryReplay.Capture[] rounds, ReadingSeries[] series, bool cableConnected)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("MouseDock 设备诊断报告 v2");
+            sb.AppendLine("MouseDock 设备诊断报告");
             sb.AppendLine($"版本: {UpdateService.CurrentVersionText} / Windows: {Environment.OSVersion.VersionString}");
             sb.AppendLine($"范围: {(single ? "单设备（按实例限定）" : "全部设备")}");
             if (cableConnected) sb.AppendLine("用户标注: 插线后采样。");
             sb.AppendLine($"安全模式: {(settings?.SafeMode == true ? "开" : "关")}；应用刷新: {settings?.RefreshSeconds} 秒");
-            sb.AppendLine("界面快照仅记录采样前的显示状态；系统手柄另采集有界电池报告，其他非 HID 来源仅记录界面快照。");
+            sb.AppendLine("界面快照仅记录采样前的显示状态；系统手柄另采集有界电池报告，新设备分阶段报告另列所选 BLE 设备的 GATT 读数。");
             foreach (var item in snapshot)
                 sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} ({item.Freshness})");
             for (int i = 0; i < rounds.Length; i++)
@@ -372,80 +431,27 @@ namespace MouseDock.Services
         /// <summary>
         /// 用系统默认邮件客户端写一封反馈邮件。附件需要手动添加。
         /// </summary>
-        public static bool OpenFeedbackMail(string reportPath = null, string userText = null)
+        public static void OpenFeedbackMail(ReportExportResult report)
         {
+            string subject = report?.MailSubject ?? $"MouseDock {UpdateService.CurrentVersionText} 反馈";
+            string body = $"MouseDock {UpdateService.CurrentVersionText} / {Environment.OSVersion.VersionString}";
+            if (report?.Succeeded == true)
+                body += "\r\n请附上诊断报告：" + Path.GetFileName(report.Path);
             try
             {
-                string version = UpdateService.CurrentVersionText;
-                string subject = "MouseDock " + version + " 反馈";
-
-                var body = new StringBuilder();
-                body.AppendLine("（这条下面写你的问题和建议）");
-                body.AppendLine();
-                body.AppendLine(userText ?? "");
-                body.AppendLine();
-                body.AppendLine("---------- 以下自动生成，请勿删除 ----------");
-                body.AppendLine("版本: " + version);
-                body.AppendLine("系统: " + Environment.OSVersion.VersionString);
-                body.AppendLine();
-
-                if (!string.IsNullOrEmpty(reportPath) && File.Exists(reportPath))
-                {
-                    body.AppendLine("错误报告已生成，请把它作为附件加入邮件：");
-                    body.AppendLine(reportPath);
-                    body.AppendLine();
-                }
-
-                body.AppendLine("如果设备电量显示「—」，附上错误报告最有用。");
-
-                // 把收件人、主题、正文全部塞进剪贴板
-                string clip = "收件人: " + ContactEmail + "\r\n"
-                            + "主题: " + subject + "\r\n"
-                            + "\r\n"
-                            + body.ToString();
-                try { System.Windows.Clipboard.SetText(clip); } catch { }
-
-                // 直接打开网页版 QQ 邮箱
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "https://mail.qq.com/",
-                    UseShellExecute = true
-                });
-
-                return true;
+                string url = $"mailto:{ContactEmail}?subject={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(body)}";
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
             catch
             {
-                return false;
+                bool copied = false;
+                try { Clipboard.SetText($"收件人：{ContactEmail}\r\n主题：{subject}\r\n{body}"); copied = true; }
+                catch (System.Runtime.InteropServices.ExternalException) { }
+                MessageBox.Show($"请在网页邮箱中写信给 {ContactEmail}，并附上已保存的报告。"
+                    + (copied ? "\n邮件信息已复制到剪贴板。" : ""), "MouseDock 反馈");
+                try { Process.Start(new ProcessStartInfo("https://mail.qq.com/") { UseShellExecute = true }); }
+                catch (Exception) { /* The recipient was displayed above. */ }
             }
-        }
-
-        /// <summary>
-        /// 打开系统默认邮件客户端（备用方案）。
-        /// </summary>
-        public static bool OpenFeedbackMailClient(string reportPath = null)
-        {
-            try
-            {
-                string subject = "MouseDock " + UpdateService.CurrentVersionText + " 反馈";
-                var body = new StringBuilder();
-                body.AppendLine("（这条下面写你的问题和建议）");
-                body.AppendLine();
-
-                if (!string.IsNullOrEmpty(reportPath) && File.Exists(reportPath))
-                {
-                    body.AppendLine("错误报告请作为附件加入：");
-                    body.AppendLine(reportPath);
-                }
-
-                string url = "mailto:" + ContactEmail
-                           + "?subject=" + Uri.EscapeDataString(subject)
-                           + "&body=" + Uri.EscapeDataString(body.ToString());
-
-                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-                return true;
-            }
-            catch { return false; }
         }
 
         /// <summary>
@@ -590,7 +596,9 @@ namespace MouseDock.Services
 
         public static readonly ReportExportResult CanceledByUser = new ReportExportResult { Canceled = true };
 
-        public static ReportExportResult Ok(string path) => new ReportExportResult { Path = path };
+        public string MailSubject { get; private set; }
+
+        public static ReportExportResult Ok(string path, string subject = null) => new ReportExportResult { Path = path, MailSubject = subject };
 
         public static ReportExportResult Failed(ReportExportFailureKind kind, string target,
                                                 string detail, Exception ex = null)

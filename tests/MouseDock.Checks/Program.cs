@@ -522,7 +522,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         try
         {
-            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null, null, null, false])!;
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null, null, null, false, null])!;
             string kind = result.GetType().GetProperty("FailureKind")!.GetValue(result)!.ToString()!;
             Require(kind == "WriteFailed", $"A directory target must fail at the write step, got {kind}.");
 
@@ -546,7 +546,7 @@ internal static class Program
             string blocked = Path.Combine(dir, "blocked");
             File.WriteAllText(blocked, "x");
             var result = tryExport.Invoke(null,
-                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null, null, null, false])!;
+                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null, null, null, false, null])!;
             string log = result.GetType().GetProperty("LogPath")!.GetValue(result) as string ?? "";
             Require(!string.IsNullOrEmpty(log), "A failed export must report where its log went.");
             Require(File.Exists(log), $"The diagnostic log must exist, got {log}.");

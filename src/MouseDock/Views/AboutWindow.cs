@@ -21,7 +21,7 @@ namespace MouseDock.Views
         /// exportReport 拿到窗口本身当所有者，好让「另存为」对话框压在它上面。
         /// </summary>
         public static void Show(Window owner, bool isFirstRun,
-            Func<Window, Task<ReportExportResult>> exportReport, Action<string> openFeedback)
+            Func<Window, Task<ReportExportResult>> exportReport, Action<ReportExportResult> openFeedback)
         {
             var win = new Window
             {
@@ -168,7 +168,7 @@ namespace MouseDock.Views
                             MessageBoxButton.OK, MessageBoxImage.Warning);
 
                     // 报告写不进去也得让人说话
-                    openFeedback?.Invoke(result?.Path);
+                    openFeedback?.Invoke(result);
                 }
                 catch (Exception ex)
                 {
