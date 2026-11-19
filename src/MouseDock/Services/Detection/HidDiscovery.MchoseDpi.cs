@@ -18,6 +18,7 @@ public static partial class HidDiscovery
         foreach (var b in buckets.Values)
         {
             if (safeMode || b.Battery < 0) continue;
+            if (VendorProtocol.IsMchoseA7V2Wired(b.Vid, b.Pid)) continue;
             if (!VendorProtocol.IsMchoseA7V2(b.Vid, b.Pid) &&
                 !VendorProtocol.IsMchoseG7(b.Vid, b.Pid, b.Product)) continue;
             if (!(preferences?.CanRead(b.InstanceId, $"hid-{b.Vid:X4}-{b.Pid:X4}") ?? true)) continue;

@@ -1644,7 +1644,8 @@ namespace MouseDock.Services.Detection
                 if (zg4Receiver) transport = "2.4G";
 
                 if (VendorProtocol.IsMchoseV9Pro(Vid, Pid, Product)) transport = "2.4G";
-                if (VendorProtocol.IsMchoseA7V2(Vid, Pid)) transport = "2.4G";
+                if (VendorProtocol.IsMchoseA7V2(Vid, Pid))
+                    transport = VendorProtocol.IsMchoseA7V2Wired(Vid, Pid) ? "有线" : "2.4G";
                 if (VendorProtocol.IsMchoseG7(Vid, Pid, Product)) transport = Vid == 0xA8A4 ? "有线" : "2.4G";
                 if (VendorProtocol.IsRapooVt7(Vid, Pid)) transport = Pid == 0x1413 ? "2.4G" : "有线";
                 if (VendorProtocol.IsAtkV75X(Vid, Pid, Product)) transport = Pid == 0x5055 ? "有线" : "2.4G";

@@ -215,7 +215,7 @@ namespace MouseDock.Services.Detection
                             (hasFf90 ? " 已满足" : " 缺少"));
             text.AppendLine("ROG Omni 接收器: 0B05:1ACE + MI_02 col01/col02 64/64" +
                             (IsRogOmni(vid, pid) ? " 已满足" : " 缺少"));
-            text.AppendLine("迈从 A7 V2 系列: 3837:100A/100B + 产品串 + FF01/0001 65/65/65（Feature 11/F9）" +
+            text.AppendLine("迈从 A7 V2 系列: 3837:100A/100B 接收器或 3837:4021 有线 + 产品串 + FF01/0001 65/65/65（Feature 11/F9）" +
                             (IsMchoseA7V2(vid, pid) ? " 已满足" : " 缺少"));
             text.AppendLine("迈从 MHUB 型号收录: " +
                             (ModernMouseProfiles.ContainsKey((requestedName ?? "").Trim())

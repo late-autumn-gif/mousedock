@@ -104,6 +104,56 @@ internal static class MchoseA7V2Regression
         Check(VendorProtocol.IsMchoseA7V2Interface(proNode), "A7 V2 Pro accepts its FF01 query collection");
         proNode.Product = "MCHOSE A7 V2 Ultra+";
         Check(!VendorProtocol.IsMchoseA7V2Interface(proNode), "A7 V2 Pro must not accept the Ultra+ name on its PID");
+
+        // 2026-11-12: USB 3837:4021 FF01/0001, live 11/F9 response while charging.
+        var wiredCapture = Convert.FromHexString("11F9C8C7DEBFFAD1FBFCFF9CFE9CFFFFFFFFFFFFFF");
+        Check(VendorProtocol.TryParseMchoseLegacy(wiredCapture, 0x3837, 0x4021, out value, out charge) &&
+            value == 99 && charge, "Wired A7 V2 Ultra+ accepts its captured 99% charging response");
+        var wiredFullCapture = Convert.FromHexString("11F9C8C7DEBFFAD1FBFCFF9BFD9BFFFFFFFFFFFFFF");
+        Check(VendorProtocol.TryParseMchoseLegacy(wiredFullCapture, 0x3837, 0x4021, out value, out charge) &&
+            value == 100 && !charge, "Wired A7 V2 accepts its captured transition to 100% with status 2");
+        Check(!VendorProtocol.TryParseMchoseLegacy(wiredFullCapture, 0x3837, 0x100B, out _, out _),
+            "The wired full-battery response does not relax receiver validation");
+        foreach (byte flag in new byte[] { 3, 255 })
+            Check(!VendorProtocol.TryParseMchoseLegacy(Response(100, flag, connection: 0),
+                0x3837, 0x4021, out _, out _), "A real 100% level must not authorize unknown charging states");
+        foreach (int percent in new[] { 42, 43, 99, 100 })
+            Check(VendorProtocol.TryParseMchoseLegacy(Response(percent, 1, connection: 0),
+                    0x3837, 0x4021, out value, out charge) && value == percent && charge,
+                $"Wired charging reports {percent}% without retaining the first reading or forcing 100%");
+        Check(VendorProtocol.TryParseMchoseLegacy(Response(0, 0, connection: 0),
+                0x3837, 0x4021, out value, out charge) && value == 0 && !charge,
+            "Wired A7 V2 preserves a real empty battery independently from the charging flag");
+        foreach (byte connection in new byte[] { 1, 2, 8, 9, 15 })
+            Check(!VendorProtocol.TryParseMchoseLegacy(Response(connection: connection),
+                    0x3837, 0x4021, out _, out _), "Wired A7 V2 must not accept receiver/offline connection states");
+        Check(!VendorProtocol.TryParseMchoseLegacy(Response(model: 0x4018, connection: 0),
+                0x3837, 0x4021, out _, out _), "Wired Ultra+ must not accept a Pro model response");
+        Check(!VendorProtocol.TryParseMchoseLegacy(Response(101, 1, connection: 0),
+                0x3837, 0x4021, out _, out _), "Wired A7 V2 rejects invalid battery percentages");
+        Check(!VendorProtocol.TryParseMchoseLegacy(Response(charge: 2, connection: 0),
+                0x3837, 0x4021, out _, out _), "Wired A7 V2 rejects unverified charge flags");
+        Check(!Parse(wiredCapture, out _, out _),
+            "A receiver must not mistake the wired response for a live wireless reading");
+        node.Pid = 0x4021;
+        Check(VendorProtocol.IsMchoseA7V2Interface(node), "Wired A7 V2 uses only its verified 65-byte FF01 collection");
+        node.Product = "MCHOSE A7 V2 Pro";
+        Check(!VendorProtocol.IsMchoseA7V2Interface(node), "Wired Ultra+ rejects another product identity");
+        Check(!DeviceRoutes.IsKnown(0x3837, 0x4022, "MCHOSE A7 V2 Ultra+"),
+            "Adjacent wired model IDs are not enabled by inference");
+        Check(DeviceRoutes.IsKnown(0x3837, 0x4021, "MCHOSE A7 V2 Ultra+"),
+            "Wired A7 V2 battery queries are reachable from discovery");
+        var route = DeviceRoutes.Find(0x3837, 0x4021, "MCHOSE A7 V2 Ultra+");
+        Check(route?.Transport == "有线" && route.Kind == MouseDock.Models.DeviceKind.Mouse,
+            "Wired A7 V2 must not be presented as a 2.4G receiver");
+        var wiredDevice = new HidDiscovery.Bucket
+        {
+            Vid = 0x3837, Pid = 0x4021, Product = "MCHOSE A7 V2 Ultra+",
+            Kind = MouseDock.Models.DeviceKind.Mouse, Battery = 99, Charging = true
+        }.ToDevice();
+        Check(wiredDevice != null && wiredDevice.Level == 99 && wiredDevice.Charging &&
+            wiredDevice.Transport == "有线" && !wiredDevice.IsStale,
+            "Discovery presents the live wired battery and charging flag without replacing the percentage");
         return count;
     }
 }

@@ -64,8 +64,11 @@ internal static class DpiSafetyRegression
             "MCHOSE projects only the existing scan value and sends no new native command");
         Check(Fails(()=>service.ApplyAsync(current,0,1600).GetAwaiter().GetResult())&&backend.Applies==0,
             "MCHOSE read-only display never grants write permission");
-        Check(!service.Supports(new DeviceInfo{Id=mchose.Id,Detail="3837:4021",Dpi=1200}),
+        var wiredMchose=new DeviceInfo{Id=mchose.Id,Detail="3837:4021",Dpi=1200,DpiCapturedAt=DateTimeOffset.UtcNow};
+        Check(!service.Supports(wiredMchose),
             "a wired A7 PID has no inferred DPI route");
+        Check(Fails(()=>service.ReadAsync(wiredMchose).GetAwaiter().GetResult())&&backend.Reads==0,
+            "a wired A7 battery route does not authorize DPI reads from an injected scan value");
         Check(!service.Supports(new DeviceInfo{Id=mchose.Id,Detail="3837:100B",Dpi=-1}),
             "unknown MCHOSE current DPI is not presented as a valid reading");
         var snapshot=service.ReadAsync(device).GetAwaiter().GetResult();
