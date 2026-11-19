@@ -349,7 +349,7 @@ namespace MouseDock.Services.Detection
                 (path, vid, pid) => VendorProtocol.ReadZeroRainy(path, vid, pid, readAtkDpi, dpiChange));
             bool readLogitechDpi = BatteryReplay.Current == null;
             QueryOriginalGpwCollections(legacyBuckets, vendorCollections, safeMode, preferences,
-                (path, vid, pid) => VendorProtocol.ReadOriginalGpw(path, vid, pid, readLogitechDpi, dpiChange));
+                (path, vid, pid) => VendorProtocol.ReadOriginalGpw(path, vid, pid, readLogitechDpi || pid == 0xC539, dpiChange));
             QueryExtraDevices(buckets, vendorCollections, safeMode, preferences, ExtraDeviceRoutes.Read);
 
             // 罗技 HID++ / VGN / AJAZZ 的读数挂在厂商集合上，统一在归并后读一次。
@@ -963,6 +963,7 @@ namespace MouseDock.Services.Detection
             foreach (var b in buckets.Values)
             {
                 if (!OriginalGpwProtocol.IsCandidate(b.Vid,b.Pid) || AulaBatteryProtocol.IsCandidate(b.Vid,b.Pid,b.Product)) continue;
+                b.Millivolts = null; b.Dpi = -1; b.DpiSettings = null; b.ChargeFull = false;
                 b.HandledBy = HandledBy.OriginalGpw; b.GpwLive = false;
                 b.GpwModel = b.Pid == 0xC088 ? OriginalGpwProtocol.Model : null;
                 b.Battery = -1; b.Charging = false; b.ReadStale = false; b.BatterySource = ""; b.Identity = "";
@@ -984,21 +985,33 @@ namespace MouseDock.Services.Detection
                     catch(Exception ex) { result=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name+": "+ex.Message); }
                 }
                 result ??= ReferenceBatteryProtocol.Reading.Failed("罗技读取器没有返回结果");
+                bool g403 = b.Pid == 0xC539 && result.Model == OriginalGpwProtocol.G403Model &&
+                    OriginalGpwProtocol.IsG403Identity(result.Identity);
                 bool g603 = b.Pid == 0xC539 && result.Model == OriginalGpwProtocol.G603Model &&
                     OriginalGpwProtocol.IsG603Name(result.Identity);
-                if (g603 || (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model))
+                if (g403 || g603 || (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model))
                 {
                     b.GpwModel = result.Model;
-                    b.GpwLive = g603 || (b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity));
+                    b.GpwLive = g403 || g603 || (b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity));
                     if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging or ReferenceBatteryProtocol.State.Full)
                     {
                         b.Battery=result.Level; b.Charging=result.ChargingKnown && result.Charging; b.GpwLive=true;
                         b.ChargeFull = result.Status == ReferenceBatteryProtocol.State.Full;
                         if (g603) b.Charging = false;
-                        b.BatterySource=(g603 ? "G603：" : "GPW：")+result.Diagnostic;
+                        b.BatterySource=(g403 ? "G403：" : g603 ? "G603：" : "GPW：")+result.Diagnostic;
                     }
                 }
-                string reader = g603 ? "G603" : "GPW";
+                b.Millivolts = g403 ? result.Millivolts : null;
+                if (b.Pid == 0xC539)
+                {
+                    var trace = new BatteryReplay.Trace();
+                    trace.Add("paired-identity", b.GpwLive, result: b.GpwModel);
+                    if (g403) trace.Add("battery", result.Level >= 0 || result.Millivolts.HasValue, result: result.Diagnostic);
+                    if (g403) trace.Add("sensor-dpi", result.Dpi != null, result: result.Dpi?.Values[result.Dpi.Index].ToString());
+                    BatteryReplay.Current?.AddQuery(b.InstanceId, channels[0].Path, "HidppPairedMouse",
+                        result.Status.ToString(), b.GpwModel, b.Battery, trace);
+                }
+                string reader = g403 ? "G403" : g603 ? "G603" : "GPW";
                 if (result.Dpi is { } dpi)
                 {
                     b.DpiSettings = dpi;
@@ -1462,6 +1475,7 @@ namespace MouseDock.Services.Detection
             /// <summary>248A:5B2F 官方 GetInfo 返回的型号名与身份串。</summary>
             public string M137Model;
             /// <summary>MCHOSE 官方 0x12 0x67 读到的 DPI；-1 表示未知。</summary>
+            public int? Millivolts;
             public int Dpi = -1;
             public MouseDpiState DpiSettings;
             public int[] DpiSlots;
@@ -1750,6 +1764,7 @@ namespace MouseDock.Services.Detection
                     Kind = kind,
                     Transport = transport,
                     Level = Battery,
+                    Millivolts = Millivolts,
                     Dpi = Dpi,
                     DpiSettings = DpiSettings,
                     DpiSlots = DpiSlots,

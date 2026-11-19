@@ -302,7 +302,7 @@ namespace MouseDock.Services
 
         internal sealed record DisplayReading(string Name, string Product, string Model, string Kind, string Transport,
             string VidPid, bool Connected, bool ReceiverPresent, bool PeripheralConfirmed, int? Percent,
-            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances, string BatteryBand = null);
+            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances, string BatteryBand = null, int? Millivolts = null);
 
         private static DisplayReading[] CreateDisplaySnapshot(IEnumerable<DeviceInfo> devices,
             Dictionary<string, string> aliases = null) =>
@@ -311,11 +311,11 @@ namespace MouseDock.Services
                 Detection.BatteryReplay.SafeLabel(d.ConfirmedModel), d.Kind.ToString(), d.Transport,
                 Regex.Match(d.Detail ?? "", @"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$").Value,
                 d.Connected, d.ReceiverDiscovered, d.PeripheralConfirmed, d.Level is >= 0 and <= 100 ? d.Level : null,
-                d.IsStale || !d.Connected ? "cached" : !string.IsNullOrEmpty(d.BatteryBand) ? "system-relative" : d.Level < 0 ? "unknown" : "display-snapshot",
+                d.IsStale || !d.Connected ? "cached" : d.Millivolts.HasValue ? "voltage-estimate" : !string.IsNullOrEmpty(d.BatteryBand) ? "system-relative" : d.Level < 0 ? "unknown" : "display-snapshot",
                 d.IsChargingActive ? true : null, d.IsFullActive ? true : null, d.HandledByLabel, d.Source,
                 aliases == null ? Array.Empty<string>() : DevicePreferences.Keys(d)
                     .Where(key => key.StartsWith("instance-", StringComparison.OrdinalIgnoreCase) || key.StartsWith("system-controller-", StringComparison.OrdinalIgnoreCase))
-                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray(), d.BatteryBand)).ToArray();
+                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray(), d.BatteryBand, d.Millivolts)).ToArray();
 
         private static string ReplayEntry(int index) => index == 0 ? Detection.BatteryReplay.EntryName :
             $"samples/{index + 1:D2}.json";

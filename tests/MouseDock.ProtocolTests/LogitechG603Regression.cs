@@ -41,6 +41,25 @@ internal static class LogitechG603Regression
             "A single reply cannot become a fresh reading");
         Check(OriginalGpwProtocol.Read(new Link { HasBattery = false }, 0xC539).Level == -1,
             "No percentage feature means unknown, without a voltage fallback");
+        const string g403 = "G403 Prodigy Wireless Gaming Mouse";
+        var sample = OriginalGpwProtocol.Read(new Link { Name = g403, Status = 1 }, 0xC539, true);
+        Check(sample.Model == OriginalGpwProtocol.G403Model && sample.Level == 90 && sample.Charging &&
+            sample.Dpi is { Writable: false } && sample.Dpi.Values.Single() == 1600, "G403 percentage and current sensor DPI");
+        sample = OriginalGpwProtocol.Read(new Link { Name = g403, HasBattery = false }, 0xC539, true);
+        Check(sample.Millivolts == 3860 && sample.Level == 60 && sample.Dpi?.Values.Single() == 1600,
+            "Voltage-only G403 preserves mV and estimates percentage");
+        var card = new DeviceInfo { Level = sample.Level, Millivolts = sample.Millivolts };
+        Check(card.LevelText == "约60%" && card.MiniText == "约60%" && card.StatusText.Contains("3860"), "Estimated display and voltage detail");
+        card.Millivolts = null;
+        Check(card.LevelText == "60%", "Direct percentage stays unmarked");
+        Check(OriginalGpwProtocol.EstimateG403Percent(3400) == 0 &&
+              OriginalGpwProtocol.EstimateG403Percent(4200) == 100 &&
+              OriginalGpwProtocol.EstimateG403Percent(3890) == 65, "Endpoint clamp and interpolation");
+        sample = OriginalGpwProtocol.Read(new Link { Name = g403, HasBattery = false, Voltage = 0 }, 0xC539, true);
+        Check(sample.Millivolts == null && sample.Level == -1 && sample.Dpi?.Values.Single() == 1600,
+            "No battery reading cannot hide valid DPI");
+        Check(OriginalGpwProtocol.Read(new Link { Name = g403, ChangeIdentity = true }, 0xC539, true).Dpi == null,
+            "Swapped receiver does not inherit G403 DPI");
         var changed = new Link { ChangeIdentity = true };
         Check(OriginalGpwProtocol.Read(changed, 0xC539).Level == -1 && changed.BatteryReads == 0,
             "An identity change aborts before battery queries");
@@ -100,6 +119,7 @@ internal static class LogitechG603Regression
         private readonly Queue<byte[]> input = new();
         public readonly List<byte[]> Requests = new();
         public string Name = "G603 Wireless Gaming Mouse";
+        public int Voltage = 3860;
         public int Level = 90, NameReads, BatteryReads;
         public byte Status;
         public bool HasBattery = true, ChangeIdentity, DropSecondBattery;
@@ -118,7 +138,9 @@ internal static class LogitechG603Regression
             if (request[2] == 0)
             {
                 ushort feature = (ushort)((request[4] << 8) | request[5]);
-                reply[4] = feature == 5 ? (byte)3 : feature == 0x1000 && HasBattery ? (byte)6 : (byte)0;
+                reply[4] = feature == 5 ? (byte)3 : feature == 0x1000 && HasBattery ? (byte)6 :
+                    Name.StartsWith("G403") && feature == 0x1001 ? (byte)7 :
+                    Name.StartsWith("G403") && feature == 0x2201 ? (byte)8 : (byte)0;
             }
             else if (request[2] == 3)
             {
@@ -136,7 +158,10 @@ internal static class LogitechG603Regression
                 reply[5] = 50;
                 reply[6] = Status;
             }
-            else throw new Exception("Unexpected G603 feature query");
+            else if (request[2] == 7) { reply[4] = (byte)(Voltage >> 8); reply[5] = (byte)Voltage; }
+            else if (request[2] == 8 && request[3] >> 4 == 0) reply[4] = 1;
+            else if (request[2] == 8 && request[3] >> 4 == 2) { reply[5] = 6; reply[6] = 0x40; }
+            else throw new Exception("Unexpected Logitech mouse feature query");
             input.Enqueue(reply);
             return true;
         }

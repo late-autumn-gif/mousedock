@@ -9,6 +9,10 @@ namespace MouseDock.Services.Detection;
 internal static class OriginalGpwProtocol
 {
     internal const string Model = "Logitech G Pro Wireless";
+    internal const string G403Model = "Logitech G403 Wireless";
+    internal static bool IsG403Identity(string name) => name is
+        "G403 Wireless Gaming Mouse" or "G403 Prodigy Wireless Gaming Mouse" or "G403 Gaming Mouse"
+        or "HID++:WPID=405D" or "HID++:WPID=405D,USB=C082";
     internal const string G603Model = "Logitech G603";
     internal static bool IsG603Name(string name) =>
         string.Equals(name, "G603 Wireless Gaming Mouse", StringComparison.Ordinal);
@@ -16,6 +20,29 @@ internal static class OriginalGpwProtocol
     internal static bool IsChannel(ushort vid, ushort pid, ushort page, ushort usage, int input, int output, int feature) =>
         IsCandidate(vid,pid) && page == 0xFF00 && input == 20 && output == 20 && feature == 0 &&
         (pid == 0xC539 ? usage == 2 : usage is 1 or 2);
+
+    // Generic HID++ voltage landmarks from Solaar's estimate_battery_level_percentage.
+    // This is an approximation for the G403, rounded to 5% to reflect that uncertainty.
+    private static readonly (int Mv, int Percent)[] VoltageLandmarks =
+    [
+        (3500, 0), (3579, 2), (3646, 5), (3671, 10), (3717, 20), (3751, 30),
+        (3778, 40), (3811, 50), (3859, 60), (3922, 70), (3989, 80), (4067, 90), (4186, 100)
+    ];
+
+    internal static int EstimateG403Percent(int mv)
+    {
+        if (mv <= VoltageLandmarks[0].Mv) return 0;
+        for (int i = 1; i < VoltageLandmarks.Length; i++)
+        {
+            var upper = VoltageLandmarks[i];
+            if (mv > upper.Mv) continue;
+            var lower = VoltageLandmarks[i - 1];
+            double fraction = (double)(mv - lower.Mv) / (upper.Mv - lower.Mv);
+            double estimate = lower.Percent + fraction * (upper.Percent - lower.Percent);
+            return (int)Math.Round(estimate / 5, MidpointRounding.AwayFromZero) * 5;
+        }
+        return 100;
+    }
 
     internal static bool TryVoltage(ReadOnlySpan<byte> frame, out int level, out bool charging)
     {
@@ -40,6 +67,12 @@ internal static class OriginalGpwProtocol
         // matching ID at arbitrary byte offsets or interpret the unit serial.
         byte transports = frame[10];
         if (transports is not (4 or 8 or 12)) return false;
+        if (transports is 4 or 12 && frame[11] == 0x40 && frame[12] == 0x5D)
+        {
+            if (transports == 12 && (frame[13] != 0xC0 || frame[14] != 0x82)) return false;
+            identity = transports == 4 ? "HID++:WPID=405D" : "HID++:WPID=405D,USB=C082";
+            return true;
+        }
         int offset = 11;
         if ((transports & 4) != 0)
         { if (frame[offset] != 0x40 || frame[offset + 1] != 0x79) return false; offset += 2; }
@@ -83,9 +116,12 @@ internal static class OriginalGpwProtocol
             {
                 string name = ReadName(slot);
                 if (pid == 0xC539 && IsG603Name(name)) return ReadG603(slot, name);
+                if (pid == 0xC539 && IsG403Identity(name) && !name.StartsWith("HID++:", StringComparison.Ordinal))
+                    return ReadName(slot) == name ? ReadG403(slot, name) : Fail("G403 实时名称复核失败");
                 if (name != null && !LogitechHidpp.IsOriginalGpwName(name))
                     return Fail("实时设备名不是一代 GPW，未读取/套用 GPW 电压曲线：" + name);
                 if (name == null && pid == 0xC539) name = ReadDeviceIdentity(slot);
+                if (pid == 0xC539 && IsG403Identity(name)) return ReadG403(slot, name);
                 bool confirmed = name != null || pid == 0xC088;
                 if (!confirmed) continue;
                 byte voltage = Feature(slot, 0x1001);
@@ -108,6 +144,47 @@ internal static class OriginalGpwProtocol
                     Model, name));
             }
             return Fail("没有取得一代 GPW 的实时名称/设备型号身份，接收器不等于外设型号：" + issue);
+        }
+
+        private ReferenceBatteryProtocol.Reading ReadG403(byte slot, string identity)
+        {
+            // Read-only display. A missing battery feature must not suppress sensor DPI.
+            var reading = ReferenceBatteryProtocol.Reading.Failed("G403 未取得有效电池响应") with
+                { Model = G403Model, Identity = identity };
+            if (readDpi && change == null)
+            {
+                byte sensor = Feature(slot, 0x2201);
+                if (sensor != 0 && Call(slot, sensor, 0) is { } count && count[4] == 1 &&
+                    Call(slot, sensor, 2) is { } response && response[4] == 0)
+                {
+                    int dpi = (response[5] << 8) | response[6];
+                    if (dpi is > 0 and < 0xE000)
+                        reading = reading with { Dpi = new(0, 0, 1, false, [dpi], MouseDpiProtocol.Hidpp, G403Model, Writable: false) };
+                }
+            }
+
+            byte status = Feature(slot, 0x1000);
+            if (status != 0)
+            {
+                bool Valid(byte[] response, out int percent, out bool charging) =>
+                    LogitechHidpp.TryParseBattery(0x1000, response, out percent, out charging) && response[6] <= 3;
+                if (Valid(Call(slot, status, 0), out _, out _) &&
+                    Call(slot, status, 0) is { } second && Valid(second, out int level, out bool active))
+                    return reading with { Level = level, Charging = active, ChargingKnown = true,
+                        Status = second[6] == 3 ? ReferenceBatteryProtocol.State.Full : active ?
+                            ReferenceBatteryProtocol.State.Charging : ReferenceBatteryProtocol.State.Online,
+                        Diagnostic = "G403 HID++ 1000 设备百分比" };
+            }
+            byte voltage = Feature(slot, 0x1001);
+            if (voltage == 0) return reading;
+            static int Millivolts(byte[] frame) => frame == null ? 0 : (frame[4] << 8) | frame[5];
+            var first = Call(slot, voltage, 0);
+            if (Millivolts(first) is < 2800 or > 4500 || (first[6] & 0x40) != 0) return reading;
+            var sample = Call(slot, voltage, 0);
+            int mv = Millivolts(sample);
+            if (mv is < 2800 or > 4500 || (sample[6] & 0x40) != 0) return reading;
+            return reading with { Millivolts = mv, Level = EstimateG403Percent(mv), Status = ReferenceBatteryProtocol.State.Online,
+                Diagnostic = $"G403 HID++ 1001 电压估算，实测 {mv} mV" };
         }
 
         private ReferenceBatteryProtocol.Reading ReadG603(byte slot, string name)
