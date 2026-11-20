@@ -47,6 +47,17 @@ internal static class Program
         }
         if (args.Contains("--r98-live"))
             return R98KeyboardChecks.RunLive();
+        if (args.Contains("--pet-preview"))
+        {
+            DesktopPetDeskChecks.Preview();
+            Console.WriteLine("PASS keyboard desk pet previews.");
+            return 0;
+        }
+        if (args.Contains("--pet-input-live"))
+        {
+            DesktopPetDeskChecks.LiveProbe();
+            return 0;
+        }
         var checks = new (string Name, Action Check)[]
         {
             ("Xbox system battery bands reach cards without cached percentages", () => XboxWirelessUiChecks.Run()),
@@ -220,7 +231,17 @@ internal static class Program
             ("Online RK receiver still validates model and battery", ConnectionSwitchChecks.ReceiverOnline),
             ("Disconnected channels cannot supply old readings", ConnectionSwitchChecks.OfflineMerge),
             ("Detection preserves explicit offline evidence", ConnectionSwitchChecks.OfflinePropagation),
-            ("Connection switches immediately remove the old channel", ConnectionSwitchChecks.ImmediateRemoval)
+            ("Connection switches immediately remove the old channel", ConnectionSwitchChecks.ImmediateRemoval),
+            ("键盘桌宠按键布局覆盖五行键盘与标准指法", DesktopPetInputChecks.Layout),
+            ("键盘桌宠输入状态跟踪轨迹、连击与过期", DesktopPetInputChecks.Tracker),
+            ("键盘桌宠全局键鼠钩子可安装、注入、停止并释放", () =>
+            {
+                string? skip = DesktopPetInputChecks.HookLifecycle();
+                if (skip != null) throw new SkippedException(skip);
+            }),
+            ("键盘桌宠桌前场景几何保持键位在桌面内", DesktopPetDeskChecks.SceneGeometry),
+            ("键盘桌宠跟随用户按键与鼠标左右键", DesktopPetDeskChecks.InputFollow),
+            ("键盘桌宠跟随开关默认开启并可克隆", DesktopPetDeskChecks.SettingsRoundTrip)
         };
         if (args.Length == 2 && args[0] == "--filter")
             checks = checks.Where(c => c.Name.Contains(args[1], StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -229,7 +250,13 @@ internal static class Program
         {
             try { check(); Console.WriteLine("PASS " + name); }
             catch (SkippedException ex) { skipped++; Console.WriteLine("SKIP " + name + ": " + ex.Message); }
-            catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex.GetBaseException().Message); }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine("FAIL " + name + ": " + ex.GetBaseException().Message);
+                if (Environment.GetEnvironmentVariable("MOUSEDOCK_CHECKS_STACK") is { Length: > 0 })
+                    Console.WriteLine(ex.GetBaseException().ToString());
+            }
         }
         Console.WriteLine($"{checks.Length - failures - skipped}/{checks.Length} checks passed, {skipped} skipped.");
         return failures == 0 ? 0 : 1;

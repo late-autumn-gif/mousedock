@@ -138,6 +138,9 @@ internal static class AuditChecks
         {
             pet.Show();
             Flush();
+            // 桌宠窗口比旧版宽，测试机光标可能正好落在场景上；悬停会按设计打断自主动作，
+            // 这里显式清掉悬停状态，让断言只验证行为调度本身，不依赖当前光标位置。
+            typeof(DesktopPetWindow).GetField("_hovering", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(pet, false);
             int frameSize = character == "keqing" ? 288 : 512;
             Require(image.Source is System.Windows.Media.Imaging.BitmapSource bitmapSource &&
                 bitmapSource.PixelWidth == frameSize && bitmapSource.PixelHeight == frameSize,

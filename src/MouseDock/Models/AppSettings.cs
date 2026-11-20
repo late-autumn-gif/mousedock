@@ -107,6 +107,12 @@ namespace MouseDock.Models
         public bool DesktopPetRandomActions { get; set; } = true;
         public bool DesktopPetBlink { get; set; } = true;
         public bool DesktopPetRest { get; set; } = true;
+        /// <summary>键盘桌宠是否跟随真实键盘输入；只在桌宠可见时监听，按下内容仅用于内存动画。</summary>
+        public bool DesktopPetMirrorInput { get; set; } = true;
+        /// <summary>键盘桌宠是否跟随鼠标左右键点击。</summary>
+        public bool DesktopPetMirrorMouse { get; set; } = true;
+        /// <summary>是否显示浮起的键帽和被敲字符；关闭后键盘与显示器保留桌宠界面但不显示按键内容。</summary>
+        public bool DesktopPetShowKeyLabels { get; set; } = true;
         public int DesktopPetMotionSpeed { get; set; } = 100;
         public int DesktopPetActionFrequency { get; set; } = 100;
         public bool DesktopPetLocked { get; set; }
@@ -222,6 +228,9 @@ namespace MouseDock.Models
                 DesktopPetRandomActions = DesktopPetRandomActions,
                 DesktopPetBlink = DesktopPetBlink,
                 DesktopPetRest = DesktopPetRest,
+                DesktopPetMirrorInput = DesktopPetMirrorInput,
+                DesktopPetMirrorMouse = DesktopPetMirrorMouse,
+                DesktopPetShowKeyLabels = DesktopPetShowKeyLabels,
                 DesktopPetMotionSpeed = DesktopPetMotionSpeed,
                 DesktopPetActionFrequency = DesktopPetActionFrequency,
                 DesktopPetLocked = DesktopPetLocked,

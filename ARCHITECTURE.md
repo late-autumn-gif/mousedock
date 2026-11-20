@@ -23,9 +23,48 @@ Services/FeedbackService（报告导出）
 Services/UpdateService（自更新）
 ```
 
-## 桌宠动作
+## 桌宠动作与输入跟随
 
 `DesktopPetWindow` 根据电量与指针状态选择姿势。刻晴使用独立内嵌的九姿势图集和卡片头像。战技和爆发在右键菜单手动触发，分别以 50 毫秒一帧播放；动画结束后重新读取当前界面状态以选择姿势。隐藏、拖动或启用减少动态效果时停止绘制战斗帧。设备读数和状态继续来自电量服务。
+
+### 场景分层
+
+v1.3.0 的桌前场景由 `Controls/DesktopPetDeskScene.cs` 实现：内部使用 300×236 设计坐标，按 0.72 输出约 216×170 DIP，接近常见键鼠同步小猫桌宠的占用；图层顺序固定，逐帧只重绘 `DrawingContext`，不重建可视化树：
+
+1. 椅背层 `_back`：背景光晕、椅背与靠垫，让角色读起来是坐着的。
+2. 角色图集 `Image`：窗口持有的九姿势帧；按图集内容做尺寸归一化（刻晴 ×1.12，其余 ×1），再叠加原有的呼吸、倾斜和抬升变换。
+3. 前景层 `_front`：桌面、显示器、5 行键帽键盘、鼠标、双手与浮起键帽，全部矢量绘制。
+4. `_sparks`：六花与刻晴在充电、满电时的星星点缀。
+
+配色在 `ApplyPalette` 时从角色的 `Surface/Outline/Accent/Hand/Sleeve` 派生并 `Freeze`，四款角色共用一套场景，不各自复制资源。键位几何由 `PetKeyboardLayout` 的行、偏移和宽度计算，`KeyBounds`、`KeyboardBounds`、`MouseBounds`、`MonitorBounds` 同时供绘制、手部定位和回归检查复用。
+
+### 输入链路
+
+```
+DesktopPetInputHook（专用后台线程 + 消息泵）
+  ├─ WH_KEYBOARD_LL → PetInputCue（vkCode、scanCode、标签、时间戳）
+  └─ WH_MOUSE_LL    → PetInputCue（左 / 右 / 中键）
+        └─ ConcurrentQueue（上限 256，满时丢最旧）
+              └─ UI 线程 33ms DispatcherTimer → Drain(64 槽缓冲) → DesktopPetInputState
+                    ├─ trail：最近 8 个按键，1.5 秒后逐条过期
+                    ├─ LastKey / LastMouse：1.6 秒后过期
+                    └─ DesktopPetDeskScene.Render(now, motion, state, showLabels, mirrorMouse)
+                          ├─ 双手：指数平滑到目标键位，按键后 180ms 保持下压
+                          ├─ 键帽：420ms 高亮，标签约 700ms 浮起
+                          ├─ 显示器：按宽度截断的最近按键标签（最多 8 个），520ms 光标闪烁
+                          └─ 鼠标：左右半侧 260ms 高亮，手部停留 700ms
+```
+
+钩子线程与 WPF 线程分离：键盘回调只读 `KBDLLHOOKSTRUCT` 的 `vkCode`/`scanCode`，忽略修饰键并对同一键做 30ms 节流；鼠标回调只认左右中键的按下消息。两者都只入队后立即调用 `CallNextHookEx`，不等待 UI 线程。窗口在 `DrainInput` 阶段按「镜像鼠标点击」开关丢弃非键盘 cue，关闭该开关时鼠标事件不会进入状态模型。`DesktopPetInputState` 只持有最近一次按键/鼠标事件、连击数和显示器标签序列，供场景逐帧读取；窗口层面的 `TypingPulse` 只取最近按键的时间参与抬升，不读取按键内容。可显示标签由 `PetKeyboardLayout.LabelOf` 生成：字母和数字直接给出字符，编辑、导航和功能键给出固定名称，其余键使用前台窗口的 `ToUnicodeEx`，失败再退回 `MapVirtualKey` 或 `0x` 前缀。
+
+### 线程与生命周期
+
+- 低级钩子只能在带消息泵的线程安装。`DesktopPetInputHook` 自建名为「MouseDock 桌宠输入钩子」的后台线程，`SetWindowsHookEx`、消息循环与 `UnhookWindowsHookEx` 都在该线程执行；回调委托保存在 `_keyboardProc` / `_mouseProc` 字段中，避免被 GC 回收造成崩溃。`Start()` 等待就绪事件最多 2 秒，`Stop()` 的 `Join` 上限同为 2 秒，失败只记录 `LastError` 并保持降级状态，不向调用方抛异常。
+- 一次 `Start()` 同时安装键盘与鼠标两个钩子；关闭「镜像鼠标点击」时鼠标钩子仍会安装，但 `DesktopPetWindow.DrainInput` 会在界面线程丢弃非键盘 cue，`DesktopPetDeskScene` 也不呈现点击反馈。需要完全停止两个钩子时关闭「镜像键盘输入」。
+- 启动条件是「镜像键盘输入」开启、窗口 `IsVisible`、`Application.Current` 存在，且环境变量 `MOUSEDOCK_PET_INPUT` 不等于 `off`；`SyncInputCapture` 幂等，重复调用不会重复安装。
+- 隐藏窗口、切换显示方式或关闭监听开关时调用 `Stop()`：卸载钩子、结束消息泵并清空 `DesktopPetInputState`；`DesktopPetWindow.OnClosed` 再 `Dispose()` 兜底。
+- 鼠标进入桌宠窗口时设置 `SuppressMouse`，避免把用户点击桌宠自身当作被镜像的点击。
+- 帧计时器只在 `Motion` 或跟随生效时运行。减少动态效果（`Motion == false`）下仍保留键帽高亮、显示器文字和鼠标按键高亮，但双手直接落位，不播放平滑过渡、呼吸与随机动作。
 
 ## 识别链路
 
@@ -64,8 +103,8 @@ VT3 MAX `24AE:1417/0105` 沿用原 HidDiscovery → InstanceScope → ExtraDevic
 
 ## 测试
 
-- `tests/MouseDock.ProtocolTests`：16093 条离线断言，覆盖帧解析、拒绝路径、路由、ToDevice。
-- `tests/MouseDock.Checks`：64 项界面/运行时检查，需要桌面会话。
+- `tests/MouseDock.ProtocolTests`：39,445 条离线断言，覆盖帧解析、拒绝路径、路由、ToDevice。
+- `tests/MouseDock.Checks`：172 项 Windows 本地界面/运行时检查，需要桌面会话；2026-11-20 键盘桌宠回归为 171 通过、0 skipped，1 项 Taskbar 透明像素检查在改动前的 HEAD 上同样失败。`--filter 键盘桌宠` 只跑 6 项桌宠专项；`--pet-input-live` 用 `keybd_event` 合成 F24 验证系统输入到钩子的链路，属于合成输入，不等于真人敲击。
 
 详见 [TESTING.md](TESTING.md)，已知限制见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。
 
