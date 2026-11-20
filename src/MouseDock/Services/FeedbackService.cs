@@ -320,7 +320,8 @@ namespace MouseDock.Services
                         Series = series,
                         Rounds = rounds.Select((r, i) => new
                         {
-                            Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, r.ScanError
+                            Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, r.ScanError,
+                            Dpi = r.DpiObservations
                         })
                     }, new JsonSerializerOptions { WriteIndented = true }));
                     for (int i = 0; i < rounds.Length; i++)
@@ -361,7 +362,9 @@ namespace MouseDock.Services
 
         internal sealed record DisplayReading(string Name, string Product, string Model, string Kind, string Transport,
             string VidPid, bool Connected, bool ReceiverPresent, bool PeripheralConfirmed, int? Percent,
-            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances, string BatteryBand = null);
+            string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances, string BatteryBand = null,
+            int? Dpi = null, int[] DpiSlots = null, int? DpiActive = null, string DpiProtocol = null,
+            bool? DpiWritable = null, string DpiStatus = null, string DpiDiagnostic = null);
 
         private static DisplayReading[] CreateDisplaySnapshot(IEnumerable<DeviceInfo> devices,
             Dictionary<string, string> aliases = null) =>
@@ -374,7 +377,10 @@ namespace MouseDock.Services
                 d.IsChargingActive ? true : null, d.IsFullActive ? true : null, d.HandledByLabel, d.Source,
                 aliases == null ? Array.Empty<string>() : DevicePreferences.Keys(d)
                     .Where(key => key.StartsWith("instance-", StringComparison.OrdinalIgnoreCase) || key.StartsWith("system-controller-", StringComparison.OrdinalIgnoreCase))
-                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray(), d.BatteryBand)).ToArray();
+                    .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray(), d.BatteryBand,
+                d.Dpi > 0 ? d.Dpi : null, d.DpiSettings?.Values?.ToArray(),
+                d.DpiSettings?.Index, d.DpiSettings?.Protocol.ToString(), d.DpiSettings?.Writable,
+                d.Dpi > 0 || d.DpiSettings != null ? "captured" : "unavailable", null)).ToArray();
 
         private static string ReplayEntry(int index) => index == 0 ? Detection.BatteryReplay.EntryName :
             $"samples/{index + 1:D2}.json";
@@ -405,7 +411,10 @@ namespace MouseDock.Services
             sb.AppendLine($"安全模式: {(settings?.SafeMode == true ? "开" : "关")}；应用刷新: {settings?.RefreshSeconds} 秒");
             sb.AppendLine("界面快照仅记录采样前的显示状态；系统手柄另采集有界电池报告，新设备分阶段报告另列所选 BLE 设备的 GATT 读数。");
             foreach (var item in snapshot)
+            {
                 sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} ({item.Freshness})");
+                sb.AppendLine($"    DPI {item.Dpi?.ToString() ?? "—"}；档位 {(item.DpiSlots == null ? "—" : string.Join(", ", item.DpiSlots))}；状态 {item.DpiStatus ?? "unknown"}；协议 {item.DpiProtocol ?? "—"}");
+            }
             for (int i = 0; i < rounds.Length; i++)
             {
                 var round = rounds[i];
@@ -415,6 +424,8 @@ namespace MouseDock.Services
                 foreach (var item in round.Observations)
                     sb.AppendLine($"  {item.Receiver} {item.Name} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} " +
                         $"{item.Source}；充电 {item.Charging?.ToString() ?? "未知"}");
+                foreach (var dpi in round.DpiObservations ?? Array.Empty<Detection.BatteryReplay.DpiObservation>())
+                    sb.AppendLine($"  {dpi.Receiver} {dpi.Model} DPI {dpi.Current?.ToString() ?? "—"}；档位 {(dpi.Slots.Length == 0 ? "—" : string.Join(", ", dpi.Slots))}；状态 {dpi.Status}；协议 {dpi.Protocol ?? "—"}");
                 foreach (var query in round.Queries)
                     sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}");
             }
