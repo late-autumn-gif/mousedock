@@ -47,9 +47,9 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 & "C:\Program Files\dotnet\dotnet-sdk\dotnet.exe" run --project tests\MouseDock.ProtocolTests -c Release
 ```
 
-- 16093 条断言，不碰硬件
+- 39,445 条断言，不碰硬件
 - 覆盖：帧解析、身份校验、拒绝路径、安全模式、实例隔离、ToDevice 路由、各品牌协议
-- 失败即抛异常，进程退出码非 0；输出 `PASS 16093 offline protocol/integration assertions`
+- 失败即抛异常，进程退出码非 0；输出 `PASS 39445 offline protocol/integration assertions; no hardware I/O.`
 
 新增断言放在 `tests/MouseDock.ProtocolTests/*Regression.cs`，优先用合成 `HidDiscovery.Bucket` 构造，不依赖真实设备。
 
@@ -59,8 +59,8 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 & "C:\Program Files\dotnet\dotnet-sdk\dotnet.exe" run --project tests\MouseDock.Checks -c Release
 ```
 
-- 119 项，需要交互式 Windows 桌面会话与 STA 线程。
-- Windows 11 Build 26300 基线为 `119/119 checks passed, 0 skipped`，退出码 0。
+- 173 项，2026-11-20 为 172 通过、1 项 HEAD 既有 Taskbar 失败，0 skipped；需要交互式 Windows 桌面会话与 STA 线程。
+- 2026-11-20 键盘桌宠与德蕾琪娜回归基线为 `172/173`；唯一失败项是任务栏透明像素检查，在改动前的 HEAD 上同样失败。
 - 任务栏检查使用真实任务栏与本机窗口，包含屏幕像素透明合成和两种宿主退出路径。
 - 更新检查用隔离目录内的旧版、新版 PE 执行真实更新脚本，验证先等待旧进程退出，再替换并启动新版。测试关闭系统集成。
 
@@ -73,6 +73,8 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 ```
 
 检查原有三个角色和刻晴的图集、电量跟随和满电状态。刻晴用菜单触发战技和爆发，验证首尾帧、结束后恢复充电姿势及减少动态效果。测试使用模拟电量设备。
+
+键盘桌宠另有 6 项检查（37 键布局与指法、输入状态轨迹/连击/过期、钩子安装与释放、场景几何、按键与鼠标跟随、开关默认值），可用 `--filter 键盘桌宠` 运行；`--pet-input-live` 用 `keybd_event` 合成 F24 验证系统输入到钩子的链路，不能替代真人敲击验收。
 
 ## 真机诊断
 

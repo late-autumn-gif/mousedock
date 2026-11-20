@@ -52,11 +52,15 @@ internal static class FeedbackReportRegression
         scan.AddQuery(targetId, path, "Neon75Feature", "Charging", "VGN Neon75 Air", 87, trace);
         scan.Detected.Add(new DetectedDevice
         {
-            Id = targetId, Name = "VGN Neon75 Air", Transport = "2.4G", Level = 100, Charging = true
+            Id = targetId, Name = "VGN Neon75 Air", Transport = "2.4G", Level = 100, Charging = true,
+            Dpi = 1600, DpiSettings = new MouseDpiState(0, 1, 3, false, new[] { 800, 1600, 3200 })
         });
         var single = scan.Finish(new[] { targetId });
         var all = scan.Finish(null);
         Check(single.Collections.Length == 2 && all.Collections.Length == 3, "Single mode excludes same-VID/PID sibling");
+        Check(single.DpiObservations.Length == 1 && single.DpiObservations[0].Current == 1600 &&
+            single.DpiObservations[0].Slots.SequenceEqual(new[] { 800, 1600, 3200 }) &&
+            single.DpiObservations[0].Active == 1, "DPI snapshot is bound to the selected instance");
         var query = single.Queries.Single();
         Check(BatteryReplay.Replay(query, single.Collections) is { Percent: 87, Charging: true }, "Replay real parser");
         Check(BatteryReplay.Replay(query with { Samples = trace.Snapshot().Skip(2).ToArray() }, single.Collections).Percent == null,
@@ -71,7 +75,8 @@ internal static class FeedbackReportRegression
 
         var devices = new[]
         {
-            new DeviceInfo { Id = targetId, Name = "VGN Neon75 Air", Detail = "391D:2A05", Transport = "2.4G" },
+            new DeviceInfo { Id = targetId, Name = "VGN Neon75 Air", Detail = "391D:2A05", Transport = "2.4G",
+                Dpi = 1600, DpiSettings = new MouseDpiState(0, 1, 3, false, new[] { 800, 1600, 3200 }) },
             new DeviceInfo { Id = "00:11:22:33:44:55", Name = "Bluetooth 00:11:22:33:44:55", Detail = "001122334455",
                 Level = 42, IsStale = true, Transport = "蓝牙" }
         };
@@ -95,6 +100,10 @@ internal static class FeedbackReportRegression
                 Check(json.RootElement.GetProperty("Series")[0].GetProperty("Assessment").GetString() ==
                     "repeated-100-unverified" && json.RootElement.GetProperty("UserContext").GetString() == "cable-connected",
                     "Repeated 100% is flagged independently of the cable annotation and charging flag");
+                var displayDpi = json.RootElement.GetProperty("DisplaySnapshot")[0];
+                Check(displayDpi.GetProperty("Dpi").GetInt32() == 1600 &&
+                    displayDpi.GetProperty("DpiSlots")[1].GetInt32() == 1600 &&
+                    displayDpi.GetProperty("DpiStatus").GetString() == "captured", "Report includes display DPI snapshot");
                 using var replay = JsonDocument.Parse(BatteryReplay.ReplayFile(file));
                 Check(replay.RootElement.GetProperty("Rounds").GetArrayLength() == 2, "Archive replay processes all rounds");
                 Check(!manifest.Contains("00:11:22:33:44:55") && !manifest.Contains("001122334455"), "Bluetooth addresses are redacted");
@@ -103,9 +112,29 @@ internal static class FeedbackReportRegression
                 string evidence = Read("battery-replay.json");
                 Check(!evidence.Contains("SERIAL-PRIVATE") && !evidence.Contains(targetId), "Physical path and identifier are omitted");
                 Check(evidence.Contains("open-failed") && evidence.Contains("MI_01/COL_02"), "Failed interfaces and interface numbers are retained");
+                Check(evidence.Contains("DpiObservations") && evidence.Contains("1600"), "Offline replay includes DPI evidence");
             }
             finally { File.Delete(file); }
         }
+        string guidedPath = Path.Combine(Path.GetTempPath(), $"mousedock-guided-{Guid.NewGuid():N}.zip");
+        try
+        {
+            var note = new FeedbackService.PhaseNote("接入充电线后", "用户填写型号", "USB 有线", 37, "未知", DateTimeOffset.UtcNow);
+            var phase = new FeedbackService.AdaptationPhase(BatteryReplay.EntryName, note, null, true, new[] { query.Receiver });
+            var result = FeedbackService.TryExportReport(new AppSettings(), devices, guidedPath, devices[0],
+                new[] { single }, phases: new[] { phase });
+            Check(result.Succeeded && result.MailSubject!.Contains(note.Model), "Guided feedback subject");
+            using var archive = ZipFile.OpenRead(guidedPath);
+            using var manifest = JsonDocument.Parse(archive.GetEntry("report.json")!.Open());
+            var item = manifest.RootElement.GetProperty("AdaptationPhases")[0];
+            Check(manifest.RootElement.GetProperty("Schema").GetInt32() == 3 &&
+                archive.GetEntry(item.GetProperty("Entry").GetString()!) != null, "Phase resolves to archived sample");
+            Check(item.GetProperty("User").GetProperty("ReferencePercent").GetInt32() == 37 &&
+                item.GetProperty("User").GetProperty("PowerState").GetString() == "未知", "Reference stays separate from observed state");
+            using var replay = JsonDocument.Parse(BatteryReplay.ReplayFile(guidedPath));
+            Check(replay.RootElement.GetProperty("Results")[0].GetProperty("Percent").GetInt32() == 87, "Guided reports support offline replay");
+        }
+        finally { File.Delete(guidedPath); }
         return checks;
     }
 }

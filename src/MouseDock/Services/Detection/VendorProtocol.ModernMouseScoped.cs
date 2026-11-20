@@ -51,7 +51,7 @@ internal static partial class VendorProtocol
         level=raw[20];charging=raw[19]==1;return true;
     }
     internal static ReferenceBatteryProtocol.Reading ReadModernMouseExchange(ReferenceBatteryProtocol.ILink link,string product,
-        byte? a7V3ProLink = null)
+        byte? a7V3ProLink = null, BatteryReplay.Trace evidence = null)
     {
         if(!ModernMouseProfiles.ContainsKey((product??"").Trim()))return ReferenceBatteryProtocol.Reading.Failed("未收录的MHUB型号");
         long deadline=link.Now+3000;int level=-1;bool charging=false;string trace="";
@@ -59,11 +59,15 @@ internal static partial class VendorProtocol
         {
             bool drained=false;for(int i=0;i<32;i++)if(link.Read(1) is not {Length:>0}){drained=true;break;}
             if(!drained||link.Now>=deadline)return ReferenceBatteryProtocol.Reading.Failed("MHUB旧输入未排空或超时");
-            var tx=BuildMchoseModernRequest();if(!link.Write(tx,300))return ReferenceBatteryProtocol.Reading.Failed("MHUB请求未完整发送");
+            var tx=BuildMchoseModernRequest(); evidence?.Add("battery-request", true, raw: tx, keep: true);
+            if(!link.Write(tx,300))return ReferenceBatteryProtocol.Reading.Failed("MHUB请求未完整发送");
             long end=Math.Min(deadline,link.Now+1000);bool ok=false;
             while(link.Now<end){var raw=link.Read((int)Math.Max(1,Math.Min(100,end-link.Now)));if(raw is not {Length:>0})continue;
                 trace=" RX="+Convert.ToHexString(raw.AsSpan(0,Math.Min(raw.Length,64)));
-                if(!raw.AsSpan().SequenceEqual(tx)&&TryModernScopedFrame(raw,product,out level,out charging,a7V3ProLink)){ok=true;break;}}
+                evidence?.Add("battery-response", true, raw: raw, keep: true);
+                if(!raw.AsSpan().SequenceEqual(tx)&&TryModernScopedFrame(raw,product,out level,out charging,a7V3ProLink)){
+                    evidence?.Add("battery-state", true, result: $"level-byte={raw[20]};charging-byte={raw[19]}");
+                    ok=true;break;}}
             if(!ok)return ReferenceBatteryProtocol.Reading.Failed($"MHUB第{round+1}/2次未取得匹配型号且校验正确的设备信息"+trace);
         }
         return new(level,charging,true,charging?ReferenceBatteryProtocol.State.Charging:ReferenceBatteryProtocol.State.Online,
@@ -111,11 +115,11 @@ internal static partial class VendorProtocol
                 }finally{HidD_FreePreparsedData(prep);}
                 signal=CreateEvent(IntPtr.Zero,true,false,IntPtr.Zero);if(signal==IntPtr.Zero)throw new IOException("MHUB事件创建失败");
                 var link = new G7Link(h, signal, 64);
-                var reading = ReadModernMouseExchange(link, product, a7V3ProLink);
+                var reading = ReadModernMouseExchange(link, product, a7V3ProLink, BatteryReplay.Current?.Active);
                 // The vendor driver uses these commands for its modern mouse profiles.
                 // The battery identity exchange first confirms the exact product on this handle.
                 if (readDpi && dpiReports && reading.Level >= 0)
-                    reading = reading with { Dpi = ModernMouseDpi.ReadSettings(link, dpiChange) };
+                    reading = reading with { Dpi = ModernMouseDpi.ReadSettings(link, dpiChange, BatteryReplay.Current?.Active) };
                 return reading;
             }finally{if(signal!=IntPtr.Zero)CloseHandle(signal);CloseHandle(h);}
         },readDpi ? 5500 : 4000);

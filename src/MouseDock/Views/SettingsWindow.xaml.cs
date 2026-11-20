@@ -561,7 +561,7 @@ namespace MouseDock.Views
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
-                Services.FeedbackService.OpenFeedbackMail(export.Path);
+                Services.FeedbackService.OpenFeedbackMail(export);
             }
             catch (System.Exception ex)
             {
@@ -581,7 +581,7 @@ namespace MouseDock.Views
             {
                 Views.AboutWindow.Show(this, false,
                     owner => App.ExportErrorReport(owner ?? this),
-                    p => Services.FeedbackService.OpenFeedbackMail(p));
+                    Services.FeedbackService.OpenFeedbackMail);
             }
             catch { }
         }

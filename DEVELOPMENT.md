@@ -54,8 +54,8 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 
 按 [TESTING.md](TESTING.md) 顺序：
 
-1. `MouseDock.ProtocolTests` 16093 条全过
-2. `MouseDock.Checks` 0 失败（Windows 11 上 5 项 SKIP 属正常）
+1. `MouseDock.ProtocolTests` 39,445 条全过
+2. `MouseDock.Checks` 173 项，2026-11-20 为 172 通过、1 项 HEAD 既有 Taskbar 失败；发布前确认无新增失败
 3. `--detect` 设备名称/类型/通道正确
 4. 替换后常驻实例能启动、托盘正常
 

@@ -93,14 +93,14 @@ namespace MouseDock.Controls
             bool low = !Full && AppearanceColors.IsLowBattery(Level, LowBatteryThreshold);
             var fill = low ? AppearanceColors.LowBatteryFill
                 : BatteryBrush ?? new SolidColorBrush(Color.FromRgb(52, 211, 153));
-            var bottom = low ? fill : BatteryBrush ?? Brushes.DodgerBlue;
+            var bottom = fill;
             _volume?.Clear();
             bool headset = Kind == DeviceKind.Headset;
             int? volume = headset && radius > 0 && DataContext is DeviceInfo device
                 ? (_volume ??= new RingVolumeInput(this)).Track(BatteryRingDrawing.VolumeBounds(center, radius), device)
                 : null;
             BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill,
-                ShowChargingMark && Charging ? GlyphBrush : null, headset ? GlyphBrush : bottom, headset, volume);
+                ShowChargingMark && Charging ? GlyphBrush : null, headset ? Brushes.White : bottom, headset, volume);
             if (showCheck)
             {
                 var check = new FormattedText("✓", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,

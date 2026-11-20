@@ -22,18 +22,26 @@ internal sealed class DesktopPetWindow : Window
     private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag, Skill, Burst }
     private const int ClickDuration = 1200;
     private const string KeqingId = "keqing";
+    private const string DracenaId = "dracena";
     private const int CombatFrameMilliseconds = 50;
     private static readonly TimeSpan IdleInterval = TimeSpan.FromMilliseconds(33);
     private static readonly TimeSpan CombatInterval = TimeSpan.FromMilliseconds(CombatFrameMilliseconds);
 
-    private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
+    private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn,
+        Brush Surface, Brush Outline, Brush Accent, Brush Hand, Brush Sleeve, bool HasBlink);
 
     private static readonly Character[] Characters =
     {
-        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), true),
-        new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
-        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true),
-        new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true)
+        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249),
+            Paint(246, 196, 160), Paint(199, 64, 58), true),
+        new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203),
+            Paint(247, 217, 199), Paint(186, 142, 86), true),
+        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249),
+            Paint(246, 213, 196), Paint(60, 52, 86), true),
+        new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255),
+            Paint(242, 206, 193), Paint(92, 68, 128), true),
+        new(DracenaId, "德蕾琪娜", "", 0, 0, Paint(16, 26, 46), Paint(206, 210, 222), Paint(232, 184, 91),
+            Paint(20, 22, 34), Paint(26, 33, 56), true)
     };
 
     private static Brush Paint(byte r, byte g, byte b)
@@ -50,14 +58,24 @@ internal sealed class DesktopPetWindow : Window
     private ImageSource[] _burstFrames;
     private Character _skin;
     private readonly Border _bubble;
+    private readonly DesktopPetDeskScene _scene;
+    private DracenaPetRig _rig;
+    private bool _rigActive;
+    private readonly DesktopPetInputHook _inputHook = new();
+    private readonly DesktopPetInputState _inputState = new();
+    private readonly PetInputCue[] _cues = new PetInputCue[64];
     private readonly Image _headerPortrait = new()
     {
         Width = 128, Height = 128, Stretch = Stretch.Uniform, IsHitTestVisible = false,
         HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
         Margin = new Thickness(0, 0, 13, 0)
     };
-    private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
-    private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+    private readonly Image _character = new() { Width = 168, Height = 168, Stretch = Stretch.Uniform };
+    private readonly Canvas _sparks = new()
+    {
+        Width = DesktopPetDeskScene.DesignWidth, Height = DesktopPetDeskScene.DesignHeight,
+        IsHitTestVisible = false, Visibility = Visibility.Collapsed
+    };
     private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
     private readonly ScaleTransform _breath = new(1, 1);
     private readonly RotateTransform _tilt = new();
@@ -106,11 +124,9 @@ internal sealed class DesktopPetWindow : Window
 
         _character.RenderTransformOrigin = new Point(.5, .98);
         _character.RenderTransform = new TransformGroup { Children = { _breath, _tilt, _lift } };
-        var artwork = new Grid();
-        artwork.Children.Add(_character);
-        artwork.Children.Add(_sparks);
         foreach (var star in _stars) _sparks.Children.Add(star);
-        var portrait = new Border { Background = Brushes.Transparent, Child = artwork };
+        _scene = new DesktopPetDeskScene(_character, _sparks);
+        var portrait = new Border { Background = Brushes.Transparent, Child = _scene };
         portrait.MouseEnter += (_, _) => { _hovering = true; _hoverAt = Environment.TickCount64; RenderPose(); };
         portrait.MouseLeave += (_, _) => { _hovering = false; RenderPose(); };
         portrait.MouseLeftButtonDown += (_, e) =>
@@ -176,7 +192,7 @@ internal sealed class DesktopPetWindow : Window
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
         var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
         portrait.VerticalAlignment = VerticalAlignment.Center;
-        portrait.Margin = new Thickness(4, 9, 8, 4);
+        portrait.Margin = new Thickness(2, 2, 4, 4);
         layout.Children.Add(portrait);
         var card = new Grid { VerticalAlignment = VerticalAlignment.Center };
         card.Children.Add(_bubble);
@@ -190,15 +206,27 @@ internal sealed class DesktopPetWindow : Window
         _timer.Tick += (_, _) => RenderPose();
         IsVisibleChanged += (_, _) =>
         {
-            if (IsVisible) Refresh();
+            if (IsVisible)
+            {
+                Refresh();
+                SyncInputCapture();
+            }
             else
             {
                 if (_action is Pose.Skill or Pose.Burst) _actionUntil = 0;
                 _behavior.Reset();
+                _inputHook.Stop();
+                _inputState.Reset();
                 _timer.Stop();
             }
         };
-        Loaded += (_, _) => PlaceOnScreen(remember: false);
+        Loaded += (_, _) =>
+        {
+            PlaceOnScreen(remember: false);
+            SyncInputCapture();
+        };
+        MouseEnter += (_, _) => _inputHook.SuppressMouse = true;
+        MouseLeave += (_, _) => _inputHook.SuppressMouse = false;
         _battery.Refreshed += OnRefresh;
         _battery.VisibleDevices.CollectionChanged += OnDevicesChanged;
         _battery.ChargeCompleted += OnFull;
@@ -207,25 +235,44 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        if (skin.Id == KeqingId)
+        _rigActive = skin.Id == DracenaId;
+        if (_rigActive)
         {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
-            _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
-            _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
-        }
-        else if (skin.Id == "shin-chan")
-        {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
+            _skillFrames = null;
+            _burstFrames = null;
+            _rig ??= new DracenaPetRig();
+            _rig.RenderTransformOrigin = new Point(.5, .98);
+            _rig.RenderTransform = _character.RenderTransform;
+            _scene.SetCharacterVisual(_rig);
+            _scene.SetCharacterScale(1);
+            _headerPortrait.Source = DracenaPetRig.CreatePortrait();
         }
         else
         {
-            LoadBuiltInCharacter(skin);
+            if (skin.Id == KeqingId)
+            {
+                _frames = LoadFrames(skin.Atlas, 3, 3, 9);
+                _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
+                _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
+                _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
+            }
+            else if (skin.Id == "shin-chan")
+            {
+                _frames = LoadFrames(skin.Atlas, 3, 3, 9);
+                _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
+            }
+            else
+            {
+                LoadBuiltInCharacter(skin);
+            }
+
+            _character.Source = _frames[0];
+            _scene.SetCharacterVisual(_character);
+            _scene.SetCharacterScale(skin.Id == KeqingId ? 1.12 : 1);
         }
 
-        _character.Source = _frames[0];
         _skin = skin;
+        _scene.ApplyPalette(skin.Surface, skin.Outline, skin.Accent, skin.Hand, skin.Sleeve);
         _behavior.Reset();
         _actionUntil = 0;
         Title = $"MouseDock · {skin.Name}桌宠";
@@ -310,8 +357,7 @@ internal sealed class DesktopPetWindow : Window
             if (IsLoaded)
                 Dispatcher.BeginInvoke(new Action(() => PlaceOnScreen(remember: false)), DispatcherPriority.Loaded);
         }
-        if (IsVisible && Motion) _timer.Start();
-        else _timer.Stop();
+        UpdateFrameTimer();
         RenderPose();
     }
 
@@ -336,6 +382,8 @@ internal sealed class DesktopPetWindow : Window
 
     internal void RenderPoseAt(long now)
     {
+        if (IsVisible && _inputHook.Running) DrainInput(now);
+        else _inputState.Prune(now);
         bool inAction = Motion && now < _actionUntil &&
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
         Pose pose = inAction ? _action : _charging ? Pose.Charging :
@@ -343,10 +391,11 @@ internal sealed class DesktopPetWindow : Window
         if (Motion && _dragging) pose = Pose.Drag;
         else if (Motion && !inAction && _hovering) pose = Pose.Hover;
         var sample = default(DesktopPetBehavior.Sample);
+        bool inputActive = _settings.DesktopPetMirrorInput && IsVisible && _inputState.InputActive(now);
         if (Motion && IsVisible)
         {
             sample = _behavior.Update(now, _hovering || _press.HasValue, _dragging,
-                (!_hovering && !_press.HasValue) && (inAction || _charging || IsLow),
+                (!_hovering && !_press.HasValue) && (inAction || _charging || IsLow || inputActive),
                 _settings.DesktopPetRandomActions, _settings.DesktopPetRest,
                 _skin.HasBlink && _settings.DesktopPetBlink, _settings.DesktopPetMotionSpeed,
                 _settings.DesktopPetActionFrequency);
@@ -370,8 +419,11 @@ internal sealed class DesktopPetWindow : Window
         var interval = combatFrames != null ? CombatInterval :
             sample.State == DesktopPetBehavior.State.Sleep ? TimeSpan.FromMilliseconds(140) : IdleInterval;
         if (_timer.Interval != interval) _timer.Interval = interval;
-        var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
-        if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
+        if (!_rigActive)
+        {
+            var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
+            if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
+        }
         _breath.ScaleY = Motion && combatFrames == null ? 1 + (pose == Pose.Charging ? .024 : .012) *
             Math.Sin(now / (pose == Pose.Charging ? 230d :
                 sample.State == DesktopPetBehavior.State.Sleep ? 1050d : 700d)) : 1;
@@ -390,7 +442,7 @@ internal sealed class DesktopPetWindow : Window
             Pose.Wave when inAction => 7 * Math.Sin((_actionUntil - now) / 95d),
             _ => sample.Tilt + _lookAngle
         };
-        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion + sample.Lift;
+        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion + sample.Lift - 1.6 * TypingPulse(now);
         bool sparkling = (_skin.Id is "rikka" or KeqingId) && Motion && pose is Pose.Charging or Pose.Celebrate;
         _sparks.Visibility = sparkling ? Visibility.Visible : Visibility.Collapsed;
         if (sparkling)
@@ -401,11 +453,82 @@ internal sealed class DesktopPetWindow : Window
                 var star = _stars[i];
                 star.Foreground = pose == Pose.Celebrate ? Brushes.Gold : Brushes.Violet;
                 star.Opacity = (1 - progress) * (.65 + .35 * Math.Sin(now / 220d + i * 2));
-                Canvas.SetLeft(star, 108 + i * 12 + progress * (6 + i * 9));
-                Canvas.SetTop(star, 13 + i * 13 - progress * 10);
+                Canvas.SetLeft(star, 150 + i * 12 + progress * (6 + i * 9));
+                Canvas.SetTop(star, 22 + i * 13 - progress * 10);
             }
         }
 
+        if (IsVisible)
+            _scene.Render(now, Motion, _inputState, _settings.DesktopPetShowKeyLabels, _settings.DesktopPetMirrorMouse);
+
+        if (IsVisible && _rigActive)
+            _rig.Render(now, Motion, _lookAngle,
+                _settings.DesktopPetMirrorInput && _inputState.Typing(now),
+                _settings.DesktopPetMirrorMouse && _inputState.InputActive(now) &&
+                    (_inputState.HeldButton != null || _inputState.LastMouse is { } mouse && now - mouse.At <= 700),
+                _charging, IsLow, pose is Pose.Click or Pose.Wave or Pose.Celebrate);
+    }
+
+    internal DesktopPetInputState InputState => _inputState;
+    internal DesktopPetDeskScene Scene => _scene;
+    internal bool InputCaptureRunning => _inputHook.Running;
+
+    private bool InputCaptureWanted => _settings.DesktopPetMirrorInput && IsVisible &&
+        Application.Current != null && Environment.GetEnvironmentVariable("MOUSEDOCK_PET_INPUT") != "off";
+
+    /// <summary>只在桌宠可见且开关开启时监听全局输入；隐藏或关闭时立即释放钩子。</summary>
+    private void SyncInputCapture()
+    {
+        if (InputCaptureWanted)
+        {
+            if (!_inputHook.Running)
+            {
+                // 隐藏期间可能没收到 MouseLeave，重新显示时按当前指针位置重建抑制状态。
+                _inputHook.SuppressMouse = IsMouseOver;
+                _inputHook.Start();
+            }
+        }
+        else if (_inputHook.Running)
+        {
+            _inputHook.Stop();
+            _inputHook.SuppressMouse = false;
+            _inputState.Reset();
+        }
+        UpdateFrameTimer();
+    }
+
+    private void UpdateFrameTimer()
+    {
+        if (_closed || !IsVisible)
+        {
+            _timer.Stop();
+            return;
+        }
+        bool following = _settings.DesktopPetMirrorInput && _inputHook.Running;
+        if (Motion || following) _timer.Start();
+        else _timer.Stop();
+    }
+
+    private void DrainInput(long now)
+    {
+        int count;
+        while ((count = _inputHook.Drain(_cues)) > 0)
+            for (int i = 0; i < count; i++)
+            {
+                var cue = _cues[i];
+                if (cue.Kind != PetInputKind.Key && !_settings.DesktopPetMirrorMouse) continue;
+                _inputState.Push(cue);
+            }
+        _inputState.Prune(now);
+    }
+
+    private double TypingPulse(long now)
+    {
+        if (!Motion || !_settings.DesktopPetMirrorInput) return 0;
+        var key = _inputState.LastKey;
+        if (!key.HasValue) return 0;
+        long age = now - key.Value.At;
+        return age is >= 0 and < 180 ? Math.Sin(age / 180d * Math.PI) : 0;
     }
 
     private ImageSource CombatFrame(ImageSource[] frames, long now)
@@ -551,6 +674,37 @@ internal sealed class DesktopPetWindow : Window
         behavior.Items.Add(frequency);
         ContextMenu.Items.Add(behavior);
 
+        var touch = new MenuItem { Header = "键盘与鼠标跟随" };
+        Add(touch.Items, "镜像键盘输入", () =>
+        {
+            _settings.DesktopPetMirrorInput = !_settings.DesktopPetMirrorInput;
+            SyncInputCapture();
+            SaveBehavior();
+        }, _settings.DesktopPetMirrorInput);
+        Add(touch.Items, "镜像鼠标点击", () =>
+        {
+            _settings.DesktopPetMirrorMouse = !_settings.DesktopPetMirrorMouse;
+            SaveBehavior();
+        }, _settings.DesktopPetMirrorMouse);
+        Add(touch.Items, "显示按键提示", () =>
+        {
+            _settings.DesktopPetShowKeyLabels = !_settings.DesktopPetShowKeyLabels;
+            SaveBehavior();
+        }, _settings.DesktopPetShowKeyLabels);
+        // 鼠标钩子与键盘钩子一起安装，键盘总开关关闭时鼠标跟随不会生效。
+        ((MenuItem)touch.Items[1]).IsEnabled = _settings.DesktopPetMirrorInput;
+        ((MenuItem)touch.Items[1]).ToolTip = _settings.DesktopPetMirrorInput
+            ? null : "需要先开启「镜像键盘输入」";
+        if (_settings.DesktopPetMirrorInput && !_inputHook.KeyboardHooked)
+            touch.Items.Add(new MenuItem { Header = "输入监听不可用（系统限制）", IsEnabled = false });
+        touch.Items.Add(new Separator());
+        touch.Items.Add(new MenuItem
+        {
+            Header = "提示：会显示敲击字符，输入密码前请关闭",
+            IsEnabled = false
+        });
+        ContextMenu.Items.Add(touch);
+
         Add(ContextMenu.Items, "满电提醒（全局）", () => { _settings.NotifyChargeCompleted = !_settings.NotifyChargeCompleted; App.SaveSettings(); }, _settings.NotifyChargeCompleted);
         Add(ContextMenu.Items, "设置…", () => App.ShowSettings(this));
         Add(ContextMenu.Items, "隐藏桌宠", App.ToggleCurrentSurface);
@@ -650,6 +804,8 @@ internal sealed class DesktopPetWindow : Window
     {
         _closed = true;
         _timer.Stop();
+        _inputHook.Dispose();
+        _inputState.Reset();
         _battery.Refreshed -= OnRefresh;
         _battery.VisibleDevices.CollectionChanged -= OnDevicesChanged;
         _battery.ChargeCompleted -= OnFull;
