@@ -241,7 +241,8 @@ internal static class Program
             }),
             ("键盘桌宠桌前场景几何保持键位在桌面内", DesktopPetDeskChecks.SceneGeometry),
             ("键盘桌宠跟随用户按键与鼠标左右键", DesktopPetDeskChecks.InputFollow),
-            ("键盘桌宠跟随开关默认开启并可克隆", DesktopPetDeskChecks.SettingsRoundTrip)
+            ("键盘桌宠跟随开关默认开启并可克隆", DesktopPetDeskChecks.SettingsRoundTrip),
+            ("德蕾琪娜使用分层矢量形象并共享键鼠同步", DesktopPetDeskChecks.Dracena)
         };
         if (args.Length == 2 && args[0] == "--filter")
             checks = checks.Where(c => c.Name.Contains(args[1], StringComparison.OrdinalIgnoreCase)).ToArray();

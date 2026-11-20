@@ -59,8 +59,8 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 & "C:\Program Files\dotnet\dotnet-sdk\dotnet.exe" run --project tests\MouseDock.Checks -c Release
 ```
 
-- 172 项，2026-11-20 为 171 通过、1 项 HEAD 既有 Taskbar 失败，0 skipped；需要交互式 Windows 桌面会话与 STA 线程。
-- 2026-11-20 键盘桌宠回归基线为 `171/172`；唯一失败项是任务栏透明像素检查，在改动前的 HEAD 上同样失败。
+- 173 项，2026-11-20 为 172 通过、1 项 HEAD 既有 Taskbar 失败，0 skipped；需要交互式 Windows 桌面会话与 STA 线程。
+- 2026-11-20 键盘桌宠与德蕾琪娜回归基线为 `172/173`；唯一失败项是任务栏透明像素检查，在改动前的 HEAD 上同样失败。
 - 任务栏检查使用真实任务栏与本机窗口，包含屏幕像素透明合成和两种宿主退出路径。
 - 更新检查用隔离目录内的旧版、新版 PE 执行真实更新脚本，验证先等待旧进程退出，再替换并启动新版。测试关闭系统集成。
 

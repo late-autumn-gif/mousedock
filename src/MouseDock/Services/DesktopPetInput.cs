@@ -6,8 +6,17 @@ using System.Threading;
 
 namespace MouseDock.Services;
 
-/// <summary>桌宠要跟随的输入类型：键盘按键与三种鼠标按键。</summary>
-internal enum PetInputKind { Key, MouseLeft, MouseRight, MouseMiddle }
+/// <summary>桌宠要跟随的输入类型：键盘按键、三种鼠标按下与三种鼠标松开。</summary>
+internal enum PetInputKind
+{
+    Key,
+    MouseLeft,
+    MouseRight,
+    MouseMiddle,
+    MouseLeftUp,
+    MouseRightUp,
+    MouseMiddleUp
+}
 
 /// <summary>
 /// 钩子线程投递给界面线程的单个输入事件。只存在于内存队列中，不写文件、不写日志。
@@ -158,13 +167,29 @@ internal sealed class DesktopPetInputState
     private const long BurstWindow = 700;   // 相邻按键间隔不超过 700ms 视为同一段连击
     private const long TrailWindow = 1500;  // 轨迹里的键帽保留 1.5s
     private const long StaleWindow = 1600;  // 最近按键/鼠标事件过期时间
+    private const long MouseWindow = 700;   // 鼠标按下后的手部停留窗口
+    private const long HeldTimeout = 30000; // 松开事件丢失时的自愈时间，避免手一直按在鼠标上
 
     private readonly List<KeyPulse> _trail = new(TrailLimit);
     private long _lastKeyAt = -1;
     private int _burst;
+    private PetInputKind? _heldButton;
+    private long _heldSince;
+    private long _mouseReleaseAt;
 
     internal KeyPulse? LastKey { get; private set; }
     internal MousePulse? LastMouse { get; private set; }
+
+    /// <summary>当前按住的鼠标键（按下后收到对应松开或超时自愈前保持）；null 表示没有按住。</summary>
+    internal PetInputKind? HeldButton => _heldButton;
+
+    /// <summary>最近一次鼠标松开的时间戳；没有松开过为 0。</summary>
+    internal long MouseReleaseAt => _mouseReleaseAt;
+
+    /// <summary>键鼠输入是否处于“活跃”状态：最近 800ms 内有按键，或鼠标按住/最近 700ms 内点击过。</summary>
+    internal bool InputActive(long now) =>
+        (LastKey is { } key && now - key.At <= TypingWindow) ||
+        (LastMouse is { } mouse && (now - mouse.At <= MouseWindow || _heldButton != null));
 
     /// <summary>最近的按键序列，最旧→最新，最多 8 个；Slot 为 -1 表示该键不在可视化键盘上。</summary>
     internal IReadOnlyList<KeyPulse> Trail => _trail;
@@ -187,8 +212,34 @@ internal sealed class DesktopPetInputState
             _lastKeyAt = cue.Timestamp;
             return;
         }
+
+        if (IsRelease(cue.Kind))
+        {
+            _mouseReleaseAt = cue.Timestamp;
+            if (_heldButton == DownKindOf(cue.Kind))
+            {
+                _heldButton = null;
+                _heldSince = 0;
+            }
+            return;
+        }
+
         LastMouse = new MousePulse(cue.Kind, cue.Timestamp);
+        _heldButton = cue.Kind;
+        _heldSince = cue.Timestamp;
     }
+
+    /// <summary>把松开类型映射回对应的按下类型。</summary>
+    internal static PetInputKind DownKindOf(PetInputKind kind) => kind switch
+    {
+        PetInputKind.MouseLeftUp => PetInputKind.MouseLeft,
+        PetInputKind.MouseRightUp => PetInputKind.MouseRight,
+        PetInputKind.MouseMiddleUp => PetInputKind.MouseMiddle,
+        _ => kind
+    };
+
+    internal static bool IsRelease(PetInputKind kind) =>
+        kind is PetInputKind.MouseLeftUp or PetInputKind.MouseRightUp or PetInputKind.MouseMiddleUp;
 
     /// <summary>丢弃过期的按键/鼠标状态与轨迹键帽；每帧调用一次。</summary>
     internal void Prune(long now)
@@ -200,6 +251,11 @@ internal sealed class DesktopPetInputState
             _burst = 0;
         }
         if (LastMouse is { } mouse && now - mouse.At > StaleWindow) LastMouse = null;
+        if (_heldButton != null && now - _heldSince > HeldTimeout)
+        {
+            _heldButton = null;
+            _heldSince = 0;
+        }
         for (int i = _trail.Count - 1; i >= 0; i--)
             if (now - _trail[i].At > TrailWindow) _trail.RemoveAt(i);
     }
@@ -214,6 +270,9 @@ internal sealed class DesktopPetInputState
         LastMouse = null;
         _lastKeyAt = -1;
         _burst = 0;
+        _heldButton = null;
+        _heldSince = 0;
+        _mouseReleaseAt = 0;
     }
 }
 
@@ -232,6 +291,9 @@ internal sealed class DesktopPetInputHook : IDisposable
     private const int WmLeftButtonDown = 0x0201;
     private const int WmRightButtonDown = 0x0204;
     private const int WmMiddleButtonDown = 0x0207;
+    private const int WmLeftButtonUp = 0x0202;
+    private const int WmRightButtonUp = 0x0205;
+    private const int WmMiddleButtonUp = 0x0208;
     private const uint WmQuit = 0x0012;
     private const uint PmNoRemove = 0x0000;
     private const int MaxQueued = 256;
@@ -473,6 +535,9 @@ internal sealed class DesktopPetInputHook : IDisposable
                 case WmLeftButtonDown: kind = PetInputKind.MouseLeft; break;
                 case WmRightButtonDown: kind = PetInputKind.MouseRight; break;
                 case WmMiddleButtonDown: kind = PetInputKind.MouseMiddle; break;
+                case WmLeftButtonUp: kind = PetInputKind.MouseLeftUp; break;
+                case WmRightButtonUp: kind = PetInputKind.MouseRightUp; break;
+                case WmMiddleButtonUp: kind = PetInputKind.MouseMiddleUp; break;
                 default: return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
             }
             Enqueue(new PetInputCue(kind, 0, 0, "", Environment.TickCount64));

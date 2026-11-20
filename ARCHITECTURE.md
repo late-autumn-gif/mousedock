@@ -31,31 +31,31 @@ Services/UpdateService（自更新）
 
 v1.3.0 的桌前场景由 `Controls/DesktopPetDeskScene.cs` 实现：内部使用 300×236 设计坐标，按 0.72 输出约 216×170 DIP，接近常见键鼠同步小猫桌宠的占用；图层顺序固定，逐帧只重绘 `DrawingContext`，不重建可视化树：
 
-1. 椅背层 `_back`：背景光晕、椅背与靠垫，让角色读起来是坐着的。
-2. 角色图集 `Image`：窗口持有的九姿势帧；按图集内容做尺寸归一化（刻晴 ×1.12，其余 ×1），再叠加原有的呼吸、倾斜和抬升变换。
-3. 前景层 `_front`：桌面、显示器、5 行键帽键盘、鼠标、双手与浮起键帽，全部矢量绘制。
+1. 背景层 `_back`：角色光晕与桌垫落影。
+2. 角色层：普通角色是窗口持有的九姿势 PNG `Image`（按图集内容归一化，刻晴 ×1.12，其余 ×1）；德蕾琪娜使用分层矢量控件 `DracenaPetRig`（后发、编发、躯干、头部、眼睛、刘海、发饰分层），由 `SetCharacterVisual` 在同一图层位置替换。
+3. 前景层 `_front`：霓虹发光桌垫与描边线缆、小玩偶、5 行键帽键盘、鼠标、双手、前沿文本条与浮起键帽，全部矢量绘制。
 4. `_sparks`：六花与刻晴在充电、满电时的星星点缀。
 
-配色在 `ApplyPalette` 时从角色的 `Surface/Outline/Accent/Hand/Sleeve` 派生并 `Freeze`，四款角色共用一套场景，不各自复制资源。键位几何由 `PetKeyboardLayout` 的行、偏移和宽度计算，`KeyBounds`、`KeyboardBounds`、`MouseBounds`、`MonitorBounds` 同时供绘制、手部定位和回归检查复用。
+配色在 `ApplyPalette` 时从角色的 `Surface/Outline/Accent/Hand/Sleeve` 派生并 `Freeze`，所有角色共用一套场景，不各自复制资源（德蕾琪娜的金色霓虹来自她的强调色）。键位几何由 `PetKeyboardLayout` 的行、偏移和宽度计算，`KeyBounds`、`KeyboardBounds`、`MouseBounds`、`MatBounds`、`DisplayBounds` 同时供绘制、手部定位和回归检查复用。
 
 ### 输入链路
 
 ```
 DesktopPetInputHook（专用后台线程 + 消息泵）
   ├─ WH_KEYBOARD_LL → PetInputCue（vkCode、scanCode、标签、时间戳）
-  └─ WH_MOUSE_LL    → PetInputCue（左 / 右 / 中键）
+  └─ WH_MOUSE_LL    → PetInputCue（左 / 右 / 中键的按下与松开）
         └─ ConcurrentQueue（上限 256，满时丢最旧）
               └─ UI 线程 33ms DispatcherTimer → Drain(64 槽缓冲) → DesktopPetInputState
                     ├─ trail：最近 8 个按键，1.5 秒后逐条过期
-                    ├─ LastKey / LastMouse：1.6 秒后过期
+                    ├─ LastKey / LastMouse：1.6 秒后过期；HeldButton 记录按住，松开丢失时 30s 自愈
                     └─ DesktopPetDeskScene.Render(now, motion, state, showLabels, mirrorMouse)
                           ├─ 双手：指数平滑到目标键位，按键后 180ms 保持下压
                           ├─ 键帽：420ms 高亮，标签约 700ms 浮起
-                          ├─ 显示器：按宽度截断的最近按键标签（最多 8 个），520ms 光标闪烁
-                          └─ 鼠标：左右半侧 260ms 高亮，手部停留 700ms
+                          ├─ 前沿文本条：按宽度整标签截断的最近按键（最多 8 个），520ms 光标闪烁
+                          └─ 鼠标：左右半侧按住/点击高亮，手部停留到松开后再延后 700ms
 ```
 
-钩子线程与 WPF 线程分离：键盘回调只读 `KBDLLHOOKSTRUCT` 的 `vkCode`/`scanCode`，忽略修饰键并对同一键做 30ms 节流；鼠标回调只认左右中键的按下消息。两者都只入队后立即调用 `CallNextHookEx`，不等待 UI 线程。窗口在 `DrainInput` 阶段按「镜像鼠标点击」开关丢弃非键盘 cue，关闭该开关时鼠标事件不会进入状态模型。`DesktopPetInputState` 只持有最近一次按键/鼠标事件、连击数和显示器标签序列，供场景逐帧读取；窗口层面的 `TypingPulse` 只取最近按键的时间参与抬升，不读取按键内容。可显示标签由 `PetKeyboardLayout.LabelOf` 生成：字母和数字直接给出字符，编辑、导航和功能键给出固定名称，其余键使用前台窗口的 `ToUnicodeEx`，失败再退回 `MapVirtualKey` 或 `0x` 前缀。
+钩子线程与 WPF 线程分离：键盘回调只读 `KBDLLHOOKSTRUCT` 的 `vkCode`/`scanCode`，忽略修饰键并对同一键做 30ms 节流；鼠标回调识别左右中键的按下与松开。两者都只入队后立即调用 `CallNextHookEx`，不等待 UI 线程。窗口在 `DrainInput` 阶段按「镜像鼠标点击」开关丢弃非键盘 cue，关闭该开关时鼠标事件不会进入状态模型。`DesktopPetInputState` 只持有最近一次按键/鼠标事件、按住状态、连击数和文本条字符序列，供场景逐帧读取；窗口层面的 `TypingPulse` 只取最近按键的时间参与抬升，不读取按键内容。可显示标签由 `PetKeyboardLayout.LabelOf` 生成：字母和数字直接给出字符，编辑、导航和功能键给出固定名称，其余键使用前台窗口的 `ToUnicodeEx`，失败再退回 `MapVirtualKey` 或 `0x` 前缀。输入优先级由 `DesktopPetWindow` 统一裁决：键鼠活跃（`InputActive`）时把行为调度标记为 `blocked`，立即结束随机动作；低电与充电优先于空闲随机动作；普通角色的表情仍受 PNG 帧限制。`DracenaPetRig` 把这一优先级映射为 Focus / Sleepy / Happy / Yawn / Smile，并在输入停止后自然回到微笑。
 
 ### 线程与生命周期
 
@@ -64,7 +64,7 @@ DesktopPetInputHook（专用后台线程 + 消息泵）
 - 启动条件是「镜像键盘输入」开启、窗口 `IsVisible`、`Application.Current` 存在，且环境变量 `MOUSEDOCK_PET_INPUT` 不等于 `off`；`SyncInputCapture` 幂等，重复调用不会重复安装。
 - 隐藏窗口、切换显示方式或关闭监听开关时调用 `Stop()`：卸载钩子、结束消息泵并清空 `DesktopPetInputState`；`DesktopPetWindow.OnClosed` 再 `Dispose()` 兜底。
 - 鼠标进入桌宠窗口时设置 `SuppressMouse`，避免把用户点击桌宠自身当作被镜像的点击。
-- 帧计时器只在 `Motion` 或跟随生效时运行。减少动态效果（`Motion == false`）下仍保留键帽高亮、显示器文字和鼠标按键高亮，但双手直接落位，不播放平滑过渡、呼吸与随机动作。
+- 帧计时器只在 `Motion` 或跟随生效时运行。减少动态效果（`Motion == false`）下仍保留键帽高亮、前沿文本条和鼠标按键高亮，但双手直接落位，不播放平滑过渡、呼吸与随机动作。
 
 ## 识别链路
 
@@ -104,7 +104,7 @@ VT3 MAX `24AE:1417/0105` 沿用原 HidDiscovery → InstanceScope → ExtraDevic
 ## 测试
 
 - `tests/MouseDock.ProtocolTests`：39,445 条离线断言，覆盖帧解析、拒绝路径、路由、ToDevice。
-- `tests/MouseDock.Checks`：172 项 Windows 本地界面/运行时检查，需要桌面会话；2026-11-20 键盘桌宠回归为 171 通过、0 skipped，1 项 Taskbar 透明像素检查在改动前的 HEAD 上同样失败。`--filter 键盘桌宠` 只跑 6 项桌宠专项；`--pet-input-live` 用 `keybd_event` 合成 F24 验证系统输入到钩子的链路，属于合成输入，不等于真人敲击。
+- `tests/MouseDock.Checks`：173 项 Windows 本地界面/运行时检查，需要桌面会话；2026-11-20 键盘桌宠与德蕾琪娜回归为 172 通过、0 skipped，1 项 Taskbar 透明像素检查在改动前的 HEAD 上同样失败。`--filter 键盘桌宠` 只跑 6 项桌宠专项；`--pet-input-live` 用 `keybd_event` 合成 F24 验证系统输入到钩子的链路，属于合成输入，不等于真人敲击。
 
 详见 [TESTING.md](TESTING.md)，已知限制见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。
 

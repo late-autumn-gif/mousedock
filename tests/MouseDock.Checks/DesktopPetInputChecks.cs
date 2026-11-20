@@ -111,12 +111,26 @@ internal static class DesktopPetInputChecks
         Require(state.LastMouse == null, "过期的鼠标按键应被 Prune 清除。");
         Require(state.Trail.Count == 0, "鼠标事件不应进入键盘轨迹。");
 
+        // 按住/松开：按下保持、松开清除，松开事件丢失时 30s 自愈。
+        state.Reset();
+        state.Push(MouseCue(PetInputKind.MouseLeft, now));
+        Require(state.HeldButton == PetInputKind.MouseLeft, "按下鼠标后应保持按住状态。");
+        Require(state.InputActive(now), "按住鼠标应让输入保持活跃。");
+        state.Prune(now + 31000);
+        Require(state.HeldButton == null, "松开事件丢失超过 30s 时应自愈释放鼠标。");
+        state.Push(MouseCue(PetInputKind.MouseRight, now + 32000));
+        state.Push(MouseCue(PetInputKind.MouseRightUp, now + 32010));
+        Require(state.HeldButton == null && state.MouseReleaseAt == now + 32010,
+            "松开鼠标应清除按住状态并记录松开时间。");
+        Require(state.InputActive(now + 32020), "刚松开后的鼠标点击仍应算作输入活跃。");
+
         // Reset 清空全部状态。
         state.Push(KeyCue(0x51, now));
         state.Push(MouseCue(PetInputKind.MouseMiddle, now));
         state.Reset();
         Require(state.Trail.Count == 0 && state.LastKey == null && state.LastMouse == null && state.Burst == 0,
             "Reset 必须清空轨迹、最近按键、最近鼠标与连击数。");
+        Require(state.HeldButton == null && state.Trail.Count == 0, "Reset 必须清空鼠标按住状态。");
         Require(!state.Typing(now), "Reset 之后不应判定为正在打字。");
     }
 

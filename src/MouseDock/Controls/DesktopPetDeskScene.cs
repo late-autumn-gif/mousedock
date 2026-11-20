@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,8 +9,8 @@ using MouseDock.Services;
 namespace MouseDock.Controls;
 
 /// <summary>
-/// 桌前键盘桌宠场景：椅背与背景 → 角色图集 → 桌面、显示器、键盘、鼠标与双手。
-/// 角色图集和星星画布由桌宠窗口持有，本控件只负责桌面场景与输入跟随动画。
+/// 桌前键盘桌宠场景：背景光晕 → 角色图集 → 霓虹桌垫、小玩偶、键盘、鼠标、双手与前沿文本条。
+/// 角色图集和星星画布由桌宠窗口持有，本控件只负责桌前场景与输入跟随动画。
 /// 所有几何使用 DIP，图层顺序固定，避免逐帧重建可视化树。
 /// </summary>
 internal sealed class DesktopPetDeskScene : Canvas
@@ -23,11 +24,8 @@ internal sealed class DesktopPetDeskScene : Canvas
     internal const double LayoutWidth = DesignWidth * LayoutScale;
     internal const double LayoutHeight = DesignHeight * LayoutScale;
 
-    private const double DeskLeft = 6;
-    private const double DeskRight = 294;
-    private const double DeskTop = 146;
-    private const double DeskNear = 184;
-    private const double DeskBottom = 224;
+    private const double MatTop = 142;
+    private const double MatBottom = 218;
 
     private const double KeyboardLeft = 66;
     private const double KeyboardTop = 150;
@@ -43,14 +41,15 @@ internal sealed class DesktopPetDeskScene : Canvas
     private const double MouseWidth = 40;
     private const double MouseHeight = 26;
 
-    private const double MonitorLeft = 8;
-    private const double MonitorTop = 86;
-    private const double MonitorWidth = 62;
-    private const double MonitorHeight = 48;
-
     private const double CharacterLeft = 46;
     private const double CharacterTop = 0;
     private const double CharacterSize = 208;
+
+    private static readonly Rect MatRect = new(16, MatTop, 268, MatBottom - MatTop);
+    private static readonly Geometry MatGeometry = new RectangleGeometry(MatRect, 12, 12);
+    private static readonly Geometry CableGeometry = BuildCableGeometry();
+    private static readonly Geometry EarLeftGeometry = BuildTriangle(new Point(35, 150), new Point(31, 141), new Point(40, 146));
+    private static readonly Geometry EarRightGeometry = BuildTriangle(new Point(49, 150), new Point(53, 141), new Point(44, 146));
 
     private static readonly int HomeLeftSlot = PetKeyboardLayout.IndexOf(0x46);  // F
     private static readonly int HomeRightSlot = PetKeyboardLayout.IndexOf(0x4A); // J
@@ -63,46 +62,37 @@ internal sealed class DesktopPetDeskScene : Canvas
 
     private readonly Layer _back = new() { IsHitTestVisible = false };
     private readonly Layer _front = new() { IsHitTestVisible = false };
-    private readonly Image _character;
+    private FrameworkElement _character;
+    private double _characterScale = 1;
     private readonly Canvas _sparks;
 
     private readonly Typeface _typeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
     private readonly Typeface _mono = new(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
 
-    private Brush _surface = Brushes.Transparent;
-    private Brush _outline = Brushes.Transparent;
     private Brush _accent = Brushes.Transparent;
     private Brush _hand = Brushes.Transparent;
     private Brush _sleeve = Brushes.Transparent;
-    private Brush _deskFront = Brushes.Transparent;
-    private Brush _deskEdge = Brushes.Transparent;
     private Brush _keyBase = Brushes.Transparent;
     private Brush _keyBorder = Brushes.Transparent;
     private Brush _keyDark = Brushes.Transparent;
-    private Brush _panel = Brushes.Transparent;
     private Brush _dim = Brushes.Transparent;
-    private Brush _chair = Brushes.Transparent;
-    private Brush _chairEdge = Brushes.Transparent;
-    private Brush _handLine = Brushes.Transparent;
-    private Brush _glow = Brushes.Transparent;
-    private Brush _shadow = Brushes.Transparent;
-    private Brush _deskTopFill = Brushes.Transparent;
     private Brush _accentSoft = Brushes.Transparent;
     private Brush _accentGlow = Brushes.Transparent;
-    private Brush _panelSoft = Brushes.Transparent;
-    private Pen _chairPen;
-    private Pen _chairCushionPen;
-    private Pen _deskPen;
-    private Pen _deskLinePen;
+    private Brush _glow = Brushes.Transparent;
+    private Brush _shadow = Brushes.Transparent;
+    private Brush _matFill = Brushes.Transparent;    private Brush _plushBody = Brushes.Transparent;
+    private Brush _plushShade = Brushes.Transparent;
+    private Pen _edgePen;
+    private Pen _rimPen;
     private Pen _keyPen;
     private Pen _keyPenPressed;
-    private Pen _panelPen;
-    private Pen _screenPen;
-    private Pen _mousePen;
-    private Pen _mouseWheelPen;
     private Pen _handPen;
     private Pen _handLinePen;
     private Pen _keycapPen;
+    private Pen _neonPen;
+    private Pen _neonGlowPen;
+    private Pen _neonHaloPen;
+    private Pen _plushPen;
 
     private Point _leftHand;
     private Point _rightHand;
@@ -112,7 +102,6 @@ internal sealed class DesktopPetDeskScene : Canvas
     private long _keyAge = long.MaxValue;
     private string _trail = "";
     private bool _showLabels = true;
-    private bool _mirrorMouse = true;
     private long _now;
 
     internal DesktopPetDeskScene(Image character, Canvas sparks)
@@ -139,7 +128,7 @@ internal sealed class DesktopPetDeskScene : Canvas
 
         _character.Width = CharacterSize;
         _character.Height = CharacterSize;
-        _character.Stretch = Stretch.Uniform;
+        if (_character is Image image) image.Stretch = Stretch.Uniform;
         SetLeft(_character, CharacterLeft);
         SetTop(_character, CharacterTop);
 
@@ -156,11 +145,11 @@ internal sealed class DesktopPetDeskScene : Canvas
     /// <summary>当前帧的按键高亮槽位，-1 表示没有高亮。</summary>
     internal int HighlightedSlot { get; private set; } = -1;
 
-    /// <summary>当前帧显示的按键标签，空字符串表示没有。</summary>
+    /// <summary>当前帧的按键标签，空字符串表示没有。</summary>
     internal string HighlightedLabel { get; private set; } = "";
 
-    /// <summary>显示器上实际显示的字符，用于回归检查。</summary>
-    internal string MonitorText { get; private set; } = "";
+    /// <summary>桌垫前沿文本条实际显示的字符；空字符串表示当前没有输入。</summary>
+    internal string DisplayText { get; private set; } = "";
 
     internal bool MouseLeftPressed { get; private set; }
     internal bool MouseRightPressed { get; private set; }
@@ -170,7 +159,12 @@ internal sealed class DesktopPetDeskScene : Canvas
 
     internal static Rect KeyboardBounds => new(KeyboardLeft, KeyboardTop, KeyboardWidth, KeyboardHeight);
     internal static Rect MouseBounds => new(MouseLeft, MouseTop, MouseWidth, MouseHeight);
-    internal static Rect MonitorBounds => new(MonitorLeft, MonitorTop, MonitorWidth, MonitorHeight);
+
+    /// <summary>霓虹桌垫的外接矩形，用于回归检查键盘/鼠标没有跑出垫面。</summary>
+    internal static Rect MatBounds => MatRect;
+
+    /// <summary>前沿文本条的可用区域，位于键盘下方、桌垫底边之上。</summary>
+    internal static Rect DisplayBounds => new(50, 200, 200, 16);
 
     /// <summary>单个键帽的渲染矩形；索引来自 <see cref="PetKeyboardLayout.Keys"/>。</summary>
     internal static Rect KeyBounds(int slot)
@@ -196,18 +190,39 @@ internal sealed class DesktopPetDeskScene : Canvas
         ? new Point(MouseLeft + MouseWidth * .7, MouseTop + MouseHeight * .45)
         : new Point(MouseLeft + MouseWidth * .3, MouseTop + MouseHeight * .45);
 
-    /// <summary>按角色图集的内容比例微调显示尺寸，让四款角色的可见高度更接近。</summary>
-    internal void SetCharacterScale(double scale)
+    /// <summary>当前使用的角色视觉；普通角色是 PNG Image，德蕾琪娜是分层矢量控件。</summary>
+    internal FrameworkElement CharacterVisual => _character;
+
+    /// <summary>切换角色视觉时保持场景图层顺序：背景 → 角色 → 前景 → 星星。</summary>
+    internal void SetCharacterVisual(FrameworkElement visual)
     {
-        scale = Math.Clamp(scale, .8, 1.3);
-        double size = CharacterSize * scale;
+        if (visual == null || ReferenceEquals(visual, _character)) return;
+        int index = Children.IndexOf(_character);
+        if (index >= 0) Children.RemoveAt(index);
+        else index = 1;
+        _character = visual;
+        if (_character is Image image) image.Stretch = Stretch.Uniform;
+        Children.Insert(Math.Min(index, Children.Count), visual);
+        ApplyCharacterLayout();
+    }
+
+    private void ApplyCharacterLayout()
+    {
+        double size = CharacterSize * _characterScale;
         _character.Width = size;
         _character.Height = size;
         SetLeft(_character, (DesignWidth - size) / 2);
         SetTop(_character, CharacterTop - (size - CharacterSize) * .4);
     }
 
-    /// <summary>更新角色配色。桌面与键帽颜色都从角色主色派生，四款角色各自成立。</summary>
+    /// <summary>按角色图集的内容比例微调显示尺寸，让可见高度更接近。</summary>
+    internal void SetCharacterScale(double scale)
+    {
+        _characterScale = Math.Clamp(scale, .8, 1.3);
+        ApplyCharacterLayout();
+    }
+
+    /// <summary>更新角色配色。桌垫、键帽、霓虹描边与小玩偶都从角色主色派生，四款角色各自成立。</summary>
     internal void ApplyPalette(Brush surface, Brush outline, Brush accent, Brush hand, Brush sleeve)
     {
         var surfaceColor = ColorOf(surface, Color.FromRgb(22, 34, 51));
@@ -216,57 +231,54 @@ internal sealed class DesktopPetDeskScene : Canvas
         var handColor = ColorOf(hand, Color.FromRgb(246, 205, 178));
         var sleeveColor = ColorOf(sleeve, outlineColor);
 
-        _surface = Frozen(surfaceColor, 1);
-        _outline = Frozen(outlineColor, 1);
         _accent = Frozen(accentColor, 1);
         _hand = Frozen(handColor, 1);
         _sleeve = Frozen(sleeveColor, 1);
-        _chair = Frozen(Mix(surfaceColor, Colors.Black, .12), .72);
-        _chairEdge = Frozen(Mix(outlineColor, Colors.White, .12), .34);
-        _deskFront = Frozen(Mix(surfaceColor, Colors.Black, .2), 1);
-        _deskEdge = Frozen(Mix(outlineColor, Colors.White, .2), .55);
-        _keyBase = Frozen(Mix(surfaceColor, Colors.White, .24), 1);
+        _keyBase = Frozen(Mix(surfaceColor, Colors.White, .2), 1);
         _keyBorder = Frozen(outlineColor, .34);
         _keyDark = Frozen(Mix(surfaceColor, Colors.Black, .38), 1);
-        _panel = Frozen(Mix(surfaceColor, Colors.Black, .52), 1);
         _dim = Frozen(Mix(outlineColor, Colors.White, .3), .8);
-        _handLine = Frozen(Mix(handColor, Colors.Black, .35), .5);
+        _accentSoft = Frozen(accentColor, .34);
+        _accentGlow = Frozen(accentColor, .16);
 
-        // 背景与桌面每帧都会重绘，渐变和阴影只在这里创建一次，避免 30fps 的 Freezable 分配。
-        _glow = new RadialGradientBrush(Color.FromArgb(28, 160, 200, 255), Color.FromArgb(0, 160, 200, 255))
+        // 背景与桌垫每帧都会重绘，渐变/画笔/几何只在这里创建一次，避免 30fps 的 Freezable 分配。
+        _glow = new RadialGradientBrush(Color.FromArgb(44, accentColor.R, accentColor.G, accentColor.B), Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B))
         {
-            Center = new Point(.5, .42),
-            GradientOrigin = new Point(.5, .42),
-            RadiusX = .5,
-            RadiusY = .5
+            Center = new Point(.5, .45),
+            GradientOrigin = new Point(.5, .45),
+            RadiusX = .52,
+            RadiusY = .52
         };
         _glow.Freeze();
-        _shadow = new RadialGradientBrush(Color.FromArgb(70, 0, 0, 0), Color.FromArgb(0, 0, 0, 0))
+        _shadow = new RadialGradientBrush(Color.FromArgb(96, 0, 0, 0), Color.FromArgb(0, 0, 0, 0))
         {
             Center = new Point(.5, .5), GradientOrigin = new Point(.5, .5), RadiusX = .5, RadiusY = .5
         };
         _shadow.Freeze();
-        _deskTopFill = new LinearGradientBrush(
-            Mix(Mix(surfaceColor, Colors.White, .16), Colors.White, .1), Mix(surfaceColor, Colors.White, .16), 90);
-        _deskTopFill.Freeze();
+        var matFill = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(0, 1)
+        };
+        matFill.GradientStops.Add(new GradientStop(Mix(surfaceColor, Colors.Black, .56), 0));
+        matFill.GradientStops.Add(new GradientStop(Mix(surfaceColor, accentColor, .14), .48));
+        matFill.GradientStops.Add(new GradientStop(Mix(surfaceColor, Colors.Black, .8), 1));
+        matFill.Freeze();
+        _matFill = matFill;
+        _plushBody = Frozen(Color.FromRgb(244, 233, 218), 1);
+        _plushShade = Frozen(Mix(Color.FromRgb(244, 233, 218), surfaceColor, .28), 1);
 
-        // 笔刷与画笔每帧复用；此前每帧 new Pen/Clone+Freeze 对常驻 30fps 窗口是持续小对象分配。
-        _accentSoft = Frozen(accentColor, .38);
-        _accentGlow = Frozen(accentColor, .14);
-        _panelSoft = Frozen(Mix(surfaceColor, Colors.Black, .52), .94);
-        _chairPen = FrozenPen(_chairEdge, 1.1);
-        _chairCushionPen = FrozenPen(_chairEdge, 1);
-        _deskPen = FrozenPen(_deskEdge, 1);
-        _deskLinePen = FrozenPen(_deskEdge, .85);
+        _edgePen = FrozenPen(Frozen(outlineColor, .5), .9);
+        _rimPen = FrozenPen(Frozen(accentColor, .55), 1.2);
         _keyPen = FrozenPen(_keyBorder, .7);
         _keyPenPressed = FrozenPen(_accent, 1.1);
-        _panelPen = FrozenPen(_accent, 1);
-        _screenPen = FrozenPen(_deskEdge, .8);
-        _mousePen = FrozenPen(_deskEdge, 1);
-        _mouseWheelPen = FrozenPen(_deskEdge, .8);
-        _handPen = FrozenPen(_handLine, .8);
-        _handLinePen = FrozenPen(_handLine, .7);
+        _handPen = FrozenPen(Frozen(Mix(handColor, Colors.Black, .35), .5), .8);
+        _handLinePen = FrozenPen(Frozen(Mix(handColor, Colors.Black, .35), .5), .7);
         _keycapPen = FrozenPen(_accent, 1.2);
+        _neonPen = FrozenPen(_accent, 2);
+        _neonGlowPen = FrozenPen(Frozen(accentColor, .18), 6);
+        _neonHaloPen = FrozenPen(Frozen(accentColor, .07), 12);
+        _plushPen = FrozenPen(Frozen(Mix(surfaceColor, Colors.Black, .45), .8), .8);
 
         InvalidateVisual();
         _back.InvalidateVisual();
@@ -274,13 +286,12 @@ internal sealed class DesktopPetDeskScene : Canvas
     }
 
     /// <summary>
-    /// 每帧更新输入跟随状态。motion=false（减少动态效果）时保留键帽高亮与显示器文字，但双手直接落到位。
+    /// 每帧更新输入跟随状态。motion=false（减少动态效果）时保留键帽高亮与文本条字符，但双手直接落到位。
     /// </summary>
     internal void Render(long now, bool motion, DesktopPetInputState input, bool showLabels, bool mirrorMouse)
     {
         _now = now;
         _showLabels = showLabels;
-        _mirrorMouse = mirrorMouse;
 
         double dt = _lastFrame < 0 ? 16 : Math.Clamp(now - _lastFrame, 1, 120);
         _lastFrame = now;
@@ -292,10 +303,13 @@ internal sealed class DesktopPetDeskScene : Canvas
 
         _keyAge = keyAge;
 
-        HighlightedSlot = keyAge < 420 ? key?.Slot ?? -1 : -1;
-        HighlightedLabel = keyAge < 900 ? key?.Label ?? "" : "";
-        MouseLeftPressed = mouseAge < 260 && mouse?.Button == PetInputKind.MouseLeft;
-        MouseRightPressed = mouseAge < 260 && mouse?.Button == PetInputKind.MouseRight;
+        bool leftHeld = mirrorMouse && input?.HeldButton == PetInputKind.MouseLeft;
+        bool rightHeld = mirrorMouse && input?.HeldButton == PetInputKind.MouseRight;
+        long releaseAt = input?.MouseReleaseAt ?? 0;
+        bool leftRecent = mouse.HasValue && mouseAge < 260 && mouse.Value.Button == PetInputKind.MouseLeft && releaseAt <= mouse.Value.At;
+        bool rightRecent = mouse.HasValue && mouseAge < 260 && mouse.Value.Button == PetInputKind.MouseRight && releaseAt <= mouse.Value.At;
+        MouseLeftPressed = leftHeld || leftRecent;
+        MouseRightPressed = rightHeld || rightRecent;
 
         var left = KeyCenter(HomeLeftSlot);
         var right = KeyCenter(HomeRightSlot);
@@ -314,12 +328,16 @@ internal sealed class DesktopPetDeskScene : Canvas
                 rightTargetDepth = keyAge < 180 ? 1 : 0;
             }
         }
-        // 鼠标只接管“比最近按键更新”的右手目标；否则点击后 700ms 内的右手键会被鼠标位置覆盖。
-        if (mouseAge < 700 && mouse.HasValue && (keyAge >= 900 || mouseAge < keyAge))
+        // 鼠标只接管“比最近按键更新”的右手目标；按住期间一直停在鼠标上，松开后保留 700ms 再回键盘。
+        bool mouseTarget = mirrorMouse && mouse.HasValue && (mouseAge < 700 || input?.HeldButton != null);
+        if (mouseTarget && mouse.HasValue && (keyAge >= 900 || mouseAge < keyAge))
         {
             right = MousePoint(mouse.Value.Button);
-            rightTargetDepth = mouseAge < 220 ? 1 : 0;
+            rightTargetDepth = (mouseAge < 220 || input?.HeldButton != null) ? 1 : 0;
         }
+
+        HighlightedSlot = keyAge < 420 ? key?.Slot ?? -1 : -1;
+        HighlightedLabel = keyAge < 900 ? key?.Label ?? "" : "";
 
         if (motion)
         {
@@ -338,20 +356,20 @@ internal sealed class DesktopPetDeskScene : Canvas
             _rightDepth = rightTargetDepth;
         }
 
-        MonitorText = FitMonitor(input);
-        _trail = showLabels ? MonitorText : "";
+        DisplayText = FitDisplay(input);
+        _trail = showLabels ? DisplayText : "";
 
-        // 椅背层与输入无关，只在换角色/调色板时由 ApplyPalette 失效。
+        // 背景光晕与角色无关，只在换角色/调色板时由 ApplyPalette 失效。
         _front.InvalidateVisual();
     }
 
-    /// <summary>按显示器可用宽度从最近按键往前拼，保证 MonitorText 与实际绘制内容一致且不截半个标签。</summary>
-    private string FitMonitor(DesktopPetInputState input)
+    /// <summary>按文本条可用宽度从最近按键往前拼，保证 DisplayText 与实际绘制内容一致且不截半个标签。</summary>
+    private string FitDisplay(DesktopPetInputState input)
     {
         if (input == null || input.Trail.Count == 0) return "";
-        double available = MonitorWidth - 8 - 14;
+        double available = DisplayBounds.Width - 8;
         double ppd = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var labels = new System.Collections.Generic.List<string>(8);
+        var labels = new List<string>(8);
         for (int i = input.Trail.Count - 1; i >= 0 && labels.Count < 8; i--)
         {
             string label = input.Trail[i].Label;
@@ -359,7 +377,7 @@ internal sealed class DesktopPetDeskScene : Canvas
             labels.Insert(0, label);
             var text = string.Concat(labels);
             var measure = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                _mono, 8.5, _accent, ppd);
+                _mono, 9.5, _accent, ppd);
             if (measure.Width > available)
             {
                 labels.RemoveAt(0);
@@ -375,103 +393,62 @@ internal sealed class DesktopPetDeskScene : Canvas
     private void PaintBackground(DrawingContext dc)
     {
         dc.PushClip(new RectangleGeometry(new Rect(0, 0, DesignWidth, DesignHeight)));
-        dc.DrawEllipse(_glow, null, new Point(150, 108), 132, 118);
-
-        // 椅背：让角色读起来是坐着的，而不是站在桌前。
-        var chair = new Rect(88, 20, 124, 156);
-        dc.DrawRoundedRectangle(_chair, _chairPen, chair, 28, 28);
-        var cushion = new Rect(99, 36, 102, 126);
-        dc.DrawRoundedRectangle(_chair, _chairCushionPen, cushion, 20, 20);
-        dc.DrawLine(_chairCushionPen, new Point(150, 38), new Point(150, 162));
+        dc.DrawEllipse(_glow, null, new Point(150, 118), 140, 118);
+        dc.DrawEllipse(_shadow, null, new Point(150, 226), 124, 9);
         dc.Pop();
     }
 
     private void PaintForeground(DrawingContext dc)
     {
         dc.PushClip(new RectangleGeometry(new Rect(0, 0, DesignWidth, DesignHeight)));
-        PaintDesk(dc);
-        PaintMonitor(dc);
+        PaintMat(dc);
+        PaintPlush(dc);
         PaintKeyboard(dc);
         PaintMouse(dc);
         PaintHands(dc);
+        PaintDisplay(dc);
         PaintKeycap(dc);
         dc.Pop();
     }
 
-    private void PaintDesk(DrawingContext dc)
+    private void PaintMat(DrawingContext dc)
     {
-        // 地面软阴影
-        dc.DrawEllipse(_shadow, null, new Point(150, 225), 130, 9);
+        // 外发光先画、垫面后画，霓虹描边最后覆盖，形成参考图的边缘光效。
+        dc.DrawGeometry(null, _neonHaloPen, MatGeometry);
+        dc.DrawGeometry(null, _neonGlowPen, MatGeometry);
+        dc.DrawGeometry(_matFill, null, MatGeometry);
+        dc.DrawGeometry(null, _neonPen, MatGeometry);
 
-        var top = new Rect(DeskLeft, DeskTop, DeskRight - DeskLeft, DeskNear - DeskTop);
-        dc.DrawRoundedRectangle(_deskTopFill, _deskPen, top, 7, 7);
-        dc.DrawLine(_deskLinePen, new Point(DeskLeft + 12, DeskTop + 1.5), new Point(DeskRight - 12, DeskTop + 1.5));
-
-        var front = new Rect(DeskLeft + 6, DeskNear, DeskRight - DeskLeft - 12, DeskBottom - DeskNear - 4);
-        dc.DrawRoundedRectangle(_deskFront, _deskPen, front, 8, 8);
-        dc.DrawLine(_deskLinePen, new Point(DeskLeft + 16, DeskNear + 1), new Point(DeskRight - 16, DeskNear + 1));
-
-        double ppd = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var brand = new FormattedText("MouseDock", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            _typeface, 8.5, _dim, ppd);
-        dc.DrawText(brand, new Point(150 - brand.Width / 2, DeskNear + 16));
+        // 左下角延出的霓虹线缆，和参考图一致地让垫子“有存在感”。
+        dc.DrawGeometry(null, _neonHaloPen, CableGeometry);
+        dc.DrawGeometry(null, _neonGlowPen, CableGeometry);
+        dc.DrawGeometry(null, _neonPen, CableGeometry);
     }
 
-    private void PaintMonitor(DrawingContext dc)
+    private void PaintPlush(DrawingContext dc)
     {
-        var bezel = new Rect(MonitorLeft, MonitorTop, MonitorWidth, MonitorHeight);
-        dc.DrawRoundedRectangle(_keyDark, _screenPen, bezel, 6, 6);
-        var screen = new Rect(MonitorLeft + 4, MonitorTop + 4, MonitorWidth - 8, MonitorHeight - 15);
-        dc.DrawRoundedRectangle(_panel, _panelPen, screen, 3, 3);
-
-        // 显示器三颗指示灯
-        for (int i = 0; i < 3; i++)
-            dc.DrawEllipse(_dim, null, new Point(MonitorLeft + 10 + i * 5, MonitorTop + 7.5), .9, .9);
-
-        // 支架
-        var stand = new Rect(MonitorLeft + MonitorWidth / 2 - 4, MonitorTop + MonitorHeight - 8, 8, 6);
-        dc.DrawRoundedRectangle(_keyDark, _screenPen, stand, 1.5, 1.5);
-
-        if (!_showLabels)
-        {
-            double ppd0 = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-            var idle = new FormattedText("MouseDock", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                _mono, 7, _dim, ppd0);
-            dc.DrawText(idle, new Point(screen.X + 4, screen.Y + screen.Height / 2 - idle.Height / 2));
-            return;
-        }
-
-        double ppd = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        string text = _trail;
-        FormattedText body;
-        if (string.IsNullOrEmpty(text))
-        {
-            body = new FormattedText("", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, _mono, 8.5, _accent, ppd);
-            var idle = new FormattedText("MouseDock", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                _mono, 7.5, _dim, ppd);
-            dc.DrawText(idle, new Point(screen.X + 4, screen.Y + screen.Height - idle.Height - 2));
-        }
-        else
-        {
-            body = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                _mono, 8.5, _accent, ppd);
-        }
-        double baseline = screen.Y + screen.Height - body.Height - 2;
-        dc.DrawText(body, new Point(screen.X + 4, baseline));
-        if ((_now / 520) % 2 == 0)
-        {
-            var cursor = new Rect(screen.X + 5 + body.Width, baseline + 1, 3, Math.Max(3, body.Height - 1));
-            dc.DrawRectangle(_accent, null, cursor);
-        }
+        // 小玩偶猫：白/奶油色身体，耳朵和尾巴用角色强调色。
+        dc.DrawEllipse(_plushShade, _plushPen, new Point(58, 169), 7, 3.6);
+        dc.DrawEllipse(_plushBody, _plushPen, new Point(46, 168), 11, 9);
+        dc.DrawGeometry(_plushBody, _plushPen, EarLeftGeometry);
+        dc.DrawGeometry(_plushBody, _plushPen, EarRightGeometry);
+        dc.DrawEllipse(_accentSoft, null, new Point(35.6, 147.2), 2.2, 2.6);
+        dc.DrawEllipse(_accentSoft, null, new Point(48.4, 147.2), 2.2, 2.6);
+        dc.DrawEllipse(_plushBody, _plushPen, new Point(42, 155), 9, 8);
+        dc.DrawEllipse(_plushShade, null, new Point(38.6, 154.4), 1.15, 1.4);
+        dc.DrawEllipse(_plushShade, null, new Point(45.4, 154.4), 1.15, 1.4);
+        dc.DrawLine(_plushPen, new Point(41, 158.6), new Point(43, 158.6));
+        dc.DrawEllipse(_plushBody, _plushPen, new Point(42, 175), 4, 2.8);
+        dc.DrawEllipse(_plushBody, _plushPen, new Point(50, 175), 4, 2.8);
+        dc.DrawEllipse(_accentSoft, null, new Point(46, 172.5), 1.6, 1.6);
     }
 
     private void PaintKeyboard(DrawingContext dc)
     {
-        var board = new Rect(KeyboardLeft, KeyboardTop, KeyboardWidth, KeyboardHeight);
-        dc.DrawRoundedRectangle(_keyDark, _screenPen, board, 5, 5);
-
+        var body = new Rect(KeyboardLeft - 4, KeyboardTop - 3, KeyboardWidth + 8, KeyboardHeight + 6);
+        dc.DrawRoundedRectangle(_keyDark, _rimPen, body, 6, 6);
         if (_keyAge < 420)
-            dc.DrawRoundedRectangle(_accentGlow, null, new Rect(board.X - 3, board.Y - 3, board.Width + 6, board.Height + 6), 7, 7);
+            dc.DrawRoundedRectangle(_accentGlow, null, new Rect(body.X - 2, body.Y - 2, body.Width + 4, body.Height + 4), 8, 8);
 
         var keys = PetKeyboardLayout.Keys;
         for (int i = 0; i < keys.Count; i++)
@@ -487,15 +464,15 @@ internal sealed class DesktopPetDeskScene : Canvas
     private void PaintMouse(DrawingContext dc)
     {
         var body = new Rect(MouseLeft, MouseTop, MouseWidth, MouseHeight);
-        dc.DrawRoundedRectangle(_keyDark, _mousePen, body, 12, 12);
+        dc.DrawRoundedRectangle(_keyDark, (MouseLeftPressed || MouseRightPressed) ? _rimPen : _edgePen, body, 12, 12);
 
         var leftHalf = new Rect(MouseLeft + 2, MouseTop + 2, MouseWidth / 2 - 2.5, MouseHeight - 4);
         var rightHalf = new Rect(MouseLeft + MouseWidth / 2 + .5, MouseTop + 2, MouseWidth / 2 - 2.5, MouseHeight - 4);
         if (MouseLeftPressed) dc.DrawRoundedRectangle(_accentSoft, null, leftHalf, 9, 9);
         if (MouseRightPressed) dc.DrawRoundedRectangle(_accentSoft, null, rightHalf, 9, 9);
-        dc.DrawLine(_mouseWheelPen, new Point(MouseLeft + MouseWidth / 2, MouseTop + 5),
+        dc.DrawLine(_edgePen, new Point(MouseLeft + MouseWidth / 2, MouseTop + 5),
             new Point(MouseLeft + MouseWidth / 2, MouseTop + MouseHeight - 5));
-        dc.DrawRoundedRectangle(_keyDark, _mouseWheelPen,
+        dc.DrawRoundedRectangle(_keyDark, _edgePen,
             new Rect(MouseLeft + MouseWidth / 2 - 3, MouseTop + 6, 6, 9), 3, 3);
     }
 
@@ -514,6 +491,26 @@ internal sealed class DesktopPetDeskScene : Canvas
         dc.DrawRoundedRectangle(_hand, _handPen, hand, 3.4, 3.4);
         dc.DrawLine(_handLinePen, new Point(point.X - 1.5, hand.Y + 1.4), new Point(point.X - 1.5, hand.Bottom - 1.4));
         dc.DrawLine(_handLinePen, new Point(point.X + 2, hand.Y + 1.4), new Point(point.X + 2, hand.Bottom - 1.4));
+    }
+
+    private void PaintDisplay(DrawingContext dc)
+    {
+        string text = _showLabels ? _trail : "";
+        double ppd = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var area = DisplayBounds;
+        if (!string.IsNullOrEmpty(text))
+        {
+            var body = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                _mono, 9.5, _accent, ppd);
+            dc.DrawText(body, new Point(150 - body.Width / 2, area.Y + 3));
+            if ((_now / 520) % 2 == 0)
+                dc.DrawRectangle(_accent, null, new Rect(150 + body.Width / 2 + 2, area.Y + 4, 2.4, area.Height - 8));
+            return;
+        }
+
+        var idle = new FormattedText(_showLabels ? "MouseDock" : "··", CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight, _mono, 8.5, _dim, ppd);
+        dc.DrawText(idle, new Point(150 - idle.Width / 2, area.Y + 4));
     }
 
     private void PaintKeycap(DrawingContext dc)
@@ -536,12 +533,37 @@ internal sealed class DesktopPetDeskScene : Canvas
         double y = (onKeyboard ? KeyBounds(HighlightedSlot).Y : KeyboardTop - 4) - 20 - 10 * ease;
 
         dc.PushOpacity(opacity);
-        dc.DrawRoundedRectangle(_panelSoft, _keycapPen, new Rect(x, y, width, height), 6, 6);
+        dc.DrawRoundedRectangle(_keyDark, _keycapPen, new Rect(x, y, width, height), 6, 6);
         double ppd = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var text = new FormattedText(label, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             _typeface, narrow ? 12.5 : 9.5, _accent, ppd);
         dc.DrawText(text, new Point(x + (width - text.Width) / 2, y + (height - text.Height) / 2));
         dc.Pop();
+    }
+
+    private static Geometry BuildCableGeometry()
+    {
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(new Point(20, 214), false, false);
+            context.BezierTo(new Point(-2, 220), new Point(-2, 232), new Point(20, 234), true, false);
+        }
+        geometry.Freeze();
+        return geometry;
+    }
+
+    private static Geometry BuildTriangle(Point a, Point b, Point c)
+    {
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(a, true, true);
+            context.LineTo(b, true, false);
+            context.LineTo(c, true, false);
+        }
+        geometry.Freeze();
+        return geometry;
     }
 
     private static Color ColorOf(Brush brush, Color fallback) =>

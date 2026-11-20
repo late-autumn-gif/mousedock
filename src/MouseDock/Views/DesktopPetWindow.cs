@@ -22,6 +22,7 @@ internal sealed class DesktopPetWindow : Window
     private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag, Skill, Burst }
     private const int ClickDuration = 1200;
     private const string KeqingId = "keqing";
+    private const string DracenaId = "dracena";
     private const int CombatFrameMilliseconds = 50;
     private static readonly TimeSpan IdleInterval = TimeSpan.FromMilliseconds(33);
     private static readonly TimeSpan CombatInterval = TimeSpan.FromMilliseconds(CombatFrameMilliseconds);
@@ -38,7 +39,9 @@ internal sealed class DesktopPetWindow : Window
         new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249),
             Paint(246, 213, 196), Paint(60, 52, 86), true),
         new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255),
-            Paint(242, 206, 193), Paint(92, 68, 128), true)
+            Paint(242, 206, 193), Paint(92, 68, 128), true),
+        new(DracenaId, "德蕾琪娜", "", 0, 0, Paint(16, 26, 46), Paint(206, 210, 222), Paint(232, 184, 91),
+            Paint(20, 22, 34), Paint(26, 33, 56), true)
     };
 
     private static Brush Paint(byte r, byte g, byte b)
@@ -56,6 +59,8 @@ internal sealed class DesktopPetWindow : Window
     private Character _skin;
     private readonly Border _bubble;
     private readonly DesktopPetDeskScene _scene;
+    private DracenaPetRig _rig;
+    private bool _rigActive;
     private readonly DesktopPetInputHook _inputHook = new();
     private readonly DesktopPetInputState _inputState = new();
     private readonly PetInputCue[] _cues = new PetInputCue[64];
@@ -230,26 +235,43 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        if (skin.Id == KeqingId)
+        _rigActive = skin.Id == DracenaId;
+        if (_rigActive)
         {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
-            _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
-            _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
-        }
-        else if (skin.Id == "shin-chan")
-        {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
+            _skillFrames = null;
+            _burstFrames = null;
+            _rig ??= new DracenaPetRig();
+            _rig.RenderTransformOrigin = new Point(.5, .98);
+            _rig.RenderTransform = _character.RenderTransform;
+            _scene.SetCharacterVisual(_rig);
+            _scene.SetCharacterScale(1);
+            _headerPortrait.Source = DracenaPetRig.CreatePortrait();
         }
         else
         {
-            LoadBuiltInCharacter(skin);
+            if (skin.Id == KeqingId)
+            {
+                _frames = LoadFrames(skin.Atlas, 3, 3, 9);
+                _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
+                _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
+                _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
+            }
+            else if (skin.Id == "shin-chan")
+            {
+                _frames = LoadFrames(skin.Atlas, 3, 3, 9);
+                _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
+            }
+            else
+            {
+                LoadBuiltInCharacter(skin);
+            }
+
+            _character.Source = _frames[0];
+            _scene.SetCharacterVisual(_character);
+            _scene.SetCharacterScale(skin.Id == KeqingId ? 1.12 : 1);
         }
 
-        _character.Source = _frames[0];
         _skin = skin;
-        _scene.SetCharacterScale(skin.Id == KeqingId ? 1.12 : 1);
         _scene.ApplyPalette(skin.Surface, skin.Outline, skin.Accent, skin.Hand, skin.Sleeve);
         _behavior.Reset();
         _actionUntil = 0;
@@ -369,10 +391,11 @@ internal sealed class DesktopPetWindow : Window
         if (Motion && _dragging) pose = Pose.Drag;
         else if (Motion && !inAction && _hovering) pose = Pose.Hover;
         var sample = default(DesktopPetBehavior.Sample);
+        bool inputActive = _settings.DesktopPetMirrorInput && IsVisible && _inputState.InputActive(now);
         if (Motion && IsVisible)
         {
             sample = _behavior.Update(now, _hovering || _press.HasValue, _dragging,
-                (!_hovering && !_press.HasValue) && (inAction || _charging || IsLow),
+                (!_hovering && !_press.HasValue) && (inAction || _charging || IsLow || inputActive),
                 _settings.DesktopPetRandomActions, _settings.DesktopPetRest,
                 _skin.HasBlink && _settings.DesktopPetBlink, _settings.DesktopPetMotionSpeed,
                 _settings.DesktopPetActionFrequency);
@@ -396,8 +419,11 @@ internal sealed class DesktopPetWindow : Window
         var interval = combatFrames != null ? CombatInterval :
             sample.State == DesktopPetBehavior.State.Sleep ? TimeSpan.FromMilliseconds(140) : IdleInterval;
         if (_timer.Interval != interval) _timer.Interval = interval;
-        var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
-        if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
+        if (!_rigActive)
+        {
+            var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
+            if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
+        }
         _breath.ScaleY = Motion && combatFrames == null ? 1 + (pose == Pose.Charging ? .024 : .012) *
             Math.Sin(now / (pose == Pose.Charging ? 230d :
                 sample.State == DesktopPetBehavior.State.Sleep ? 1050d : 700d)) : 1;
@@ -434,6 +460,13 @@ internal sealed class DesktopPetWindow : Window
 
         if (IsVisible)
             _scene.Render(now, Motion, _inputState, _settings.DesktopPetShowKeyLabels, _settings.DesktopPetMirrorMouse);
+
+        if (IsVisible && _rigActive)
+            _rig.Render(now, Motion, _lookAngle,
+                _settings.DesktopPetMirrorInput && _inputState.Typing(now),
+                _settings.DesktopPetMirrorMouse && _inputState.InputActive(now) &&
+                    (_inputState.HeldButton != null || _inputState.LastMouse is { } mouse && now - mouse.At <= 700),
+                _charging, IsLow, pose is Pose.Click or Pose.Wave or Pose.Celebrate);
     }
 
     internal DesktopPetInputState InputState => _inputState;

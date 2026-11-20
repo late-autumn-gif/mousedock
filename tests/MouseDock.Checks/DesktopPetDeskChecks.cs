@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -26,11 +27,15 @@ internal static class DesktopPetDeskChecks
     {
         var keyboard = DesktopPetDeskScene.KeyboardBounds;
         var mouse = DesktopPetDeskScene.MouseBounds;
-        var monitor = DesktopPetDeskScene.MonitorBounds;
+        var mat = DesktopPetDeskScene.MatBounds;
+        var display = DesktopPetDeskScene.DisplayBounds;
         Require(DesktopPetDeskScene.DesignWidth > 0 && DesktopPetDeskScene.DesignHeight > 0, "Scene must declare a design size.");
-        Require(keyboard.Left >= 0 && keyboard.Right <= DesktopPetDeskScene.DesignWidth, "Keyboard must stay inside the scene.");
-        Require(mouse.Left >= keyboard.Right && mouse.Right <= DesktopPetDeskScene.DesignWidth, "Mouse must sit to the right of the keyboard.");
-        Require(monitor.Bottom <= keyboard.Top, "Monitor must sit behind the keyboard.");
+        Require(keyboard.Left >= mat.Left && keyboard.Right <= mat.Right, "Keyboard must stay on the glowing desk mat.");
+        Require(mouse.Left >= keyboard.Right && mouse.Right <= mat.Right, "Mouse must sit to the right of the keyboard on the mat.");
+        Require(keyboard.Top >= mat.Top && keyboard.Bottom <= mat.Bottom, "Keyboard must stay within the mat surface.");
+        Require(display.Top >= keyboard.Bottom && display.Bottom <= mat.Bottom, "The front text strip must sit below the keyboard.");
+        Require(mat.Right <= DesktopPetDeskScene.DesignWidth && mat.Bottom <= DesktopPetDeskScene.DesignHeight,
+            "The mat and its text strip must stay inside the scene.");
 
         int rows = 0;
         double widest = 0;
@@ -73,7 +78,7 @@ internal static class DesktopPetDeskChecks
                 pet.InputState.Push(Key(typedAt + i * 70, typed[i]));
             Settle(typedAt, now);
 
-            Require(pet.Scene.MonitorText == "QBDKUX", "The pet monitor must show the same characters the user typed.");
+            Require(pet.Scene.DisplayText == "QBDKUX", "The pet text strip must show the same characters the user typed.");
             Require(pet.Scene.HighlightedSlot == PetKeyboardLayout.IndexOf(0x58), "The last key must stay highlighted on the pet keyboard.");
             Require(pet.Scene.HighlightedLabel == "X", "The last key label must be available for the floating keycap.");
             Require(pet.Scene.KeyLabelsVisible, "Key labels default to visible.");
@@ -86,45 +91,97 @@ internal static class DesktopPetDeskChecks
             Require(Math.Abs(pet.Scene.RightHandPoint.X - (homeRight.X + homeRight.Width / 2)) < 12,
                 "The right hand must stay on its home key while the left hand types.");
 
-            pet.InputState.Push(new PetInputCue(PetInputKind.MouseLeft, 0, 0, "", now - 240));
-            Settle(now - 240, now);
-            Require(pet.Scene.MouseLeftPressed, "A left click must press the left mouse button on the pet desk.");
+            // 鼠标测试整体后移 300ms，确保鼠标按下时间晚于最后一次按键，才符合“更新的输入接管右手”的规则。
+            long later = now + 300;
+
+            // 按住鼠标：超过 260ms 的点击脉冲后仍应保持按下，右手停在鼠标上。
+            pet.InputState.Push(new PetInputCue(PetInputKind.MouseLeft, 0, 0, "", later - 500));
+            Settle(later - 500, later);
+            Require(pet.Scene.MouseLeftPressed, "Holding the left button must keep the pet mouse pressed beyond the click pulse.");
             Require(pet.Scene.RightHandPoint.X > DesktopPetDeskScene.KeyboardBounds.Right,
-                "The right hand must move to the pet mouse when the user clicks.");
+                "The right hand must stay on the pet mouse while the button is held.");
+
+            pet.InputState.Push(new PetInputCue(PetInputKind.MouseLeftUp, 0, 0, "", later - 60));
+            pet.RenderPoseAt(later);
+            Require(!pet.Scene.MouseLeftPressed, "Releasing the left button must clear the pet mouse press.");
 
             settings.DesktopPetMirrorMouse = false;
-            pet.RenderPoseAt(now);
+            pet.RenderPoseAt(later);
             Require(!pet.Scene.MouseLeftPressed, "Disabling mouse mirroring must stop the pet click animation.");
-            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRight, 0, 0, "", now - 40));
-            pet.RenderPoseAt(now);
+            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRight, 0, 0, "", later - 40));
+            pet.RenderPoseAt(later);
             Require(!pet.Scene.MouseRightPressed, "A disabled mouse mirror must ignore new button cues.");
 
             settings.DesktopPetMirrorMouse = true;
-            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRight, 0, 0, "", now - 40));
-            pet.RenderPoseAt(now);
+            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRight, 0, 0, "", later - 40));
+            pet.RenderPoseAt(later);
             Require(pet.Scene.MouseRightPressed && !pet.Scene.MouseLeftPressed, "A right click must press only the right mouse button.");
 
             // 更新的右手键必须把右手从鼠标位置拉回键盘，不能继续被 700ms 鼠标窗口覆盖。
             settings.DesktopPetReduceMotion = true;
-            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRight, 0, 0, "", now - 120));
-            pet.InputState.Push(Key(now - 60, 0x4B));
-            pet.RenderPoseAt(now);
+            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRight, 0, 0, "", later - 120));
+            pet.InputState.Push(Key(later - 60, 0x4B));
+            pet.RenderPoseAt(later);
             var k = DesktopPetDeskScene.KeyBounds(PetKeyboardLayout.IndexOf(0x4B));
             Require(Math.Abs(pet.Scene.RightHandPoint.X - (k.X + k.Width / 2)) < .01,
                 "A newer right-hand key must take the right hand back from the mouse.");
+            pet.InputState.Push(new PetInputCue(PetInputKind.MouseRightUp, 0, 0, "", later - 30));
             settings.DesktopPetReduceMotion = false;
 
             settings.DesktopPetShowKeyLabels = false;
-            pet.RenderPoseAt(now);
+            pet.RenderPoseAt(later);
             Require(!pet.Scene.KeyLabelsVisible, "Hiding key labels must reach the scene.");
 
             settings.DesktopPetShowKeyLabels = true;
             settings.DesktopPetReduceMotion = true;
-            pet.InputState.Push(Key(now - 40, 0x58));
-            pet.RenderPoseAt(now);
+            pet.InputState.Push(Key(later - 40, 0x58));
+            pet.RenderPoseAt(later);
             var x = DesktopPetDeskScene.KeyBounds(PetKeyboardLayout.IndexOf(0x58));
             Require(Math.Abs(pet.Scene.LeftHandPoint.X - (x.X + x.Width / 2)) < .01,
                 "Reduced motion must snap the typing hand without animating.");
+            settings.DesktopPetReduceMotion = false;
+        }
+        finally
+        {
+            pet.Close();
+        }
+    }
+
+    internal static void Dracena()
+    {
+        using var fixture = new AppearanceFixture();
+        var settings = fixture.Settings;
+        settings.DesktopPetCharacter = "dracena";
+        var pet = new DesktopPetWindow(fixture.Battery, settings, new Random(413));
+        try
+        {
+            pet.Show();
+            Flush();
+            var rig = pet.Scene.CharacterVisual as DracenaPetRig;
+            Require(rig != null, "Dracena must render through the layered vector rig, not a PNG atlas.");
+
+            long now = Environment.TickCount64;
+            pet.RenderPoseAt(now);
+            Require(rig!.Mood == DracenaMood.Smile, "Idle Dracena should show the default smile expression.");
+
+            int[] typed = { 0x51, 0x42, 0x44, 0x4B, 0x55, 0x58 };
+            for (int i = 0; i < typed.Length; i++)
+                pet.InputState.Push(Key(now - 550 + i * 80, typed[i]));
+            pet.RenderPoseAt(now);
+            Require(rig.Mood == DracenaMood.Focus, "Typing must take priority over idle micro-expressions.");
+            Require(pet.Scene.DisplayText == "QBDKUX", "Dracena shares the same text strip and keyboard sync.");
+            Require(pet.Scene.HighlightedSlot == PetKeyboardLayout.IndexOf(0x58),
+                "Dracena must share the same key highlight as the other characters.");
+
+            var portrait = (Image)typeof(DesktopPetWindow)
+                .GetField("_headerPortrait", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(pet)!;
+            Require(portrait.Source is DrawingImage, "The Dracena card portrait must be the vector drawing.");
+
+            // 静止后仍应回到可显示的微笑，不因一次性输入永久卡在盯键盘状态。
+            settings.DesktopPetReduceMotion = true;
+            pet.RenderPoseAt(now + 5000);
+            Require(rig.Mood == DracenaMood.Smile, "Dracena must return to idle expression after input stops.");
             settings.DesktopPetReduceMotion = false;
         }
         finally
@@ -230,7 +287,7 @@ internal static class DesktopPetDeskChecks
         string? dir = Environment.GetEnvironmentVariable("MOUSEDOCK_PET_SCENE_PREVIEW");
         if (string.IsNullOrWhiteSpace(dir)) return;
         Directory.CreateDirectory(dir);
-        string[] characters = { "shin-chan", "xin-yue-hu", "rikka", "keqing" };
+        string[] characters = { "shin-chan", "xin-yue-hu", "rikka", "keqing", "dracena" };
         int[] typed = { 0x51, 0x42, 0x44, 0x4B, 0x55, 0x58 };
         foreach (string character in characters)
         {
