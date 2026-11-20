@@ -445,7 +445,7 @@ namespace MouseDock.Services
                 foreach (var dpi in round.DpiObservations ?? Array.Empty<Detection.BatteryReplay.DpiObservation>())
                     sb.AppendLine($"  {dpi.Receiver} {dpi.Model} DPI {dpi.Current?.ToString() ?? "—"}；档位 {(dpi.Slots.Length == 0 ? "—" : string.Join(", ", dpi.Slots))}；状态 {dpi.Status}；协议 {dpi.Protocol ?? "—"}");
                 foreach (var query in round.Queries)
-                    sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}");
+                    sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}；阶段 {query.FailureStage ?? "unknown"}");
             }
             foreach (var item in series.Where(item => item.Assessment == "repeated-100-unverified"))
                 sb.AppendLine($"  {item.Receiver} {item.Transport} 连续 {item.Samples} 次上报 100%；实时电量未验证。");

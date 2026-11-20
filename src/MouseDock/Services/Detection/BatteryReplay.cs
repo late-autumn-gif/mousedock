@@ -21,7 +21,7 @@ internal static partial class BatteryReplay
         string ReportIds = null, string Route = null, string QueryPolicy = null);
     internal sealed record Sample(string Stage, bool Ok, byte Sequence = 0, int Length = 0, string Hex = null, DateTimeOffset? At = null, string Result = null, int? NativeError = null);
     internal sealed record Query(string Receiver, int? Interface, string Protocol, string Status, string Model,
-        int? ObservedPercent, Sample[] Samples);
+        int? ObservedPercent, Sample[] Samples, string FailureStage = null);
     internal sealed record Observation(string Receiver, string Model, string Transport, int? Percent, bool Stale, bool Connected = true, bool? Charging = null, bool? Full = null,
         string Reader = null, bool ReceiverPresent = false, bool PeripheralConfirmed = false, string Product = null,
         string Name = null, string Source = null, string BatteryBand = null);
@@ -95,7 +95,18 @@ internal static partial class BatteryReplay
         internal void AddQuery(string instance, string path, string protocol, string status, string model,
             int level = -1, Trace trace = null) =>
             queries.Add(new(Receiver(instance), path != null && interfaces.TryGetValue(path, out int number) ? number : null,
-                protocol, status, SafeLabel(model), level >= 0 ? level : null, trace?.Snapshot() ?? Array.Empty<Sample>()));
+                protocol, status, SafeLabel(model), level >= 0 ? level : null, trace?.Snapshot() ?? Array.Empty<Sample>(), FailureStage(status, trace)));
+
+        private static string FailureStage(string status, Trace trace)
+        {
+            if (status is "Online" or "Charging" or "Full") return "completed";
+            if (status?.Contains("safe", StringComparison.OrdinalIgnoreCase) == true) return "policy-skipped";
+            if (status?.Contains("recognition", StringComparison.OrdinalIgnoreCase) == true) return "recognition-disabled";
+            if (status?.Contains("collection", StringComparison.OrdinalIgnoreCase) == true) return "interface-selection";
+            if (trace?.Snapshot().Any(sample => sample.Stage.Contains("deadline", StringComparison.OrdinalIgnoreCase)) == true) return "timeout";
+            if (trace?.Snapshot().Any(sample => sample.Stage.Contains("response", StringComparison.OrdinalIgnoreCase) && !sample.Ok) == true) return "response-invalid";
+            return string.IsNullOrWhiteSpace(status) ? "unknown" : "reader-failed";
+        }
 
         internal Capture Finish(IEnumerable<string> selectedIds)
         {
