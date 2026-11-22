@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -57,6 +58,7 @@ internal sealed class DesktopPetWindow : Window
         Margin = new Thickness(0, 0, 13, 0)
     };
     private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
+    private readonly DesktopPetInputOverlay _inputOverlay = new();
     private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
     private readonly ScaleTransform _breath = new(1, 1);
@@ -66,6 +68,7 @@ internal sealed class DesktopPetWindow : Window
     private readonly StackPanel _deviceList = new();
     private DeviceInfo[] _listedDevices = Array.Empty<DeviceInfo>();
     private readonly DispatcherTimer _timer;
+    private DesktopPetRawInput _rawInput;
     private DeviceInfo _device;
     private Pose _action;
     private long _actionUntil;
@@ -109,6 +112,7 @@ internal sealed class DesktopPetWindow : Window
         var artwork = new Grid();
         artwork.Children.Add(_character);
         artwork.Children.Add(_sparks);
+        artwork.Children.Add(_inputOverlay);
         foreach (var star in _stars) _sparks.Children.Add(star);
         var portrait = new Border { Background = Brushes.Transparent, Child = artwork };
         portrait.MouseEnter += (_, _) => { _hovering = true; _hoverAt = Environment.TickCount64; RenderPose(); };
@@ -193,11 +197,13 @@ internal sealed class DesktopPetWindow : Window
             if (IsVisible) Refresh();
             else
             {
+                SyncInputRegistration();
                 if (_action is Pose.Skill or Pose.Burst) _actionUntil = 0;
                 _behavior.Reset();
                 _timer.Stop();
             }
         };
+        StateChanged += (_, _) => SyncInputRegistration();
         Loaded += (_, _) => PlaceOnScreen(remember: false);
         _battery.Refreshed += OnRefresh;
         _battery.VisibleDevices.CollectionChanged += OnDevicesChanged;
@@ -278,6 +284,44 @@ internal sealed class DesktopPetWindow : Window
 
     private bool Motion => !_settings.DesktopPetReduceMotion && SystemParameters.ClientAreaAnimation;
 
+    private bool InputReactionEnabled => !_closed && IsVisible && WindowState != WindowState.Minimized &&
+        _settings.DesktopPetInputReaction && Motion;
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        if (source == null) return;
+        _rawInput = new DesktopPetRawInput(source, OnInputActivity);
+        SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
+        SyncInputRegistration();
+    }
+
+    private void OnSystemParametersChanged(object sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SystemParameters.ClientAreaAnimation)) return;
+        if (Dispatcher.CheckAccess()) RefreshMotion();
+        else Dispatcher.BeginInvoke(new Action(RefreshMotion));
+    }
+
+    private void RefreshMotion()
+    {
+        if (!_closed && IsVisible) Refresh(rebuild: true);
+    }
+
+    private void SyncInputRegistration()
+    {
+        bool enabled = InputReactionEnabled;
+        _rawInput?.SetEnabled(enabled);
+        if (!enabled) _inputOverlay.Clear();
+    }
+
+    private void OnInputActivity(DesktopPetInputActivity activity, long now)
+    {
+        if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
+            _inputOverlay.Flash(activity, now);
+    }
+
     private void OnRefresh(object sender, EventArgs e) => QueueRefresh();
     private void OnDevicesChanged(object sender, NotifyCollectionChangedEventArgs e) => QueueRefresh();
 
@@ -312,6 +356,7 @@ internal sealed class DesktopPetWindow : Window
         }
         if (IsVisible && Motion) _timer.Start();
         else _timer.Stop();
+        SyncInputRegistration();
         RenderPose();
     }
 
@@ -336,6 +381,9 @@ internal sealed class DesktopPetWindow : Window
 
     internal void RenderPoseAt(long now)
     {
+        if (InputReactionEnabled) _inputOverlay.Advance(now);
+        else _inputOverlay.Clear();
+
         bool inAction = Motion && now < _actionUntil &&
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
         Pose pose = inAction ? _action : _charging ? Pose.Charging :
@@ -536,6 +584,12 @@ internal sealed class DesktopPetWindow : Window
         ContextMenu.Items.Add(sizes);
         Add(ContextMenu.Items, "锁定位置", () => { _settings.DesktopPetLocked = !_settings.DesktopPetLocked; App.SaveSettings(); }, _settings.DesktopPetLocked);
         Add(ContextMenu.Items, "减少动态效果", () => { _settings.DesktopPetReduceMotion = !_settings.DesktopPetReduceMotion; _actionUntil = 0; SaveAndRefresh(); }, _settings.DesktopPetReduceMotion);
+        Add(ContextMenu.Items, "键鼠动作联动", () =>
+        {
+            _settings.DesktopPetInputReaction = !_settings.DesktopPetInputReaction;
+            SyncInputRegistration();
+            App.SaveSettings();
+        }, _settings.DesktopPetInputReaction);
         var behavior = new MenuItem { Header = "待机行为" };
         Add(behavior.Items, "随机小动作", () => { _settings.DesktopPetRandomActions ^= true; SaveBehavior(); }, _settings.DesktopPetRandomActions);
         Add(behavior.Items, "随机眨眼（支持的角色）", () => { _settings.DesktopPetBlink ^= true; SaveBehavior(); }, _settings.DesktopPetBlink);
@@ -649,6 +703,8 @@ internal sealed class DesktopPetWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _closed = true;
+        SyncInputRegistration();
+        SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
         _timer.Stop();
         _battery.Refreshed -= OnRefresh;
         _battery.VisibleDevices.CollectionChanged -= OnDevicesChanged;

@@ -104,6 +104,7 @@ namespace MouseDock.Models
         public string DesktopPetCharacter { get; set; } = "shin-chan";
         public string DesktopPetDevice { get; set; } = "";
         public bool DesktopPetReduceMotion { get; set; }
+        public bool DesktopPetInputReaction { get; set; }
         public bool DesktopPetRandomActions { get; set; } = true;
         public bool DesktopPetBlink { get; set; } = true;
         public bool DesktopPetRest { get; set; } = true;
@@ -219,6 +220,7 @@ namespace MouseDock.Models
                 DesktopPetCharacter = DesktopPetCharacter,
                 DesktopPetDevice = DesktopPetDevice,
                 DesktopPetReduceMotion = DesktopPetReduceMotion,
+                DesktopPetInputReaction = DesktopPetInputReaction,
                 DesktopPetRandomActions = DesktopPetRandomActions,
                 DesktopPetBlink = DesktopPetBlink,
                 DesktopPetRest = DesktopPetRest,

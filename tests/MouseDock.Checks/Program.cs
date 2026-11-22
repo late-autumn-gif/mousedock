@@ -47,6 +47,12 @@ internal static class Program
         }
         if (args.Contains("--r98-live"))
             return R98KeyboardChecks.RunLive();
+        if (args.Contains("--pet-input"))
+        {
+            DesktopPetInputChecks.Run();
+            Console.WriteLine("PASS desktop pet input opt-in, native registration and overlays.");
+            return 0;
+        }
         var checks = new (string Name, Action Check)[]
         {
             ("Xbox system battery bands reach cards without cached percentages", () => XboxWirelessUiChecks.Run()),
@@ -94,6 +100,7 @@ internal static class Program
             ("Only one of the six display modes is visible", UiRegressionChecks.ExclusiveSurfaces),
             ("Desktop pet behavior schedules idle interaction rest and landing", AuditChecks.DesktopPetBehaviorSchedule),
             ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
+            ("Desktop pet input is opt-in and reacts only while visible with motion enabled", DesktopPetInputChecks.Run),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
