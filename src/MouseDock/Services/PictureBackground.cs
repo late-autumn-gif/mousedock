@@ -22,6 +22,8 @@ namespace MouseDock.Services
             public Brush Fallback;
             public AppSettings Settings;
             public ThemePreset Theme;
+            public BitmapSource Wallpaper;
+            public Brush SurfaceOverride;
         }
 
         private static readonly ConditionalWeakTable<Border, State> States = new();
@@ -93,6 +95,18 @@ namespace MouseDock.Services
 
         private static void Paint(Border root, State state)
         {
+            if (state.SurfaceOverride != null)
+            {
+                root.Background = state.SurfaceOverride;
+                return;
+            }
+            if (state.Wallpaper != null)
+            {
+                RenderOptions.SetBitmapScalingMode(root, BitmapScalingMode.HighQuality);
+                root.Background = Create(state.Wallpaper, new Size(Math.Max(1, root.ActualWidth), Math.Max(1, root.ActualHeight)),
+                    state.Settings, state.Theme);
+                return;
+            }
             if (state.Image == null) { root.Background = state.Fallback; return; }
             RenderOptions.SetBitmapScalingMode(root, BitmapScalingMode.HighQuality);
             // Existing per-window pictures retain their original untinted aspect-fill rendering.
@@ -100,6 +114,15 @@ namespace MouseDock.Services
                 ? new ImageBrush(state.Image) { Stretch = Stretch.UniformToFill }
                 : Create(state.Image, new Size(Math.Max(1, root.ActualWidth), Math.Max(1, root.ActualHeight)),
                     state.Settings, state.Theme);
+        }
+
+        internal static void SetWallpaper(Border root, BitmapSource image, Brush surfaceOverride)
+        {
+            if (!States.TryGetValue(root, out var state) ||
+                (state.Wallpaper == image && state.SurfaceOverride == surfaceOverride)) return;
+            state.Wallpaper = image;
+            state.SurfaceOverride = surfaceOverride;
+            Paint(root, state);
         }
 
         public static string Import(string path, string directory = null)

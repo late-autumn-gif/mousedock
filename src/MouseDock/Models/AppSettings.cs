@@ -131,6 +131,7 @@ namespace MouseDock.Models
 
         // 三个窗口各自的背景图，空字符串表示用预设主题渐变
         public string DockBackground { get; set; } = "";
+        public bool DockFollowWallpaperEngine { get; set; }
         public string MiniBackground { get; set; } = "";
         public string IconBackground { get; set; } = "";
 
@@ -239,6 +240,7 @@ namespace MouseDock.Models
                 IconFollowTheme=IconFollowTheme, IconHideBackground=IconHideBackground,
                 IconShape = IconShape,
                 DockBackground = DockBackground,
+                DockFollowWallpaperEngine = DockFollowWallpaperEngine,
                 MiniBackground = MiniBackground,
                 IconBackground = IconBackground,
                 AlwaysOnTop = AlwaysOnTop,
