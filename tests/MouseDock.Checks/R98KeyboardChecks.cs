@@ -173,4 +173,74 @@ internal static class R98KeyboardChecks
             Require((int)Call("ParseBattery", corrupt) == -1, $"Corrupt battery byte {i} was accepted.");
         }
     }
+
+    private static DetectedDevice ReadBattery(byte[] battery)
+    {
+        var commands = new Queue<byte>([7, 5, 0x4A]);
+        var result = RkKeyboardProtocol.ReadReceiverAsync(0x258A, 0x01BB, request =>
+        {
+            Require(commands.Count > 0 && request[1] == commands.Dequeue(),
+                "Battery reads must retain the connection, identity and power query order.");
+            return Task.FromResult(request[1] switch
+            {
+                7 => Convert.FromHexString("130701000101000000000000000000000000001D"),
+                5 => Convert.FromHexString("13050100060A000000004600000000000000006F"),
+                0x4A => battery,
+                _ => throw new Exception("Unexpected R98 query.")
+            });
+        }).GetAwaiter().GetResult();
+        Require(commands.Count == 0 && result != null,
+            "R98 reading skipped a verified identity or battery transaction.");
+        return result!;
+    }
+
+    public static void ChargingTransitions()
+    {
+        // Captured charging/unplugged frames, followed by synthetic boundary cases.
+        var frames = new (string Hex, int Level, bool Charging)[]
+        {
+            ("134A0100023210000000000000000000000000A2", 50, true),
+            ("134A0100023310000000000000000000000000A3", 51, true),
+            ("134A0100022D000000000000000000000000008D", 45, false),
+            ("134A0100026401000000000000000000000000C5", 100, false),
+            ("134A0100023211000000000000000000000000A3", 50, true),
+            ("134A010002001000000000000000000000000070", 0, true),
+            ("134A0100026410000000000000000000000000D4", 100, true)
+        };
+        foreach (var frame in frames)
+        {
+            var result = ReadBattery(Convert.FromHexString(frame.Hex));
+            Require(result is { Connected: true, Kind: DeviceKind.Keyboard } &&
+                result.Level == frame.Level && result.Charging == frame.Charging,
+                $"R98 must publish this frame's own percentage and charging state: {frame.Hex}.");
+            Require(!result.ChargeFull || result.Level == 100,
+                "A status bit must not turn a measured partial battery into full charge.");
+        }
+    }
+
+    public static void ChargingGuards()
+    {
+        byte[] actual = Convert.FromHexString("134A0100023210000000000000000000000000A2");
+        foreach (byte[] invalid in new[]
+        {
+            Array.Empty<byte>(), actual.Take(19).ToArray(),
+            Convert.FromHexString("134A0100026510000000000000000000000000D5")
+        })
+        {
+            var result = ReadBattery(invalid);
+            Require(result.Level == -1 && !result.Charging,
+                "Invalid battery data must not supply a charging flag.");
+        }
+        for (int i = 0; i < actual.Length; i++)
+        {
+            byte[] corrupt = actual.ToArray();
+            corrupt[i] ^= 0x80;
+            var result = ReadBattery(corrupt);
+            Require(result.Level == -1 && !result.Charging,
+                $"Corrupt battery byte {i} supplied a charging flag.");
+        }
+        var unknown = ReadBattery(Convert.FromHexString("134A0100023220000000000000000000000000B2"));
+        Require(unknown.Level == 50 && !unknown.Charging,
+            "An unrecognized state must preserve the measured percentage without claiming charging.");
+    }
 }
