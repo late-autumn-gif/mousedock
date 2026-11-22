@@ -26,6 +26,8 @@ internal static class Program
         }
         if (args.Contains("--settings-drag-fixture")) return LightUiChecks.RunDragFixture(true);
         if (args.Contains("--card-drag-fixture")) return LightUiChecks.RunDragFixture();
+        if (args.Contains("--wallpaper-engine-live"))
+            return WallpaperEngineChecks.RunLive();
         if (args.Length == 2 && args[0] == "--startup-surface")
             return StartupChecks.Run(args[1]);
         if (args.Length == 1 && args[0] == "--dock-dpi")
@@ -47,8 +49,6 @@ internal static class Program
         }
         if (args.Contains("--r98-live"))
             return R98KeyboardChecks.RunLive();
-        if (args.Contains("--wallpaper-engine-live"))
-            return WallpaperEngineChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
             ("Xbox system battery bands reach cards without cached percentages", () => XboxWirelessUiChecks.Run()),
