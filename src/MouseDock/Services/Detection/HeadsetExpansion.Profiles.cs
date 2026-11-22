@@ -65,8 +65,8 @@ internal static class HeadsetExpansionProfiles
                 (c.Pid is not (0x0FCC or 0x069F or 0x0995) || Mi(c, 3)),
             "Cloud2" => c.UsagePage == 0xFF90 && c.Usage == 0x303 && c.Input == 20 && c.Output == 52,
             "Alpha2" => c.UsagePage == 0xFF13 && c.Usage == 0xFF00 && io64,
-            "Cloud3S" => Mi(c, 3) && (c.UsagePage, c.Usage) is (0xFF13, 1) or (0xFFC0, 0x202) or
-                (0x1C0, 1) or (0x170F, 0x202) && (c.Input is >= 7 and <= 64 || c.Output == 64),
+            "Cloud3S" => Mi(c, 3) && c.UsagePage == 0x01C0 && c.Usage == 1 &&
+                io64 && c.Feature == 0,
             "Rog" => c.UsagePage == 0xFF00 && c.Output == 64 && c.Input is >= 9 and <= 64 &&
                 (c.Pid != 0x1AFA || Mi(c, 3) && c.Usage == 1 && io64),
             "Moondrop" => c.Input is >= 10 and <= 1024 && c.Output is >= 4 and <= 1024,
@@ -126,8 +126,12 @@ internal static class HeadsetExpansionProfiles
                 break;
             case "Cloud2": Pair(6, 20, 52); break;
             case "Alpha2": Require(m.HasInput(0x51, 64) && m.HasOutput(0x50, 64), "Alpha2 report51/50 missing"); break;
-            case "Cloud3S": Require(m.InputSizes.TryGetValue(12, out int rx) && rx is >= 7 and <= 64 ||
-                m.HasOutput(12, 64), "Cloud III S report0C missing"); break;
+            case "Cloud3S":
+                Require(Matches(family, c) && m.InputIds.Contains(0x0C) && m.OutputIds.Contains(0x0C) &&
+                    m.InputIds.All(id => id is 0x0C or 0x0D) &&
+                    m.OutputIds.All(id => id is 0x0C or 0x0D) && m.FeatureIds.Count == 0,
+                    "Cloud III S control report0C missing or unexpected report layout");
+                break;
             case "Rog": Pair(0xCC, c.Input, 64); break;
             case "Moondrop": Pair(0x4B, c.Input, c.Output); break;
             case "Xiberia":
