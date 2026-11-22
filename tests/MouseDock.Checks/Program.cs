@@ -216,6 +216,8 @@ internal static class Program
             ("R98 validates keyboard connection state", R98KeyboardChecks.Connection),
             ("R98 safe mode never opens hardware", R98KeyboardChecks.SafeMode),
             ("R98 decodes battery and rejects corrupt replies", R98KeyboardChecks.Battery),
+            ("R98 charging follows fresh replies without overriding percentages", R98KeyboardChecks.ChargingTransitions),
+            ("R98 charging rejects invalid and unrecognized power replies", R98KeyboardChecks.ChargingGuards),
             ("Offline RK receiver skips keyboard-only queries", ConnectionSwitchChecks.ReceiverOffline),
             ("Online RK receiver still validates model and battery", ConnectionSwitchChecks.ReceiverOnline),
             ("Disconnected channels cannot supply old readings", ConnectionSwitchChecks.OfflineMerge),

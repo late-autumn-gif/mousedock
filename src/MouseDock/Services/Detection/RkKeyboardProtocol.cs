@@ -48,6 +48,14 @@ internal static class RkKeyboardProtocol
     public static int ParseBattery(byte[] report) =>
         Valid(report, 0x4A, 2) && report[5] <= 100 ? report[5] : -1;
 
+    private static bool? ParseCharging(byte[] report)
+    {
+        if (ParseBattery(report) < 0) return null;
+        // Official driver 0x459D90: the high nibble selects the charging icon.
+        // The low nibble must never replace the separately reported percentage.
+        return (report[6] & 0xF0) switch { 0 => false, 0x10 => true, _ => null };
+    }
+
     public static bool IsSupportedInterface(ushort usagePage, ushort usage, ushort input, ushort output) =>
         usagePage == 0xFF02 && usage == 2 && input == 20 && output == 20;
 
@@ -86,9 +94,11 @@ internal static class RkKeyboardProtocol
         if (connected == null) return null;
         if (connected.Value &&
             !IsR98Identity(await exchange(CreateIdentityQuery()).ConfigureAwait(false))) return null;
-        int level = connected.Value
-            ? ParseBattery(await exchange(CreateBatteryQuery()).ConfigureAwait(false))
-            : -1;
+        byte[] power = connected.Value
+            ? await exchange(CreateBatteryQuery()).ConfigureAwait(false)
+            : Array.Empty<byte>();
+        int level = ParseBattery(power);
+        bool? charging = ParseCharging(power);
         return new DetectedDevice
         {
             Id = $"hid-{vid:X4}-{pid:X4}",
@@ -96,10 +106,13 @@ internal static class RkKeyboardProtocol
             Kind = DeviceKind.Keyboard,
             Transport = "2.4G",
             Level = level,
+            Charging = charging == true,
             Connected = connected.Value,
             Detail = $"{vid:X4}:{pid:X4}",
             Note = !connected.Value ? "接收器已插入，键盘未通过此通道连接"
-                : level >= 0 ? "RK 官方协议电量；充电状态尚未确认"
+                : level >= 0 ? charging.HasValue
+                    ? charging.Value ? "RK 官方协议电量；充电中" : "RK 官方协议电量；未充电"
+                    : "RK 官方协议电量；充电状态尚未确认"
                 : "已识别 RK R98Pro V2，暂未读到电量"
         };
     }
