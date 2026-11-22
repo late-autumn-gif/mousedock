@@ -386,17 +386,22 @@ namespace MouseDock.Services.Detection
                         var value = await characteristic.ReadValueAsync(BluetoothCacheMode.Uncached)
                             .AsTask().WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
 
-                        if (value.Status != GattCommunicationStatus.Success) continue;
+                        if (value.Status != GattCommunicationStatus.Success || value.Value?.Length != 1) continue;
 
                         using var reader = DataReader.FromBuffer(value.Value);
-                        byte level = reader.ReadByte();
-                        if (level <= 100) return level;
+                        var bytes = new byte[1];
+                        reader.ReadBytes(bytes);
+                        int level = DecodeBatteryLevel(bytes);
+                        if (level >= 0) return level;
                     }
                 }
             }
             catch { }
             return -1;
         }
+
+        internal static int DecodeBatteryLevel(ReadOnlySpan<byte> value) =>
+            value.Length == 1 && value[0] <= 100 ? value[0] : -1;
 
         /// <summary>BLE 没给 Appearance 时，看有没有 HID 服务（0x1812）：有就按输入设备处理。</summary>
         private static async Task<Models.DeviceKind?> KindFromGattAsync(BluetoothLEDevice device, int timeoutMs)

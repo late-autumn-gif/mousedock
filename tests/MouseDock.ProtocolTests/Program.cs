@@ -5,6 +5,11 @@ using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 // Offline protocol regression: these tests never enumerate or communicate with a device.
+if (args.Contains("--verify-standard-battery"))
+{
+    Console.WriteLine($"PASS {StandardBatteryRegression.Run()} standard battery checks; no hardware I/O.");
+    return;
+}
 if (args.Contains("--verify-rapoo-ahub"))
 {
     Console.WriteLine($"PASS {RapooAhubRegression.Run()} Rapoo AHUB read/session offline checks; no hardware I/O.");
@@ -416,6 +421,7 @@ assertions += FreqRegression.Run();
 assertions += KeyboardExpansionRegression.Run();
 assertions += KeyboardExpansionTransactions.Run();
 assertions += ExtraDiscoveryRegression.Run();
+assertions += StandardBatteryRegression.Run();
 
 // ── HyperX（飓风 3）：03F0:06BE 的六个集合原来全被判成 usage 跳过 ──
 Check(HidDiscovery.TryDeviceKind(0x03F0, 0x06BE, 0xFF13, 0x0001, out var hxKind1) && hxKind1 == DeviceKind.Headset,

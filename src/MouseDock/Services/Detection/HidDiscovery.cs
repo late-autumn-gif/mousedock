@@ -15,8 +15,6 @@ namespace MouseDock.Services.Detection
     {
         private const uint DIGCF_PRESENT = 0x02;
         private const uint DIGCF_DEVICEINTERFACE = 0x10;
-        private const uint GENERIC_READ = 0x80000000;
-        private const uint GENERIC_WRITE = 0x40000000;
         private const uint FILE_SHARE_READ = 0x01;
         private const uint FILE_SHARE_WRITE = 0x02;
         private const uint OPEN_EXISTING = 3;
@@ -57,7 +55,9 @@ namespace MouseDock.Services.Detection
         [DllImport("hid.dll")] private static extern bool HidD_GetPreparsedData(IntPtr h, out IntPtr data);
         [DllImport("hid.dll")] private static extern bool HidD_FreePreparsedData(IntPtr data);
         [DllImport("hid.dll")] private static extern int HidP_GetCaps(IntPtr data, ref HIDP_CAPS caps);
-        [DllImport("hid.dll", SetLastError = true)] private static extern bool HidD_GetFeature(IntPtr h, byte[] buffer, int length);
+        [DllImport("hid.dll")]
+        [return: MarshalAs(UnmanagedType.U1)]
+        private static extern bool HidD_GetFeature(IntPtr h, [In, Out] byte[] buffer, int length);
         [DllImport("hid.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool HidD_GetProductString(IntPtr h, IntPtr buffer, int length);
         [DllImport("hid.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool HidD_GetManufacturerString(IntPtr h, IntPtr buffer, int length);
 
@@ -148,6 +148,7 @@ namespace MouseDock.Services.Detection
             int scanStarted = Environment.TickCount;
             var buckets = new Dictionary<string, Bucket>();
             var vendorCollections = new List<VendorCollectionInfo>();
+            var standardChannels = new List<StandardBatteryChannel>();
             var pending = new List<(string Path, List<(string InstanceId, string Service)> Ancestors, bool Integrated)>();
             int interfaces = 0, noOpen = 0, notRunning = 0, kindRejected = 0, noise = 0, collected = 0;
 
@@ -203,7 +204,7 @@ namespace MouseDock.Services.Detection
             foreach (var item in pending)
             {
                 var verdict = TryCollect(item.Path, item.Ancestors, item.Integrated, buckets, preferences,
-                    vendorCollections, out bool wasNoise);
+                    vendorCollections, standardChannels, out bool wasNoise);
                 if (verdict) collected++; else if (wasNoise) noise++; else kindRejected++;
             }
 
@@ -396,6 +397,14 @@ namespace MouseDock.Services.Detection
                 // 这里不再调用不区分实例的 legacy TryRead。
             }
 
+            if (dpiChange == null && standardChannels.Count > 0)
+            {
+                var channelsByInstance = standardChannels.ToLookup(channel => InstanceScope.ForPath(channel.Path, ""));
+                foreach (var bucket in buckets.Values)
+                    QueryStandardBattery(bucket, channelsByInstance[bucket.InstanceId].ToArray(), safeMode, preferences,
+                        channel => ReadStandardBattery(bucket.InstanceId, channel));
+            }
+
             LastDiagnostics.Add($"扫描完成 用时={Environment.TickCount - scanStarted}ms 设备={buckets.Count}");
 
             return buckets.Values.Select(b =>
@@ -565,7 +574,7 @@ namespace MouseDock.Services.Detection
         /// <summary>返回 true 表示这台设备被采集（鼠标/键盘/手柄）。</summary>
         private static bool TryCollect(string path, List<(string InstanceId, string Service)> ancestors, bool integratedUsb,
             Dictionary<string, Bucket> buckets, DevicePreferences preferences,
-            List<VendorCollectionInfo> vendorCollections,
+            List<VendorCollectionInfo> vendorCollections, List<StandardBatteryChannel> standardChannels,
             out bool wasNoise)
         {
             wasNoise = false;
@@ -595,6 +604,7 @@ namespace MouseDock.Services.Detection
             string product, vendor;
             ushort revision;
             string reportIds = null;
+            StandardBatteryField? standardField = null;
 
             try
             {
@@ -620,6 +630,9 @@ namespace MouseDock.Services.Detection
                             LastDiagnostics.Add($"{vid:X4}:{pid:X4} 能力读取失败 NTSTATUS=0x{status:X8} 路径={path}");
                             return false;
                         }
+                        if (StandardTopLevel(caps.UsagePage, caps.Usage) &&
+                            InstanceScope.MatchesUsbInstance(key, path, vid, pid))
+                            standardField = StandardField(pre, caps);
                         if (BatteryReplay.Current != null)
                         {
                             string Ids(int type, ushort values, ushort buttons) => string.Join(",",
@@ -656,9 +669,11 @@ namespace MouseDock.Services.Detection
             string ancestry = string.Join(" <- ", ancestors.Select(n => n.InstanceId + " [" + n.Service + "]"));
             string exclusion = ExclusionReason(ancestors, integratedUsb);
             if(IsKnownHubSwitch(vid,pid))exclusion="HM Lab扩展坞切换键HID，不是独立外设";
+            bool known = DeviceRoutes.IsKnown(vid, pid, product);
+            if (exclusion == null && !known && standardField is { } field)
+                standardChannels.Add(new(path, vid, pid, revision, caps.UsagePage, caps.Usage, field));
             if (BatteryReplay.Current is { } evidence)
             {
-                bool known = DeviceRoutes.IsKnown(vid, pid, product);
                 bool zg4 = VendorProtocol.IsZg4Channel(vid, pid, product, caps.UsagePage,
                     caps.InputReportByteLength, caps.OutputReportByteLength);
                 bool enabled = preferences?.CanRead(key, $"hid-{vid:X4}-{pid:X4}",
@@ -672,7 +687,8 @@ namespace MouseDock.Services.Detection
                     exclusion != null, revision, exclusion, reportIds: reportIds,
                     route: zg4 ? "Zg4" : monsGeekStatus ? VendorProtocol.MonsGeekStatusRoute : DeviceRoutes.Find(vid, pid, product)?.Reader,
                     queryPolicy: exclusion != null ? "excluded" : !enabled ? "recognition-disabled" :
-                        IsSafeMode ? "safe-mode" : known || zg4 ? "known-route-only" : "unknown-no-vendor-probe");
+                        IsSafeMode ? "safe-mode" : known || zg4 ? "known-route-only" :
+                        standardField != null ? "standard-battery-only" : "unknown-no-vendor-probe");
             }
             LastDiagnostics.Add($"{key} 产品={product ?? "（无产品名）"} UPage=0x{caps.UsagePage:X4} Usage=0x{caps.Usage:X4} " +
                 $"in={caps.InputReportByteLength} out={caps.OutputReportByteLength} feat={caps.FeatureReportByteLength} 路径={path} PnP={ancestry}");
@@ -685,7 +701,9 @@ namespace MouseDock.Services.Detection
 
             bool safeMode = false;
             try { safeMode = IsSafeMode; } catch { }
-            bool recognitionEnabled = DeviceRoutes.IsKnown(vid, pid, product) && (preferences?.CanRead(key, null) ?? true) && (preferences?.CanRead($"hid-{vid:X4}-{pid:X4}", VendorMap.PhysicalKeyFromName(product)) ?? true);
+            bool enabledForReading = preferences?.CanRead(key, $"hid-{vid:X4}-{pid:X4}",
+                VendorMap.PhysicalKeyFromName(product)) ?? true;
+            bool recognitionEnabled = known && enabledForReading;
 
             // 厂商集合（FF00/FF80…）不是鼠标/键盘用法，下面会被跳过。
             // 先记下这些接口，等设备本体归并好，再按整机身份统一读一次电量。
@@ -717,7 +735,7 @@ namespace MouseDock.Services.Detection
             if (kind == DeviceKind.Headset && VendorMap.TryUsbHeadset(vid, pid, out string headsetName, product))
             {
                 if (!buckets.TryGetValue(key, out var headset))
-                    buckets[key] = headset = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path, Kind = kind };
+                    buckets[key] = headset = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Revision = revision, Product = product, Vendor = vendor, Path = path, Kind = kind };
                 headset.Counts[kind] = headset.Counts.TryGetValue(kind, out int count) ? count + 1 : 1;
 
                 // HyperX Cloud III 走 0xFF13 私有通道，一次读完整机就行，别的集合不再重复。
@@ -759,7 +777,6 @@ namespace MouseDock.Services.Detection
                 return false;
             }
 
-            // 需要读电量时才申请读写权限；拿不到就保持 -1，不影响设备本身被列出
             int battery = -1;
             bool batteryCharging = false;
             bool batteryStale = false;
@@ -807,30 +824,6 @@ namespace MouseDock.Services.Detection
                 batteryTrace.Add("Neon75 状态由本实例的 Feature 集合读取");
             else
             {
-            if (caps.FeatureReportByteLength > 1 && caps.UsagePage == 0x06 && caps.Usage == 0x20)
-            {
-                IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-                if (h == IntPtr.Zero || h == new IntPtr(-1))
-                {
-                    batteryTrace.Add($"标准电量接口打开失败 Win32={Marshal.GetLastWin32Error()}");
-                }
-                else
-                {
-                    try
-                    {
-                        var buf = new byte[caps.FeatureReportByteLength];
-                        if (!HidD_GetFeature(h, buf, buf.Length))
-                            batteryTrace.Add($"标准电量 GET_FEATURE 失败 Win32={Marshal.GetLastWin32Error()}");
-                        else if (buf[1] > 100)
-                            batteryTrace.Add($"标准电量返回值无效: {buf[1]}");
-                        else battery = buf[1];
-                    }
-                    catch (Exception ex) { batteryTrace.Add("标准电量异常: " + ex.GetType().Name); }
-                    finally { CloseHandle(h); }
-                }
-            }
-            else batteryTrace.Add("本 HID 集合未暴露标准电池 Feature 用法");
             if (safeMode) batteryTrace.Add("安全模式已跳过需要发送命令的厂商读取器");
 
             // 国产 2.4G 接收器（AULA/VXE 系）：走厂商 32 字节协议读电量
@@ -903,11 +896,11 @@ namespace MouseDock.Services.Detection
 
             }
             }
-            else batteryTrace.Add("用户已取消识别：仅保留设备管理条目，未发起电量查询");
+            else if (!enabledForReading) batteryTrace.Add("用户已取消识别：仅保留设备管理条目，未发起电量查询");
 
             if (!buckets.TryGetValue(key, out Bucket bucket))
             {
-                bucket = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Product = product, Vendor = vendor, Path = path };
+                bucket = new Bucket { InstanceId = key, Vid = vid, Pid = pid, Revision = revision, Product = product, Vendor = vendor, Path = path };
                 buckets[key] = bucket;
             }
 
@@ -1429,7 +1422,7 @@ namespace MouseDock.Services.Detection
 
         internal sealed class Bucket
         {
-            public ushort Vid, Pid;
+            public ushort Vid, Pid, Revision;
             public string Product;
             public string Vendor;
 
@@ -1493,6 +1486,8 @@ namespace MouseDock.Services.Detection
             public bool HeadsetQueried;
             public bool RainyIdentified;
             public string BatterySource = "";
+            public bool StandardBattery;
+            public string StandardBatteryNote;
             public readonly HashSet<string> BatteryFailures = new HashSet<string>();
             public readonly Dictionary<DeviceKind, int> Counts = new Dictionary<DeviceKind, int>();
 
@@ -1745,7 +1740,7 @@ namespace MouseDock.Services.Detection
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
                     ReceiverDiscovered = HandledBy is HandledBy.MchoseA7Ultra or HandledBy.MonsGeekBatteryEvent or HandledBy.MonsGeekDongleStatus || zg4Receiver || (HandledBy == HandledBy.RazerBlackShark && Pid == RazerBlackSharkProtocol.WirelessPid) || HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
-                    PeripheralConfirmed = HandledBy == HandledBy.M9Pro ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.M137 ? false : HandledBy == HandledBy.RealTek ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.MchoseModern ? false : unresolved ? false : HandledBy == HandledBy.ZeroRainy ? false : HandledBy == HandledBy.MchoseG7 ? false : HandledBy == HandledBy.OriginalGpw ? GpwLive : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaOnline : !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
+                    PeripheralConfirmed = HandledBy == HandledBy.M9Pro ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.M137 ? false : HandledBy == HandledBy.RealTek ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.MchoseModern ? false : unresolved ? false : HandledBy == HandledBy.ZeroRainy ? false : HandledBy == HandledBy.MchoseG7 ? false : HandledBy == HandledBy.OriginalGpw ? GpwLive : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaOnline : !StandardBattery && !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,
                     Transport = transport,
@@ -1762,7 +1757,8 @@ namespace MouseDock.Services.Detection
                     PhysicalKey = InstanceId,
                     HandledBy = HandledBy,
                     Note = HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse ? BatterySource :
-                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 &&
+                        RogScopeModel == VendorProtocol.RogScopeRxWired ? "有线键盘，无电池" : unresolved ? "已发现8K复合接收器，外设类型与型号尚未确认；不按辅助接口数量定型" : Battery < 0 && StandardBatteryNote != null
+                        ? StandardBatteryNote : Battery < 0 &&
                         !(Vid == 0x3654 && Pid == 0x5055 && VendorMap.IsZhuAudioZg4(Product)) &&
                         !DeviceRoutes.IsKnown(Vid, Pid, Product) ? "候选设备：型号与电量协议尚未确认，未发送厂商命令" : Battery >= 0
                         ? BatterySource
