@@ -965,7 +965,7 @@ namespace MouseDock.Services.Detection
                 if (!OriginalGpwProtocol.IsCandidate(b.Vid,b.Pid) || AulaBatteryProtocol.IsCandidate(b.Vid,b.Pid,b.Product)) continue;
                 b.HandledBy = HandledBy.OriginalGpw; b.GpwLive = false;
                 b.GpwModel = b.Pid == 0xC088 ? OriginalGpwProtocol.Model : null;
-                b.Battery = -1; b.Charging = false; b.ReadStale = false; b.BatterySource = ""; b.Identity = "";
+                b.Battery = -1; b.Charging = false; b.ChargeFull = false; b.ReadStale = false; b.BatterySource = ""; b.Identity = "";
                 string legacy = $"hid-{b.Vid:X4}-{b.Pid:X4}";
                 var channels = collections.Where(c => c.Vid == b.Vid && c.Pid == b.Pid &&
                     InstanceScope.ForPath(c.Path, legacy) == b.InstanceId &&
@@ -984,21 +984,39 @@ namespace MouseDock.Services.Detection
                     catch(Exception ex) { result=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name+": "+ex.Message); }
                 }
                 result ??= ReferenceBatteryProtocol.Reading.Failed("罗技读取器没有返回结果");
+                bool pairedMouse = b.Pid == 0xC539 && result.MouseTypeConfirmed &&
+                    !string.IsNullOrWhiteSpace(result.Identity) && (result.Model == result.Identity ||
+                        result.Model == LogitechG403Battery.Model && LogitechG403Battery.IsName(result.Identity));
                 bool g603 = b.Pid == 0xC539 && result.Model == OriginalGpwProtocol.G603Model &&
                     OriginalGpwProtocol.IsG603Name(result.Identity);
-                if (g603 || (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model))
+                if (pairedMouse || g603 || (b.Pid==0xC547 ? result.Model=="Logitech G PRO X SUPERLIGHT" && OriginalGpwProtocol.IsSuperlightName(result.Identity) : result.Model == OriginalGpwProtocol.Model))
                 {
                     b.GpwModel = result.Model;
-                    b.GpwLive = g603 || (b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity));
+                    b.GpwLive = pairedMouse || g603 || (b.Pid==0xC547 ? OriginalGpwProtocol.IsSuperlightName(result.Identity) : OriginalGpwProtocol.IsIdentityEvidence(result.Identity));
                     if (result.Level is >=0 and <=100 && result.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging or ReferenceBatteryProtocol.State.Full)
                     {
                         b.Battery=result.Level; b.Charging=result.ChargingKnown && result.Charging; b.GpwLive=true;
                         b.ChargeFull = result.Status == ReferenceBatteryProtocol.State.Full;
                         if (g603) b.Charging = false;
-                        b.BatterySource=(g603 ? "G603：" : "GPW：")+result.Diagnostic;
+                        b.BatterySource=(pairedMouse ? "HID++ 配对鼠标：" : g603 ? "G603：" : "GPW：")+result.Diagnostic;
                     }
                 }
-                string reader = g603 ? "G603" : "GPW";
+                if (BatteryReplay.Current != null)
+                {
+                    var trace = new BatteryReplay.Trace();
+                    trace.Add("paired-identity", b.GpwLive, result: BatteryReplay.SafeLabel(b.GpwModel));
+                    string detail = result.Diagnostic ?? "";
+                    // Raw legacy diagnostics may include device-info serial bytes. Export only the reason.
+                    foreach (string marker in new[] { " TX=", " RX=", "；回显=" })
+                    {
+                        int raw = detail.IndexOf(marker, StringComparison.Ordinal);
+                        if (raw >= 0) detail = detail[..raw];
+                    }
+                    trace.Add("battery-result", b.Battery >= 0, result: BatteryReplay.SafeLabel(detail));
+                    BatteryReplay.Current.AddQuery(b.InstanceId, channels[0].Path, "HidppPairedMouse",
+                        result.Status.ToString(), b.GpwModel, b.Battery, trace);
+                }
+                string reader = pairedMouse ? "HID++ 配对鼠标" : g603 ? "G603" : "GPW";
                 if (result.Dpi is { } dpi)
                 {
                     b.DpiSettings = dpi;

@@ -11,6 +11,7 @@ internal static class ReferenceBatteryProtocol
         string Diagnostic, string Model = null, string Identity = null)
     {
         internal MouseDpiState Dpi { get; init; }
+        internal bool MouseTypeConfirmed { get; init; }
         internal static Reading Failed(string reason) => new(-1, false, false, State.Failed, reason);
     }
 
