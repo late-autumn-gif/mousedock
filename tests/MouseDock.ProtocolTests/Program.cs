@@ -51,6 +51,11 @@ if (args.Contains("--verify-rog-omni-mouse"))
     return;
 }
 Console.WriteLine($"PASS {LegacySelectionRegression.Run()} legacy device preference checks.");
+if (args.Contains("--verify-logitech-paired-mouse"))
+{
+    Console.WriteLine($"PASS {LogitechPairedMouseRegression.Run()} Logitech paired mouse checks.");
+    return;
+}
 if (args.Length > 0 && args[0] == "--inspect-k87-battery")
 {
     // Explicitly requested hardware check through the production discovery path.
@@ -403,6 +408,7 @@ assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
 assertions += OriginalGpwScopedRegression.Run();
 assertions += LogitechG603Regression.Run();
+assertions += LogitechPairedMouseRegression.Run();
 assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += HeadsetExpansionRegression.Run();

@@ -6,7 +6,7 @@ namespace MouseDock.Services.Detection;
 
 // New battery-only transactions, using HID++ facts and the existing original-GPW
 // model. No broad Logitech admission and no uncorrelated/zero-client-ID fallback.
-internal static class OriginalGpwProtocol
+internal static partial class OriginalGpwProtocol
 {
     internal const string Model = "Logitech G Pro Wireless";
     internal const string G603Model = "Logitech G603";
@@ -64,7 +64,7 @@ internal static class OriginalGpwProtocol
     internal static ReferenceBatteryProtocol.Reading Read(ReferenceBatteryProtocol.ILink link, ushort pid,
         bool readDpi = false, MouseDpiChange change = null) => new Reader(link, readDpi, change).Read(pid);
 
-    private sealed class Reader(ReferenceBatteryProtocol.ILink link, bool readDpi, MouseDpiChange change)
+    private sealed partial class Reader(ReferenceBatteryProtocol.ILink link, bool readDpi, MouseDpiChange change)
     {
         private readonly long deadline = link.Now + 4000;
         private readonly StringBuilder trace = new();
@@ -83,6 +83,8 @@ internal static class OriginalGpwProtocol
             {
                 string name = ReadName(slot);
                 if (pid == 0xC539 && IsG603Name(name)) return ReadG603(slot, name);
+                if (pid == 0xC539 && name != null && !LogitechHidpp.IsOriginalGpwName(name))
+                    return ReadPairedMouse(slot, name);
                 if (name != null && !LogitechHidpp.IsOriginalGpwName(name))
                     return Fail("实时设备名不是一代 GPW，未读取/套用 GPW 电压曲线：" + name);
                 if (name == null && pid == 0xC539) name = ReadDeviceIdentity(slot);
