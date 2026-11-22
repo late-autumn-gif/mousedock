@@ -132,6 +132,11 @@ if (args.Length > 1 && args[0] == "--verify-headset-audio")
     Console.WriteLine($"PASS {HeadsetAudioRegression.RunUi(args[1])} headset UI/control checks; simulated backend, no system audio writes.");
     return;
 }
+if (args.Contains("--verify-cloud3s"))
+{
+    Console.WriteLine($"PASS {Cloud3SRegression.Run()} Cloud III S checks.");
+    return;
+}
 if (args.Length > 0 && args[0] == "--inspect-audio-endpoints")
 {
     var endpoints = new WindowsHeadsetAudioBackend().Enumerate();
@@ -451,6 +456,7 @@ Check(VendorProtocol.IsCloud3SControlCollection(0xFF13, 0x0001, 62, 62) &&
     !VendorProtocol.IsCloud3SControlCollection(0xFFC0, 0x0202, 32, 32),
     "Cloud III S only uses the FF13 control collection");
 var cloudRequest = VendorProtocol.BuildCloud3SRequest(62, VendorProtocol.Cloud3SBatteryCommand);
+assertions += Cloud3SRegression.Run();
 Check(cloudRequest.Length == 62 &&
     cloudRequest.Take(6).SequenceEqual(new byte[] { 0x0C, 0x02, 0x03, 0x01, 0x00, 0x1D }),
     "Cloud III S battery command is Airoha GET_BATTERY_INFO 0x1D");

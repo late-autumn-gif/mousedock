@@ -19,7 +19,7 @@ internal static partial class VendorProtocol
             return ReferenceBatteryProtocol.Reading.Failed("No scoped headset profile");
         var selected = channels.Where(c => c != null && c.Vid == vid && c.Pid == pid &&
             InstanceScope.Allows(c.Path) && HeadsetExpansionProfiles.Matches(family, c)).ToArray();
-        if (selected.Length == 0 || selected.Length > (family == "Cloud3S" ? 4 : 16) ||
+        if (selected.Length == 0 || selected.Length > (family == "Cloud3S" ? 1 : 16) ||
             selected.Select(c => c.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() != selected.Length)
             return ReferenceBatteryProtocol.Reading.Failed("Missing/ambiguous headset collection snapshot");
         return ReferenceQueryGate.Run(InstanceScope.Current + ":headset-expansion", () =>
@@ -54,11 +54,9 @@ internal static partial class VendorProtocol
                 }
                 if (family == "Cloud3S")
                 {
-                    var writers = links.Where(l => l.Metadata.HasOutput(12, 64)).ToArray();
-                    var readers = links.Where(l => l.Metadata.InputSizes.TryGetValue(12, out int size) &&
-                        size is >= 7 and <= 64).ToArray();
-                    Require(writers.Length == 1 && readers.Length > 0, "Cloud III S writer/readers ambiguous");
-                    return HeadsetExpansionCloud3S.Read(writers[0].Wire(), readers.Select(l => l.Wire()).ToArray());
+                    Require(links.Count == 1, "Cloud III S control collection ambiguous");
+                    var control = links[0].Wire();
+                    return HeadsetExpansionCloud3S.Read(control, new[] { control });
                 }
                 if (family == "Xiberia")
                 {
