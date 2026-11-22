@@ -20,6 +20,11 @@ if (args.Contains("--verify-scyrox-legacy"))
     Console.WriteLine($"PASS {ScyroxLegacyRegression.Run()} Scyrox legacy receiver checks; no hardware I/O.");
     return;
 }
+if (args.Contains("--verify-sc580-transactions"))
+{
+    Console.WriteLine($"PASS {M137TransactionsRegression.Run()} SC580 transaction checks.");
+    return;
+}
 if (args.Contains("--verify-mchose-feedback"))
 {
     Console.WriteLine($"PASS {MchoseFeedbackRegression.Run()} G89/V9 Pro feedback checks; no hardware I/O.");
@@ -635,6 +640,7 @@ Check(chargeDevice.IsChargingActive && chargeDevice.LevelText == "—", "Known c
 
 var identify = new byte[] { 0x30, 0, 1, 0x0B, 0x4D, 0x31, 0x33, 0x37, 1, 0x16, 0x11, 0xAA, 0, 65, 1, 0 };
 Check(VendorProtocol.TryParseIdentifyBattery(identify, out int identifyLevel, out bool identifyCharging) && identifyLevel == 65 && !identifyCharging, "Captured M137 Identify shape gives level and noncharging state");
+assertions += M137TransactionsRegression.Run();
 identify[12] = 1;
 Check(VendorProtocol.TryParseIdentifyBattery(identify, out identifyLevel, out identifyCharging) && identifyLevel == 65 && identifyCharging, "Identify charging byte is propagated");
 Check(VendorProtocol.TryParseIdentifyBattery(new byte[] { 0 }.Concat(identify).ToArray(), out identifyLevel, out identifyCharging) && identifyCharging, "Windows report-ID alignment preserves charging");

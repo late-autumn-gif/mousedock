@@ -12,9 +12,9 @@ namespace MouseDock.Services.Detection;
 /// 电量在 <c>[18]</c>。同一号段被多个品牌共用，身份串决定型号：
 /// M137=狼蛛 SC580、M139=黑爵 AJ139 Pro、M620=黑爵 AJ159、M184=黑爵 AJ179。
 ///
-/// 这里只做帧与解析，不发 I/O。
+/// 设备 I/O 由已验证通道的调用方提供。
 /// </summary>
-internal static class M137FeatureProtocol
+internal static partial class M137FeatureProtocol
 {
     internal const byte ReportId = 12;
     internal const int FrameLength = 33;
