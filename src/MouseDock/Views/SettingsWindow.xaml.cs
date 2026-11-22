@@ -129,6 +129,7 @@ namespace MouseDock.Views
                 AutoUpdateBox.IsEnabled = !App.IsTestProfile;
                 AutoUpdateBox.ToolTip = App.IsTestProfile ? "隔离测试版不访问更新源" : null;
                 ApplySurfaceButtons(s.SurfaceMode);
+                DockWallpaperEngineBox.IsChecked = s.DockFollowWallpaperEngine;
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
                 ReferenceCharacterChoices.SelectedItem = ReferenceCharacterChoices.Items.OfType<ComboBoxItem>()
@@ -325,6 +326,14 @@ namespace MouseDock.Views
             App.RefreshTheme();
             App.SaveSettings();
             Reload();
+        }
+
+        private void OnDockWallpaperEngineChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.Settings.DockFollowWallpaperEngine = DockWallpaperEngineBox.IsChecked == true;
+            App.Dock?.ApplyBackground(App.Settings.DockBackground);
+            App.SaveSettings();
         }
 
         private void OnPickBackground(object sender, RoutedEventArgs e)

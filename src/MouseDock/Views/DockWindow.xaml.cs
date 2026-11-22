@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -40,10 +41,13 @@ namespace MouseDock.Views
         public Brush TrackBrush { get => (Brush)GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
         public int LowBatteryThreshold { get => (int)GetValue(LowBatteryThresholdProperty); set => SetValue(LowBatteryThresholdProperty, value); }
 
-        public DockWindow()
+        public DockWindow() : this(new WallpaperEngineSource().ReadAsync) { }
+
+        internal DockWindow(Func<WallpaperMonitor, CancellationToken, Task<WallpaperContent>> readWallpaper)
         {
             InitializeComponent();
             _themeBackground = Root.Background;
+            InitializeWallpaper(readWallpaper);
             LowBatteryThreshold = App.Settings.LowBatteryWarn;
             App.Battery.Refreshed += (_, __) => RefreshDevices();
             App.Battery.SourceChanged += (_, __) => RefreshDevices();
@@ -144,12 +148,16 @@ namespace MouseDock.Views
         {
             ApplyTheme(App.Theme, false);
             PictureBackground.Apply(Root, path, _themeBackground, App.Settings, App.Theme);
+            UpdateWallpaperActivation();
+            if (_bareDensity) ApplyBareBackground();
+            else PaintWallpaper();
         }
 
         /// <summary>卡片窗样式：standard 标准 / compact 紧凑 / bare 极简（去底色去圆角阴影）。</summary>
         public void ApplyDensity(string style)
         {
             style = (style ?? "standard").ToLowerInvariant();
+            _bareDensity = style == "bare";
             Root.Width = style == "compact" ? 288 : 316;
             switch (style)
             {
@@ -164,7 +172,8 @@ namespace MouseDock.Views
                     Root.CornerRadius = new CornerRadius(0);
                     Root.BorderThickness = new Thickness(0);
                     RootShadow.Opacity = 0;
-                    Root.Background = new SolidColorBrush(App.Theme.Surface);
+                    UpdateWallpaperActivation();
+                    ApplyBareBackground();
                     return;
                 default:
                     Root.Padding = new Thickness(15, 12, 15, 10);
@@ -174,6 +183,13 @@ namespace MouseDock.Views
                     break;
             }
             ApplyBackground(App.Settings.DockBackground);
+        }
+
+        private void ApplyBareBackground()
+        {
+            var brush = new SolidColorBrush(App.Theme.Surface);
+            PictureBackground.SetWallpaper(Root, null, brush);
+            Root.Background = brush;
         }
 
         public void ApplyTheme(ThemePreset theme, bool animate)

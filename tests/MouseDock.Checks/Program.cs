@@ -47,6 +47,8 @@ internal static class Program
         }
         if (args.Contains("--r98-live"))
             return R98KeyboardChecks.RunLive();
+        if (args.Contains("--wallpaper-engine-live"))
+            return WallpaperEngineChecks.RunLive();
         var checks = new (string Name, Action Check)[]
         {
             ("Xbox system battery bands reach cards without cached percentages", () => XboxWirelessUiChecks.Run()),
@@ -115,6 +117,10 @@ internal static class Program
             ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
             ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
             ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
+            ("Wallpaper Engine background is opt-in and keeps saved images", WallpaperEngineChecks.Preferences),
+            ("Wallpaper Engine uses the selected monitor's configured wallpaper on empty CLI output", WallpaperEngineChecks.Monitor),
+            ("Wallpaper Engine resolves local video and scene/web previews without escaping project paths", WallpaperEngineChecks.Assets),
+            ("Wallpaper Engine stops polling and discards results when the card hides or reconfigures", WallpaperEngineChecks.Card),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
             ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
