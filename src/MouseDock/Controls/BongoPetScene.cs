@@ -74,26 +74,10 @@ internal sealed class BongoPetScene : Canvas
         }
         _idleExpression = new DrawingImage(drawing);
         _idleExpression.Freeze();
-        ImageSource portrait = id == "shin-chan"
-            ? SmilingPortrait(new CroppedBitmap(atlas, new Int32Rect(width, height, width, height)))
-            : new CroppedBitmap(idle, new Int32Rect(width / 5, 0, width * 3 / 5, height * 3 / 5));
+        var portrait = new CroppedBitmap(idle, new Int32Rect(width / 5, 0, width * 3 / 5, height * 3 / 5));
         portrait.Freeze();
         Portrait = portrait;
         ShowPose(false);
-    }
-
-    private static DrawingImage SmilingPortrait(BitmapSource pose)
-    {
-        // Trace around the shoulders and ear where the chair touches the silhouette.
-        // Coordinates refer to a 400-unit pose cell, independently of atlas resolution.
-        var bust = new DrawingGroup
-        {
-            ClipGeometry = Geometry.Parse(
-                "M80,1 H324 V213 Q321,238 297,246 L269,255 Q283,265 292,277 " +
-                "H111 Q125,254 149,243 L151,238 136,229 Q124,239 105,233 Q92,229 88,216 H80 Z")
-        };
-        using (var dc = bust.Open()) dc.DrawImage(pose, new Rect(0, 0, 400, 400));
-        return new DrawingImage(bust);
     }
 
     internal void SetButtons(bool keyboard, bool mouse)

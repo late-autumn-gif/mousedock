@@ -206,11 +206,12 @@ internal sealed class DesktopPetWindow : Window
         }
 
         _bongo.SetSkin(skin.Id);
-        if (skin.Id is KeqingId or "dracena" or "shin-chan") _headerPortrait.Source = _bongo.Portrait;
+        if (skin.Id is KeqingId or "dracena") _headerPortrait.Source = _bongo.Portrait;
+        else _headerPortrait.Source = LoadCardPortrait(skin);
         bool perched = skin.Id == "shin-chan";
-        _headerPortrait.Width = perched ? 76 : 128;
-        _headerPortrait.Height = perched ? 80 : 128;
-        _headerPortrait.Margin = new Thickness(0, 0, perched ? 19 : 13, 0);
+        _headerPortrait.Width = 128;
+        _headerPortrait.Height = perched ? 82 : 128;
+        _headerPortrait.Margin = new Thickness(0, perched ? 8 : 0, 13, 0);
         _skin = skin;
         _behavior.Reset();
         _actionUntil = 0;
@@ -255,11 +256,20 @@ internal sealed class DesktopPetWindow : Window
             frame.Freeze();
             return (ImageSource)frame;
         }).ToArray();
+    }
 
+    private static ImageSource LoadCardPortrait(Character skin)
+    {
         var headers = LoadArtwork("desktop-pet-headers.png");
         int headerWidth = headers.PixelWidth / 3;
-        _headerPortrait.Source = new CroppedBitmap(headers,
-            new Int32Rect(skin.HeaderColumn * headerWidth, 0, headerWidth, headers.PixelHeight / 2));
+        int rowHeight = headers.PixelHeight / 2;
+        // The sleeve line meets the rim, with the fingers hanging over the front.
+        var cell = skin.Id == "shin-chan"
+            ? new Int32Rect(64, rowHeight + 176, 416, 264)
+            : new Int32Rect(skin.HeaderColumn * headerWidth, 0, headerWidth, rowHeight);
+        var portrait = new CroppedBitmap(headers, cell);
+        portrait.Freeze();
+        return portrait;
     }
 
     private bool Motion => !_settings.DesktopPetReduceMotion && SystemParameters.ClientAreaAnimation;

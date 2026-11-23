@@ -28,7 +28,12 @@ internal static class BongoSceneChecks
                 if (id == "shin-chan")
                 {
                     var header = (Image)typeof(DesktopPetWindow).GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-                    Require(header.Source == scene.Portrait && header.ActualHeight == 80, "The card must use the illustrated portrait at its top edge.");
+                    Require(header.Source is CroppedBitmap { SourceRect: { X: 64, Y: 688, Width: 416, Height: 264 } },
+                        "Use the smiling ledge pose from the shared portrait atlas.");
+                    double scale = header.ActualHeight / 264;
+                    double sleeve = header.Margin.Top + (404 - 176) * scale;
+                    double fingers = header.Margin.Top + (429 - 176) * scale;
+                    Require(sleeve <= 80 && fingers > 80, "The rim must pass between the sleeves and fingertips.");
                     var card = (Grid)header.Parent;
                     var root = (FrameworkElement)pet.Content;
                     var preview = new RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth),
