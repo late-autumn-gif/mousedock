@@ -14,7 +14,10 @@ internal static class BongoSceneChecks
     {
         using var fixture = new AppearanceFixture();
         Directory.CreateDirectory(output);
-        foreach(var id in new[]{"shin-chan","xin-yue-hu","rikka","keqing","dracena"})
+        fixture.Battery.VisibleDevices[0].Name = "MCHOSE A7 V3 Pro";
+        fixture.Battery.VisibleDevices.Add(new MouseDock.Models.DeviceInfo { Id = "key", Name = "VGN Neon75 Air", Kind = MouseDock.Models.DeviceKind.Keyboard, Level = 79, IsStale = true });
+        fixture.Battery.VisibleDevices.Add(new MouseDock.Models.DeviceInfo { Id = "unknown", Name = "ZhuAudio ZG2", Kind = MouseDock.Models.DeviceKind.Headset, Level = -1 });
+        foreach(var id in new[]{"shin-chan","xin-yue-hu","rikka","keqing"})
         {
             fixture.Settings.DesktopPetCharacter=id;
             var pet=new DesktopPetWindow(fixture.Battery,fixture.Settings);
@@ -27,6 +30,10 @@ internal static class BongoSceneChecks
                 var scene=(BongoPetScene)typeof(DesktopPetWindow).GetField("_bongo",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(pet)!;
                 if (id == "shin-chan")
                 {
+                    typeof(DesktopPetWindow).GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(pet, null);
+                    var skins = pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "桌宠角色"));
+                    Require(skins.Items.OfType<MenuItem>().Select(item => item.Header).SequenceEqual(new[] { "蜡笔小新", "心月狐", "小鸟游六花", "刻晴" }),
+                        "Only the four supported skins should be selectable.");
                     var header = (Image)typeof(DesktopPetWindow).GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
                     Require(header.Source is CroppedBitmap { SourceRect: { X: 64, Y: 688, Width: 416, Height: 264 } },
                         "Use the smiling ledge pose from the shared portrait atlas.");
@@ -43,6 +50,9 @@ internal static class BongoSceneChecks
                     var crop = new Int32Rect((int)origin.X, (int)origin.Y, (int)card.ActualWidth, (int)card.ActualHeight);
                     var png = new PngBitmapEncoder();
                     png.Frames.Add(BitmapFrame.Create(new CroppedBitmap(preview, crop)));
+                    var layoutPng = new PngBitmapEncoder();
+                    layoutPng.Frames.Add(BitmapFrame.Create(preview));
+                    using (var layoutFile = File.Create(Path.Combine(output, "layout.png"))) layoutPng.Save(layoutFile);
                     using var file = File.Create(Path.Combine(output, "shin-chan-card.png"));
                     png.Save(file);
                 }
@@ -178,12 +188,12 @@ internal static class BongoSceneChecks
         Require(Frame().SequenceEqual(idleKeys), "Released lights must return to the exact original pixels.");
         scene.Tap(DesktopPetInputActivity.Keyboard, 500, 0x1e);
         scene.ShowPose(true, 560);
-        double letterX = scene.KeyboardTravel.X;
+        double letterAngle = scene.KeyboardAngle;
         var letter = Frame("letter");
         scene.Tap(DesktopPetInputActivity.Keyboard, 600, 0x11c);
         scene.ShowPose(true, 680);
         var enter = Frame("pad-enter");
-        Require(scene.KeyboardTravel.X - letterX > .2, "The hand must cross the keyboard from A to keypad Enter.");
+        Require(letterAngle > 4 && scene.KeyboardAngle < -4 && Math.Abs(scene.KeyboardAngle) <= 18, "The forearm turns toward the key within its anatomical travel.");
         scene.SetButtons(false, false);
         scene.ShowPose(true, 850);
         Require(letter.AsSpan(0, size * 4 * 100).SequenceEqual(enter.AsSpan(0, size * 4 * 100)) &&

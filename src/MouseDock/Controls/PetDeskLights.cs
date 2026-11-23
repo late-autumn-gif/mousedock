@@ -66,8 +66,7 @@ internal sealed class PetDeskLights : FrameworkElement
     {
         _desk = id switch
         {
-            "dracena" => new(201, 318, 323, 191, 333, 357, 110, 347, 19, Color.FromRgb(91, 93, 116)),
-            "keqing" => new(188, 335, 314, 178, 348, 343, 94, 331, 19, Color.FromRgb(155, 130, 160)),
+            "keqing" => new(176, 338, 353, 166, 348, 370, 92, 367, 24, Color.FromRgb(155, 130, 160)),
             "rikka" => new(184, 340, 332, 175, 351, 361, 87, 349, 20, Color.FromRgb(88, 90, 109)),
             "xin-yue-hu" => new(181, 319, 322, 174, 330, 354, 105, 344, 20, Color.FromRgb(122, 105, 98)),
             _ => new(191, 346, 322, 198, 364, 357, 100, 350, 25, Color.FromRgb(104, 100, 115))

@@ -15,19 +15,21 @@ internal sealed class BongoPetScene : Canvas
     private readonly Image _artwork;
     private readonly Image _mouseArm = ArmImage(), _keyArm = ArmImage();
     private readonly PetHandEffect _mouseEffect = new(), _keyEffect = new();
+    private readonly RotateTransform _keyRotation = new();
+    private Point _keyPivot;
     private readonly PetDeskLights _lights = new();
     private PetArmLayers _neutral, _smiling;
     private ImageSource _idleExpression;
     private PetArmLayers.Rig _rig;
     private long _quietAfter, _lastFrame;
     internal Point MouseTravel => _mouseEffect.MouseOffset;
-    internal Point KeyboardTravel => _keyEffect.MouseOffset;
+    internal double KeyboardAngle => _keyRotation.Angle;
     internal double KeyboardStroke => _keyEffect.KeyStroke;
     private static Image ArmImage() => new() { Width = SceneWidth, Height = SceneHeight, IsHitTestVisible = false };
     private System.Drawing.Point? _lastCursor;
     private bool _keyboardDown, _mouseDown;
     private long _keyboardUntil, _mouseUntil;
-    internal ImageSource Portrait { get; private set; }
+    private double _mouseForwardLimit;
 
     internal BongoPetScene(Image artwork)
     {
@@ -40,6 +42,7 @@ internal sealed class BongoPetScene : Canvas
         Children.Add(_lights);
         _mouseArm.Effect = _mouseEffect;
         _keyArm.Effect = _keyEffect;
+        _keyArm.RenderTransform = _keyRotation;
         Children.Add(_mouseArm);
         Children.Add(_keyArm);
         Children.Add(_lights.Indicators);
@@ -54,11 +57,18 @@ internal sealed class BongoPetScene : Canvas
         int height = atlas.PixelHeight / 2;
         var idle = new CroppedBitmap(atlas, new Int32Rect(0, 0, width, height));
         _rig = PetArmLayers.For(id);
+        // Leave the desk rim and two units of click travel clear of the shell.
+        _mouseForwardLimit = Math.Min(.014, (380 - _rig.Mouse[^1].Y) / 400d);
+        var joint = _rig.Keys[0];
+        _keyPivot = new Point((joint.Left + joint.Right) / 2d, joint.Y);
+        _keyRotation.CenterX = _keyPivot.X * SceneWidth / 400;
+        _keyRotation.CenterY = _keyPivot.Y * SceneHeight / 400;
+        _keyRotation.Angle = 0;
         _neutral = new PetArmLayers(idle, _rig);
         _mouseEffect.Anchors = new Point(_rig.Mouse[0].Y / 400d, _rig.WristY / 400d);
         _keyEffect.Anchors = new Point(_rig.Keys[0].Y / 400d, _rig.WristY / 400d);
         _lights.SetMask(_lights.CreateFingerMask(idle));
-        if (id == "shin-chan")
+        if (id is "shin-chan" or "keqing")
         {
             var smile = new CroppedBitmap(atlas, new Int32Rect(width, height, width, height));
             _smiling = new PetArmLayers(smile, _rig, _neutral.Base);
@@ -69,9 +79,6 @@ internal sealed class BongoPetScene : Canvas
             _smiling = _neutral;
             _idleExpression = HeadExpression(atlas, width, height, _neutral.Base);
         }
-        var portrait = new CroppedBitmap(idle, new Int32Rect(width / 5, 0, width * 3 / 5, height * 3 / 5));
-        portrait.Freeze();
-        Portrait = portrait;
         ShowPose(false);
     }
 
@@ -102,12 +109,12 @@ internal sealed class BongoPetScene : Canvas
     {
         double x = Math.Clamp((cursor.X - desktop.Left) / (double)Math.Max(1, desktop.Width - 1), 0, 1);
         double y = Math.Clamp((cursor.Y - desktop.Top) / (double)Math.Max(1, desktop.Height - 1), 0, 1);
-        var offset = new Point((x - .5) * .14, (y - .5) * .028);
+        var offset = new Point((x - .5) * .14, Math.Min((y - .5) * .028, _mouseForwardLimit));
         if (_lastCursor is { } previous)
         {
             // Relative travel on a small pad. Ordinary short strokes remain visible on a wide desktop.
             offset.X = Math.Clamp(_mouseEffect.MouseOffset.X + (cursor.X - previous.X) * .00055, -.07, .07);
-            offset.Y = Math.Clamp(_mouseEffect.MouseOffset.Y + (cursor.Y - previous.Y) * .00048, -.030, .014);
+            offset.Y = Math.Clamp(_mouseEffect.MouseOffset.Y + (cursor.Y - previous.Y) * .00048, -.030, _mouseForwardLimit);
         }
         _lastCursor = cursor;
         if (_mouseEffect.MouseOffset != offset) _mouseEffect.MouseOffset = offset;
@@ -140,14 +147,15 @@ internal sealed class BongoPetScene : Canvas
         double stroke = Math.Clamp((_keyboardUntil - now) / 85d, 0, 1) * .020;
         _keyEffect.KeyStroke = stroke * .35;
         var cap = _lights.ActiveTarget();
-        Point target = cap is Point point
-            ? new Point((point.X - _rig.Tip.X) / 400, (point.Y - 3 - _rig.Tip.Y) / 400)
-            : new Point();
+        // Turn the forearm toward the cap around its painted attachment. Rigid
+        // rotation preserves its length even when the cap lies beyond its reach.
+        double target = cap is Point point
+            ? Math.Clamp(Vector.AngleBetween(_rig.Tip - _keyPivot, point - _keyPivot), -18, 18)
+            : 0;
         double blend = _lastFrame == 0 ? 1 : 1 - Math.Exp(-Math.Clamp(now - _lastFrame, 0, 150) / 26d);
         _lastFrame = now;
-        var previous = KeyboardTravel;
-        if ((target - previous).Length < .0005) _keyEffect.MouseOffset = target;
-        else _keyEffect.MouseOffset = previous + (target - previous) * blend;
+        _keyRotation.Angle = Math.Abs(target - KeyboardAngle) < .05
+            ? target : KeyboardAngle + (target - KeyboardAngle) * blend;
         if (_keyboardDown || _mouseDown) _quietAfter = Math.Max(_quietAfter, now + 750);
         double click = _mouseDown || now < _mouseUntil ? .005 : 0;
         _mouseEffect.KeyStroke = click;
@@ -170,7 +178,8 @@ internal sealed class BongoPetScene : Canvas
         _keyboardUntil = _mouseUntil = 0;
         _lastCursor = null;
         _quietAfter = _lastFrame = 0;
-        _mouseEffect.MouseOffset = _keyEffect.MouseOffset = new Point();
+        _keyRotation.Angle = 0;
+        _mouseEffect.MouseOffset = new Point();
         _lights.MoveMouse(new Point());
         _lights.Clear();
         ShowPose(false);

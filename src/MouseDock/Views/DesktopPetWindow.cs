@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -25,16 +26,20 @@ internal sealed class DesktopPetWindow : Window
     private const string KeqingId = "keqing";
     private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(1d / 60);
 
-    private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
+    private sealed record Character(string Id, string Name, int HeaderColumn, bool HasBlink = true);
 
     private static readonly Character[] Characters =
     {
-        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), true),
-        new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
-        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true),
-        new(KeqingId, "紫发信使", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true),
-        new("dracena", "银发机械师", "", 0, 0, Paint(28, 36, 52), Paint(120, 157, 206), Paint(245, 201, 117), true)
+        new("shin-chan", "蜡笔小新", 0),
+        new("xin-yue-hu", "心月狐", 2),
+        new("rikka", "小鸟游六花", 1),
+        new(KeqingId, "刻晴", 0)
     };
+    private static readonly Brush CardSurface = Paint(40, 42, 40);
+    private static readonly Brush CardLine = Paint(75, 77, 72);
+    private static readonly Brush CardInk = Paint(241, 240, 232);
+    private static readonly Brush CardMuted = Paint(190, 192, 181);
+    private static readonly Brush CardAccent = Paint(185, 207, 171);
 
     private static Brush Paint(byte r, byte g, byte b)
     {
@@ -45,7 +50,6 @@ internal sealed class DesktopPetWindow : Window
 
     private readonly BatteryService _battery;
     private readonly AppSettings _settings;
-    private ImageSource[] _frames;
     private Character _skin;
     private readonly Border _bubble;
     private readonly Image _headerPortrait = new()
@@ -149,21 +153,25 @@ internal sealed class DesktopPetWindow : Window
             e.Handled = true;
         };
 
-        var heading = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(9, 8, 0, 7) };
-        heading.Children.Add(new TextBlock { Text = "✦", FontSize = 17, Foreground = Brushes.Gold, Margin = new Thickness(0, 0, 8, 0) });
-        heading.Children.Add(new TextBlock { Text = "设备电量", FontSize = 19, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
-        var batteryContent = new StackPanel { Width = 300 };
+        var heading = new TextBlock
+        {
+            Text = "设备电量", FontSize = 13, FontWeight = FontWeights.Medium,
+            Foreground = CardMuted, Margin = new Thickness(4, 0, 0, 9)
+        };
+        var batteryContent = new StackPanel { Width = 248 };
         batteryContent.Children.Add(heading);
+        batteryContent.Children.Add(new Border { Height = 1, Background = CardLine, Margin = new Thickness(4, 0, 4, 4) });
         batteryContent.Children.Add(_deviceList);
         _bubble = new Border
         {
-            Child = batteryContent, CornerRadius = new CornerRadius(23), BorderThickness = new Thickness(1.5),
-            Padding = new Thickness(9, 0, 9, 9), Margin = new Thickness(0, 80, 0, 0)
+            Child = batteryContent, Background = CardSurface, BorderBrush = CardLine,
+            CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1),
+            Padding = new Thickness(11, 11, 11, 7), Margin = new Thickness(0, 80, 0, 0)
         };
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
         var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
-        portrait.VerticalAlignment = VerticalAlignment.Center;
-        portrait.Margin = new Thickness(4, 4, 6, 4);
+        portrait.VerticalAlignment = VerticalAlignment.Bottom;
+        portrait.Margin = new Thickness(2, 2, 7, 1);
         layout.Children.Add(portrait);
         var card = new Grid { VerticalAlignment = VerticalAlignment.Center };
         card.Children.Add(_bubble);
@@ -195,68 +203,22 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        if (skin.Id == KeqingId)
-        {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
-        }
-        else if (skin.Id is not ("dracena" or "shin-chan"))
-        {
-            LoadBuiltInCharacter(skin);
-        }
-
         _bongo.SetSkin(skin.Id);
-        if (skin.Id is KeqingId or "dracena") _headerPortrait.Source = _bongo.Portrait;
-        else _headerPortrait.Source = LoadCardPortrait(skin);
+        _headerPortrait.Source = skin.Id == KeqingId ? LoadArtwork("keqing-pet-header.png") : LoadCardPortrait(skin);
         bool perched = skin.Id == "shin-chan";
-        _headerPortrait.Width = 128;
-        _headerPortrait.Height = perched ? 82 : 128;
+        _headerPortrait.Width = perched ? 128 : 102;
+        _headerPortrait.Height = perched ? 82 : skin.Id == KeqingId ? 80 : 102;
         _headerPortrait.Margin = new Thickness(0, perched ? 8 : 0, 13, 0);
         _skin = skin;
         _behavior.Reset();
         _actionUntil = 0;
         Title = $"MouseDock · {skin.Name}桌宠";
-        _bubble.Background = skin.Surface;
-        _bubble.BorderBrush = skin.Outline;
         _listedDevices = Array.Empty<DeviceInfo>();
         _deviceList.Children.Clear();
     }
 
     private static BitmapImage LoadArtwork(string file) =>
         new(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{file}"));
-
-    private static ImageSource[] LoadFrames(string file, int columns, int rows, int count)
-    {
-        var atlas = LoadArtwork(file);
-        int width = atlas.PixelWidth / columns, height = atlas.PixelHeight / rows;
-        return Enumerable.Range(0, count).Select(index =>
-        {
-            var frame = new CroppedBitmap(atlas, new Int32Rect(index % columns * width, index / columns * height, width, height));
-            frame.Freeze();
-            return (ImageSource)frame;
-        }).ToArray();
-    }
-
-    private void LoadBuiltInCharacter(Character skin)
-    {
-        var atlas = LoadArtwork(skin.Atlas);
-        int width = atlas.PixelWidth / 3, height = atlas.PixelHeight / 2;
-        var interactions = LoadArtwork("desktop-pet-interactions.png");
-        // The transparent gutters in the gesture atlas are not evenly spaced.
-        int[] columns = { 0, 399, 837, interactions.PixelWidth };
-        int[] rows = { 0, 388, 793, interactions.PixelHeight };
-        int gestureTop = rows[skin.InteractionRow];
-        int gestureHeight = rows[skin.InteractionRow + 1] - gestureTop;
-        _frames = Enumerable.Range(0, 9).Select(index =>
-        {
-            int gesture = index - 6;
-            var frame = index < 6
-                ? new CroppedBitmap(atlas, new Int32Rect(index % 3 * width, index / 3 * height, width, height))
-                : new CroppedBitmap(interactions, new Int32Rect(columns[gesture], gestureTop, columns[gesture + 1] - columns[gesture], gestureHeight));
-            frame.Freeze();
-            return (ImageSource)frame;
-        }).ToArray();
-    }
 
     private static ImageSource LoadCardPortrait(Character skin)
     {
@@ -421,54 +383,66 @@ internal sealed class DesktopPetWindow : Window
             return;
         }
 
-        var accent = ((SolidColorBrush)_skin.Accent).Color;
+        var accent = ((SolidColorBrush)CardAccent).Color;
         foreach (var device in _listedDevices)
         {
-            _deviceList.Children.Add(new Border { Height = 1, Background = _skin.Outline, Opacity = .46, Margin = new Thickness(4, 0, 4, 0) });
-            var row = new Grid { DataContext = device, Margin = new Thickness(9, 5, 9, 5), MinHeight = 38 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
+            var row = new Grid { DataContext = device, Margin = new Thickness(4, 0, 4, 0), MinHeight = 34 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
             row.ColumnDefinitions.Add(new ColumnDefinition());
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62) });
-            var glyph = new DeviceGlyph { Width = 22, Height = 22, GlyphBrush = _skin.Accent, HorizontalAlignment = HorizontalAlignment.Left };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+
+            var glyph = new DeviceGlyph { Width = 16, Height = 16, GlyphBrush = device == _device ? CardAccent : CardMuted,
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
             row.Children.Add(glyph);
-
-            var details = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-            var name = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+            var name = new TextBlock { Foreground = CardInk, FontSize = 13, VerticalAlignment = VerticalAlignment.Center,
+                FontWeight = device == _device ? FontWeights.SemiBold : FontWeights.Normal,
+                TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 5, 0) };
             name.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Name)));
-            details.Children.Add(name);
-            var meter = new MeterBar
-            {
-                Height = 6, BarHeight = 5, Margin = new Thickness(0, 4, 28, 0), ShowDot = false,
-                Accent = accent, Accent2 = accent, MotionEnabled = Motion
-            };
+            Grid.SetColumn(name, 1);
+            row.Children.Add(name);
+
+            var meter = new MeterBar { Height = 4, Width = 24, BarHeight = 4, ShowDot = false,
+                TrackBrush = CardLine, Accent = accent, Accent2 = accent, MotionEnabled = Motion };
             meter.SetBinding(MeterBar.ValueProperty, new Binding(nameof(DeviceInfo.LevelFraction)));
             meter.SetBinding(MeterBar.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
             meter.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
-            details.Children.Add(meter);
-            Grid.SetColumn(details, 1);
-            row.Children.Add(details);
+            var meterStyle = new Style(typeof(MeterBar));
+            var unknown = new DataTrigger { Binding = new Binding(nameof(DeviceInfo.Level)), Value = -1 };
+            unknown.Setters.Add(new Setter(VisibilityProperty, Visibility.Hidden));
+            meterStyle.Triggers.Add(unknown);
+            meter.Style = meterStyle;
+            Grid.SetColumn(meter, 2);
+            row.Children.Add(meter);
 
-            var reading = new TextBlock
-            {
-                Foreground = _skin.Accent, FontSize = 17, FontWeight = FontWeights.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
-            };
+            var reading = new TextBlock { FontSize = 13, FontWeight = FontWeights.Medium,
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            Typography.SetNumeralAlignment(reading, FontNumeralAlignment.Tabular);
             reading.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)));
-            reading.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
-            Grid.SetColumn(reading, 2);
+            var readingStyle = new Style(typeof(TextBlock));
+            readingStyle.Setters.Add(new Setter(TextBlock.ForegroundProperty, CardInk));
+            var stale = new DataTrigger { Binding = new Binding(nameof(DeviceInfo.IsStale)), Value = true };
+            stale.Setters.Add(new Setter(TextBlock.ForegroundProperty, CardMuted));
+            readingStyle.Triggers.Add(stale);
+            reading.Style = readingStyle;
+            Grid.SetColumn(reading, 3);
             row.Children.Add(reading);
             var item = new Button
             {
                 Content = row, Padding = new Thickness(0), BorderThickness = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch, Cursor = Cursors.Hand,
-                Background = device == _device ? new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) : Brushes.Transparent
+                Background = Brushes.Transparent
             };
             var border = new FrameworkElementFactory(typeof(Border));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(5));
             border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
             border.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
-            item.Template = new ControlTemplate(typeof(Button)) { VisualTree = border };
+            var template = new ControlTemplate(typeof(Button)) { VisualTree = border };
+            var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
+            hover.Setters.Add(new Setter(BackgroundProperty, CardLine));
+            template.Triggers.Add(hover);
+            item.Template = template;
             item.SetBinding(ToolTipProperty, new Binding(nameof(DeviceInfo.StatusText)) { Source = device });
             item.Click += (_, _) => Follow(device.Id);
             _deviceList.Children.Add(item);
