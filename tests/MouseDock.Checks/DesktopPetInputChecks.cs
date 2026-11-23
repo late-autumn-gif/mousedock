@@ -43,8 +43,8 @@ internal static class DesktopPetInputChecks
             void WaitForIdle(ImageSource expected)
             {
                 long deadline = Environment.TickCount64 + 1000;
-                do { Pump(30); } while (art.Source != expected && Environment.TickCount64 < deadline);
-                Require(art.Source == expected, "After release, the dispatcher must restore the idle frame.");
+                do { Pump(30); } while (scene.PoseIndex(false, Environment.TickCount64) != 0 && Environment.TickCount64 < deadline);
+                Require(scene.PoseIndex(false, Environment.TickCount64) == 0 && art.Source == expected, "After release, the dispatcher must restore the idle frame.");
             }
             var pos = target.PointToScreen(new Point(40, 60));
             System.Windows.Forms.Cursor.Position = new((int)pos.X, (int)pos.Y);
@@ -57,20 +57,20 @@ internal static class DesktopPetInputChecks
             Pump(120);
             Guard();
             var idle = art.Source;
-            var effect = (PetHandEffect)scene.Effect;
-            var offset = effect.MouseOffset;
+
+            var offset = scene.MouseTravel;
             // Move toward the centre of the illustrated pad, away from either travel stop.
             int dx = offset.X > 0 ? -32 : 32, dy = offset.Y > 0 ? -20 : 20;
             System.Windows.Forms.Cursor.Position = new((int)pos.X + dx, (int)pos.Y + dy);
             Pump(100);
-            Require((effect.MouseOffset.X - offset.X) * Math.Sign(dx) > .014 &&
-                (effect.MouseOffset.Y - offset.Y) * Math.Sign(dy) > .008, "A short physical stroke must move the displayed hand visibly.");
+            Require((scene.MouseTravel.X - offset.X) * Math.Sign(dx) > .014 &&
+                (scene.MouseTravel.Y - offset.Y) * Math.Sign(dy) > .008, "A short physical stroke must move the displayed hand visibly.");
             Guard();
             keybd_event(0x87, 0, 0, UIntPtr.Zero); // F24
             try
             {
                 Pump(180);
-                Require(scene.PoseIndex(false, Environment.TickCount64) == 1 && art.Source != idle,
+                Require(scene.PoseIndex(false, Environment.TickCount64) == 1 && art.Source == idle,
                     "A background held function key must reach the displayed typing pose.");
             }
             finally { keybd_event(0x87, 0, 2, UIntPtr.Zero); }
@@ -81,7 +81,7 @@ internal static class DesktopPetInputChecks
             try
             {
                 Pump(160);
-                Require(scene.PoseIndex(false, Environment.TickCount64) == 2 && art.Source != idle, "Background middle click must reach the displayed pose.");
+                Require(scene.PoseIndex(false, Environment.TickCount64) == 2 && art.Source == idle, "Background middle click must reach the displayed pose.");
             }
             finally { mouse_event(0x40, 0, 0, 0, UIntPtr.Zero); }
             WaitForIdle(idle);
@@ -132,8 +132,8 @@ internal static class DesktopPetInputChecks
                 return pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, header));
             }
             void Click(string header) => Toggle(header).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            const string linkage = "é”®é¼ åŠ¨ä½œè”åŠ¨";
-            const string motion = "å‡å°‘åŠ¨æ€æ•ˆæžœ";
+            const string linkage = "¼üÊó¶¯×÷Áª¶¯";
+            const string motion = "¼õÉÙ¶¯Ì¬Ð§¹û";
 
             Require(Toggle(linkage).IsChecked, "New settings must enable linkage on first show.");
             Click(linkage);
@@ -177,13 +177,13 @@ internal static class DesktopPetInputChecks
             Require(scene.PoseIndex(false, start + 30) == 1, "A quick tap remains visible.");
             Require(scene.PoseIndex(false, start + 100) == 0, "Tap expires and restores idle.");
             scene.TrackPointer(new(50, 50), new(0, 0, 101, 101));
-            var handEffect = (PetHandEffect)scene.Effect;
+
             scene.SetButtons(false, true);
             scene.ShowPose(false, start + 60);
-            var previousStroke = handEffect.KeyStroke;
+            var previousStroke = scene.KeyboardStroke;
             react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 62, 0x1e]);
             scene.ShowPose(false, start + 64);
-            Require(scene.PoseIndex(false, start + 64) == 2 && handEffect.KeyStroke > previousStroke,
+            Require(scene.PoseIndex(false, start + 64) == 2 && scene.KeyboardStroke > previousStroke,
                 "Another quick keystroke must visibly depress the keyboard hand while the mouse stays held.");
             pet.Hide();
             Require(Usages(window).Length == 0, "Hiding the pet must unregister input.");

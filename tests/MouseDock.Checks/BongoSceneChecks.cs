@@ -30,7 +30,9 @@ internal static class BongoSceneChecks
                 {
                     scene.SetButtons(pose == 1, pose == 2);
                     Require(scene.PoseIndex(pose == 3, 0) == pose, "Input selects complete pose.");
-                    scene.ShowPose(pose == 3);
+                    if (pose == 1) scene.Tap(DesktopPetInputActivity.Keyboard, 0, 0x1e);
+                    if (pose == 2) scene.UpdateLights(10, _ => false, true, false);
+                    scene.ShowPose(pose == 3, 100);
                     scene.UpdateLayout();
                     scene.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
                     int width = BongoPetScene.SceneWidth;
@@ -61,6 +63,8 @@ internal static class BongoSceneChecks
                     Require(!left.SequenceEqual(right) && !top.SequenceEqual(bottom), "Mouse hand tracks both axes.");
                     Require(left.AsSpan(0, width * 4 * height / 2).SequenceEqual(right.AsSpan(0, width * 4 * height / 2)),
                         "The face stays fixed while the mouse moves.");
+                    Require(top.AsSpan(width * 4 * 169).SequenceEqual(bottom.AsSpan(width * 4 * 169)),
+                        "The front desk rim must stay pixel-identical throughout mouse travel.");
                     scene.Clear();
                 }
                 CheckLights(scene, output, id);
@@ -133,6 +137,20 @@ internal static class BongoSceneChecks
             "A held letter and a tapped spacebar must both light distinct caps.");
         scene.UpdateLights(400, _ => false, false, false);
         Require(Frame().SequenceEqual(idleKeys), "Released lights must return to the exact original pixels.");
+        scene.Tap(DesktopPetInputActivity.Keyboard, 500, 0x1e);
+        scene.ShowPose(true, 560);
+        double letterX = scene.KeyboardTravel.X;
+        var letter = Frame("letter");
+        scene.Tap(DesktopPetInputActivity.Keyboard, 600, 0x11c);
+        scene.ShowPose(true, 680);
+        var enter = Frame("pad-enter");
+        Require(scene.KeyboardTravel.X - letterX > .2, "The hand must cross the keyboard from A to keypad Enter.");
+        scene.SetButtons(false, false);
+        scene.ShowPose(true, 850);
+        Require(letter.AsSpan(0, size * 4 * 100).SequenceEqual(enter.AsSpan(0, size * 4 * 100)) &&
+            Frame().AsSpan(0, size * 4 * 100).SequenceEqual(idleKeys.AsSpan(0, size * 4 * 100)),
+            "Typing and its inter-key gap must preserve the neutral face even during an idle smile request.");
+
     }
     private static void Require(bool ok,string message) {if(!ok) throw new InvalidOperationException(message);}
 }

@@ -1,20 +1,12 @@
-// Compile with Windows SDK fxc /T ps_2_0 /E main /Fo PetHandEffect.ps PetHandEffect.hlsl
 sampler2D artwork : register(s0);
-float2 mouseOffset : register(c0);
-float keyStroke : register(c1);
-float2 anchors : register(c2); // Mouse and keyboard hand X positions in the pose atlas cell.
-
-float handWeight(float2 uv, float2 center, float2 radii)
-{
-    float2 p = (uv - center) / radii;
-    float t = saturate(1.0 - dot(p, p));
-    return t * t * (3.0 - 2.0 * t);
-}
-
+float2 displacement : register(c0);
+float stroke : register(c1);
+float2 joint : register(c2); // shoulder and cuff y in source texture coordinates
 float4 main(float2 uv : TEXCOORD0) : COLOR
 {
-    // Deform each complete drawing locally, fading to zero before the face and desk rim.
-    float mouse = handWeight(uv, float2(anchors.x, 0.842) + mouseOffset, float2(0.225, 0.175));
-    float key = handWeight(uv, float2(anchors.y, 0.778), float2(0.128, 0.115));
-    return tex2D(artwork, uv - mouse * mouseOffset - float2(0, key * keyStroke));
+    float2 shift = displacement + float2(0, stroke);
+    // Invert the shoulder-to-cuff stretch in destination coordinates. The entire
+    // palm below the cuff translates rigidly, including its painted mouse shell.
+    float weight = saturate((uv.y - joint.x) / max(.01, joint.y + shift.y - joint.x));
+    return tex2D(artwork, uv - shift * weight);
 }

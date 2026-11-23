@@ -22,6 +22,31 @@ internal sealed class PetDeskLights : FrameworkElement
     private long _leftUntil, _rightUntil;
     private bool _leftOn, _rightOn;
     private Brush _fingerMask;
+    private Point _mouseOffset;
+    internal FrameworkElement Indicators { get; }
+    private sealed class IndicatorLayer(PetDeskLights owner) : FrameworkElement
+    {
+        protected override void OnRender(DrawingContext dc) => owner.DrawIndicators(dc);
+    }
+    private void RefreshLayers()
+    {
+        InvalidateVisual();
+        Indicators.InvalidateVisual();
+    }
+    internal void MoveMouse(Point offset)
+    {
+        if (_mouseOffset == offset) return;
+        _mouseOffset = offset;
+        Indicators.InvalidateVisual();
+    }
+    internal Point? ActiveTarget()
+    {
+        long latest = long.MinValue;
+        Rect cap = Rect.Empty;
+        foreach (var (scan, time) in _litUntil)
+            if (time >= latest) { latest = time; cap = _caps[scan].Bounds; }
+        return cap.IsEmpty ? null : new Point(cap.X + cap.Width / 2, cap.Y + cap.Height / 2);
+    }
     private const double Scale = BongoPetScene.SceneWidth / 400d;
     private static readonly ScaleTransform ToScene = new(Scale, Scale);
     private static readonly Brush Gold = Brushes.Gold;
@@ -34,6 +59,7 @@ internal sealed class PetDeskLights : FrameworkElement
         Width = BongoPetScene.SceneWidth;
         Height = BongoPetScene.SceneHeight;
         IsHitTestVisible = false;
+        Indicators = new IndicatorLayer(this) { Width = Width, Height = Height, IsHitTestVisible = false };
     }
 
     internal void SetSkin(string id)
@@ -62,7 +88,7 @@ internal sealed class PetDeskLights : FrameworkElement
         _keyboard.Freeze();
         _left = ButtonShape(-1);
         _right = ButtonShape(1);
-        InvalidateVisual();
+        RefreshLayers();
     }
 
     private Geometry KeyShape(Rect rect, double gap)
@@ -134,7 +160,7 @@ internal sealed class PetDeskLights : FrameworkElement
     {
         if (ReferenceEquals(mask, _fingerMask)) return;
         _fingerMask = mask;
-        InvalidateVisual();
+        RefreshLayers();
     }
 
     internal void PressKey(int scan, long now)
@@ -142,7 +168,7 @@ internal sealed class PetDeskLights : FrameworkElement
         if (!_caps.ContainsKey(scan)) return;
         bool alreadyLit = _litUntil.ContainsKey(scan);
         _litUntil[scan] = now + 95;
-        if (!alreadyLit) InvalidateVisual();
+        if (!alreadyLit) RefreshLayers();
     }
 
     internal void PressMouse(int flags, long now)
@@ -160,14 +186,14 @@ internal sealed class PetDeskLights : FrameworkElement
         _expired.Clear();
         left |= now < _leftUntil;
         right |= now < _rightUntil;
-        if (changed || left != _leftOn || right != _rightOn) InvalidateVisual();
+        if (changed || left != _leftOn || right != _rightOn) RefreshLayers();
         _leftOn = left;
         _rightOn = right;
     }
 
     internal void Clear()
     {
-        if (_litUntil.Count != 0 || _leftOn || _rightOn) InvalidateVisual();
+        if (_litUntil.Count != 0 || _leftOn || _rightOn) RefreshLayers();
         _litUntil.Clear();
         _leftOn = _rightOn = false;
         _leftUntil = _rightUntil = 0;
@@ -177,11 +203,19 @@ internal sealed class PetDeskLights : FrameworkElement
     {
         if (_keyboard == null) return;
         dc.PushTransform(ToScene);
-        dc.PushOpacityMask(_fingerMask);
         dc.DrawDrawing(_keyboard);
         foreach (int scan in _litUntil.Keys) Light(dc, _caps[scan]);
+        dc.Pop();
+    }
+
+    private void DrawIndicators(DrawingContext dc)
+    {
+        dc.PushTransform(ToScene);
+        dc.PushTransform(new TranslateTransform(_mouseOffset.X * 400, _mouseOffset.Y * 400));
+        dc.PushOpacityMask(_fingerMask);
         if (_leftOn) Light(dc, _left);
         if (_rightOn) Light(dc, _right);
+        dc.Pop();
         dc.Pop();
         // Warm spill on an occluding fingertip makes even a covered key readable.
         dc.PushOpacity(.35);
