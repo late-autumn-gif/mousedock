@@ -14,7 +14,7 @@ float handWeight(float2 uv, float2 center, float2 radii)
 float4 main(float2 uv : TEXCOORD0) : COLOR
 {
     // Deform each complete drawing locally, fading to zero before the face and desk rim.
-    float mouse = handWeight(uv, float2(anchors.x, 0.818) + mouseOffset * 0.5, float2(0.165, 0.135));
+    float mouse = handWeight(uv, float2(anchors.x, 0.842) + mouseOffset, float2(0.225, 0.175));
     float key = handWeight(uv, float2(anchors.y, 0.778), float2(0.128, 0.115));
     return tex2D(artwork, uv - mouse * mouseOffset - float2(0, key * keyStroke));
 }

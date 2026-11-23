@@ -40,6 +40,12 @@ internal static class DesktopPetInputChecks
                 Dispatcher.PushFrame(loop);
             }
             void Guard() => Require(GetForegroundWindow() == hwnd, "Input test requires its own foreground window.");
+            void WaitForIdle(ImageSource expected)
+            {
+                long deadline = Environment.TickCount64 + 1000;
+                do { Pump(30); } while (art.Source != expected && Environment.TickCount64 < deadline);
+                Require(art.Source == expected, "After release, the dispatcher must restore the idle frame.");
+            }
             var pos = target.PointToScreen(new Point(40, 60));
             System.Windows.Forms.Cursor.Position = new((int)pos.X, (int)pos.Y);
             if (GetForegroundWindow() != hwnd)
@@ -51,11 +57,14 @@ internal static class DesktopPetInputChecks
             Pump(120);
             Guard();
             var idle = art.Source;
-            var effect = (PetHandEffect)art.Effect;
+            var effect = (PetHandEffect)scene.Effect;
             var offset = effect.MouseOffset;
-            System.Windows.Forms.Cursor.Position = new((int)pos.X + 60, (int)pos.Y + 20);
+            // Move toward the centre of the illustrated pad, away from either travel stop.
+            int dx = offset.X > 0 ? -32 : 32, dy = offset.Y > 0 ? -20 : 20;
+            System.Windows.Forms.Cursor.Position = new((int)pos.X + dx, (int)pos.Y + dy);
             Pump(100);
-            Require(effect.MouseOffset.X > offset.X && effect.MouseOffset.Y > offset.Y, "Cursor movement must reach the displayed hand.");
+            Require((effect.MouseOffset.X - offset.X) * Math.Sign(dx) > .014 &&
+                (effect.MouseOffset.Y - offset.Y) * Math.Sign(dy) > .008, "A short physical stroke must move the displayed hand visibly.");
             Guard();
             keybd_event(0x87, 0, 0, UIntPtr.Zero); // F24
             try
@@ -65,8 +74,7 @@ internal static class DesktopPetInputChecks
                     "A background held function key must reach the displayed typing pose.");
             }
             finally { keybd_event(0x87, 0, 2, UIntPtr.Zero); }
-            Pump(120);
-            Require(art.Source == idle, "Releasing the key must restore idle.");
+            WaitForIdle(idle);
             Guard();
             Require(WindowFromPoint(System.Windows.Forms.Cursor.Position) == hwnd, "Test click must land on the blank fixture.");
             mouse_event(0x20, 0, 0, 0, UIntPtr.Zero); // Middle button down
@@ -76,8 +84,23 @@ internal static class DesktopPetInputChecks
                 Require(scene.PoseIndex(false, Environment.TickCount64) == 2 && art.Source != idle, "Background middle click must reach the displayed pose.");
             }
             finally { mouse_event(0x40, 0, 0, 0, UIntPtr.Zero); }
+            WaitForIdle(idle);
+            var raw = (DesktopPetRawInput)typeof(DesktopPetWindow).GetField("_rawInput", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Guard();
+            keybd_event(0x41, 0x1e, 0, UIntPtr.Zero);
+            keybd_event(0x44, 0x20, 0, UIntPtr.Zero);
+            try
+            {
+                Pump(140);
+                Require(raw.IsScanHeld(0x1e) && raw.IsScanHeld(0x20), "Background A+D must retain both physical cap identities.");
+            }
+            finally
+            {
+                keybd_event(0x44, 0x20, 2, UIntPtr.Zero);
+                keybd_event(0x41, 0x1e, 2, UIntPtr.Zero);
+            }
             Pump(120);
-            Require(art.Source == idle, "Releasing the mouse must restore idle.");
+            Require(!raw.IsScanHeld(0x1e) && !raw.IsScanHeld(0x20), "Both physical caps must release.");
         }
         finally
         {
@@ -150,15 +173,15 @@ internal static class DesktopPetInputChecks
             Require(scene.PoseIndex(true, 0) == 3, "Idle may blink.");
             long start = Environment.TickCount64;
             var react = type.GetMethod("OnInputActivity", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start]);
+            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start, 0x1e]);
             Require(scene.PoseIndex(false, start + 30) == 1, "A quick tap remains visible.");
             Require(scene.PoseIndex(false, start + 100) == 0, "Tap expires and restores idle.");
             scene.TrackPointer(new(50, 50), new(0, 0, 101, 101));
-            var handEffect = (PetHandEffect)((Image)scene.Children[0]).Effect;
+            var handEffect = (PetHandEffect)scene.Effect;
             scene.SetButtons(false, true);
             scene.ShowPose(false, start + 60);
             var previousStroke = handEffect.KeyStroke;
-            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 62]);
+            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 62, 0x1e]);
             scene.ShowPose(false, start + 64);
             Require(scene.PoseIndex(false, start + 64) == 2 && handEffect.KeyStroke > previousStroke,
                 "Another quick keystroke must visibly depress the keyboard hand while the mouse stays held.");
@@ -172,7 +195,7 @@ internal static class DesktopPetInputChecks
             Require(Usages(window).Length == 2, "Restoring a minimized pet must register input again.");
 
             Click(motion);
-            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 350]);
+            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 350, 0x1e]);
             Require(Usages(window).Length == 0 && scene.PoseIndex(false, start + 360) == 0, "Reduced motion must clear registration and block input responses.");
             Click(motion);
             Click(linkage);

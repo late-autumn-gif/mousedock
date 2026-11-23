@@ -302,10 +302,10 @@ internal sealed class DesktopPetWindow : Window
         if (!enabled) _bongo.Clear();
     }
 
-    private void OnInputActivity(DesktopPetInputActivity activity, long now)
+    private void OnInputActivity(DesktopPetInputActivity activity, long now, int detail)
     {
         if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
-            _bongo.Tap(activity, now);
+            _bongo.Tap(activity, now, detail);
     }
 
     private void OnRefresh(object sender, EventArgs e) => QueueRefresh();
@@ -369,9 +369,11 @@ internal sealed class DesktopPetWindow : Window
     {
         if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
         {
+            bool left = DesktopPetRawInput.IsDown(1), right = DesktopPetRawInput.IsDown(2);
             _bongo.SetButtons(_rawInput?.KeyboardDown == true,
-                DesktopPetRawInput.IsDown(1) || DesktopPetRawInput.IsDown(2) || DesktopPetRawInput.IsDown(4) ||
+                left || right || DesktopPetRawInput.IsDown(4) ||
                 DesktopPetRawInput.IsDown(5) || DesktopPetRawInput.IsDown(6));
+            if (_rawInput != null) _bongo.UpdateLights(now, _rawInput.IsScanHeld, left, right);
             _bongo.TrackPointer(System.Windows.Forms.Cursor.Position, System.Windows.Forms.SystemInformation.VirtualScreen);
         }
         else _bongo.Clear();
