@@ -16,6 +16,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if(args.Length==2 && args[0]=="--bongo") {BongoSceneChecks.Run(args[1]); return 0;}
         if (args.Length == 2 && args[0] == "--xbox-ui") { XboxWirelessUiChecks.Run(args[1]); return 0; }
         if (args.Length == 2 && args[0] == "--scyrox-ui") { ScyroxLegacyUiChecks.Run(args[1]); return 0; }
         if (args.Length == 3 && args[0] == "--mchose-report-ui")

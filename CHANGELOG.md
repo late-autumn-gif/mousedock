@@ -1,5 +1,11 @@
 # MouseDock 更新日志
 
+## Q 版桌宠整帧重绘（2026-11-23）
+
+- 桌宠改用完整的 Q 版桌前姿势，每帧同时绘制角色、双手、鼠标和键盘，支持待机、敲键、点击和闭眼微笑。
+- 内置小新、心月狐、六花、紫发信使和银发机械师。键鼠联动开启时，鼠标按键与键盘按键驱动整帧动作；同时输入时鼠标优先。
+
+
 ## 启动回归修复（2026-11-17）
 
 - 启动回归使用生产的界面恢复入口，验证显式收起、按需创建、晚到设备和不抢焦点。Windows 本地六种显示方式全部通过。
@@ -912,7 +918,7 @@
 
 - 修复 Logitech HID++ 通用探针被 DeviceRoutes.IsKnown 挡死的缺陷：046D 下非 GPW 接收器（如 C53F）此前永远进不了探针，G304 这类设备读不到电量。现在 046D && !OriginalGpwProtocol.IsCandidate 允许进入探针，GPW 专用路由保持不变。
 - 修复 VGN/AJAZZ 通用 vendor collection 被同一道门挡死的问题：391D 任意 PID 与 1A2C:6281 现在可以进入 QueryVendorCollections，应答仍由 TryReadVgn/TryReadAjazz 严格校验。
-- MouseDock.Checks 从 48/64 提升到 59/64 passed, 5 skipped，退出码 0。修复的夹具问题：DeviceBatteryBadge 构造函数参数从 5 个同步到 6 个；导出失败测试的参数从 3/4 个同步到 5 个；素材路径改为从程序集目录上溯查找；更新启动参数补上 estart。
+- MouseDock.Checks 从 48/64 提升到 59/64 passed, 5 skipped，退出码 0。修复的夹具问题：DeviceBatteryBadge 构造函数参数从 5 个同步到 6 个；导出失败测试的参数从 3/4 个同步到 5 个；素材路径改为从程序集目录上溯查找；更新启动参数补上 estart。
 - 新增 KNOWN_ISSUES.md 与 TESTING.md：记录 5 项跳过原因（Windows 11 XAML 任务栏 4 项、更新夹具 1 项）与两套测试基线。
 - 离线断言 16093 条通过（+1：Logitech 非 GPW 接收器进入探针、GPW 专用路由仍排除）。
 - 真机复验：ROG 游侠2 RX 无线版 52%、迈从 A7 V2 Pro 83%。
@@ -930,7 +936,7 @@
 
 - 收紧 33 字节接收器归属：248A:5B2F 现在只归 M137 官方 GetInfo，IsGenericReceiver33 不再接手这个号段，避免英菲克与狼蛛接收器同时在线时互相改名。IsKnown 补上 M137，Find 保持 M137 优先。
 - 修复连带断言：HandledBy 无身份帧用例改到 248A:5C2F，IsGenericReceiver33 的空产品串用例改到 249A:5B2F。
-- 新增 DPI 读取：依据官方网页驱动 eadMap 的 "0x12 0x67"（64 字节 Feature，dpi0..dpi5 小端、dpiSum、gDpiIndex/usbDpiIndex），落成 MchoseDpiProtocol + VendorProtocol.ReadMchoseDpi + QueryMchoseDpi，只在电量读到的迈从设备上发只读请求。
+- 新增 DPI 读取：依据官方网页驱动 eadMap 的 "0x12 0x67"（64 字节 Feature，dpi0..dpi5 小端、dpiSum、gDpiIndex/usbDpiIndex），落成 MchoseDpiProtocol + VendorProtocol.ReadMchoseDpi + QueryMchoseDpi，只在电量读到的迈从设备上发只读请求。
 - DPI 写入未实现：官方写入走 configManager.getCommandConfig 配置表，命令字节未取到，不猜。
 - 本机 A7 V2 Pro 实测不响应 0x12 0x67（旧 11/F9 通道），DPI 显示 —，诊断写明"设备不响应"。能读的是 MHUB v2 系设备。
 - --detect 与报告新增 DPI 列；DeviceInfo.Dpi/DpiLabel、DetectedDevice.Dpi 贯通。
@@ -989,7 +995,7 @@
 ### v1.1.2 新增：任务栏迷你卡片样式 + 1C25 夜魔 X（2026-11-08）
 
 - 对照用户 GitHub 仓库（late-autumn-gif/mousedock）的 main 与 PR #8、#9 做了全量比对。结论：本地的设备识别（DeviceRoutes、RealTek、M137、RogScope、DPI）更强；GitHub 的任务栏 UI（TaskbarBatteryStrip、TaskbarChangeMonitor、颜色设置）更完整。这次把 GitHub 那边的任务栏能力移植到本地基座，不替换识别层。
-- 新增任务栏第三种样式 card（迷你卡片）：圆角、半透明底、图标 + 粗体百分比 + 型号名，全部矢量绘制，任务栏尺寸下不糊。ing 与 panel 保留。
+- 新增任务栏第三种样式 card（迷你卡片）：圆角、半透明底、图标 + 粗体百分比 + 型号名，全部矢量绘制，任务栏尺寸下不糊。ing 与 panel 保留。
 - 设置界面新增「任务栏样式」三选一（环内数字 / 紧凑面板 / 迷你卡片）与「文字颜色」「电量颜色」两个取色按钮，写入 TaskbarTextColor / TaskbarBatteryColor。
 - RogOmniKeyboardProtocol 增加 0x1C25 → 「ROG 夜魔 X」映射（依据 ASUS 官方 AZOTH-X 插件设备表设备 ID 7205 与 D:\ROG\驱动\ROG AZOTH\Config.ini 的 DisplayNameML）。1B7A 仍是 ROG Strix Scope II 96 RX。
 - 任务栏检测诊断带配对 PID（配对=0x1C25），错配能从日志直接看出来。

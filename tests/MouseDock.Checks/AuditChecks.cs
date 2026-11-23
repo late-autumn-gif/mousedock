@@ -138,28 +138,9 @@ internal static class AuditChecks
         {
             pet.Show();
             Flush();
-            int frameSize = character == "keqing" ? 288 : 512;
             Require(image.Source is System.Windows.Media.Imaging.BitmapSource bitmapSource &&
-                bitmapSource.PixelWidth == frameSize && bitmapSource.PixelHeight == frameSize,
-                "The embedded atlas must load in the real window.");
-            if (SystemParameters.ClientAreaAnimation)
-            {
-                var framesForIdle = (ImageSource[])typeof(DesktopPetWindow)
-                    .GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-                long now = Environment.TickCount64;
-                bool waved = false;
-                for (int elapsed = 0; elapsed < 180000 && !waved; elapsed += 100)
-                {
-                    pet.RenderPoseAt(now + elapsed);
-                    waved = ReferenceEquals(image.Source, framesForIdle[1]);
-                }
-                Require(waved, $"{character} must use its wave art during an autonomous gesture.");
-                settings.DesktopPetReduceMotion = true;
-                pet.RenderPoseAt(now);
-                Require(ReferenceEquals(image.Source, framesForIdle[0]), $"{character} must stop idle gestures with reduced motion.");
-                settings.DesktopPetReduceMotion = false;
-                pet.RenderPoseAt(now);
-            }
+                bitmapSource.PixelWidth > 0 && bitmapSource.PixelHeight > 0,
+                "The embedded complete pose must load in the real window.");
             if (character == "shin-chan")
             {
                 var list = (StackPanel)typeof(DesktopPetWindow).GetField("_deviceList", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
@@ -177,24 +158,12 @@ internal static class AuditChecks
                 Flush();
                 Require(Rows().Length == 6 && Rows().Contains(battery.Devices[5].Id), "Settings-side selection must restore the pet row.");
             }
-            var frames = (ImageSource[])typeof(DesktopPetWindow).GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-            Require(frames.Length == 9 && frames.Skip(6).All(frame => frame.Width > 0 && frame.Height > 0),
-                "Every character must load three separate interaction poses.");
             var header = (Image)typeof(DesktopPetWindow).GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-            Require(header.Source != null && header.IsVisible, "The original card portrait must remain visible next to the full-body pet.");
-            if (character != "shin-chan")
-            {
-                source.Reading = 15;
-                Wait(battery.PollAsync());
-                Flush();
-                Require(ReferenceEquals(image.Source, frames[2]), "The selected character must show its low battery art.");
-            }
+            Require(header.Source != null && header.IsVisible, "The battery card portrait remains visible.");
             source.Device.Charging = true;
             Wait(battery.PollAsync());
             Flush();
             Require(Followed().IsChargingActive, "A confirmed charging transition must reach the followed device.");
-            if (character != "shin-chan")
-                Require(ReferenceEquals(image.Source, frames[4]), "Confirmed charging must select that character's charging art.");
             if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
             {
                 Wait(Task.Delay(100));
@@ -209,7 +178,6 @@ internal static class AuditChecks
                 using var file = File.Create(output);
                 png.Save(file);
             }
-            if (character == "keqing") VerifyKeqingActions(pet, settings, image, frames[4]);
             long firstAction = ActionUntil();
             source.Reading = 63;
             Wait(battery.PollAsync());

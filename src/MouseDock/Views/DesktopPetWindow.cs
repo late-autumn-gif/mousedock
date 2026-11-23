@@ -20,12 +20,10 @@ namespace MouseDock.Views;
 
 internal sealed class DesktopPetWindow : Window
 {
-    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag, Skill, Burst }
+    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag }
     private const int ClickDuration = 1200;
     private const string KeqingId = "keqing";
-    private const int CombatFrameMilliseconds = 50;
-    private static readonly TimeSpan IdleInterval = TimeSpan.FromMilliseconds(33);
-    private static readonly TimeSpan CombatInterval = TimeSpan.FromMilliseconds(CombatFrameMilliseconds);
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(1d / 60);
 
     private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
 
@@ -34,7 +32,8 @@ internal sealed class DesktopPetWindow : Window
         new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), true),
         new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
         new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true),
-        new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true)
+        new(KeqingId, "紫发信使", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true),
+        new("dracena", "银发机械师", "", 0, 0, Paint(28, 36, 52), Paint(120, 157, 206), Paint(245, 201, 117), true)
     };
 
     private static Brush Paint(byte r, byte g, byte b)
@@ -47,8 +46,6 @@ internal sealed class DesktopPetWindow : Window
     private readonly BatteryService _battery;
     private readonly AppSettings _settings;
     private ImageSource[] _frames;
-    private ImageSource[] _skillFrames;
-    private ImageSource[] _burstFrames;
     private Character _skin;
     private readonly Border _bubble;
     private readonly Image _headerPortrait = new()
@@ -58,12 +55,7 @@ internal sealed class DesktopPetWindow : Window
         Margin = new Thickness(0, 0, 13, 0)
     };
     private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
-    private readonly DesktopPetInputOverlay _inputOverlay = new();
-    private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-    private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
-    private readonly ScaleTransform _breath = new(1, 1);
-    private readonly RotateTransform _tilt = new();
-    private readonly TranslateTransform _lift = new();
+    private readonly BongoPetScene _bongo;
     private readonly ScaleTransform _size = new(1, 1);
     private readonly StackPanel _deviceList = new();
     private DeviceInfo[] _listedDevices = Array.Empty<DeviceInfo>();
@@ -73,8 +65,7 @@ internal sealed class DesktopPetWindow : Window
     private Pose _action;
     private long _actionUntil;
     private readonly DesktopPetBehavior _behavior;
-    private double _lookAngle;
-    private long _hoverAt;
+
     private bool _charging;
     private bool _refreshQueued;
     private bool _closed;
@@ -83,8 +74,7 @@ internal sealed class DesktopPetWindow : Window
     private bool _hovering;
     private System.Drawing.Point? _press;
     private Point _dragOrigin;
-    private long _dragStartedAt;
-    private double _look;
+
 
     internal DesktopPetWindow(BatteryService battery, AppSettings settings)
         : this(battery, settings, Random.Shared)
@@ -107,15 +97,11 @@ internal sealed class DesktopPetWindow : Window
         Topmost = settings.AlwaysOnTop;
         UseLayoutRounding = true;
 
-        _character.RenderTransformOrigin = new Point(.5, .98);
-        _character.RenderTransform = new TransformGroup { Children = { _breath, _tilt, _lift } };
+        _bongo = new BongoPetScene(_character);
         var artwork = new Grid();
-        artwork.Children.Add(_character);
-        artwork.Children.Add(_sparks);
-        artwork.Children.Add(_inputOverlay);
-        foreach (var star in _stars) _sparks.Children.Add(star);
+        artwork.Children.Add(_bongo);
         var portrait = new Border { Background = Brushes.Transparent, Child = artwork };
-        portrait.MouseEnter += (_, _) => { _hovering = true; _hoverAt = Environment.TickCount64; RenderPose(); };
+        portrait.MouseEnter += (_, _) => { _hovering = true; RenderPose(); };
         portrait.MouseLeave += (_, _) => { _hovering = false; RenderPose(); };
         portrait.MouseLeftButtonDown += (_, e) =>
         {
@@ -128,8 +114,6 @@ internal sealed class DesktopPetWindow : Window
         };
         portrait.MouseMove += (_, e) =>
         {
-            var point = e.GetPosition(portrait);
-            _look = Math.Clamp((point.X - portrait.ActualWidth / 2) / (portrait.ActualWidth / 2), -1, 1);
             if (_press is not System.Drawing.Point start || e.LeftButton != MouseButtonState.Pressed || _settings.DesktopPetLocked)
                 return;
 
@@ -142,7 +126,6 @@ internal sealed class DesktopPetWindow : Window
                     Math.Abs(dy) < SystemParameters.MinimumVerticalDragDistance * dpi.DpiScaleY)
                     return;
                 _dragging = true;
-                _dragStartedAt = Environment.TickCount64;
                 _actionUntil = 0;
                 RenderPose();
             }
@@ -198,7 +181,6 @@ internal sealed class DesktopPetWindow : Window
             else
             {
                 SyncInputRegistration();
-                if (_action is Pose.Skill or Pose.Burst) _actionUntil = 0;
                 _behavior.Reset();
                 _timer.Stop();
             }
@@ -216,9 +198,11 @@ internal sealed class DesktopPetWindow : Window
         if (skin.Id == KeqingId)
         {
             _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
-            _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
             _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
+        }
+        else if (skin.Id == "dracena")
+        {
+            _headerPortrait.Source = null;
         }
         else if (skin.Id == "shin-chan")
         {
@@ -230,7 +214,8 @@ internal sealed class DesktopPetWindow : Window
             LoadBuiltInCharacter(skin);
         }
 
-        _character.Source = _frames[0];
+        _bongo.SetSkin(skin.Id);
+        if (skin.Id is KeqingId or "dracena") _headerPortrait.Source = _bongo.Portrait;
         _skin = skin;
         _behavior.Reset();
         _actionUntil = 0;
@@ -313,13 +298,14 @@ internal sealed class DesktopPetWindow : Window
     {
         bool enabled = InputReactionEnabled;
         _rawInput?.SetEnabled(enabled);
-        if (!enabled) _inputOverlay.Clear();
+
+        if (!enabled) _bongo.Clear();
     }
 
     private void OnInputActivity(DesktopPetInputActivity activity, long now)
     {
         if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
-            _inputOverlay.Flash(activity, now);
+            _bongo.Tap(activity, now);
     }
 
     private void OnRefresh(object sender, EventArgs e) => QueueRefresh();
@@ -381,8 +367,7 @@ internal sealed class DesktopPetWindow : Window
 
     internal void RenderPoseAt(long now)
     {
-        if (InputReactionEnabled) _inputOverlay.Advance(now);
-        else _inputOverlay.Clear();
+        _bongo.Advance(InputReactionEnabled);
 
         bool inAction = Motion && now < _actionUntil &&
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
@@ -409,57 +394,8 @@ internal sealed class DesktopPetWindow : Window
             _behavior.Reset();
         }
 
-        ImageSource[] combatFrames = pose switch
-        {
-            Pose.Skill => _skillFrames,
-            Pose.Burst => _burstFrames,
-            _ => null
-        };
-        var interval = combatFrames != null ? CombatInterval :
-            sample.State == DesktopPetBehavior.State.Sleep ? TimeSpan.FromMilliseconds(140) : IdleInterval;
-        if (_timer.Interval != interval) _timer.Interval = interval;
-        var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
-        if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
-        _breath.ScaleY = Motion && combatFrames == null ? 1 + (pose == Pose.Charging ? .024 : .012) *
-            Math.Sin(now / (pose == Pose.Charging ? 230d :
-                sample.State == DesktopPetBehavior.State.Sleep ? 1050d : 700d)) : 1;
-        double dragTime = Math.Min(700, now - _dragStartedAt);
-        double clickProgress = pose == Pose.Click ? 1 - Math.Clamp((_actionUntil - now) / (double)ClickDuration, 0, 1) : 0;
-        double clickMotion = Math.Sin(clickProgress * Math.PI);
-        double hoverTime = (now - _hoverAt) / 1400d;
-        double inspection = hoverTime is > 1 and < 2 ? Math.Sin((hoverTime - 1) * Math.PI) : 0;
-        double hoverTarget = pose == Pose.Hover ? _look * (4 + inspection) : 0;
-        _lookAngle = Motion ? _lookAngle + (hoverTarget - _lookAngle) * .36 : 0;
-        _tilt.Angle = pose switch
-        {
-            Pose.Drag => Math.Sin(dragTime * Math.PI / 175) * 7,
-            Pose.Hover => _lookAngle,
-            Pose.Click => (_skin.Id == "rikka" ? 5 : -3) * clickMotion,
-            Pose.Wave when inAction => 7 * Math.Sin((_actionUntil - now) / 95d),
-            _ => sample.Tilt + _lookAngle
-        };
-        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion + sample.Lift;
-        bool sparkling = (_skin.Id is "rikka" or KeqingId) && Motion && pose is Pose.Charging or Pose.Celebrate;
-        _sparks.Visibility = sparkling ? Visibility.Visible : Visibility.Collapsed;
-        if (sparkling)
-        {
-            double progress = pose == Pose.Celebrate ? 1 - Math.Clamp((_actionUntil - now) / 1450d, 0, 1) : 0;
-            for (int i = 0; i < _stars.Length; i++)
-            {
-                var star = _stars[i];
-                star.Foreground = pose == Pose.Celebrate ? Brushes.Gold : Brushes.Violet;
-                star.Opacity = (1 - progress) * (.65 + .35 * Math.Sin(now / 220d + i * 2));
-                Canvas.SetLeft(star, 108 + i * 12 + progress * (6 + i * 9));
-                Canvas.SetTop(star, 13 + i * 13 - progress * 10);
-            }
-        }
-
-    }
-
-    private ImageSource CombatFrame(ImageSource[] frames, long now)
-    {
-        long startedAt = _actionUntil - frames.Length * CombatFrameMilliseconds;
-        return frames[(now - startedAt) / CombatFrameMilliseconds];
+        _bongo.ShowPose(sample.Blink || sample.State == DesktopPetBehavior.State.Sleep ||
+            (Motion && pose is Pose.Click or Pose.Wave or Pose.Celebrate), now);
     }
 
     private void RebuildList()
@@ -545,23 +481,9 @@ internal sealed class DesktopPetWindow : Window
                 SaveAndRefresh();
             }, ReferenceEquals(_skin, skin));
         ContextMenu.Items.Add(characters);
-        if (_skin.Id == KeqingId)
-        {
-            var actions = new MenuItem { Header = "刻晴动作", IsEnabled = Motion };
-            Add(actions.Items, "星斗归位（元素战技）", () => Play(Pose.Skill, _skillFrames.Length * CombatFrameMilliseconds));
-            Add(actions.Items, "天街巡游（元素爆发）", () => Play(Pose.Burst, _burstFrames.Length * CombatFrameMilliseconds));
-            Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
-            Add(actions.Items, "打招呼", () => Play(Pose.Click, ClickDuration));
-            ContextMenu.Items.Add(actions);
-        }
-
-        else
-        {
-            var actions = new MenuItem { Header = "桌宠动作", IsEnabled = Motion };
-            Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
-            Add(actions.Items, "打招呼", () => Play(Pose.Click, ClickDuration));
-            ContextMenu.Items.Add(actions);
-        }
+        var actions = new MenuItem { Header = "桌宠动作", IsEnabled = Motion };
+        Add(actions.Items, "微笑", () => Play(Pose.Click, ClickDuration));
+        ContextMenu.Items.Add(actions);
 
         var display = new MenuItem { Header = "显示设备", IsEnabled = _battery.Devices.Any(d => d.Connected && d.RecognitionEnabled && !d.Hidden) };
         foreach (var device in _battery.Devices.Where(d => d.Connected && d.RecognitionEnabled && !d.Hidden))
