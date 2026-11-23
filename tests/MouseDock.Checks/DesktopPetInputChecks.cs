@@ -55,7 +55,8 @@ internal static class DesktopPetInputChecks
             Require(Usages(window).SequenceEqual(new ushort[] { 2, 6 }), "The shown pet must receive background keyboard and mouse input.");
 
             var scene = (BongoPetScene)type.GetField("_bongo", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-            Require(scene.Width == 612 && scene.Height == 352, "Bongo default canvas must remain 612x352.");
+            Require(scene.ActualWidth == 176 && scene.ActualHeight == 176,
+                "The default pet should fit a compact square beside the battery card.");
             scene.Sample(k => k == 49);
             Require(scene.PoseIndex(false, 0) == 1, "Held key uses the keyboard pose.");
             scene.Sample(k => k == 49 || k == 1);

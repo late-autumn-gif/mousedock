@@ -163,7 +163,7 @@ internal sealed class DesktopPetWindow : Window
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
         var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
         portrait.VerticalAlignment = VerticalAlignment.Center;
-        portrait.Margin = new Thickness(4, 9, 8, 4);
+        portrait.Margin = new Thickness(4, 4, 6, 4);
         layout.Children.Add(portrait);
         var card = new Grid { VerticalAlignment = VerticalAlignment.Center };
         card.Children.Add(_bubble);

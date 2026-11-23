@@ -32,10 +32,12 @@ internal static class BongoSceneChecks
                     scene.ShowPose(pose == 3);
                     scene.UpdateLayout();
                     scene.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
-                    var bmp=new RenderTargetBitmap(612,352,96,96,PixelFormats.Pbgra32);
+                    int width = BongoPetScene.SceneWidth;
+                    int height = BongoPetScene.SceneHeight;
+                    var bmp = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
                     bmp.Render(scene);
-                    var pixels = new byte[612 * 352 * 4];
-                    bmp.CopyPixels(pixels, 612 * 4, 0);
+                    var pixels = new byte[width * height * 4];
+                    bmp.CopyPixels(pixels, width * 4, 0);
                     Require(renders.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pixels))),
                         "Every pose must render different pixels.");
                     var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bmp));

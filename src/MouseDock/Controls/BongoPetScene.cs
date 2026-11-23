@@ -11,7 +11,8 @@ namespace MouseDock.Controls;
 /// <summary>Complete poses keep shoulders, hands and the desk aligned.</summary>
 internal sealed class BongoPetScene : Canvas
 {
-    internal const double SceneWidth = 612, SceneHeight = 352;
+    // The pose sprites are square. A square viewport avoids empty columns next to the battery card.
+    internal const int SceneWidth = 176, SceneHeight = 176;
     private readonly Image _artwork;
     private readonly ImageSource[] _poses = new ImageSource[4];
     private bool _keyboardDown, _mouseDown;
