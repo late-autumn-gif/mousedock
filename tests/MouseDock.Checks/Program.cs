@@ -53,7 +53,13 @@ internal static class Program
         if (args.Contains("--pet-input"))
         {
             DesktopPetInputChecks.Run();
-            Console.WriteLine("PASS desktop pet input opt-in, native registration and overlays.");
+            Console.WriteLine("PASS desktop pet input defaults, native registration and pose lifecycle.");
+            return 0;
+        }
+        if (args.Contains("--pet-input-live"))
+        {
+            DesktopPetInputChecks.RunLive();
+            Console.WriteLine("PASS Windows background keyboard, mouse buttons, cursor tracking and release.");
             return 0;
         }
         var checks = new (string Name, Action Check)[]
@@ -103,7 +109,7 @@ internal static class Program
             ("Only one of the six display modes is visible", UiRegressionChecks.ExclusiveSurfaces),
             ("Desktop pet behavior schedules idle interaction rest and landing", AuditChecks.DesktopPetBehaviorSchedule),
             ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
-            ("Desktop pet input is opt-in and reacts only while visible with motion enabled", DesktopPetInputChecks.Run),
+            ("Desktop pet links input by default and reacts only while visible with motion enabled", DesktopPetInputChecks.Run),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),

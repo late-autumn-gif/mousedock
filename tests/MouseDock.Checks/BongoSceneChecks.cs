@@ -27,7 +27,7 @@ internal static class BongoSceneChecks
                 var renders = new HashSet<string>();
                 for (int pose = 0; pose < 4; pose++)
                 {
-                    scene.Sample(k => pose == 1 && k == 49 || pose == 2 && k == 1);
+                    scene.SetButtons(pose == 1, pose == 2);
                     Require(scene.PoseIndex(pose == 3, 0) == pose, "Input selects complete pose.");
                     scene.ShowPose(pose == 3);
                     scene.UpdateLayout();
@@ -42,6 +42,25 @@ internal static class BongoSceneChecks
                         "Every pose must render different pixels.");
                     var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bmp));
                     using var stream=File.Create(Path.Combine(output,id+"-"+pose+".png")); encoder.Save(stream);
+
+                    var desktop = new System.Drawing.Rectangle(-1000, -500, 2001, 1001);
+                    byte[] RenderPointer(int x, int y)
+                    {
+                        scene.TrackPointer(new System.Drawing.Point(x,y), desktop);
+                        var frame = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+                        frame.Render(scene);
+                        var bytes = new byte[pixels.Length];
+                        frame.CopyPixels(bytes, width * 4, 0);
+                        return bytes;
+                    }
+                    var left = RenderPointer(-1000, 0);
+                    var right = RenderPointer(1000, 0);
+                    var top = RenderPointer(0, -500);
+                    var bottom = RenderPointer(0, 500);
+                    Require(!left.SequenceEqual(right) && !top.SequenceEqual(bottom), "Mouse hand tracks both axes.");
+                    Require(left.AsSpan(0, width * 4 * height / 2).SequenceEqual(right.AsSpan(0, width * 4 * height / 2)),
+                        "The face stays fixed while the mouse moves.");
+                    scene.Clear();
                 }
                 Console.WriteLine($"PASS Bongo {id}: four complete poses rendered.");
             }

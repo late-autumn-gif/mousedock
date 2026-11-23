@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 
@@ -23,6 +24,19 @@ internal sealed class DesktopPetRawInput
     private readonly Action<DesktopPetInputActivity, long> _react;
     private readonly HwndSourceHook _receive;
     private bool _registered;
+    private readonly HashSet<ushort> _heldKeys = new();
+
+    internal bool KeyboardDown
+    {
+        get
+        {
+            // A disconnected device may never send its release.
+            _heldKeys.RemoveWhere(static key => !IsDown(key));
+            return _heldKeys.Count != 0;
+        }
+    }
+
+    internal static bool IsDown(int key) => (GetAsyncKeyState(key) & 0x8000) != 0;
 
     internal DesktopPetRawInput(HwndSource source, Action<DesktopPetInputActivity, long> react)
     {
@@ -34,6 +48,7 @@ internal sealed class DesktopPetRawInput
     internal void SetEnabled(bool enabled)
     {
         if (enabled == _registered) return;
+        _heldKeys.Clear();
         if (_source.IsDisposed)
         {
             _registered = false;
@@ -64,6 +79,11 @@ internal sealed class DesktopPetRawInput
         uint copied = GetRawInputData(lParam, RidInput, out RawInput input, ref size, HeaderSize);
         if (copied >= HeaderSize + 16 && copied <= InputSize)
         {
+            if (input.Header.Type == RawKeyboard && input.Body.VirtualKey is > 0 and < 255)
+            {
+                if ((input.Body.KeyFlags & KeyBreak) == 0) _heldKeys.Add(input.Body.VirtualKey);
+                else _heldKeys.Remove(input.Body.VirtualKey);
+            }
             var activity = Classify(input.Header.Type, input.Header.Type == RawKeyboard ? input.Body.KeyFlags : input.Body.MouseFlags);
             if (activity != DesktopPetInputActivity.None)
                 _react(activity, Environment.TickCount64);
@@ -92,12 +112,13 @@ internal sealed class DesktopPetRawInput
         internal IntPtr Param;
     }
 
-    // The RAWMOUSE/RAWKEYBOARD union needs 24 bytes. Only expose the event flags.
+    // RAWMOUSE/RAWKEYBOARD share this 24-byte union.
     [StructLayout(LayoutKind.Explicit, Size = 24)]
     private struct RawInputBody
     {
         [FieldOffset(2)] internal ushort KeyFlags;
         [FieldOffset(4)] internal ushort MouseFlags;
+        [FieldOffset(6)] internal ushort VirtualKey;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -113,4 +134,7 @@ internal sealed class DesktopPetRawInput
 
     [DllImport("user32.dll")]
     private static extern uint GetRawInputData(IntPtr input, uint command, out RawInput data, ref uint size, uint headerSize);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
 }

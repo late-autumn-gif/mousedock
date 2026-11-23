@@ -43,6 +43,7 @@
     <Resource Include="Assets\Characters\shin-chan-pet.png;Assets\Characters\xin-yue-hu-pet.png;Assets\Characters\rikka-takanashi-pet.png;Assets\Characters\desktop-pet-interactions.png;Assets\Characters\desktop-pet-headers.png" />
     <Resource Include="Assets\Characters\keqing-pet-*.png" />
     <Resource Include="Assets\Characters\DeskPoses\*.png" />
+    <Resource Include="Controls\PetHandEffect.ps" />
     <Resource Include="Assets\donate.png;Assets\qq-group.png" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
     <InternalsVisibleTo Include="MouseDock.Checks" />

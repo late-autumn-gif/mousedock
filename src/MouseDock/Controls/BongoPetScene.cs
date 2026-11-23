@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -15,6 +14,7 @@ internal sealed class BongoPetScene : Canvas
     internal const int SceneWidth = 176, SceneHeight = 176;
     private readonly Image _artwork;
     private readonly ImageSource[] _poses = new ImageSource[4];
+    private readonly PetHandEffect _hands = new();
     private bool _keyboardDown, _mouseDown;
     private long _keyboardUntil, _mouseUntil;
     internal ImageSource Portrait { get; private set; }
@@ -31,6 +31,12 @@ internal sealed class BongoPetScene : Canvas
 
     internal void SetSkin(string id)
     {
+        _hands.Anchors = id switch
+        {
+            "rikka" => new Point(.22, .71),
+            "xin-yue-hu" or "dracena" => new Point(.27, .71),
+            _ => new Point(.24, .69)
+        };
         var atlas = new BitmapImage(new Uri(
             $"pack://application:,,,/MouseDock;component/Assets/Characters/DeskPoses/{id}.png"));
         int width = atlas.PixelWidth / 2;
@@ -48,29 +54,19 @@ internal sealed class BongoPetScene : Canvas
         ShowPose(false);
     }
 
-    internal void Advance(bool enabled)
+    internal void SetButtons(bool keyboard, bool mouse)
     {
-        if (enabled) Sample(IsDown);
-        else
-        {
-            _keyboardDown = _mouseDown = false;
-            _keyboardUntil = _mouseUntil = 0;
-        }
+        _keyboardDown = keyboard;
+        _mouseDown = mouse;
     }
 
-    private static bool IsDown(int key) => (GetAsyncKeyState(key) & 0x8000) != 0;
-
-    internal void Sample(Func<int, bool> down)
+    internal void TrackPointer(System.Drawing.Point cursor, System.Drawing.Rectangle desktop)
     {
-        _keyboardDown = down(0x20) || AnyDown(down, 0x30, 0x39) || AnyDown(down, 0x41, 0x5A);
-        _mouseDown = down(1) || down(2) || down(5) || down(6);
-    }
-
-    private static bool AnyDown(Func<int, bool> down, int first, int last)
-    {
-        for (int key = first; key <= last; key++)
-            if (down(key)) return true;
-        return false;
+        double x = Math.Clamp((cursor.X - desktop.Left) / (double)Math.Max(1, desktop.Width - 1), 0, 1);
+        double y = Math.Clamp((cursor.Y - desktop.Top) / (double)Math.Max(1, desktop.Height - 1), 0, 1);
+        var offset = new Point((x - .5) * .084, (y - .5) * .044);
+        if (_hands.MouseOffset != offset) _hands.MouseOffset = offset;
+        if (_artwork.Effect == null) _artwork.Effect = _hands;
     }
 
     internal void Tap(DesktopPetInputActivity activity, long now)
@@ -84,16 +80,17 @@ internal sealed class BongoPetScene : Canvas
 
     internal void ShowPose(bool blink, long now = 0)
     {
+        double stroke = Math.Clamp((_keyboardUntil - now) / 85d, 0, 1) * .020;
+        if (_hands.KeyStroke != stroke) _hands.KeyStroke = stroke;
         var pose = _poses[PoseIndex(blink, now)];
         if (!ReferenceEquals(_artwork.Source, pose)) _artwork.Source = pose;
     }
 
     internal void Clear()
     {
-        Advance(false);
+        SetButtons(false, false);
+        _keyboardUntil = _mouseUntil = 0;
+        _artwork.Effect = null;
         ShowPose(false);
     }
-
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int key);
 }

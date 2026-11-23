@@ -367,7 +367,14 @@ internal sealed class DesktopPetWindow : Window
 
     internal void RenderPoseAt(long now)
     {
-        _bongo.Advance(InputReactionEnabled);
+        if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
+        {
+            _bongo.SetButtons(_rawInput?.KeyboardDown == true,
+                DesktopPetRawInput.IsDown(1) || DesktopPetRawInput.IsDown(2) || DesktopPetRawInput.IsDown(4) ||
+                DesktopPetRawInput.IsDown(5) || DesktopPetRawInput.IsDown(6));
+            _bongo.TrackPointer(System.Windows.Forms.Cursor.Position, System.Windows.Forms.SystemInformation.VirtualScreen);
+        }
+        else _bongo.Clear();
 
         bool inAction = Motion && now < _actionUntil &&
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
