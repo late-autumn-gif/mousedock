@@ -108,3 +108,12 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original source code.
 3. This notice may not be removed or altered from any source distribution.
+
+
+## MouseDock DB227 device and protocol reference
+
+The DB227 release supplied under the MouseDock contributors' MIT license provided
+device identities, protocol fields and compatibility catalog entries for this
+port. The copyright and full MIT license for MouseDock contributors are reproduced
+above. The supplied executable's SHA-256 was
+7715b269d0dcb9d0400f8b56775d86d4c7a60430709693506582dbc8bef59286.

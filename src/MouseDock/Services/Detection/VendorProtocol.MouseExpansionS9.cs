@@ -9,8 +9,14 @@ internal static partial class VendorProtocol
         ReferenceBatteryProtocol.ILink link)
     {
         bool vk=family=="vk-m2",wired=vk ? pid is 0xA304 or 0xA307 : pid==0x1029;
-        ulong expected=vk ? pid is 0xA304 or 0xA305 ? 0x09000000000DUL : 0x090000000003UL
-            : 0x09000000000EUL;
+        ulong expected = !vk ? 0x09000000000EUL : pid switch
+        {
+            0xA304 or 0xA305 => 0x09000000000DUL,
+            0xA307 or 0xA308 => 0x090000000003UL,
+            0xA313 => 0x09000000001EUL,
+            0xA316 => 0x090000000022UL,
+            _ => throw new IOException("Unknown Valkyrie transport")
+        };
         byte[] Query(byte command,byte offset=0)
         {
             var request=MouseExpansionPacket(64,3,0,80,0,(byte)(vk?(command==0x47?1:2):0),command,offset);

@@ -26,7 +26,7 @@ internal static class HeadsetExpansionProfiles
         (0x03F0, 0x02CC or 0x06BE) => "Cloud3S",
         (0x0B05, 0x1AFA or 0x1B84) => "Rog",
         (0x35D8, 0x012D or 0x0133) => "Moondrop",
-        (0x36F9, 0xF001 or 0xF008 or 0xF010) => "Xiberia",
+        (0x36F9, 0xF001 or 0xF002 or 0xF008 or 0xF010) => "Xiberia",
         (0x040B, 0xF779) or (0x391D, 0x0003) => "Siren",
         (0x3654, 0x4255) => "Dailing",
         (0x0D8C, 0x0334) => "IkfLegacy",
@@ -70,7 +70,7 @@ internal static class HeadsetExpansionProfiles
             "Rog" => c.UsagePage == 0xFF00 && c.Output == 64 && c.Input is >= 9 and <= 64 &&
                 (c.Pid != 0x1AFA || Mi(c, 3) && c.Usage == 1 && io64),
             "Moondrop" => c.Input is >= 10 and <= 1024 && c.Output is >= 4 and <= 1024,
-            "Xiberia" => io64 && c.Feature == 0 && (c.Pid == 0xF010 ? c.UsagePage >= 0xFF00 :
+            "Xiberia" => io64 && c.Feature == 0 && (c.Pid is 0xF010 or 0xF002 ? c.UsagePage >= 0xFF00 :
                 Mi(c, 0) && c.UsagePage is 0xFF90 or 0xFF82 && c.Usage == 1),
             "Siren" => Mi(c, 3) && (io64 || c.Vid == 0x040B && c.Input == 13 && c.Output is 64 or 65),
             "Dailing" => Mi(c, 3) && c.UsagePage == 0xFF02 && c.Usage == 2 &&
@@ -135,6 +135,13 @@ internal static class HeadsetExpansionProfiles
             case "Rog": Pair(0xCC, c.Input, 64); break;
             case "Moondrop": Pair(0x4B, c.Input, c.Output); break;
             case "Xiberia":
+                if (c.Pid == 0xF002)
+                {
+                    Require(m.FeatureIds.Count == 0 &&
+                        (m.HasInput(0x41,64) || m.HasInput(0x55,64) || m.HasOutput(0x55,64)),
+                        "K06S status channel required");
+                    break;
+                }
                 byte report = c.Pid != 0xF010 && c.UsagePage == 0xFF82 ? (byte)0x41 : (byte)0x55;
                 Require(m.HasInput(report, 64) && (m.HasOutput(report, 64) ||
                     report == 0x55 && c.Pid == 0xF001 && m.OutputIds.Count == 0), "Xiberia report layout invalid");

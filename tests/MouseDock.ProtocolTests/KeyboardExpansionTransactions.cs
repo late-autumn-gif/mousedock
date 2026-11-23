@@ -91,7 +91,7 @@ internal static class KeyboardExpansionTransactions
 
         byte[] HubInfo(ushort pid,byte level) => Frame(56,(4,0xA6),(5,0x38),
             (6,(byte)pid),(7,(byte)(pid >> 8)),(12,1),(17,level),(18,1));
-        Input Hub(ushort board,bool change = false,bool disconnect = false)
+        Input Hub(ushort board,bool change = false,bool disconnect = false, byte charge = 1)
         {
             int reads = 0;
             return new Input(packet =>
@@ -102,11 +102,19 @@ internal static class KeyboardExpansionTransactions
                 if (count != Math.Min(24,56 - at)) throw new InvalidDataException("Wrong HUB block range");
                 int round = reads++ / 3;
                 byte[] data = HubInfo((ushort)(change && round == 1 ? 0x2738 : board),(byte)(77 + round));
+                data[18] = charge;
                 var reply = Frame(32,(0,0x55),(1,0x10),(2,(byte)count),(3,(byte)at));
                 Array.Copy(data,at,reply,8,count);
                 return disconnect && reads == 6 ? [reply,new byte[] {0x55,0xFC,6}] : [reply];
             });
         }
+        var he = KeyboardExpansionAulaHub.Read(Wire(Hub(0x2729, charge:2),32,33),0xFEFE,"AULA F75 HE Dongle",false);
+        Check(he is { Level:78, Charging:true, ChargingKnown:true, Identity:"38A6:2729" }, "HE state 2 and paired identity");
+        Check(Reject(() => KeyboardExpansionAulaHub.Read(Wire(Hub(0x80A2),32,33),0xFEFE,
+            "MINI 60 HE PRO Dongle",false)), "MINI rejects matching board PID with different vendor");
+        Check(KeyboardExpansionProfiles.Find(0x391D,0x2A07,"VGN Neon75 Turbo2.4G")?.Family == "Neon" &&
+            KeyboardExpansionProfiles.Find(0x385D,0x2A05,"VGN Neon75 Air 2.4G") == null &&
+            KeyboardExpansionProfiles.Find(0x391D,0x2A07,"Unknown") == null, "Neon Turbo requires correct name and VID");
         var hub = KeyboardExpansionAulaHub.Read(Wire(Hub(0x2712),32,33),0xFEFC,"AULA F87ProV2C Dongle",false);
         Check(hub.Level == 78 && hub.Model == "AULA F87 Pro V2 C" &&
             hub.Identity == "38A6:2712" && !hub.ChargingKnown,"AULA verifies board and suppresses unverified charging");
@@ -117,6 +125,10 @@ internal static class KeyboardExpansionTransactions
         Check(Reject(() => KeyboardExpansionAulaHub.Read(Wire(Hub(0x2712,disconnect:true),32,33),0xFEFC,
             "AULA F87ProV2C Dongle",false)),"AULA invalidating event in final queue rejects battery");
 
+        Input Rf32(bool corrupt) => new Input(_ =>
+            [Frame(32,(0,0x20),(1,1),(3,91),(31,(byte)(corrupt ? 0 : 124)))]);
+        Check(KeyboardExpansionNova.Read(Wire(Rf32(false),32,33),true).Level == 91 &&
+            Reject(() => KeyboardExpansionNova.Read(Wire(Rf32(true),32,33),true)), "AK820 MAX requires a valid response checksum");
         int byReads = 0;
         var by = new Input(packet =>
         {

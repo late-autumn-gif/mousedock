@@ -15,12 +15,12 @@ internal static class HeadsetExpansionXiberia
         return Value(b[7] & 127);
     }
     internal static ReferenceBatteryProtocol.Reading Read(ExpansionWire writer,
-        IReadOnlyList<(byte Report, ExpansionWire Wire)> readers, bool session)
+        IReadOnlyList<(byte Report, ExpansionWire Wire)> readers, bool session, bool singleQuery = false)
     {
         void Drain() { foreach (var (_, wire) in readers) wire.Drain(); }
         if (session) { Drain(); writer.Send(Packet(64, 0x55, 0x57)); }
         ReferenceBatteryProtocol.Reading result = null;
-        for (int round = 0; round < 2; round++)
+        for (int round = 0; round < (singleQuery ? 1 : 2); round++)
         {
             Drain(); writer.Send(Packet(64, 0x55, 0x10, 1));
             long until = writer.Link.Now + 2000;

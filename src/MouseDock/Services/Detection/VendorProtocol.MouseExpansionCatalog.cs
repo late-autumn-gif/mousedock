@@ -18,14 +18,14 @@ internal static partial class VendorProtocol
      0x007C,0x0080,0x0086,0x00C4,0x00C7,0x00D0,0x00D3,0x00D6,0x00DA,0x00DB,0x00DE,0x00A4};
     private static string MouseExpansionFamily(ushort vid, ushort pid, string product)
     {
-        if (vid == 0x373B && pid == 0x1196) return "hechi";
+        if (vid == 0x373B && pid is 0x1147 or 0x1148 or 0x1196) return "hechi";
         if (vid == 0x363C && pid == 0xFF99) return "ausdom";
         if (vid == 0x32C2 && pid == 0x0027) return "sc525";
         if (vid == 0x395A && MouseExpansionPid(pid, 4, 10, 12, 14)) return "scyrox";
         if (vid == 0x3886 && MouseExpansionPid(pid, 0xCA02,0xCA03,0xCA04,0xCBFE,0xCBFF)) return "zynoo";
         if (vid == 0x1915 && pid == 0x0728) return "waizowl";
-        if (vid == 0x1915 && MouseExpansionPid(pid,0x232A,0x232B,0x2335)) return "rawm";
-        if (vid == 0x1915 && MouseExpansionPid(pid,0xAE8C,0xAE1C,0xAE11)) return "sora-v2";
+        if (vid == 0x1915 && RawmReceivers.ContainsKey(pid)) return "rawm";
+        if (vid == 0x1915 && MouseExpansionPid(pid,0xAE8C,0xAE1C,0xAE11,0xAE12,0xAE13,0xAE14,0xAE15,0xAE16)) return "sora-v2";
         if (vid == 0x093A && MouseExpansionPid(pid,0xEB02,0xE010)) return "sora-v3";
         if (vid == 0x093A && MouseExpansionPid(pid,0x522C,0x622C)) return "incott";
         if (vid == 0x046D && pid == 0xC54F) return "logitech-x3";
@@ -85,7 +85,7 @@ internal static partial class VendorProtocol
         if (vid == 0x372E && (pid == 0x1029 && MouseExpansionName(product,"EWEADN S9 Pro") ||
             pid == 0x1026 && MouseExpansionName(product,"EWEADN S9") ||
             pid == 0x103D && MouseExpansionName(product,"Gaming 2.4G"))) return "s9";
-        if (vid == 0x374A && MouseExpansionPid(pid,0xA304,0xA305,0xA307,0xA308)) return "vk-m2";
+        if (vid == 0x374A && MouseExpansionPid(pid,0xA304,0xA305,0xA307,0xA308,0xA313,0xA316)) return "vk-m2";
         if (vid == 0x374A && pid == 0xA329) return "vk-m5";
         if (vid == 0x3151 && pid == 0x5045) return "royuan-mouse";
         if (vid == 0x3151 && pid == 0x4027) return "aj159-pro";
@@ -116,7 +116,7 @@ internal static partial class VendorProtocol
         bool At(int mi, int page, int usage) => MouseExpansionMi(c.Path, mi) && c.UsagePage == page && c.Usage == usage;
         return family switch
         {
-            "hechi" => At(2,0xFFA0,2), "ausdom" => At(1,0xFFA0,2), "sc525" => At(2,0xFF0F,1),
+            "hechi" => At(-1,0xFFA0,2), "ausdom" => At(1,0xFFA0,2), "sc525" => At(2,0xFF0F,1),
             "scyrox" => At(2,0xFF00,2), "zynoo" => At(-1,0xFF80,1), "waizowl" => At(3,0xFF0A,1),
             "sora-v3" => c.Usage == 1 && c.UsagePage is 0xFF00 or 0xFF01 or 0xFF02,
             "sora-v2" => At(c.Pid == 0xAE8C ? 1 : -1,0xFFA0,1),
@@ -179,7 +179,9 @@ internal static partial class VendorProtocol
         bool F(int size, byte report) => l.Feature == size && l.Features.SetEquals(new[] { report });
         return family switch
         {
-            "hechi" or "ausdom" => Io(64,11),
+            "hechi" => l.Input == 64 && l.Output == 64 && l.Outputs.Contains(11) &&
+                l.Inputs.Count(id => id is 10 or 11) == 1,
+            "ausdom" => Io(64,11),
             "sc525" => l.Input == 32 && l.Output == 16 && l.Inputs.SetEquals(new byte[]{14}) && l.Outputs.SetEquals(new byte[]{14}),
             "scyrox" => Io(64) && l.InputId != 0, "zynoo" => Io(17,0),
             "nk" => Io(17,8),

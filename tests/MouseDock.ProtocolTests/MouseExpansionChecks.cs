@@ -131,6 +131,11 @@ internal static class MouseExpansionChecks
         var hechi = new byte[64];
         hechi[0] = 11; hechi[1] = 19; hechi[18] = 57;
         Check(VendorProtocol.MouseExpansionDecode("hechi", hechi)?.Level == 57, "HECHI percent18");
+        hechi[0] = 10; hechi[17] = 1;
+        Check(VendorProtocol.MouseExpansionDecode("hechi", hechi) is {Level:57, Charging:true},
+            "Alternate HECHI input and charging field");
+        Check(VendorProtocol.ExtraMouseFamily(0x373B,0x1147,"") == "hechi" &&
+            VendorProtocol.ExtraMouseTransport(0x373B,0x1148,"") == "2.4G", "Wired and receiver HECHI routes");
         hechi[18] = 101;
         Check(VendorProtocol.MouseExpansionDecode("hechi", hechi) == null, "HECHI invalid percent");
         var scyrox = new byte[64];
@@ -227,11 +232,11 @@ internal static class MouseExpansionChecks
         });
         Check(VendorProtocol.MouseExpansionTransaction("get10", 0x248A, 0x5C2F, "", get10Link).Level == 58,
             "GET10 M183 identity and live flag");
-        var rawmLink = new ReplayLink(packet =>
+        ReplayLink Rawm(string receiver, string mouseJson) => new ReplayLink(packet =>
         {
             bool mouse = packet[1] == 0xC0;
             byte[] json = System.Text.Encoding.UTF8.GetBytes(mouse ?
-                "{\"dn\":\"SA-ML01\",\"battery\":57}" : "{\"dn\":\"USB Receiver\"}");
+                mouseJson : "{\"dn\":\"" + receiver + "\"}");
             int size = json.Length + 2;
             var reply = new byte[64];
             int offset = mouse ? 1 : 0;
@@ -243,6 +248,15 @@ internal static class MouseExpansionChecks
             json.CopyTo(reply, offset + 7);
             return reply;
         });
+        var rawmLink = Rawm("USB Receiver","{\"dn\":\"SA-ML01\",\"battery\":57}");
+        foreach (int product in new[] { 0x2334, 0x2352 })
+        {
+            string json = System.Text.Json.JsonSerializer.Serialize(new { dn="ES21Pro", pi=product, battery=0, chr=1 });
+            var reading = VendorProtocol.MouseExpansionTransaction("rawm",0x1915,0x234B,"",Rawm("RAWM HS Receiver",json));
+            Check(reading is { Level:0, Charging:true, ChargingKnown:true }, "Both registered ES21Pro identities may report zero while charging");
+        }
+        Check(VendorProtocol.MouseExpansionTransaction("rawm",0x1915,0x234B,"",
+            Rawm("RAWM HS Receiver","{\"dn\":\"ES21Pro\",\"pi\":1,\"battery\":50}")).Level < 0, "Reject mismatched RAWM product identity");
         Check(VendorProtocol.MouseExpansionTransaction("rawm", 0x1915, 0x232A, "", rawmLink)
             is { Level: 57, ChargingKnown: false }, "RAWM receiver and JSON mouse identities");
         var ajazzLink = new ReplayLink(packet =>

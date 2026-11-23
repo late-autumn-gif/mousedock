@@ -35,8 +35,10 @@ internal static partial class VendorProtocol
             "rapoo-vt7" => pid == 0x1413 ? "2.4G" : "USB",
             "nzxt" => pid == 0x2129 ? "USB" : "2.4G",
             "keychron" => pid == 0xD048 ? "USB" : "2.4G",
+            "sora-v2" => pid is >= 0xAE11 and <= 0xAE16 ? "USB" : "2.4G",
             "sora-v3" => pid == 0xE010 ? "USB" : "2.4G",
             "exx" => pid == 0x3A87 ? "USB" : "2.4G",
+            "hechi" => pid == 0x1147 ? "USB" : "2.4G",
             "vk-m2" => pid is 0xA304 or 0xA307 ? "USB" : "2.4G",
             _ => null
         };

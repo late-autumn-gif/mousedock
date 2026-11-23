@@ -31,9 +31,10 @@ internal static class KeyboardExpansionProfiles
                 "AtkHfd" => Page(0xFF60,0x61) && c.Input == 33 && c.Output == 33 && c.Feature == 0,
                 "AulaHub" => (Named(Product,"AULA NOVA98 Dongle")
                     ? c.UsagePage == 0xFF80 && c.Usage is 1 or 0x71
-                    : Named(Product,"F75 Master Dongle") ? Page(0xFF60,0x61) : Page(0xFF68,0x61)) &&
+                    : (Named(Product,"F75 Master Dongle") || KeyboardExpansionAulaHub.IsHallEffect(Pid,Product)) ? Page(0xFF60,0x61) : Page(0xFF68,0x61)) &&
                     c.Input is 33 or 65 && c.Output == c.Input,
                 "Weikav" => Mi(3) && Page(0xFF60,0x61) && c.Input is 33 or 65 && c.Output == c.Input,
+                "SonixRf32" => Mi(3) && Page(0xFF60,0x61) && c.Input == 33 && c.Output == 33,
                 "Nova" => Mi(3) && Page(0xFF60,0x61) && (Vid == 0x0C45 ||
                     Named(Product,"VK 75 Wireless Receiver","VK99Pro Wireless Receiver")
                     ? c.Input is 33 or 65 && c.Output == c.Input : Io(33,65)),
@@ -41,8 +42,9 @@ internal static class KeyboardExpansionProfiles
                     Mi(1) && c.UsagePage is 0xFF02 or 0xFF04 && c.Usage == 2 &&
                     (c.Input is >= 20 and <= 65 || c.Output is >= 20 and <= 65),
                 "Relay" => Mi(2) && Page(0xFFFF,2) && c.Feature is >= 10 and <= 65,
+                "Irok" when Pid == 0x502B => Page(0xFFFF,2) && c.Feature == 65,
                 "Irok" or "RoyuanLegacy" => Mi(2) && Page(0xFFFF,2) && c.Feature == 65,
-                "Neon" => Mi(1) && c.Path.Contains("&col01#",StringComparison.OrdinalIgnoreCase) &&
+                "Neon" =>
                     c.UsagePage >= 0xFF00 && c.Feature == 65,
                 "Cherry" => Mi(1) && Page(0xFF1C,0x92) && Io(11,65),
                 "MchoseBy" => Mi(1) && c.UsagePage is 0xFF02 or 0xFF04 && c.Usage == 2 &&
@@ -137,6 +139,9 @@ internal static class KeyboardExpansionProfiles
     {
         string family = (vid,pid) switch
         {
+            (0x0C45,0xFEFE) when Named(product,"AJAZZ AK980 2.4G","AJAZZ AK980 PRO 2.4G") => "SonixRf32",
+            (0x0C45,0xFDFD) when Named(product,"2.4G Dongle") => "SonixRf32",
+            (0x05AC,0x024F) when Named(product,"AJAZZ AK820 MAX 2.4G") => "SonixRf32",
             (0x373B,0x111E or 0x111F or 0x114D or 0x114E or 0x1151 or 0x1152 or 0x1231) => "AtkHfd",
             (0x0C45,0xFEFC or 0xFEFE or 0xFEF9) when KeyboardExpansionAulaHub.HasProfile(pid,product) => "AulaHub",
             (0x0C45,0xFEF9) when Named(product,"NUT75 2.4G","NUT75 2.4G WIRELESS") => "Weikav",
@@ -146,7 +151,8 @@ internal static class KeyboardExpansionProfiles
             (0x0C45,0xFEFE) when Named(product,"2.4G Dongle") => "Nova",
             (0x3151,0x5026) or (0x374A,0xA263 or 0xA278 or 0xA281) => "Relay",
             (0x3151,0x5038) when !Named(product,"MonsGeek 2.4G Wireless Keyboard") => "Irok",
-            (0x385D,0x2A05) when Named(product,"VGN Neon75 Air 2.4G","VGN Neon75 Air 2.4G Dongle") => "Neon",
+            (0x391D,0x2A07) when Named(product,"VGN Neon75 Turbo2.4G") => "Neon",
+            (0x3151,0x502B) when Named(product,"2.4G Wireless Keyboard") => "Irok",
             (0x3151,0x4015) => "RoyuanLegacy",
             (0x046A,0x01E0 or 0x01DE) => "Cherry",
             (0x41E4,0x2001) when Named(product,"MCHOSE 2.4G Wireless-G87","2.4G Wireless Receiver-G87",
@@ -185,6 +191,7 @@ internal static class KeyboardExpansionProfiles
         "AtkHfd" => KeyboardExpansionAtk.Read(wire, p.Pid is 0x111E or 0x114D or 0x1151 or 0x1231),
         "AulaHub" => KeyboardExpansionAulaHub.Read(wire, p.Pid, p.Product, false),
         "Weikav" => KeyboardExpansionAulaHub.Read(wire, p.Pid, p.Product, true),
+        "SonixRf32" => KeyboardExpansionNova.Read(wire, checkSum:p.Pid == 0x024F),
         "Nova" => KeyboardExpansionNova.Read(wire),
         "Shared024F" => wire.InputId == 19 ? KeyboardExpansionMchoseBy.Read(wire) : KeyboardExpansionNova.Read(wire),
         "Relay" => KeyboardExpansionRoyuan.ReadRelay(wire,p.Vid == 0x374A),

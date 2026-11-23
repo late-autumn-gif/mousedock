@@ -7,9 +7,14 @@ namespace MouseDock.Services.Detection;
 
 internal static class KeyboardExpansionAulaHub
 {
-    private sealed record Board(ushort Receiver, string Product, string Model, ushort[] Ids);
+    private sealed record Board(ushort Receiver, string Product, string Model, ushort[] Ids, ushort BoardVendor = 0x38A6, bool HallEffect = false);
     private static readonly Board[] boards =
     [
+        new(0xFEFE,"AULA F75 HE Dongle","狼蛛 F75 HE",[0x2729,0x2742],0x38A6, true),
+        new(0xFEFE,"MINI 60 HE PRO Dongle","狼蛛 MINI 60 HE PRO",[0x80A2,0x80B2],0x0C45, true),
+        new(0xFEFE,"MINI 68 HE PRO Dongle","狼蛛 MINI 68 HE PRO",[0x2723],0x38A6, true),
+        new(0xFEFE,"MINI60HE MAX Dongle","狼蛛 MINI60HE MAX",[0x80A1],0x0C45, true),
+        new(0xFEFE,"MINI68HE MAX Dongle","狼蛛 MINI68 HE MAX",[0x2724],0x38A6, true),
         new(0xFEFC,"AULA F87ProV2C Dongle","AULA F87 Pro V2 C",[0x2712,0x2738,0x2747]),
         new(0xFEFE,"AULA F87ProV2D Dongle","AULA F87 Pro V2 D",[0x2711,0x2737,0x2746]),
         new(0xFEFE,"AULA F87ProV2Z Dongle","AULA F87 Pro V2 Z",[0x2710,0x2736,0x2748]),
@@ -22,6 +27,8 @@ internal static class KeyboardExpansionAulaHub
         new(0xFEF9,"F75 Master Dongle","AULA F75 Master",[0x2758])
     ];
     internal static bool HasProfile(ushort pid, string product) => boards.Any(b => b.Receiver == pid &&
+        KeyboardExpansionProfiles.Name(b.Product) == KeyboardExpansionProfiles.Name(product));
+    internal static bool IsHallEffect(ushort pid, string product) => boards.Any(b => b.HallEffect && b.Receiver == pid &&
         KeyboardExpansionProfiles.Name(b.Product) == KeyboardExpansionProfiles.Name(product));
     internal static byte[] Request(int size, int address, int total)
     {
@@ -51,6 +58,7 @@ internal static class KeyboardExpansionAulaHub
         };
         byte[] previous = null;
         int level = -1;
+        bool? charging = null;
         ushort boardPid = 0;
         int total = weikav ? 48 : 56;
         for (int round = 0; round < 2; round++)
@@ -68,16 +76,17 @@ internal static class KeyboardExpansionAulaHub
             level = info[17];
             if (weikav) continue;
             boardPid = (ushort)U16(info,6);
-            Require(U16(info,4) == 0x38A6 && board.Ids.Contains(boardPid) && info[18] <= 2,
+            Require(U16(info,4) == board.BoardVendor && board.Ids.Contains(boardPid) && info[18] <= 2,
                 "Unexpected mechanical keyboard board or power status");
             var identity = info.AsSpan(4,6).ToArray().Concat(info.AsSpan(12,4).ToArray()).ToArray();
             Require(previous == null || identity.AsSpan().SequenceEqual(previous),
                 "Mechanical keyboard identity changed");
             previous = identity;
+            if (board.HallEffect) charging = info[18] is 1 or 2;
         }
         if (!weikav) wire.Drain();
-        // Hardware charging semantics remain unverified for these profiles.
-        return Value(level, model: weikav ? null : board.Model,
-            identity: weikav ? null : "38A6:" + boardPid.ToString("X4"));
+        // Only the DB219 HE profiles define the charging field.
+        return Value(level, charging, model: weikav ? null : board.Model,
+            identity: weikav ? null : $"{board.BoardVendor:X4}:{boardPid:X4}");
     }
 }

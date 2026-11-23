@@ -60,6 +60,15 @@ internal static partial class VendorProtocol
                 }
                 if (family == "Xiberia")
                 {
+                    if (pid == 0xF002)
+                    {
+                        var writers55 = links.Where(l => l.Metadata.HasOutput(0x55,64)).ToArray();
+                        var readers = links.SelectMany(l => new byte[] { 0x55, 0x41 }
+                            .Where(id => l.Metadata.HasInput(id,64)).Select(id => (id, l.Wire()))).ToArray();
+                        Require(writers55.Length == 1 && readers.Length >= 1 &&
+                            readers.Select(r => r.id).Distinct().Count() == readers.Length, "Ambiguous K06S report layout");
+                        return HeadsetExpansionXiberia.Read(writers55[0].Wire(), readers, false, singleQuery:true);
+                    }
                     Require(links.Count is >= 1 and <= 2 && links.Select(l => l.Channel.UsagePage).Distinct().Count() == links.Count,
                         "Xiberia collection ambiguity");
                     var writers = links.Where(l => l.Metadata.HasInput(0x55, 64)).ToArray();
