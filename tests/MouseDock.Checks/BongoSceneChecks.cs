@@ -25,6 +25,22 @@ internal static class BongoSceneChecks
                     .GetField("_timer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
                 timer.Stop();
                 var scene=(BongoPetScene)typeof(DesktopPetWindow).GetField("_bongo",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(pet)!;
+                if (id == "shin-chan")
+                {
+                    var header = (Image)typeof(DesktopPetWindow).GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                    Require(header.Source == scene.Portrait && header.ActualHeight == 80, "The card must use the illustrated portrait at its top edge.");
+                    var card = (Grid)header.Parent;
+                    var root = (FrameworkElement)pet.Content;
+                    var preview = new RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth),
+                        (int)Math.Ceiling(root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+                    preview.Render(root);
+                    var origin = card.TranslatePoint(new Point(), root);
+                    var crop = new Int32Rect((int)origin.X, (int)origin.Y, (int)card.ActualWidth, (int)card.ActualHeight);
+                    var png = new PngBitmapEncoder();
+                    png.Frames.Add(BitmapFrame.Create(new CroppedBitmap(preview, crop)));
+                    using var file = File.Create(Path.Combine(output, "shin-chan-card.png"));
+                    png.Save(file);
+                }
                 var renders = new HashSet<string>();
                 for (int pose = 0; pose < 4; pose++)
                 {

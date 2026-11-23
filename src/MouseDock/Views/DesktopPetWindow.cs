@@ -200,22 +200,17 @@ internal sealed class DesktopPetWindow : Window
             _frames = LoadFrames(skin.Atlas, 3, 3, 9);
             _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
         }
-        else if (skin.Id == "dracena")
-        {
-            _headerPortrait.Source = null;
-        }
-        else if (skin.Id == "shin-chan")
-        {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
-        }
-        else
+        else if (skin.Id is not ("dracena" or "shin-chan"))
         {
             LoadBuiltInCharacter(skin);
         }
 
         _bongo.SetSkin(skin.Id);
-        if (skin.Id is KeqingId or "dracena") _headerPortrait.Source = _bongo.Portrait;
+        if (skin.Id is KeqingId or "dracena" or "shin-chan") _headerPortrait.Source = _bongo.Portrait;
+        bool perched = skin.Id == "shin-chan";
+        _headerPortrait.Width = perched ? 76 : 128;
+        _headerPortrait.Height = perched ? 80 : 128;
+        _headerPortrait.Margin = new Thickness(0, 0, perched ? 19 : 13, 0);
         _skin = skin;
         _behavior.Reset();
         _actionUntil = 0;
