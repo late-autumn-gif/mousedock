@@ -16,8 +16,8 @@ internal sealed class BongoPetScene : Canvas
     private readonly Image _mouseArm = ArmImage(), _keyArm = ArmImage();
     private readonly PetHandEffect _mouseEffect = new(), _keyEffect = new();
     private readonly PetDeskLights _lights = new();
-    private BitmapSource _neutral;
-    private DrawingImage _idleExpression;
+    private PetArmLayers _neutral, _smiling;
+    private ImageSource _idleExpression;
     private PetArmLayers.Rig _rig;
     private long _quietAfter, _lastFrame;
     internal Point MouseTravel => _mouseEffect.MouseOffset;
@@ -54,30 +54,42 @@ internal sealed class BongoPetScene : Canvas
         int height = atlas.PixelHeight / 2;
         var idle = new CroppedBitmap(atlas, new Int32Rect(0, 0, width, height));
         _rig = PetArmLayers.For(id);
-        var layers = new PetArmLayers(idle, _rig);
-        _neutral = layers.Base;
-        _mouseArm.Source = layers.Mouse;
-        _keyArm.Source = layers.Keys;
+        _neutral = new PetArmLayers(idle, _rig);
         _mouseEffect.Anchors = new Point(_rig.Mouse[0].Y / 400d, _rig.WristY / 400d);
         _keyEffect.Anchors = new Point(_rig.Keys[0].Y / 400d, _rig.WristY / 400d);
         _lights.SetMask(_lights.CreateFingerMask(idle));
-        // The idle expression replaces only the head. Both arms and the desk keep their own layers.
+        if (id == "shin-chan")
+        {
+            var smile = new CroppedBitmap(atlas, new Int32Rect(width, height, width, height));
+            _smiling = new PetArmLayers(smile, _rig, _neutral.Base);
+            _idleExpression = _smiling.Base;
+        }
+        else
+        {
+            _smiling = _neutral;
+            _idleExpression = HeadExpression(atlas, width, height, _neutral.Base);
+        }
+        var portrait = new CroppedBitmap(idle, new Int32Rect(width / 5, 0, width * 3 / 5, height * 3 / 5));
+        portrait.Freeze();
+        Portrait = portrait;
+        ShowPose(false);
+    }
+
+    private static DrawingImage HeadExpression(BitmapSource atlas, int width, int height, BitmapSource neutral)
+    {
         int headHeight = height * 57 / 100;
         var face = new CroppedBitmap(atlas, new Int32Rect(width, height, width, headHeight));
         var drawing = new DrawingGroup();
         using (var dc = drawing.Open())
         {
             dc.PushClip(new RectangleGeometry(new Rect(0, headHeight, width, height - headHeight)));
-            dc.DrawImage(_neutral, new Rect(0, 0, width, height));
+            dc.DrawImage(neutral, new Rect(0, 0, width, height));
             dc.Pop();
             dc.DrawImage(face, new Rect(0, 0, width, headHeight));
         }
-        _idleExpression = new DrawingImage(drawing);
-        _idleExpression.Freeze();
-        var portrait = new CroppedBitmap(idle, new Int32Rect(width / 5, 0, width * 3 / 5, height * 3 / 5));
-        portrait.Freeze();
-        Portrait = portrait;
-        ShowPose(false);
+        var expression = new DrawingImage(drawing);
+        expression.Freeze();
+        return expression;
     }
 
     internal void SetButtons(bool keyboard, bool mouse)
@@ -141,8 +153,15 @@ internal sealed class BongoPetScene : Canvas
         _mouseEffect.KeyStroke = click;
         var mouse = MouseTravel;
         _lights.MoveMouse(new Point(mouse.X, mouse.Y + click));
-        ImageSource face = PoseIndex(blink, now) == 3 && now >= _quietAfter ? _idleExpression : _neutral;
-        if (!ReferenceEquals(_artwork.Source, face)) _artwork.Source = face;
+        bool smiling = PoseIndex(blink, now) == 3 && now >= _quietAfter;
+        ImageSource face = smiling ? _idleExpression : _neutral.Base;
+        if (!ReferenceEquals(_artwork.Source, face))
+        {
+            var arms = smiling ? _smiling : _neutral;
+            _artwork.Source = face;
+            _mouseArm.Source = arms.Mouse;
+            _keyArm.Source = arms.Keys;
+        }
     }
 
     internal void Clear()

@@ -33,7 +33,7 @@ internal sealed class PetArmLayers
     internal BitmapSource Base { get; }
     internal BitmapSource Mouse { get; }
     internal BitmapSource Keys { get; }
-    internal PetArmLayers(BitmapSource pose, Rig rig)
+    internal PetArmLayers(BitmapSource pose, Rig rig, BitmapSource stationaryDesk = null)
     {
         // A fixed-resolution rig also keeps skin swaps bounded at high display DPI.
         const int size = 512;
@@ -107,6 +107,12 @@ internal sealed class PetArmLayers
         }
         Mouse = Cut(rig.Mouse, true);
         Keys = Cut(rig.Keys, false);
+        if (stationaryDesk != null)
+        {
+            int deskTop = (int)Math.Ceiling(rig.DeskY * size / 400d);
+            var desk = new Int32Rect(0, deskTop, size, size - deskTop);
+            stationaryDesk.CopyPixels(desk, back, size * 4, deskTop * size * 4);
+        }
         Base = Bitmap(back);
     }
 }

@@ -62,6 +62,7 @@ internal static class BongoSceneChecks
                     bmp.Render(scene);
                     var pixels = new byte[width * height * 4];
                     bmp.CopyPixels(pixels, width * 4, 0);
+                    if (id == "shin-chan" && pose == 3) CheckSmile(scene);
                     Require(renders.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pixels))),
                         "Every pose must render different pixels.");
                     var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bmp));
@@ -94,6 +95,23 @@ internal static class BongoSceneChecks
             finally {pet.Close();}
         }
     }
+    private static void CheckSmile(BongoPetScene scene)
+    {
+        var atlas = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/DeskPoses/shin-chan.png"));
+        int w = atlas.PixelWidth / 2, h = atlas.PixelHeight / 2;
+        var smile = new CroppedBitmap(atlas, new Int32Rect(w, h, w, h));
+        var actual = (BitmapSource)((Image)scene.Children[0]).Source;
+        var scaled = new TransformedBitmap(smile, new ScaleTransform((double)actual.PixelWidth / w, (double)actual.PixelHeight / h));
+        var reference = new FormatConvertedBitmap(scaled, PixelFormats.Pbgra32, null, 0);
+        // The chin finishes at y=256 in the 400-unit cell, just above the shoulders.
+        var head = new Int32Rect(0, 0, actual.PixelWidth, actual.PixelHeight * 257 / 400);
+        int stride = head.Width * 4;
+        byte[] expected = new byte[stride * head.Height], displayed = new byte[expected.Length];
+        reference.CopyPixels(head, expected, stride, 0);
+        actual.CopyPixels(head, displayed, stride, 0);
+        Require(displayed.SequenceEqual(expected), "The smile from helmet to chin must come from one expression frame.");
+    }
+
     private static void CheckLights(BongoPetScene scene, string output, string id)
     {
         Require(PetKeyboardLayout.Caps.Count == 104 && PetKeyboardLayout.Caps.Values.Distinct().Count() == 104,
