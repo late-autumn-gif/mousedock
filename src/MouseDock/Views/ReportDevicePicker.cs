@@ -103,7 +103,7 @@ namespace MouseDock.Views
                 {
                     Device = device,
                     Title = device.Name,
-                    Subtitle = $"{device.KindLabel} · {device.Transport} · {(device.Level < 0 ? "电量未知" : device.Level + "%")}",
+                    Subtitle = $"{device.KindLabel} · {device.Transport} · {(device.Level < 0 ? "电量未知" : device.LevelText)}",
                     Detail = $"{device.Detail} · {device.Id}"
                 };
                 list.Items.Add(MakeItem(target, true));

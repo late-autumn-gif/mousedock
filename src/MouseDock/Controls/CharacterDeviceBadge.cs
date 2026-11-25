@@ -1,12 +1,10 @@
 using MouseDock.Views;
 using System;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using MouseDock.Models;
-using MouseDock.Services;
 
 namespace MouseDock.Controls;
 
@@ -62,17 +60,11 @@ public sealed class CharacterDeviceBadge : Grid
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
         };
         number.SetBinding(TextBlock.TextProperty, compact
-            ? new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() }
+            ? new Binding(nameof(DeviceInfo.CompactLevelText))
             : new Binding(nameof(DeviceInfo.LevelText)));
         PercentageWarningConverter.Bind(number, ink,
             artwork.CompactLowBatteryThreshold ?? App.Settings?.LowBatteryWarn ?? 20);
         row.Children.Add(number);
     }
 
-    private sealed class NumberConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-            value is int level && level >= 0 ? level.ToString(CultureInfo.InvariantCulture) : "\u2014";
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
-    }
 }

@@ -1,5 +1,13 @@
 # 厂商私有协议（实测还原）
 
+### DualSense 电量档位
+
+USB 完整输入报告 `0x01` 和通过 CRC 校验的蓝牙完整输入报告 `0x31` 都提供电量档位与独立的充电状态。档位 0–9 分别表示 0–9%、10–19% 至 90–99%。MouseDock 按 [Linux PlayStation 驱动](https://codebrowser.dev/linux/linux/drivers/hid/hid-playstation.c.html#1590) 的换算显示 `≈(档位 × 10 + 5)%`，并保留原始档位。档位 10 显示 `100%`，充电状态单独判断。明确充满时显示 `100%` 和充满标记。
+
+[Issue #44](https://github.com/late-autumn-gif/mousedock/issues/44) 提供的 Pico 2W 适配器在 Windows 一侧呈现为 DualSense USB 设备。离线样本按 Issue 所述字段构造，USB 报告状态字节 `0x19` 对应 `≈95%` 和充电中。适配器复测待实机。
+
+## SC580 接收器
+
 来源：USBPcap 抓取官方驱动 `CBMouse.exe` 与接收器的真实 USB 流量，逐字节比对得出。
 设备：AULA / 狼蛛 SC580 的 2.4G 接收器（`VID 089D: PID 062F`）。
 

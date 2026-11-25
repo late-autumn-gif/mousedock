@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MouseDock.Controls;
@@ -32,6 +33,40 @@ internal static class BatteryColorChecks
         theme.TextDim = Colors.Gray;
         Require(TaskbarBatteryStrip.AppearanceKey(new AppSettings(), theme) != lowKey,
             "Changing only the unknown color leaves compact character plates cached.");
+    }
+
+    internal static void EstimatedBatteryLabels()
+    {
+        var device = new DeviceInfo { Kind = DeviceKind.Controller, Level = 95, IsBatteryEstimated = true, Charging = true };
+        foreach (bool vertical in new[] { false, true })
+        {
+            foreach (var (style, _) in TaskbarBatteryStrip.Styles(vertical))
+            {
+                var strip = new TaskbarBatteryStrip(new[] { device }, style, true, vertical, Brushes.White, 20);
+                Snapshot(strip);
+                var reading = FindText(strip, "≈95");
+                Require(reading != null && reading.ActualWidth >= reading.DesiredSize.Width,
+                    $"Estimated battery label missing or clipped for {style} (vertical={vertical}).");
+            }
+        }
+        var badge = new DeviceBatteryBadge(device, Brushes.White, true, false, 20);
+        Snapshot(badge);
+        Require(FindText(badge, "≈95") != null, "Screen-edge battery badge lost its estimate label.");
+        device.Level = 100;
+        device.IsBatteryEstimated = false;
+        Snapshot(badge);
+        Require(FindText(badge, "100") != null, "Exact battery reading retained the estimate label.");
+    }
+
+    private static TextBlock? FindText(DependencyObject element, string value)
+    {
+        if (element is TextBlock text && text.Text == value) return text;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+        {
+            var match = FindText(VisualTreeHelper.GetChild(element, i), value);
+            if (match != null) return match;
+        }
+        return null;
     }
 
     private static byte[] Snapshot(FrameworkElement element)

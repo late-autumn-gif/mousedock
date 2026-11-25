@@ -36,15 +36,26 @@ internal static class ControllerExpansionRegression
             { Level: -1, Charging: false } full && full.Status.ToString() == "Full", "DS4 full semantics");
         Check(Read("SonyDs4", Frame(64, (0, 1), (30, 4), (31, 4)), adapter: true).Status == ReferenceBatteryProtocol.State.Failed,
             "unpaired adapter rejects byte");
+        Check(Read("SonyDs5", Frame(64, (0, 1), (53, 0x19))) is
+            { Level: 95, IsBatteryEstimated: true, Charging: true, Diagnostic: "device-band=9/10" },
+            "Issue #44 USB report preserves the band and estimates its midpoint");
+        Check(Read("SonyDs5", Frame(64, (0, 1), (53, 0x00))) is
+            { Level: 5, IsBatteryEstimated: true, Charging: false }, "DualSense lowest interval");
+        Check(Read("SonyDs5", Frame(64, (0, 1), (53, 0x1a))) is
+            { Level: 100, IsBatteryEstimated: false, Status: ReferenceBatteryProtocol.State.Charging },
+            "DualSense maximum band can still be charging");
         Check(Read("SonyDs5", Frame(64, (0, 1), (53, 0x22))) is
-            { Level: -1 } ds5Full && ds5Full.Status.ToString() == "Full", "DualSense full status");
+            { Level: 100, IsBatteryEstimated: false, Charging: false, Status: ReferenceBatteryProtocol.State.Full },
+            "DualSense explicit full state");
+        Check(Read("SonyDs5", Frame(64, (0, 1), (53, 0x1b))).Status == ReferenceBatteryProtocol.State.Failed,
+            "DualSense out-of-range band rejected");
         Check(Read("SonyDs5", Frame(64, (0, 1), (53, 0x34))).Status == ReferenceBatteryProtocol.State.Failed,
             "DualSense unknown state rejected");
         var btSony = Frame(78, (0, 0x31), (54, 0x15));
         Check(Read("SonyDs5", btSony, true).Status == ReferenceBatteryProtocol.State.Failed, "Bluetooth Sony requires CRC");
         uint crc = Crc([0xA1, .. btSony.Take(74)]);
         BitConverter.GetBytes(crc).CopyTo(btSony, 74);
-        Check(Read("SonyDs5", btSony, true) is { Level: -1, Charging: true, Diagnostic: "device-band=5/10" },
+        Check(Read("SonyDs5", btSony, true) is { Level: 55, Charging: true, IsBatteryEstimated: true, Diagnostic: "device-band=5/10" },
             "Bluetooth Sony CRC accepted");
         btSony[3] ^= 1;
         Check(Read("SonyDs5", btSony, true).Status == ReferenceBatteryProtocol.State.Failed, "Bluetooth Sony corruption rejected");

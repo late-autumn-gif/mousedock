@@ -1180,7 +1180,7 @@ namespace MouseDock
                         if (_lowWarned.Add(d.Id) && _tray != null)
                         {
                             _tray.BalloonTipTitle = $"{d.Name} 电量低";
-                            _tray.BalloonTipText = $"只剩 {d.Level}%，低于 {threshold}% 提醒线。";
+                            _tray.BalloonTipText = $"只剩 {d.LevelText}，低于 {threshold}% 提醒线。";
                             _tray.BalloonTipIcon = WinForms.ToolTipIcon.Warning;
                             _tray.ShowBalloonTip(5000);
                         }
@@ -1303,7 +1303,7 @@ namespace MouseDock
             sb.AppendLine();
             foreach (var d in hid.Concat(bt))
             {
-                string level = d.Level >= 0 ? d.Level + "%" : "未知";
+                string level = d.Level >= 0 ? $"{(d.IsBatteryEstimated ? "≈" : "")}{d.Level}%" : "未知";
                 string charge = d.Charging ? "  充电=是" : "";
                 sb.AppendLine($"[{d.Kind}] {d.Name}  电量={level}{charge}  DPI={(d.Dpi > 0 ? d.Dpi.ToString() : "—")}  连接={(d.Connected ? "是" : "否")}  通道={d.Transport}  ({d.Detail})");
                 if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendLine("    说明: " + d.Note);

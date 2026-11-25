@@ -34,9 +34,14 @@ internal static class ControllerExpansionSony
         if (dualSense)
         {
             int powerState = status >> 4;
-            if (powerState == 2) return Full();
+            if (powerState == 2) return Percentage(100, false, "device-band=full", full: true);
             Require(powerState is 0 or 1 && band <= MaximumBand, "Invalid DualSense battery state");
-            return Band(band, MaximumBand, powerState == 1, "device");
+            // The DualSense HID report gives a 10-point interval below the maximum band.
+            int level = band == MaximumBand ? 100 : band * 10 + 5;
+            return Percentage(level, powerState == 1, $"device-band={band}/{MaximumBand}") with
+            {
+                IsBatteryEstimated = band < MaximumBand
+            };
         }
 
         bool cableConnected = (status & 0x10) != 0;

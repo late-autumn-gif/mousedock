@@ -81,6 +81,33 @@ internal static class ExtraDiscoveryRegression
                 "device-band=2/5", "Logitech keyboard", "1:confirmed"));
         Check(buckets.Values.Single(b => b != parent).ToDevice() is { Level: -1, Charging: true },
             "coarse battery state was converted into a precise percentage or lost charging");
+        InstanceScope.BeginScan();
+        string sony = InstanceScope.Register("sony", new[] { (@"USB\VID_054C&PID_0CE6\ONE", "") });
+        var controller = new HidDiscovery.Bucket
+        {
+            InstanceId = sony, Vid = 0x054C, Pid = 0x0CE6, Product = "DualSense Wireless Controller", Path = "sony"
+        };
+        buckets = new() { [sony] = controller };
+        channels = new() { new() { Path = "sony", Vid = 0x054C, Pid = 0x0CE6 } };
+        var dualSenseReport = new byte[64];
+        dualSenseReport[0] = 1;
+        dualSenseReport[53] = 0x19;
+        HidDiscovery.QueryExtraDevices(buckets, channels, false, new DevicePreferences(new()),
+            (_, _, _, _, _, _) => ControllerExpansionSony.Decode(dualSenseReport, true, false, false));
+        var detected = controller.ToDevice();
+        Check(detected is { Level: 95, IsBatteryEstimated: true, Charging: true } &&
+            detected.Note.Contains("device-band=9/10"), "DualSense estimate reached detection with its raw band");
+        var display = new DeviceInfo
+        {
+            Level = detected.Level, IsBatteryEstimated = detected.IsBatteryEstimated, Charging = detected.Charging
+        };
+        Check(display.LevelText == "≈95%" && display.MiniText == "≈95%" && display.StatusText.Contains("充电中"),
+            "DualSense estimate is labeled in display bindings");
+        display.IsStale = true;
+        Check(display.LevelText == "≈95%" && !display.IsChargingActive, "cached estimate keeps its label");
+        display.IsBatteryEstimated = false;
+        display.Level = 100;
+        Check(display.LevelText == "100%", "exact reading clears estimate label");
         var typeReply = new byte[20]; typeReply[0] = 0x11; typeReply[4] = 0;
         Check(!LogitechHidpp.IsMouseType(typeReply), "keyboard type was accepted as a mouse");
         typeReply[4] = 3;

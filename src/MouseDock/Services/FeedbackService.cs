@@ -364,7 +364,7 @@ namespace MouseDock.Services
             string VidPid, bool Connected, bool ReceiverPresent, bool PeripheralConfirmed, int? Percent,
             string Freshness, bool? Charging, bool? Full, string Reader, string Source, string[] Instances, string BatteryBand = null,
             int? Dpi = null, int[] DpiSlots = null, int? DpiActive = null, string DpiProtocol = null,
-            bool? DpiWritable = null, string DpiStatus = null, string DpiDiagnostic = null);
+            bool? DpiWritable = null, string DpiStatus = null, string DpiDiagnostic = null, bool IsBatteryEstimated = false);
 
         private static DisplayReading[] CreateDisplaySnapshot(IEnumerable<DeviceInfo> devices,
             Dictionary<string, string> aliases = null) =>
@@ -380,7 +380,7 @@ namespace MouseDock.Services
                     .Select(key => Detection.BatteryReplay.Alias(aliases, key)).ToArray(), d.BatteryBand,
                 d.Dpi > 0 ? d.Dpi : null, d.DpiSettings?.Values?.ToArray(),
                 d.DpiSettings?.Index, d.DpiSettings?.Protocol.ToString(), d.DpiSettings?.Writable,
-                d.Dpi > 0 || d.DpiSettings != null ? "captured" : "unavailable", null)).ToArray();
+                d.Dpi > 0 || d.DpiSettings != null ? "captured" : "unavailable", null, d.IsBatteryEstimated)).ToArray();
 
         private static string ReplayEntry(int index) => index == 0 ? Detection.BatteryReplay.EntryName :
             $"samples/{index + 1:D2}.json";
@@ -389,7 +389,7 @@ namespace MouseDock.Services
             string Assessment);
 
         private static ReadingSeries[] DescribeSeries(Detection.BatteryReplay.Capture[] rounds) =>
-            rounds.SelectMany(r => r.Observations).Where(item => item.Connected && !item.Stale && item.Percent.HasValue)
+            rounds.SelectMany(r => r.Observations).Where(item => item.Connected && !item.Stale && !item.IsBatteryEstimated && item.Percent.HasValue)
                 .GroupBy(item => (item.Receiver, item.Transport))
                 .Select(group =>
                 {
@@ -412,7 +412,7 @@ namespace MouseDock.Services
             sb.AppendLine("界面快照仅记录采样前的显示状态；系统手柄另采集有界电池报告，新设备分阶段报告另列所选 BLE 设备的 GATT 读数。");
             foreach (var item in snapshot)
             {
-                sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} ({item.Freshness})");
+                sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {(item.IsBatteryEstimated ? "≈" : "")}{item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} ({item.Freshness})");
                 sb.AppendLine($"    DPI {item.Dpi?.ToString() ?? "—"}；档位 {(item.DpiSlots == null ? "—" : string.Join(", ", item.DpiSlots))}；状态 {item.DpiStatus ?? "unknown"}；协议 {item.DpiProtocol ?? "—"}");
             }
             for (int i = 0; i < rounds.Length; i++)
@@ -422,7 +422,7 @@ namespace MouseDock.Services
                 if (round.ScanError != null) sb.AppendLine($"  扫描错误: {round.ScanError}");
                 else if (round.Collections.Length == 0) sb.AppendLine("  此轮没有找到范围内的 HID 集合。");
                 foreach (var item in round.Observations)
-                    sb.AppendLine($"  {item.Receiver} {item.Name} {item.Transport} {item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} " +
+                    sb.AppendLine($"  {item.Receiver} {item.Name} {item.Transport} {(item.IsBatteryEstimated ? "≈" : "")}{item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} " +
                         $"{item.Source}；充电 {item.Charging?.ToString() ?? "未知"}");
                 foreach (var dpi in round.DpiObservations ?? Array.Empty<Detection.BatteryReplay.DpiObservation>())
                     sb.AppendLine($"  {dpi.Receiver} {dpi.Model} DPI {dpi.Current?.ToString() ?? "—"}；档位 {(dpi.Slots.Length == 0 ? "—" : string.Join(", ", dpi.Slots))}；状态 {dpi.Status}；协议 {dpi.Protocol ?? "—"}");
