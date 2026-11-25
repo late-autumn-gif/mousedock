@@ -174,7 +174,7 @@ internal static class MouseExpansionChecks
             if (packet[6] == 0x81) reply[6] = 63;
             return reply;
         });
-        var s9 = VendorProtocol.MouseExpansionTransaction("s9", 0x372E, 0x1029, "", s9Link);
+        var s9 = VendorProtocol.MouseExpansionTransaction("s9", 0x372E, 0x1029, "EWEADN S9 Pro", s9Link);
         Check(s9 is { Level: 63, ChargingKnown: false }, "S9 UUID confirmed battery transaction");
         Check(s9Link.Writes.Count == 5, "S9 two identities/batteries and final identity");
         var wrongS9 = new ReplayLink(packet =>
@@ -185,8 +185,56 @@ internal static class MouseExpansionChecks
             reply[8] = 9; reply[13] = 13;
             return reply;
         });
-        Check(VendorProtocol.MouseExpansionTransaction("s9", 0x372E, 0x1029, "", wrongS9).Level < 0,
+        Check(VendorProtocol.MouseExpansionTransaction("s9", 0x372E, 0x1029, "EWEADN S9 Pro", wrongS9).Level < 0,
             "S9 foreign UUID rejected before battery");
+        foreach (var (pid, product, transport) in new (ushort, string, string)[]
+        {
+            (0x1029, "EWEADN S9 Pro", "USB"), (0x1027, "EWEADN S9 Ultra", "USB"),
+            (0x105E, "EWEADN S9 Max", "USB"), (0x108D, "EWEADN S9Ultra+", "USB"),
+            (0x107B, "EWEADN S7Pro", "USB"), (0x107C, "EWEADN S7Max", "USB"),
+            (0x108A, "EWEADN S7Ultra", "USB"), (0x1026, "EWEADN S9", "2.4G"),
+            (0x103D, "Gaming 2.4G", "2.4G"), (0x106E, "EWEADN S7Max", "2.4G"),
+            (0x106E, "EWEADN S7Ultra", "2.4G")
+        })
+            Check(DeviceRoutes.Find(0x372E, pid, product) is { Reader: "ExtraMouse:s9" } route && route.Transport == transport,
+                $"S7/S9 route {pid:X4} {product}");
+        Check(!VendorProtocol.ExtraMouseCandidate(0x372E, 0x106E, "EWEADN S7Pro"),
+            "S7 Pro rejects unsupported shared receiver PID");
+
+        (int Level, int Writes) ReplayS9Receiver(string product, byte firstUuid, byte nextUuid,
+            bool online = true, byte battery = 63, byte identityLength = 8, bool timeout = false)
+        {
+            int identities = 0;
+            var receiver = new ReplayLink(packet =>
+            {
+                if (timeout) return [];
+                var reply = new byte[64];
+                reply[0] = 3; reply[1] = 80; reply[3] = 8;
+                reply[4] = packet[4]; reply[5] = packet[6];
+                if (packet[5] == 0x47) reply[6] = online ? (byte)1 : (byte)0;
+                if (packet[6] == 0x80)
+                {
+                    reply[3] = identityLength;
+                    reply[8] = 9;
+                    reply[13] = identities++ == 0 ? firstUuid : nextUuid;
+                }
+                if (packet[6] == 0x81) reply[6] = battery;
+                return reply;
+            });
+            var result = VendorProtocol.MouseExpansionTransaction("s9", 0x372E, 0x103D, product, receiver);
+            return (result.Level, receiver.Writes.Count);
+        }
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A) == (63, 8), "S9 Max shared receiver");
+        Check(ReplayS9Receiver("EWEADN S7Max", 0x3E, 0x3E) == (63, 8), "S7 Max shared receiver");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x0E).Level < 0, "S9 receiver rejects pairing change");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x3E, 0x3E).Level < 0, "S9 receiver rejects foreign UUID");
+        Check(ReplayS9Receiver("Unknown receiver", 0x2A, 0x2A) == (-1, 0), "S9 unknown HID product performs no I/O");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A, online: false) == (-1, 1), "S9 offline receiver");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A, identityLength: 7).Level < 0, "S9 truncated UUID");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A, battery: 0).Level == 0, "S9 empty battery");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A, battery: 100).Level == 100, "S9 full battery");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A, battery: 101).Level < 0, "S9 invalid battery level");
+        Check(ReplayS9Receiver("Gaming 2.4G", 0x2A, 0x2A, timeout: true).Level < 0, "S9 response timeout");
         var finalLink = new ReplayLink(packet =>
         {
             byte command = (byte)(packet[2] & 0x7F);

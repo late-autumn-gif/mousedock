@@ -1,5 +1,9 @@
 # MouseDock 更新日志
 
+## 前行者 S7／S9 电量（2026-11-25）
+
+补齐 S7 Pro、S7 Max、S7 Ultra、S9 Pro、S9 Max、S9 Ultra、S9 Ultra+ 的有线与 2.4G 电量路径。共享接收器按 HID 产品名和配对 UUID 验证型号，读取前后核对配对身份。39,627 项离线协议及集成断言通过。电量待实机验证，DPI 待研究。详见[设备协议清单](docs/MouseDock设备协议清单.md)。
+
 ## 部分 DB227 电量与 DPI 协议（2026-11-24）
 
 新增 RAWM 接收器及配对身份、瓦尔基里 M3/M3 Pro、Sora V2 有线身份、K06S、Neon75 Turbo、MG68 MAX、黑爵 SONiX 键盘及狼蛛磁轴键盘的电量路径。ATK HECHI 新增 1147、1148，并按输入报告和实际接口读取充电状态。Pulsar cMouse DPI 表覆盖 69 个传输身份与 149 个配对身份。[项目设备协议清单](docs/MouseDock设备协议清单.md)分别记录电量、DPI 与实机证据。39,604 项离线协议及集成断言通过，新增路径待实机。全量协议对齐仍在进行。

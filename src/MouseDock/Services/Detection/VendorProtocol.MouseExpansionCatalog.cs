@@ -82,9 +82,7 @@ internal static partial class VendorProtocol
         if (vid == 0x38A6 && MouseExpansionPid(pid,0x28F9,0x2F1A,0x28FD,0x28E9)) return "aula-x5";
         if (vid == 0x1B1C && pid == 0x1B62) return "bragi";
         if (vid == 0x372E && pid == 0x10F9) return "ipi-uni";
-        if (vid == 0x372E && (pid == 0x1029 && MouseExpansionName(product,"EWEADN S9 Pro") ||
-            pid == 0x1026 && MouseExpansionName(product,"EWEADN S9") ||
-            pid == 0x103D && MouseExpansionName(product,"Gaming 2.4G"))) return "s9";
+        if (FindS9Profile(vid, pid, product) != null) return "s9";
         if (vid == 0x374A && MouseExpansionPid(pid,0xA304,0xA305,0xA307,0xA308,0xA313,0xA316)) return "vk-m2";
         if (vid == 0x374A && pid == 0xA329) return "vk-m5";
         if (vid == 0x3151 && pid == 0x5045) return "royuan-mouse";
