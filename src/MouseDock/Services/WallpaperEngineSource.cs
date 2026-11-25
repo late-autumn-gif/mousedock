@@ -15,15 +15,15 @@ using System.Windows.Media.Imaging;
 
 namespace MouseDock.Services;
 
-internal sealed record WallpaperAsset(string Video, string Image);
-internal sealed record WallpaperContent(string Video, BitmapSource Image);
+internal sealed record WallpaperAsset(string Video, string Image, string Scene = null);
+internal sealed record WallpaperContent(string Video, BitmapSource Image, WallpaperAnimation Animation = null, string Scene = null);
 internal readonly record struct WallpaperMonitor(string DeviceName, int DisplayCount);
 
-internal sealed class WallpaperEngineSource
+internal sealed partial class WallpaperEngineSource
 {
     private const int MaxJsonBytes = 2 * 1024 * 1024;
     private const int MaxPathChars = 4096;
-    private (string Path, DateTime Modified, BitmapSource Bitmap) _preview;
+    private (string Path, DateTime Modified, BitmapSource Bitmap, WallpaperAnimation Animation) _preview;
 
     internal async Task<WallpaperContent> ReadAsync(WallpaperMonitor monitor, CancellationToken cancellationToken)
     {
@@ -42,22 +42,30 @@ internal sealed class WallpaperEngineSource
         string activeFile = await QueryAsync(executable, monitorIndex, cancellationToken).ConfigureAwait(false);
         if (cancellationToken.IsCancellationRequested) return null;
         // Some Wallpaper Engine builds exit successfully without writing redirected output.
-        var asset = ResolveAsset(string.IsNullOrWhiteSpace(activeFile) ? configuredFile : activeFile);
+        return ReadSelected(activeFile) ?? ReadSelected(configuredFile);
+    }
+
+    internal WallpaperContent ReadSelected(string path)
+    {
+        var asset = ResolveAsset(path);
         if (asset == null) return null;
         BitmapSource bitmap = null;
+        WallpaperAnimation animation = null;
         if (asset.Image != null)
         {
             try
             {
                 DateTime modified = File.GetLastWriteTimeUtc(asset.Image);
                 if (_preview.Path != asset.Image || _preview.Modified != modified)
-                    _preview = (asset.Image, modified, Palette.Load(asset.Image, 1024));
+                    _preview = (asset.Image, modified, Palette.Load(asset.Image, 3840), WallpaperAnimation.Read(asset.Image));
                 bitmap = _preview.Bitmap;
+                animation = _preview.Animation;
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
-        return asset.Video != null || bitmap != null ? new WallpaperContent(asset.Video, bitmap) : null;
+        return asset.Video != null || bitmap != null || asset.Scene != null
+            ? new WallpaperContent(asset.Video, bitmap, animation, asset.Scene) : null;
     }
 
     internal static (int? Index, string File) SelectMonitor(JsonElement root, string username, string deviceName,
@@ -107,7 +115,7 @@ internal sealed class WallpaperEngineSource
             return new WallpaperAsset(path, Preview(project, directory));
         if (project == null) return null;
 
-        string type = Text(Field(project.RootElement, "type"));
+        string type = Text(Field(project.RootElement, "type"))?.Trim().ToLowerInvariant();
         var file = ProjectFile(directory, Text(Field(project.RootElement, "file")));
         if (!string.Equals(manifest, path, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(file, path, StringComparison.OrdinalIgnoreCase) &&
@@ -115,6 +123,9 @@ internal sealed class WallpaperEngineSource
             return null;
         string preview = Preview(project, directory);
         if (type == "video" && file != null && IsVideo(file)) return new WallpaperAsset(file, preview);
+        if (type == "scene" && (file != null || LocalPath(Path.Combine(directory, "scene.pkg")) != null))
+            return new WallpaperAsset(null, preview, manifest);
+        if (file != null && IsImage(file)) return new WallpaperAsset(null, file);
         return preview != null ? new WallpaperAsset(null, preview) : null;
     }
 
@@ -184,8 +195,11 @@ internal sealed class WallpaperEngineSource
 
     private static string Text(JsonElement element) => element.ValueKind == JsonValueKind.String ? element.GetString() : null;
 
-    private static FileStream OpenRunningExecutable()
+    private static FileStream OpenRunningExecutable() => OpenRunningExecutable(out _);
+
+    private static FileStream OpenRunningExecutable(out int processId)
     {
+        processId = 0;
         using var current = Process.GetCurrentProcess();
         foreach (string name in new[] { "wallpaper64", "wallpaper32" })
         {
@@ -206,7 +220,7 @@ internal sealed class WallpaperEngineSource
                         try
                         {
                             accepted = VerifyExecutable(path) && !process.HasExited;
-                            if (accepted) return stream;
+                            if (accepted) { processId = process.Id; return stream; }
                         }
                         finally { if (!accepted) stream.Dispose(); }
                     }

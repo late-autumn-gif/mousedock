@@ -23,6 +23,7 @@ namespace MouseDock.Services
             public AppSettings Settings;
             public ThemePreset Theme;
             public BitmapSource Wallpaper;
+            public Drawing WallpaperMedia;
             public Brush SurfaceOverride;
         }
 
@@ -66,6 +67,22 @@ namespace MouseDock.Services
             return brush;
         }
 
+        internal static DrawingBrush CreateWallpaper(Drawing media, Size target, AppSettings settings, ThemePreset theme)
+        {
+            var canvas = new Rect(target);
+            byte depth = (byte)Math.Round(255 * Clamp(settings.BackgroundDepth, 0, .8, .35));
+            var drawing = new DrawingGroup();
+            using (var dc = drawing.Open())
+            {
+                dc.DrawRectangle(new SolidColorBrush(theme.BgTop), null, canvas);
+                dc.DrawRectangle(new DrawingBrush(media) { Stretch = Stretch.Fill }, null, canvas);
+                dc.DrawRectangle(new SolidColorBrush(Palette.WithAlpha(theme.BgTop, depth)), null, canvas);
+            }
+            var brush = new DrawingBrush(drawing) { Stretch = Stretch.Fill };
+            if (media.IsFrozen) brush.Freeze();
+            return brush;
+        }
+
         public static BitmapSource Apply(Border root, string overridePath, Brush fallback, AppSettings settings, ThemePreset theme,
             int decodeWidth = 2048)
         {
@@ -100,10 +117,17 @@ namespace MouseDock.Services
                 root.Background = state.SurfaceOverride;
                 return;
             }
-            if (state.Wallpaper != null)
+            if (state.WallpaperMedia != null || state.Wallpaper != null)
             {
                 RenderOptions.SetBitmapScalingMode(root, BitmapScalingMode.HighQuality);
-                root.Background = Create(state.Wallpaper, new Size(Math.Max(1, root.ActualWidth), Math.Max(1, root.ActualHeight)),
+                Drawing media = state.WallpaperMedia;
+                if (media == null)
+                {
+                    media = new ImageDrawing(state.Wallpaper,
+                        new Rect(0, 0, state.Wallpaper.PixelWidth, state.Wallpaper.PixelHeight));
+                    if (media.CanFreeze) media.Freeze();
+                }
+                root.Background = CreateWallpaper(media, new Size(Math.Max(1, root.ActualWidth), Math.Max(1, root.ActualHeight)),
                     state.Settings, state.Theme);
                 return;
             }
@@ -116,11 +140,12 @@ namespace MouseDock.Services
                     state.Settings, state.Theme);
         }
 
-        internal static void SetWallpaper(Border root, BitmapSource image, Brush surfaceOverride)
+        internal static void SetWallpaper(Border root, BitmapSource image, Drawing media = null, Brush surfaceOverride = null)
         {
             if (!States.TryGetValue(root, out var state) ||
-                (state.Wallpaper == image && state.SurfaceOverride == surfaceOverride)) return;
+                (state.Wallpaper == image && state.WallpaperMedia == media && state.SurfaceOverride == surfaceOverride)) return;
             state.Wallpaper = image;
+            state.WallpaperMedia = media;
             state.SurfaceOverride = surfaceOverride;
             Paint(root, state);
         }

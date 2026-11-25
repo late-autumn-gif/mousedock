@@ -16,6 +16,8 @@ internal readonly record struct TaskbarElement(Rect Bounds, string ClassName, st
 internal sealed record TaskbarLayoutSnapshot(Rect Taskbar, uint Edge, Rect Icons, Rect[] Occupied,
     DateTime CapturedUtc)
 {
+    public Rect Tray { get; init; } = Rect.Empty;
+
     public bool Matches(Rect taskbar, uint edge, DateTime now) =>
         taskbar == Taskbar && edge == Edge && now >= CapturedUtc &&
         now - CapturedUtc <= TimeSpan.FromSeconds(3);
@@ -32,6 +34,7 @@ internal sealed class TaskbarLayoutReader : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly Action _changed;
     private Reading _reading;
+    private Reading _trayReading;
     private int _pending;
     private long _lastRequest;
     private volatile bool _disposed;
@@ -42,11 +45,14 @@ internal sealed class TaskbarLayoutReader : IDisposable
         _changed = changed;
     }
 
-    public bool TryGet(Rect bounds, uint edge, out TaskbarLayoutSnapshot snapshot)
+    public bool TryGet(Rect bounds, uint edge, out TaskbarLayoutSnapshot snapshot, bool pinToTray = false)
     {
         snapshot = null;
-        var reading = Volatile.Read(ref _reading);
-        if (reading == null || !reading.Layout.Matches(bounds, edge, DateTime.UtcNow)) return false;
+        var reading = pinToTray ? Volatile.Read(ref _trayReading) : Volatile.Read(ref _reading);
+        var now = DateTime.UtcNow;
+        if (reading == null || !reading.Layout.Matches(bounds, edge, now) ||
+            (pinToTray && now - reading.Layout.CapturedUtc > TimeSpan.FromSeconds(1)))
+            return false;
         var host = FindWindow("Shell_TrayWnd", null);
         GetWindowThreadProcessId(host, out uint processId);
         if (host == IntPtr.Zero || reading.Host != host || reading.ProcessId != processId) return false;
@@ -82,9 +88,11 @@ internal sealed class TaskbarLayoutReader : IDisposable
 
     private void Publish(Reading reading)
     {
-        // Keep a recent snapshot through transient provider failures; TryGet still
-        // rejects expired geometry and a replaced or moved Explorer taskbar.
-        if (!_disposed && reading != null) Volatile.Write(ref _reading, reading);
+        if (_disposed) return;
+        // A missing notification area must not leave the pinned strip over new tray buttons.
+        Volatile.Write(ref _trayReading, reading);
+        // Preserve follow-mode continuity when Explorer momentarily omits the application group.
+        if (reading != null && !reading.Layout.Icons.IsEmpty) Volatile.Write(ref _reading, reading);
     }
 
     private static Reading Read()
@@ -102,6 +110,8 @@ internal sealed class TaskbarLayoutReader : IDisposable
         var condition = new OrCondition(
             new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
             new PropertyCondition(AutomationElement.ClassNameProperty, "TrayNotifyWnd"),
+            new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
+            new PropertyCondition(AutomationElement.AutomationIdProperty, "NotifyItemIcon"),
             new PropertyCondition(AutomationElement.ClassNameProperty, "MSTaskListWClass"),
             new PropertyCondition(AutomationElement.ClassNameProperty, "MSTaskSwWClass"));
         var items = new List<TaskbarElement>();
@@ -123,12 +133,17 @@ internal sealed class TaskbarLayoutReader : IDisposable
     {
         bool Valid(Rect rect) => !rect.IsEmpty && rect.Width > 0 && rect.Height > 0 &&
             double.IsFinite(rect.Left) && double.IsFinite(rect.Top) &&
-            double.IsFinite(rect.Right) && double.IsFinite(rect.Bottom) && bounds.IntersectsWith(rect);
-        var visible = elements.Where(e => !e.Offscreen && e.ProcessId != Environment.ProcessId && Valid(e.Bounds)).ToArray();
+            double.IsFinite(rect.Right) && double.IsFinite(rect.Bottom);
+        var visible = elements.Where(e => !e.Offscreen && e.ProcessId != Environment.ProcessId && Valid(e.Bounds))
+            .Select(e => e with { Bounds = Rect.Intersect(bounds, e.Bounds) })
+            .Where(e => Valid(e.Bounds)).ToArray();
         bool Tray(TaskbarElement e) => e.ClassName == "TrayNotifyWnd" ||
             (e.ClassName ?? "").StartsWith("SystemTray.", StringComparison.Ordinal) ||
             e.Id is "SystemTrayIcon" or "NotifyItemIcon";
-        if (!visible.Any(Tray)) return null;
+        Rect tray = Rect.Empty;
+        foreach (var element in visible.Where(Tray))
+            tray.Union(element.Bounds);
+        if (tray.IsEmpty) return null;
         var buttons = visible.Where(e => e.Button && !Tray(e)).ToArray();
         var apps = buttons.Where(e => (e.ClassName ?? "").Contains("TaskListButton", StringComparison.Ordinal) ||
             (e.Id ?? "").StartsWith("Appid:", StringComparison.Ordinal)).ToArray();
@@ -137,13 +152,13 @@ internal sealed class TaskbarLayoutReader : IDisposable
             var legacy = visible.Where(e => e.ClassName is "MSTaskListWClass" or "MSTaskSwWClass").ToArray();
             apps = buttons.Where(e => legacy.Any(area => area.Bounds.Contains(e.Bounds))).ToArray();
         }
-        if (apps.Length == 0) return null;
         var group = apps.Concat(buttons.Where(e => e.Id is "StartButton" or "SearchButton" or "TaskViewButton")).ToArray();
         Rect icons = Rect.Empty;
-        foreach (var element in group) icons.Union(Rect.Intersect(bounds, element.Bounds));
+        if (apps.Length > 0)
+            foreach (var element in group) icons.Union(element.Bounds);
         var occupied = visible.Where(e => e.Button || Tray(e))
-            .Select(e => Rect.Intersect(bounds, e.Bounds)).ToArray();
-        return new TaskbarLayoutSnapshot(bounds, edge, icons, occupied, DateTime.UtcNow);
+            .Select(e => e.Bounds).ToArray();
+        return new TaskbarLayoutSnapshot(bounds, edge, icons, occupied, DateTime.UtcNow) { Tray = tray };
     }
 
     public void Dispose() => _disposed = true;

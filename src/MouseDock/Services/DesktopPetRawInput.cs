@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 
@@ -20,11 +21,26 @@ internal sealed class DesktopPetRawInput
     private static readonly uint InputSize = (uint)Marshal.SizeOf<RawInput>();
     private static readonly uint DeviceSize = (uint)Marshal.SizeOf<RawInputDevice>();
     private readonly HwndSource _source;
-    private readonly Action<DesktopPetInputActivity, long> _react;
+    private readonly Action<DesktopPetInputActivity, long, int> _react;
     private readonly HwndSourceHook _receive;
     private bool _registered;
+    private readonly Dictionary<int, ushort> _heldKeys = new();
+    internal bool IsScanHeld(int scan) => _heldKeys.ContainsKey(scan);
 
-    internal DesktopPetRawInput(HwndSource source, Action<DesktopPetInputActivity, long> react)
+    internal bool KeyboardDown
+    {
+        get
+        {
+            // A disconnected device may never send its release.
+            foreach (var (scan, key) in _heldKeys)
+                if (!IsDown(key)) _heldKeys.Remove(scan);
+            return _heldKeys.Count != 0;
+        }
+    }
+
+    internal static bool IsDown(int key) => (GetAsyncKeyState(key) & 0x8000) != 0;
+
+    internal DesktopPetRawInput(HwndSource source, Action<DesktopPetInputActivity, long, int> react)
     {
         _source = source;
         _react = react;
@@ -34,6 +50,7 @@ internal sealed class DesktopPetRawInput
     internal void SetEnabled(bool enabled)
     {
         if (enabled == _registered) return;
+        _heldKeys.Clear();
         if (_source.IsDisposed)
         {
             _registered = false;
@@ -64,13 +81,36 @@ internal sealed class DesktopPetRawInput
         uint copied = GetRawInputData(lParam, RidInput, out RawInput input, ref size, HeaderSize);
         if (copied >= HeaderSize + 16 && copied <= InputSize)
         {
+            int detail = input.Body.MouseFlags;
+            if (input.Header.Type == RawKeyboard)
+            {
+                if (input.Body.VirtualKey is 0 or >= 255) return IntPtr.Zero;
+                detail = PhysicalKey(input.Body.MakeCode, input.Body.KeyFlags, input.Body.VirtualKey);
+                if ((input.Body.KeyFlags & KeyBreak) == 0) _heldKeys[detail] = input.Body.VirtualKey;
+                else _heldKeys.Remove(detail);
+            }
             var activity = Classify(input.Header.Type, input.Header.Type == RawKeyboard ? input.Body.KeyFlags : input.Body.MouseFlags);
             if (activity != DesktopPetInputActivity.None)
-                _react(activity, Environment.TickCount64);
+                _react(activity, Environment.TickCount64, detail);
         }
 
         // Leave normal input delivery and WM_INPUT cleanup with the window procedure.
         return IntPtr.Zero;
+    }
+
+    internal static int PhysicalKey(ushort scan, ushort flags, ushort key)
+    {
+        if (key == 0x13) return 0x245; // Pause
+        if (key == 0x90) return 0x45;  // Num Lock
+        if (key == 0x2c) return 0x137; // Print Screen
+        if (scan == 0)
+        {
+            uint mapped = MapVirtualKey(key, 4); // MAPVK_VK_TO_VSC_EX
+            if (mapped == 0) return 0x400 | key;
+            scan = (ushort)(mapped & 0xff);
+            if ((mapped >> 8) == 0xe0) flags |= 2;
+        }
+        return (scan & 0xff) | ((flags & 2) != 0 ? 0x100 : 0);
     }
 
     internal static DesktopPetInputActivity Classify(uint kind, ushort flags) => kind switch
@@ -92,12 +132,14 @@ internal sealed class DesktopPetRawInput
         internal IntPtr Param;
     }
 
-    // The RAWMOUSE/RAWKEYBOARD union needs 24 bytes. Only expose the event flags.
+    // RAWMOUSE/RAWKEYBOARD share this 24-byte union.
     [StructLayout(LayoutKind.Explicit, Size = 24)]
     private struct RawInputBody
     {
+        [FieldOffset(0)] internal ushort MakeCode;
         [FieldOffset(2)] internal ushort KeyFlags;
         [FieldOffset(4)] internal ushort MouseFlags;
+        [FieldOffset(6)] internal ushort VirtualKey;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -113,4 +155,10 @@ internal sealed class DesktopPetRawInput
 
     [DllImport("user32.dll")]
     private static extern uint GetRawInputData(IntPtr input, uint command, out RawInput data, ref uint size, uint headerSize);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
+
+    [DllImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    private static extern uint MapVirtualKey(uint code, uint mode);
 }

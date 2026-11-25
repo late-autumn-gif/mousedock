@@ -10,6 +10,21 @@ if (args.Contains("--verify-standard-battery"))
     Console.WriteLine($"PASS {StandardBatteryRegression.Run()} standard battery checks; no hardware I/O.");
     return;
 }
+if (args.Contains("--verify-sc580-transactions"))
+{
+    Console.WriteLine($"PASS {M137TransactionsRegression.Run()} SC580 transaction checks.");
+    return;
+}
+if (args.Contains("--verify-logitech-paired-mouse"))
+{
+    Console.WriteLine($"PASS {LogitechPairedMouseRegression.Run()} Logitech paired mouse checks.");
+    return;
+}
+if (args.Contains("--verify-cloud3s"))
+{
+    Console.WriteLine($"PASS {Cloud3SRegression.Run()} Cloud III S checks.");
+    return;
+}
 if (args.Contains("--verify-rapoo-ahub"))
 {
     Console.WriteLine($"PASS {RapooAhubRegression.Run()} Rapoo AHUB read/session offline checks; no hardware I/O.");
@@ -23,11 +38,6 @@ if (args.Contains("--verify-xbox-wireless"))
 if (args.Contains("--verify-scyrox-legacy"))
 {
     Console.WriteLine($"PASS {ScyroxLegacyRegression.Run()} Scyrox legacy receiver checks; no hardware I/O.");
-    return;
-}
-if (args.Contains("--verify-sc580-transactions"))
-{
-    Console.WriteLine($"PASS {M137TransactionsRegression.Run()} SC580 transaction checks.");
     return;
 }
 if (args.Contains("--verify-mchose-feedback"))
@@ -56,11 +66,6 @@ if (args.Contains("--verify-rog-omni-mouse"))
     return;
 }
 Console.WriteLine($"PASS {LegacySelectionRegression.Run()} legacy device preference checks.");
-if (args.Contains("--verify-logitech-paired-mouse"))
-{
-    Console.WriteLine($"PASS {LogitechPairedMouseRegression.Run()} Logitech paired mouse checks.");
-    return;
-}
 if (args.Length > 0 && args[0] == "--inspect-k87-battery")
 {
     // Explicitly requested hardware check through the production discovery path.
@@ -79,6 +84,12 @@ if (args.Length > 0 && args[0] == "--inspect-k87-battery")
     return;
 }
 Console.WriteLine($"PASS {K87DiscoveryRegression.Run()} K87 discovery regression checks.");
+if (args.Length == 0)
+{
+    Console.WriteLine($"PASS {Cloud3SRegression.Run()} Cloud III S checks.");
+    Console.WriteLine($"PASS {LogitechPairedMouseRegression.Run()} Logitech paired mouse checks.");
+    Console.WriteLine($"PASS {M137TransactionsRegression.Run()} SC580 transaction checks.");
+}
 if(args.Length>2&&args[0]=="--audit-support-catalogue"){SupportAuditRegression.Export(args[1],args[2]);return;}
 if(args.Length>1 && args[0]=="--preview-reference-styles"){InphicStylesRegression.Preview(args[1]);return;}
 if(args.Length>1&&args[0]=="--verify-published-update")
@@ -140,11 +151,6 @@ if (args.Length > 0 && args[0] == "--inspect-aula-battery")
 if (args.Length > 1 && args[0] == "--verify-headset-audio")
 {
     Console.WriteLine($"PASS {HeadsetAudioRegression.RunUi(args[1])} headset UI/control checks; simulated backend, no system audio writes.");
-    return;
-}
-if (args.Contains("--verify-cloud3s"))
-{
-    Console.WriteLine($"PASS {Cloud3SRegression.Run()} Cloud III S checks.");
     return;
 }
 if (args.Length > 0 && args[0] == "--inspect-audio-endpoints")
@@ -413,7 +419,6 @@ assertions += OfficialIntegrationRegression.Run();
 assertions += LogitechGpwRegression.Run();
 assertions += OriginalGpwScopedRegression.Run();
 assertions += LogitechG603Regression.Run();
-assertions += LogitechPairedMouseRegression.Run();
 assertions += InphicStylesRegression.Run();
 assertions += G7V9Regression.Run();
 assertions += HeadsetExpansionRegression.Run();
@@ -468,7 +473,6 @@ Check(VendorProtocol.IsCloud3SControlCollection(0xFF13, 0x0001, 62, 62) &&
     !VendorProtocol.IsCloud3SControlCollection(0xFFC0, 0x0202, 32, 32),
     "Cloud III S only uses the FF13 control collection");
 var cloudRequest = VendorProtocol.BuildCloud3SRequest(62, VendorProtocol.Cloud3SBatteryCommand);
-assertions += Cloud3SRegression.Run();
 Check(cloudRequest.Length == 62 &&
     cloudRequest.Take(6).SequenceEqual(new byte[] { 0x0C, 0x02, 0x03, 0x01, 0x00, 0x1D }),
     "Cloud III S battery command is Airoha GET_BATTERY_INFO 0x1D");
@@ -658,7 +662,6 @@ Check(chargeDevice.IsChargingActive && chargeDevice.LevelText == "—", "Known c
 
 var identify = new byte[] { 0x30, 0, 1, 0x0B, 0x4D, 0x31, 0x33, 0x37, 1, 0x16, 0x11, 0xAA, 0, 65, 1, 0 };
 Check(VendorProtocol.TryParseIdentifyBattery(identify, out int identifyLevel, out bool identifyCharging) && identifyLevel == 65 && !identifyCharging, "Captured M137 Identify shape gives level and noncharging state");
-assertions += M137TransactionsRegression.Run();
 identify[12] = 1;
 Check(VendorProtocol.TryParseIdentifyBattery(identify, out identifyLevel, out identifyCharging) && identifyLevel == 65 && identifyCharging, "Identify charging byte is propagated");
 Check(VendorProtocol.TryParseIdentifyBattery(new byte[] { 0 }.Concat(identify).ToArray(), out identifyLevel, out identifyCharging) && identifyCharging, "Windows report-ID alignment preserves charging");

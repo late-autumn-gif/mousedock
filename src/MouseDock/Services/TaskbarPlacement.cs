@@ -43,7 +43,44 @@ namespace MouseDock.Services
             double reservedStart = position - (offset < 0 ? reserve : 0);
             double reservedEnd = position + length + (offset < 0 ? 0 : reserve);
             if (reservedStart < start || reservedEnd > end) return false;
-            foreach (var rect in (occupied ?? Array.Empty<Rect>()).Append(icons))
+            if (!IsClear(taskbar, vertical, reservedStart, reservedEnd,
+                (occupied ?? Array.Empty<Rect>()).Append(icons))) return false;
+            placement = vertical
+                ? new Rect(taskbar.Left + (thickness - height) / 2, position, height, length)
+                : new Rect(position, taskbar.Top + (thickness - height) / 2, length, height);
+            return true;
+        }
+
+        public static bool TryPinToTray(Rect taskbar, uint edge, Size content, double dpiScale,
+            Rect tray, IEnumerable<Rect> occupied, out Rect placement, double extraSpace = 0)
+        {
+            placement = Rect.Empty;
+            if (!Valid(taskbar) || !Valid(tray) || !Valid(Rect.Intersect(taskbar, tray)) ||
+                !double.IsFinite(content.Width) || !double.IsFinite(content.Height) ||
+                content.Width <= 0 || content.Height <= 0 || !double.IsFinite(dpiScale) || dpiScale <= 0)
+                return false;
+            bool vertical = edge == 0 || edge == 2;
+            double thickness = vertical ? taskbar.Width : taskbar.Height;
+            double scale = Math.Min(dpiScale, thickness / content.Height);
+            double length = Math.Floor(content.Width * scale);
+            double height = content.Height * scale;
+            // Snap toward the free space before native window rounding.
+            double end = Math.Floor(vertical ? tray.Top : tray.Left);
+            double position = end - length;
+            double reserve = double.IsFinite(extraSpace) ? Math.Max(0, extraSpace) * dpiScale : 0;
+            double reservedStart = position - reserve;
+            if (length < 1 || reservedStart < (vertical ? taskbar.Top : taskbar.Left) ||
+                !IsClear(taskbar, vertical, reservedStart, end, occupied ?? Array.Empty<Rect>()))
+                return false;
+            placement = vertical
+                ? new Rect(taskbar.Left + (thickness - height) / 2, position, height, length)
+                : new Rect(position, taskbar.Top + (thickness - height) / 2, length, height);
+            return true;
+        }
+
+        private static bool IsClear(Rect taskbar, bool vertical, double start, double end, IEnumerable<Rect> occupied)
+        {
+            foreach (var rect in occupied)
             {
                 if (rect.IsEmpty) continue;
                 if (!Valid(rect)) return false;
@@ -51,11 +88,8 @@ namespace MouseDock.Services
                 double obstacleStart = vertical ? rect.Top : rect.Left;
                 double obstacleEnd = vertical ? rect.Bottom : rect.Right;
                 // Touching an edge is valid at zero; only a positive overlap blocks it.
-                if (reservedStart < obstacleEnd && reservedEnd > obstacleStart) return false;
+                if (start < obstacleEnd && end > obstacleStart) return false;
             }
-            placement = vertical
-                ? new Rect(taskbar.Left + (thickness - height) / 2, position, height, length)
-                : new Rect(position, taskbar.Top + (thickness - height) / 2, length, height);
             return true;
         }
 

@@ -1,5 +1,4 @@
-// Protocol adaptation from MouseDock 1.0.3 and Halo Battery (MIT, 2026 contributors).
-// The complete reference permission notices are embedded through THIRD-PARTY-NOTICES.md.
+// License notices are included in THIRD-PARTY-NOTICES.md.
 using System;
 using System.IO;
 using System.Linq;

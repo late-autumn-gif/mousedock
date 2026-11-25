@@ -6,7 +6,7 @@ internal static partial class OriginalGpwProtocol
 {
     private sealed partial class Reader
     {
-        private ReferenceBatteryProtocol.Reading ReadPairedMouse(byte slot, string name)
+        private ReferenceBatteryProtocol.Reading ReadPairedMouse(byte slot, string name, bool allowVoltage = true)
         {
             if (name is "USB Receiver" or "Receiver" or "Logitech USB Receiver")
                 return Fail("接收器名称不能证明配对鼠标型号");
@@ -42,7 +42,7 @@ internal static partial class OriginalGpwProtocol
                 break;
             }
 
-            if (reading.Level < 0)
+            if (reading.Level < 0 && allowVoltage)
             {
                 byte voltage = Feature(slot, 0x1001);
                 if (voltage != 0)

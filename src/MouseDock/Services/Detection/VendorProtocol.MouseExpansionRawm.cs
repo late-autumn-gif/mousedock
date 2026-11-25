@@ -8,11 +8,46 @@ namespace MouseDock.Services.Detection;
 
 internal static partial class VendorProtocol
 {
+    private static readonly IReadOnlyDictionary<int, string> RawmReceivers = new Dictionary<int, string>
+    {
+        [0x232A] = "USB Receiver",
+        [0x232B] = "USB Receiver 4K",
+        [0x2335] = "USB Receiver 8Kn",
+        [0x2336] = "RAWM DH8",
+        [0x233B] = "RAWM HS Receiver",
+        [0x233C] = "RAWM Receiver",
+        [0x2346] = "RAWM HS Receiver",
+        [0x234B] = "RAWM HS Receiver",
+    };
+
+    private static readonly IReadOnlyDictionary<int, string> RawmMice = new Dictionary<int, string>
+    {
+        [0x2329] = "SA-ML01",
+        [0x232C] = "SA-MH01",
+        [0x232D] = "SA-SL01",
+        [0x232E] = "SA-SH01",
+        [0x2331] = "SA-MH01Pro",
+        [0x2332] = "SA-SH01Pro",
+        [0x2333] = "ES21",
+        [0x2334] = "ES21Pro",
+        [0x2337] = "ES21M",
+        [0x2338] = "ER21Pro",
+        [0x2339] = "ER21M",
+        [0x233A] = "G11",
+        [0x233E] = "SA-SH01S",
+        [0x233F] = "ER21",
+        [0x2340] = "SA-SL01C",
+        [0x2341] = "ES11",
+        [0x2343] = "G11Plus",
+        [0x2344] = "G11Pro",
+        [0x2349] = "ES21Pro(AkamiKarubi Model)",
+        [0x234A] = "LEVIATHAN V4",
+        [0x2352] = "ES21Pro",
+    };
+
     private static ReferenceBatteryProtocol.Reading MouseExpansionRawm(ushort pid,ReferenceBatteryProtocol.ILink link)
     {
-        var mice=new Dictionary<int,string>{{9001,"SA-ML01"},{9004,"SA-MH01"},{9005,"SA-SL01"},{9006,"SA-SH01"},
-            {9009,"SA-MH01Pro"},{9010,"SA-SH01Pro"},{9012,"ES21Pro"},{9015,"ES21M"},{9016,"ER21Pro"},{9017,"ER21M"}};
-        string receiver=pid switch {0x232A=>"USB Receiver",0x232B=>"USB Receiver 4K",0x2335=>"USB Receiver 8Kn",_=>null};
+        if (!RawmReceivers.TryGetValue(pid, out string receiver)) throw new IOException("Unknown RAWM receiver");
         ReferenceBatteryProtocol.Reading Channel(int channel)
         {
             bool drained=false;
@@ -66,29 +101,36 @@ internal static partial class VendorProtocol
                             if(!value.TryGetProperty("dn",out var dn)||dn.ValueKind!=JsonValueKind.String)
                                 throw new IOException("missing RAWM device identity");
                             string name=dn.GetString();
-                            int identity=channel==255?pid:mice.FirstOrDefault(p=>p.Value==name).Key;
-                            if(identity==0||channel==255&&name!=receiver||
-                                value.TryGetProperty("vi",out var vi)&&(vi.ValueKind!=JsonValueKind.Number||!vi.TryGetInt32(out int v)||v!=0x1915)||
-                                value.TryGetProperty("pi",out var pi)&&(pi.ValueKind!=JsonValueKind.Number||!pi.TryGetInt32(out int p)||p!=identity))
+                            if (value.TryGetProperty("vi", out var vi) && (vi.ValueKind != JsonValueKind.Number || !vi.TryGetInt32(out int vendor) || vendor != 0x1915))
+                                throw new IOException("RAWM vendor mismatch");
+                            bool receiverChannel = channel == 255;
+                            bool validName = receiverChannel ? name == receiver : RawmMice.Values.Contains(name);
+                            if (!validName) throw new IOException("RAWM device name mismatch");
+                            if (value.TryGetProperty("pi", out var pi) &&
+                                (pi.ValueKind != JsonValueKind.Number || !pi.TryGetInt32(out int productId) ||
+                                 (receiverChannel ? productId != pid : !RawmMice.TryGetValue(productId, out var model) || model != name)))
                                 throw new IOException("RAWM device identity mismatch");
                             if(channel==255)return null;
                             identified=name;
                             if(!value.TryGetProperty("battery",out var battery))continue;
                             if(battery.ValueKind!=JsonValueKind.Number||!battery.TryGetInt32(out int level)||level is <0 or >100)
                                 throw new IOException("invalid RAWM battery");
+                            bool? charging = null;
                             if(value.TryGetProperty("chr",out var chr)&&
                                 !(chr.ValueKind is JsonValueKind.True or JsonValueKind.False||
                                     chr.ValueKind==JsonValueKind.Number&&chr.TryGetInt32(out int charge)&&charge is 0 or 1))
                                 throw new IOException("invalid RAWM charging field");
+                            if (chr.ValueKind != JsonValueKind.Undefined)
+                                charging = chr.ValueKind == JsonValueKind.True || chr.ValueKind == JsonValueKind.Number && chr.GetInt32() == 1;
                             return MouseExpansionValue(level,"RAWM reported percent; receiver and mouse JSON identities confirmed",
-                                model:"RAWM "+name,identity:"RAWM:"+name);
+                                charging:charging,model:"RAWM "+name,identity:"RAWM:"+name);
                         }
                     }
                     if(channel==0&&identified!=null&&(command[0]&15)==11&&command.Length>=3&&command[2]==23)
                     {
                         if(command.Length!=5||command[3]>100||command[4]>1)throw new IOException("invalid RAWM battery notification");
                         return MouseExpansionValue(command[3],"RAWM fresh notification after confirmed mouse identity",
-                            model:"RAWM "+identified,identity:"RAWM:"+identified);
+                            charging:command[4] == 1,model:"RAWM "+identified,identity:"RAWM:"+identified);
                     }
                 }
             }

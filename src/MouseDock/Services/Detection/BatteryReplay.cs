@@ -25,9 +25,12 @@ internal static partial class BatteryReplay
     internal sealed record Observation(string Receiver, string Model, string Transport, int? Percent, bool Stale, bool Connected = true, bool? Charging = null, bool? Full = null,
         string Reader = null, bool ReceiverPresent = false, bool PeripheralConfirmed = false, string Product = null,
         string Name = null, string Source = null, string BatteryBand = null);
+    internal sealed record DpiObservation(string Receiver, string Model, int? Current, int[] Slots,
+        int? Active, string Protocol, bool? Writable, string Status, string Diagnostic);
     internal sealed record Capture(int Schema, string AppVersion, Guid BuildId, string WindowsVersion, string ScanError,
         DateTimeOffset StartedAt, DateTimeOffset FinishedAt,
-        Collection[] Collections, Query[] Queries, Observation[] Observations);
+        Collection[] Collections, Query[] Queries, Observation[] Observations,
+        DpiObservation[] DpiObservations = null);
     internal sealed record Result(string Receiver, int? Interface, string Protocol, string Status, string Model,
         int? Percent, bool? Charging, string ValueKind, string BatteryBand = null);
 
@@ -112,7 +115,23 @@ internal static partial class BatteryReplay
                             ? null : device.Charging, device.ChargeFull && !device.IsStale ? true : null,
                         device.HandledBy.ToString(), device.ReceiverDiscovered, device.PeripheralConfirmed, SafeLabel(device.RawName),
                         SafeLabel(device.Name), device.Level >= 0 ? (device.IsStale ? "cached" : "reader") :
-                            !string.IsNullOrEmpty(device.BatteryBand) ? "system-relative" : "unknown", device.BatteryBand)).ToArray());
+                            !string.IsNullOrEmpty(device.BatteryBand) ? "system-relative" : "unknown", device.BatteryBand)).ToArray(),
+                Detected.Where(device => receivers.TryGetValue(device.Id, out string label) &&
+                        (selected == null || selected.Contains(label)))
+                    .Select(device => DescribeDpi(receivers[device.Id], device)).ToArray());
+        }
+
+        private static DpiObservation DescribeDpi(string receiver, DetectedDevice device)
+        {
+            var state = device.DpiSettings;
+            bool hasCurrent = device.Dpi is >= 50 and <= 50000;
+            if (state == null && !hasCurrent)
+                return new(receiver, SafeLabel(device.ConfirmedModel), null, Array.Empty<int>(), null,
+                    null, null, "unavailable", SafeLabel(device.DpiText));
+
+            return new(receiver, SafeLabel(device.ConfirmedModel), hasCurrent ? device.Dpi : null,
+                state?.Values?.ToArray() ?? device.DpiSlots ?? Array.Empty<int>(), state?.Index,
+                state?.Protocol.ToString(), state?.Writable, "captured", SafeLabel(device.DpiText));
         }
     }
 
@@ -169,7 +188,7 @@ internal static partial class BatteryReplay
         {
             capture.AppVersion, capture.BuildId, capture.WindowsVersion, capture.ScanError, capture.StartedAt, capture.FinishedAt,
             Note = "离线重放只验证采集时的应答。无有效样本时保持未知。",
-            capture.Collections, capture.Observations,
+            capture.Collections, capture.Observations, capture.DpiObservations,
             Results = capture.Queries.Select(query => Replay(query, capture.Collections)).ToArray()
         }, Json);
     }

@@ -42,7 +42,6 @@ internal static class ChargingVisualRegression
                     new DeviceInfo { Name = "状态未提供", Level = -1 },
                     new DeviceInfo { Name = "设备断开", Level = 42, Charging = true, Connected = false }
                 };
-                var glyphs = new List<ChargingGlyph>();
                 var rings = new List<DeviceBatteryRing>();
                 foreach (var device in devices)
                 {
@@ -50,10 +49,8 @@ internal static class ChargingVisualRegression
                     row.Children.Add(new TextBlock { Text = device.Name, Width = 105, FontSize = 13, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center });
                     var percent = new TextBlock { Width = 50, FontSize = 17, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
                     percent.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)));
+                    percent.SetBinding(ChargeBreath.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingNumber)));
                     row.Children.Add(percent);
-                    var glyph = new ChargingGlyph { Width = 30, Height = 24 };
-                    glyph.SetBinding(ChargingGlyph.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
-                    glyphs.Add(glyph); row.Children.Add(glyph);
                     var ring = new DeviceBatteryRing();
                     ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)));
                     ring.SetBinding(DeviceBatteryRing.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
@@ -84,54 +81,58 @@ internal static class ChargingVisualRegression
                         ChargeSweep.Interpolate(42, 43, 150) == 42.5 &&
                         ChargeSweep.Interpolate(43, 44, 300) == 44,
                         "Only a new target moves the fill, with a 300 ms transition");
-                    var settingsProperty = typeof(MouseDock.App).GetProperty(nameof(MouseDock.App.Settings))!;
-                    var previousSettings = settingsProperty.GetValue(null);
-                    try
+                    DrawingGroup Fill(double level, double phase, bool vertical)
                     {
-                        settingsProperty.SetValue(null, new AppSettings { ChargeEffect = "lightning" });
-                        DrawingGroup Fill(double level, double phase, bool vertical)
-                        {
-                            var drawing = new DrawingGroup();
-                            using (var dc = drawing.Open())
-                                ChargeSweep.Fill(dc, new Rect(0, 0, 40, 40), level, 2, Brushes.Green, phase, vertical, wave: true);
-                            return drawing.Children[0] as DrawingGroup ?? drawing;
-                        }
-
-                        var vertical42 = ((GeometryDrawing)Fill(.42, .25, true).Children[0]).Geometry.Bounds;
-                        var vertical68 = ((GeometryDrawing)Fill(.68, .25, true).Children[0]).Geometry.Bounds;
-                        var horizontal42 = ((GeometryDrawing)Fill(.42, .25, false).Children[0]).Geometry.Bounds;
-                        var horizontal68 = ((GeometryDrawing)Fill(.68, .25, false).Children[0]).Geometry.Bounds;
-                        Check(vertical42.Bottom == 40 && vertical68.Bottom == 40 && vertical68.Top < vertical42.Top &&
-                            Fill(.42, .25, true).Children.Count == 3, "Vertical battery waves at the top and advances upward");
-                        Check(horizontal42.Left == 0 && horizontal68.Left == 0 && horizontal68.Right > horizontal42.Right &&
-                            Fill(.42, .25, false).Children.Count == 3, "Horizontal battery waves at the right and advances rightward");
-                        Check(Fill(1, .25, true).Children.Count == 1 && Fill(.42, -1, true).Children.Count == 1,
-                            "Full fill and stopped animation both have a flat surface");
-                        settingsProperty.SetValue(null, new AppSettings { ChargeEffect = "wave" });
-                        devices[0].Level = 42; Pump(330);
-                        var wave = Capture("波浪充电-42.png");
-                        devices[0].Level = 43; Pump(330);
-                        Check(!wave.SequenceEqual(Capture("波浪充电-43.png")), "A new reading advances the wave");
-                        devices[0].IsStale = true; Pump(60);
-                        Check(!rings[0].IsChargeSweepRunning && devices[0].Level == 43, "Timeout stops the wave and preserves 43%");
-                        devices[0].Level = 44;
-                        devices[0].IsStale = false; Pump(330);
-                        Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation && rings[0].Level == 44,
-                            "A fresh 44% restores charging visuals");
+                        var drawing = new DrawingGroup();
+                        using (var dc = drawing.Open())
+                            ChargeSweep.Fill(dc, new Rect(0, 0, 40, 40), level, 2, Brushes.Green, phase, vertical);
+                        return drawing.Children[0] as DrawingGroup ?? drawing;
                     }
-                    finally { settingsProperty.SetValue(null, previousSettings); }
+
+                    var vertical42 = ((GeometryDrawing)Fill(.42, .25, true).Children[0]).Geometry.Bounds;
+                    var vertical68 = ((GeometryDrawing)Fill(.68, .25, true).Children[0]).Geometry.Bounds;
+                    var horizontal42 = ((GeometryDrawing)Fill(.42, .25, false).Children[0]).Geometry.Bounds;
+                    var horizontal68 = ((GeometryDrawing)Fill(.68, .25, false).Children[0]).Geometry.Bounds;
+                    Check(vertical42.Bottom == 40 && vertical68.Bottom == 40 && vertical68.Top < vertical42.Top &&
+                        Fill(.42, .25, true).Children.Count == 3, "Vertical battery waves at the top and advances upward");
+                    Check(horizontal42.Left == 0 && horizontal68.Left == 0 && horizontal68.Right > horizontal42.Right &&
+                        Fill(.42, .25, false).Children.Count == 3, "Horizontal battery waves at the right and advances rightward");
+                    Check(Fill(1, .25, true).Children.Count == 3 && Fill(.42, -1, true).Children.Count == 1,
+                        "A reported 100% still waves while charging. An inactive fill has a flat surface");
+                    devices[0].Level = 42; Pump(330);
+                    var wave = Capture("波浪充电-42.png");
+                    devices[0].Level = 43; Pump(330);
+                    Check(!wave.SequenceEqual(Capture("波浪充电-43.png")), "A new reading advances the wave");
+                    devices[0].IsStale = true; Pump(60);
+                    Check(!rings[0].IsChargeSweepRunning && devices[0].Level == 43, "Timeout stops the wave and preserves 43%");
+                    devices[0].Level = 44;
+                    devices[0].IsStale = false; Pump(330);
+                    Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation && rings[0].Level == 44,
+                        "A fresh 44% restores charging visuals");
+                    DrawingGroup Particles(double phase)
+                    {
+                        var group = new DrawingGroup();
+                        using (var dc = group.Open())
+                            ChargeSweep.Absorb(dc, new Point(20, 20), 13, phase, Brushes.Aquamarine);
+                        return group;
+                    }
+                    Check(Particles(-1).Children.Count == 0, "An idle ring has no particles.");
+                    double ParticleX(double phase) => Particles(phase).Children[0].Bounds.X;
+                    Check(ParticleX(.15) > ParticleX(.65), "Particles converge inward from outside the ring.");
+                    Check(ChargeSweep.Interpolate(42, 44, 525, 1050) == 43,
+                        "The ring advances gradually to the latest reading without extrapolating.");
                     devices[0].Charging = false; Pump(50);
-                    Check(!rings[0].IsChargeSweepRunning && glyphs[0].Visibility == Visibility.Collapsed, "Stopping charge removes the glyph and animation clock");
+                    Check(!rings[0].IsChargeSweepRunning, "Stopping charge releases the animation clock");
                     devices[0].Charging = true; Pump(50);
                     Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation, "Fresh charging can restart without reconstructing the view");
                     devices[0].Level = 100; Pump(380);
-                    Check(!rings[0].CompletionVisible, "A 100 percent reading during charging must not show a check.");
+                    Check(rings[0].IsChargeSweepRunning == SystemParameters.ClientAreaAnimation,
+                        "A charging report at 100 stays animated.");
                     devices[0].ChargeFull = true; Pump(80);
-                    Check(rings[0].CompletionVisible, "Explicit full must show a temporary center check.");
-                    Capture("明确满电-勾号.png");
-                    Pump(ChargeSweep.CompletionDuration + 100);
-                    Check(!rings[0].CompletionVisible && !rings[0].IsChargeSweepRunning,
-                        "A persistent full report must settle and stop its timer.");
+                    Capture("明确满电.png");
+                    Check(!rings[0].IsChargeSweepRunning, "Explicit full stops animation without a marker.");
+                    Check(ChargeBreath.OpacityAt(-1) == 1 && ChargeBreath.OpacityAt(.5) < .8,
+                        "The numeric breathing cycle changes the opacity of the whole number.");
                     window.Hide(); Pump(30);
                     Check(rings.All(g => !g.IsChargeSweepRunning), "Hidden views do not retain running charging clocks");
                 }

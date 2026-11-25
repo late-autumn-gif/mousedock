@@ -15,6 +15,7 @@ namespace MouseDock.Views
 {
     public partial class MiniWindow : Window
     {
+        public int LowBatteryThreshold => App.Settings?.LowBatteryWarn ?? 20;
         public static readonly DependencyProperty GlyphBrushProperty = DependencyProperty.Register(
             nameof(GlyphBrush), typeof(Brush), typeof(MiniWindow), new PropertyMetadata(Brushes.Gainsboro));
 

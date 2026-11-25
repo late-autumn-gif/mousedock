@@ -14,10 +14,21 @@ internal static partial class VendorProtocol
             var raw = Query(request,b => MouseExpansionDecode(decodeFamily ?? family,b) != null,budget);
             return raw == null ? null : MouseExpansionDecode(decodeFamily ?? family,raw);
         }
+        if (family == "hechi")
+        {
+            byte input = l.Inputs.Single(id => id is 10 or 11);
+            bool Online() => Query(MouseExpansionPacket(64,11,20),
+                b => b.Length == 64 && b[0] == input && b[1] == 20 && b[3] == 0 && b[4] != 0,3000) != null;
+            if (!Online()) return MouseExpansionSleep("HECHI mouse offline");
+            var raw = Query(MouseExpansionPacket(64,11,19),
+                b => b.Length == 64 && b[0] == input && MouseExpansionDecode("hechi",b) != null,3000);
+            return raw != null && Online() ? MouseExpansionDecode("hechi",raw) :
+                ReferenceBatteryProtocol.Reading.Failed("HECHI missing reply or mouse disconnected");
+        }
         bool Online0B() => Query(MouseExpansionPacket(64,11,20),
             b => b.Length == 64 && MouseExpansionPrefix(b,11,20) && b[3] == 0 && b[4] != 0,
             family == "hechi" ? 3000 : 400) != null;
-        if (family is "hechi" or "ausdom")
+        if (family == "ausdom")
         {
             if (!Online0B()) return MouseExpansionSleep(family + " mouse not online");
             var value = Decoded(MouseExpansionPacket(64,11,19),budget: family == "hechi" ? 3000 : 400);

@@ -343,14 +343,15 @@
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <TextBlock Text="充电动效" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <ComboBox x:Name="ChargeEffectChoice" Width="110" SelectionChanged="OnChargeEffectChanged">
-                                    <ComboBoxItem Content="扫光"/>
-                                    <ComboBoxItem Content="流光／波浪"/>
+                            <StackPanel x:Name="TaskbarPositionChoiceRow" Orientation="Horizontal" Margin="0,14,0,0">
+                                <TextBlock Text="显示位置" Style="{StaticResource RowText}" Margin="0,0,8,0"/>
+                                <ComboBox x:Name="TaskbarPositionChoice" Width="120" SelectedValuePath="Tag"
+                                          AutomationProperties.Name="任务栏显示位置" SelectionChanged="OnTaskbarPositionChanged">
+                                    <ComboBoxItem Content="跟随图标" Tag="follow"/>
+                                    <ComboBoxItem Content="固定靠右" Tag="tray"/>
+                                    <ComboBoxItem Content="手动位置" Tag="manual"/>
                                 </ComboBox>
                             </StackPanel>
-                            <CheckBox x:Name="TaskbarFollowIconsBox" Content="自动跟随任务栏图标" Margin="0,14,0,0" Checked="OnTaskbarFollowIconsChanged" Unchecked="OnTaskbarFollowIconsChanged"/>
                             <Grid x:Name="TaskbarIconOffsetRow" Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -550,33 +551,7 @@
                     <CheckBox x:Name="DockWallpaperEngineBox" Content="卡片窗跟随 Wallpaper Engine" Margin="0,4,0,0"
                               Foreground="{DynamicResource TextBrush}"
                               Checked="OnDockWallpaperEngineChanged" Unchecked="OnDockWallpaperEngineChanged"/>
-                    <Expander Header="各窗口背景（可选）" Foreground="{DynamicResource TextBrush}" Margin="0,16,0,0">
-<Border Style="{StaticResource Card}">
-                        <StackPanel>
-                            <Grid Margin="0,0,0,7">
-                                <TextBlock Text="卡片窗" Style="{StaticResource RowText}"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickDockBg"/>
-                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearDockBg"/>
-                                </StackPanel>
-                            </Grid>
-                            <Grid Margin="0,0,0,7">
-                                <TextBlock Text="迷你窗" Style="{StaticResource RowText}"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickMiniBg"/>
-                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearMiniBg"/>
-                                </StackPanel>
-                            </Grid>
-                            <Grid>
-                                <TextBlock Text="悬浮图标" Style="{StaticResource RowText}"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="选择图片" Style="{StaticResource GhostButton}" Click="OnPickIconBackground"/>
-                                    <Button Content="清除" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Click="OnClearIconBackground"/>
-                                </StackPanel>
-                            </Grid>
-                            <TextBlock Text="三个窗口各用各的背景；不设就用预设主题" FontSize="10" Opacity="0.42" Margin="0,9,0,0" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border></Expander></StackPanel><StackPanel x:Name="PageBehavior" Visibility="Collapsed"><TextBlock Text="常驻与交互" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="放在合适的位置，保持安静。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="窗口行为" Style="{StaticResource Section}"/>
+</StackPanel><StackPanel x:Name="PageBehavior" Visibility="Collapsed"><TextBlock Text="常驻与交互" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="放在合适的位置，保持安静。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="窗口行为" Style="{StaticResource Section}"/>
 <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <CheckBox x:Name="TopmostBox" Content="窗口置顶（一直压在其他窗口上面）" FontSize="11" Checked="OnTopmostChanged" Unchecked="OnTopmostChanged"/>

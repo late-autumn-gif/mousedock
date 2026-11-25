@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using MouseDock.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MouseDock.Models;
 using MouseDock.Services;
@@ -64,6 +65,72 @@ internal static class AuditChecks
                 "Disabling each category keeps the idle state.");
     }
 
+    internal static void DesktopPetHeaderExpressions()
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+        using var fixture = new AppearanceFixture();
+        fixture.Settings.DesktopPetInputReaction = true;
+        foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka", "keqing" })
+        {
+            fixture.Settings.DesktopPetCharacter = character;
+            var pet = new DesktopPetWindow(fixture.Battery, fixture.Settings, new Random(413));
+            try
+            {
+                pet.Show();
+                var header = (Image)typeof(DesktopPetWindow)
+                    .GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                long start = Environment.TickCount64;
+                pet.RenderPoseAt(start);
+                var neutral = header.Source;
+                var size = header.RenderSize;
+                var scene = (BongoPetScene)typeof(DesktopPetWindow)
+                    .GetField("_bongo", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                var face = scene.Children.OfType<PetFaceEffects>().Single();
+                var tilt = (RotateTransform)typeof(DesktopPetWindow)
+                    .GetField("_petTilt", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                bool blinked = false;
+                for (long tick = start; tick < start + 80000; tick += 33)
+                {
+                    pet.RenderPoseAt(tick);
+                    blinked |= face.Expression == PetExpression.Blink;
+                    Require(face.Expression != PetExpression.Smile, "Idle scheduling must never select the smile sprite.");
+                }
+                Require(blinked, "The dedicated blink expression must still appear.");
+                Require(ReferenceEquals(header.Source, neutral) && header.RenderSize == size, "The ledge portrait stays fixed.");
+
+                var play = typeof(DesktopPetWindow).GetMethod("Play", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                var dizzy = Enum.Parse(play.GetParameters()[0].ParameterType, "Dizzy");
+                play.Invoke(pet, [dizzy, DesktopPetBehavior.DizzyDuration]);
+                long began = (long)typeof(DesktopPetWindow)
+                    .GetField("_actionStarted", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                pet.RenderPoseAt(began + DesktopPetBehavior.DizzyDuration * 3 / 10);
+                Require(face.Expression == PetExpression.Dizzy && tilt.Angle < -1, "Dizziness sways left.");
+                pet.RenderPoseAt(began + DesktopPetBehavior.DizzyDuration / 2);
+                Require(tilt.Angle > 1, "Dizziness sways right.");
+
+                typeof(DesktopPetWindow).GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(pet, null);
+                var reduce = pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "减少动态效果"));
+                reduce.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Require(fixture.Settings.DesktopPetReduceMotion && tilt.Angle == 0 && face.Expression == PetExpression.Neutral,
+                    "The menu clears movement and expression immediately.");
+                Require(ReferenceEquals(header.Source, neutral), "Reducing motion must keep the ledge artwork stable.");
+                fixture.Settings.DesktopPetReduceMotion = false;
+            }
+            finally { pet.Close(); }
+        }
+    }
+
+    private static void SavePortraitPreview(string character, string state, BitmapSource image)
+    {
+        if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_EXPRESSIONS_PREVIEW") is not { Length: > 0 } directory)
+            return;
+        Directory.CreateDirectory(directory);
+        var png = new PngBitmapEncoder();
+        png.Frames.Add(BitmapFrame.Create(image));
+        using var stream = File.Create(Path.Combine(directory, $"{character}-{state}.png"));
+        png.Save(stream);
+    }
+
     private static void DesktopPetSizing()
     {
         using var fixture = new AppearanceFixture();
@@ -106,6 +173,8 @@ internal static class AuditChecks
             "Charging waves must keep the fill boundary fixed while the reading is unchanged.");
         var firstFill = (GeometryDrawing)((DrawingGroup)first.Children[0]).Children[0];
         var nextFill = (GeometryDrawing)((DrawingGroup)next.Children[0]).Children[0];
+        Require(firstFill.Geometry.Bounds.Top >= track.Top - .801,
+            "The charging wave crest must remain within the reduced amplitude.");
         Require(firstFill.Geometry.ToString() != nextFill.Geometry.ToString(),
             "A new animation phase must move the surface across the same filled region.");
         Require(Math.Abs(higher.Bounds.Right - 136) < .01 && Render(0, .25).Children.Count == 0,
@@ -138,31 +207,13 @@ internal static class AuditChecks
         {
             pet.Show();
             Flush();
-            int frameSize = character == "keqing" ? 288 : 512;
-            Require(image.Source is System.Windows.Media.Imaging.BitmapSource bitmapSource &&
-                bitmapSource.PixelWidth == frameSize && bitmapSource.PixelHeight == frameSize,
-                "The embedded atlas must load in the real window.");
-            if (SystemParameters.ClientAreaAnimation)
-            {
-                var framesForIdle = (ImageSource[])typeof(DesktopPetWindow)
-                    .GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-                long now = Environment.TickCount64;
-                bool waved = false;
-                for (int elapsed = 0; elapsed < 180000 && !waved; elapsed += 100)
-                {
-                    pet.RenderPoseAt(now + elapsed);
-                    waved = ReferenceEquals(image.Source, framesForIdle[1]);
-                }
-                Require(waved, $"{character} must use its wave art during an autonomous gesture.");
-                settings.DesktopPetReduceMotion = true;
-                pet.RenderPoseAt(now);
-                Require(ReferenceEquals(image.Source, framesForIdle[0]), $"{character} must stop idle gestures with reduced motion.");
-                settings.DesktopPetReduceMotion = false;
-                pet.RenderPoseAt(now);
-            }
+            VerifyPetMenu(pet, character);
+            Require(image.Source != null, "Desk artwork must load.");
             if (character == "shin-chan")
             {
                 var list = (StackPanel)typeof(DesktopPetWindow).GetField("_deviceList", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                var bubble = (Border)typeof(DesktopPetWindow).GetField("_bubble", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                Require(ReferenceEquals(bubble.Child, list), "The battery card should contain the device rows directly.");
                 string[] Rows() => list.Children.OfType<Button>().Select(item => ((DeviceInfo)((Grid)item.Content).DataContext).Id).ToArray();
                 Require(Rows().Length == 6 && Rows().SequenceEqual(battery.VisibleDevices.Select(d => d.Id)),
                     "The desktop pet must respect the same six-device cap and order as other surfaces.");
@@ -177,24 +228,12 @@ internal static class AuditChecks
                 Flush();
                 Require(Rows().Length == 6 && Rows().Contains(battery.Devices[5].Id), "Settings-side selection must restore the pet row.");
             }
-            var frames = (ImageSource[])typeof(DesktopPetWindow).GetField("_frames", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-            Require(frames.Length == 9 && frames.Skip(6).All(frame => frame.Width > 0 && frame.Height > 0),
-                "Every character must load three separate interaction poses.");
             var header = (Image)typeof(DesktopPetWindow).GetField("_headerPortrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
             Require(header.Source != null && header.IsVisible, "The original card portrait must remain visible next to the full-body pet.");
-            if (character != "shin-chan")
-            {
-                source.Reading = 15;
-                Wait(battery.PollAsync());
-                Flush();
-                Require(ReferenceEquals(image.Source, frames[2]), "The selected character must show its low battery art.");
-            }
             source.Device.Charging = true;
             Wait(battery.PollAsync());
             Flush();
-            Require(Followed().IsChargingActive, "A confirmed charging transition must reach the followed device.");
-            if (character != "shin-chan")
-                Require(ReferenceEquals(image.Source, frames[4]), "Confirmed charging must select that character's charging art.");
+            Require(Followed().IsChargingActive, "Charging reaches the followed device.");
             if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_PREVIEW") is { Length: > 0 } preview)
             {
                 Wait(Task.Delay(100));
@@ -209,7 +248,6 @@ internal static class AuditChecks
                 using var file = File.Create(output);
                 png.Save(file);
             }
-            if (character == "keqing") VerifyKeqingActions(pet, settings, image, frames[4]);
             long firstAction = ActionUntil();
             source.Reading = 63;
             Wait(battery.PollAsync());
@@ -235,29 +273,68 @@ internal static class AuditChecks
         Require(!pet.IsVisible, "Closing the desktop pet must release the window.");
     }
 
+    private static void VerifyPetMenu(DesktopPetWindow pet, string character)
+    {
+        var menu = pet.ContextMenu;
+        typeof(DesktopPetWindow).GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(pet, null);
+        var sections = menu.Items.Cast<object>().Select(item => item is MenuItem command ? (string)command.Header : "|");
+        Require(sections.SequenceEqual(new[] {
+            "桌宠角色", "显示设备", "桌宠大小", "|",
+            "锁定位置", "减少动态效果", "键鼠动作联动", "满电提醒（全局）", "|", "设置…", "隐藏桌宠"
+        }), $"{character} must expose only the condensed, grouped desktop-pet commands.");
+        var characters = (MenuItem)menu.Items[0];
+        Require(characters.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1,
+            "The character submenu must identify the currently selected character.");
+        Require(((MenuItem)menu.Items[2]).Items.OfType<MenuItem>().Any(item => item.IsChecked),
+            "The size submenu must identify the current size when it matches a preset.");
+        if (character != "shin-chan") return;
+        menu.PlacementTarget = pet;
+        menu.IsOpen = true;
+        try
+        {
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            characters = (MenuItem)menu.Items[0];
+            characters.IsSubmenuOpen = true;
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            var popup = (System.Windows.Controls.Primitives.Popup?)characters.Template.FindName("PART_Popup", characters);
+            var selected = characters.Items.OfType<MenuItem>().Single(item => item.IsChecked);
+            var check = (FrameworkElement?)selected.Template.FindName("Check", selected);
+            Require(menu.ActualWidth >= 176 && popup is { IsOpen: true } && popup.Child is { IsVisible: true } &&
+                check is { IsVisible: true }, "The themed WPF popup must expose the submenu and visible selection indicator.");
+            if (Environment.GetEnvironmentVariable("MOUSEDOCK_PET_MENU_PREVIEW") is { Length: > 0 } path &&
+                VisualTreeHelper.GetChild(menu, 0) is FrameworkElement frame)
+            {
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    (int)Math.Ceiling(frame.ActualWidth), (int)Math.Ceiling(frame.ActualHeight),
+                    96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(frame);
+                var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using var file = File.Create(path);
+                png.Save(file);
+            }
+        }
+        finally { menu.IsOpen = false; }
+    }
+
     private static void VerifyKeqingActions(DesktopPetWindow pet, AppSettings settings, Image image, ImageSource charging)
     {
         var type = typeof(DesktopPetWindow);
-        var buildMenu = type.GetMethod("BuildMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var play = type.GetMethod("Play", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var poses = type.GetNestedType("Pose", BindingFlags.NonPublic)!;
         var actionUntil = type.GetField("_actionUntil", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var renderPose = type.GetMethod("RenderPose", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        MenuItem OpenActions()
-        {
-            buildMenu.Invoke(pet, null);
-            return pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "刻晴动作"));
-        }
 
         foreach (var (name, field, count) in new[]
         {
-            ("星斗归位（元素战技）", "_skillFrames", 21),
-            ("天街巡游（元素爆发）", "_burstFrames", 37)
+            ("Skill", "_skillFrames", 21),
+            ("Burst", "_burstFrames", 37)
         })
         {
             var frames = (ImageSource[])type.GetField(field, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
             Require(frames.Length == count, "Each action must load its complete embedded animation.");
-            var item = OpenActions().Items.OfType<MenuItem>().Single(item => Equals(item.Header, name));
-            item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            Require(frames.Contains(image.Source), "The context menu must start the selected action.");
+            play.Invoke(pet, [Enum.Parse(poses, name), count * 50]);
+            Require(frames.Contains(image.Source), "The selected action must start its animation.");
             actionUntil.SetValue(pet, Environment.TickCount64 + 25);
             renderPose.Invoke(pet, null);
             Require(ReferenceEquals(image.Source, frames[^1]), "The end of the action must show its final frame.");
@@ -267,9 +344,7 @@ internal static class AuditChecks
         }
 
         settings.DesktopPetReduceMotion = true;
-        var reduced = OpenActions();
-        Require(!reduced.IsEnabled, "Reduced motion must disable the manual animations.");
-        ((MenuItem)reduced.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        play.Invoke(pet, [Enum.Parse(poses, "Skill"), 1050]);
         Require(ReferenceEquals(image.Source, charging), "Reduced motion must leave the charging art visible.");
         settings.DesktopPetReduceMotion = false;
     }

@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -33,9 +32,6 @@ namespace MouseDock.Controls
         public static readonly DependencyProperty FullProperty = DependencyProperty.Register(
             nameof(Full), typeof(bool), typeof(DeviceBatteryRing), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
         public bool Full { get => (bool)GetValue(FullProperty); set => SetValue(FullProperty, value); }
-        public static readonly DependencyProperty ShowChargingMarkProperty = DependencyProperty.Register(
-            nameof(ShowChargingMark), typeof(bool), typeof(DeviceBatteryRing), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
-
         public DeviceKind Kind { get => (DeviceKind)GetValue(KindProperty); set => SetValue(KindProperty, value); }
         public int Level { get => (int)GetValue(LevelProperty); set => SetValue(LevelProperty, value); }
         public bool Charging { get => (bool)GetValue(ChargingProperty); set => SetValue(ChargingProperty, value); }
@@ -43,23 +39,21 @@ namespace MouseDock.Controls
         public Brush GlyphBrush { get => (Brush)GetValue(GlyphBrushProperty); set => SetValue(GlyphBrushProperty, value); }
         public Brush BatteryBrush { get => (Brush)GetValue(BatteryBrushProperty); set => SetValue(BatteryBrushProperty, value); }
         public bool ShowGlyph { get => (bool)GetValue(ShowGlyphProperty); set => SetValue(ShowGlyphProperty, value); }
-        public bool ShowChargingMark { get => (bool)GetValue(ShowChargingMarkProperty); set => SetValue(ShowChargingMarkProperty, value); }
-
-        private static readonly DependencyPropertyKey CompletionVisiblePropertyKey = DependencyProperty.RegisterReadOnly(
-            nameof(CompletionVisible), typeof(bool), typeof(DeviceBatteryRing), new PropertyMetadata(false));
-        public static readonly DependencyProperty CompletionVisibleProperty = CompletionVisiblePropertyKey.DependencyProperty;
-        public bool CompletionVisible => (bool)GetValue(CompletionVisibleProperty);
+        private static readonly Brush DefaultFill = new SolidColorBrush(Color.FromRgb(52, 211, 153));
+        private const double DefaultSize = 40;
+        private const double RingInset = 7;
+        private const double DefaultRadius = DefaultSize / 2 - RingInset;
         private readonly ChargeSweep _sweep;
         internal bool IsChargeSweepRunning => _sweep.IsRunning;
         public bool AnimateCharge { get; set; } = true;
         public DeviceBatteryRing()
         {
             _sweep = new ChargeSweep(this);
-            Width = Height = 40;
+            Width = Height = DefaultSize;
             Background = Brushes.Transparent;
             var glyph = new DeviceGlyph
             {
-                Width = 21, Height = 21, Thickness = 1.8,
+                Thickness = 1.8,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false
@@ -70,44 +64,29 @@ namespace MouseDock.Controls
                 { Source = this, Converter = new BooleanToVisibilityConverter() });
             Children.Add(glyph);
             var glyphStyle = new Style(typeof(DeviceGlyph));
-            var completing = new DataTrigger { Binding = new Binding(nameof(CompletionVisible)) { Source = this }, Value = true };
-            completing.Setters.Add(new Setter(OpacityProperty, 0d));
-            glyphStyle.Triggers.Add(completing);
+            glyphStyle.Setters.Add(new Setter(WidthProperty, DefaultRadius * BatteryRingDrawing.GlyphRadiusRatio));
+            glyphStyle.Setters.Add(new Setter(HeightProperty, DefaultRadius * BatteryRingDrawing.GlyphRadiusRatio));
+            var headset = new Trigger { Property = DeviceGlyph.KindProperty, Value = DeviceKind.Headset };
+            headset.Setters.Add(new Setter(WidthProperty, DefaultRadius * BatteryRingDrawing.HeadsetGlyphRadiusRatio));
+            headset.Setters.Add(new Setter(HeightProperty, DefaultRadius * BatteryRingDrawing.HeadsetGlyphRadiusRatio));
+            glyphStyle.Triggers.Add(headset);
             glyph.Style = glyphStyle;
         }
-
-        private RingVolumeInput _volume;
 
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
             var center = new Point(ActualWidth / 2, ActualHeight / 2);
-            double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - 7);
+            double radius = Math.Max(0, Math.Min(ActualWidth, ActualHeight) / 2 - RingInset);
             var trackBrush = GlyphBrush.Clone();
             trackBrush.Opacity = 0.28;
-            long completed = _sweep.Completion(0, Charging, Full);
-            bool showCheck = ShowChargingMark && completed < ChargeSweep.CompletionDuration;
-            if (CompletionVisible != showCheck) SetValue(CompletionVisiblePropertyKey, showCheck);
-            double drawnLevel = _sweep.Follow(0, Full ? 100 : Level, AnimateCharge);
-            _sweep.Phase(_sweep.IsFollowing(0), showCheck);
-            bool low = !Full && AppearanceColors.IsLowBattery(Level, LowBatteryThreshold);
-            var fill = low ? AppearanceColors.LowBatteryFill
-                : BatteryBrush ?? new SolidColorBrush(Color.FromRgb(52, 211, 153));
-            var bottom = low ? fill : BatteryBrush ?? Brushes.DodgerBlue;
-            _volume?.Clear();
-            bool headset = Kind == DeviceKind.Headset;
-            int? volume = headset && radius > 0 && DataContext is DeviceInfo device
-                ? (_volume ??= new RingVolumeInput(this)).Track(BatteryRingDrawing.VolumeBounds(center, radius), device)
-                : null;
-            BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill,
-                ShowChargingMark && Charging ? GlyphBrush : null, headset ? GlyphBrush : bottom, headset, volume);
-            if (showCheck)
-            {
-                var check = new FormattedText("✓", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                    new Typeface("Segoe UI Symbol"), 16, GlyphBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-                dc.DrawText(check, new Point(center.X - check.Width / 2, center.Y - check.Height / 2));
-            }
+            bool active = Charging && !Full && Level >= 0 && AnimateCharge;
+            double phase = _sweep.Phase(active);
+            double drawnLevel = _sweep.Follow(0, Full ? 100 : Level, phase >= 0, 1050);
+            var fill = AppearanceColors.BatteryState(
+                BatteryBrush ?? DefaultFill, Level, LowBatteryThreshold, Charging, Full);
+            BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill);
+            ChargeSweep.Absorb(dc, center, radius, phase, fill);
         }
-
     }
 }

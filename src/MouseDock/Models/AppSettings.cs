@@ -89,6 +89,7 @@ namespace MouseDock.Models
         /// <summary>任务栏左侧/底部偏移，相对任务栏可用长度的百分比（0-100，v6 起；旧版是 DIP，启动时迁移）。</summary>
         public double TaskbarOffset { get; set; } = 8;
         public bool TaskbarFollowIcons { get; set; } = true;
+        public bool TaskbarPinToTray { get; set; }
         /// <summary>图标组外的逻辑像素间距；负数在前，非负数在后，0 紧贴右边缘。</summary>
         public double TaskbarIconOffset { get; set; }
         /// <summary>ring = 圆环；panel = 胶囊条；card = 迷你卡片。</summary>
@@ -104,7 +105,7 @@ namespace MouseDock.Models
         public string DesktopPetCharacter { get; set; } = "shin-chan";
         public string DesktopPetDevice { get; set; } = "";
         public bool DesktopPetReduceMotion { get; set; }
-        public bool DesktopPetInputReaction { get; set; }
+        public bool DesktopPetInputReaction { get; set; } = true;
         public bool DesktopPetRandomActions { get; set; } = true;
         public bool DesktopPetBlink { get; set; } = true;
         public bool DesktopPetRest { get; set; } = true;
@@ -117,7 +118,6 @@ namespace MouseDock.Models
         public double DesktopPetY { get; set; } = .75;
         public bool NotifyChargeCompleted { get; set; } = true;
 
-        public string ChargeEffect { get; set; } = "wave";
         public double EdgeSizePercent { get; set; } = 100;
         public double EdgeInset { get; set; } = 12;
 
@@ -131,7 +131,11 @@ namespace MouseDock.Models
 
         // 三个窗口各自的背景图，空字符串表示用预设主题渐变
         public string DockBackground { get; set; } = "";
+        public double DockWidth { get; set; }
+        public double DockHeight { get; set; }
         public bool DockFollowWallpaperEngine { get; set; }
+        public bool DockWallpaperLiveScene { get; set; }
+        public string DockWallpaperEngineSelection { get; set; } = "";
         public string MiniBackground { get; set; } = "";
         public string IconBackground { get; set; } = "";
 
@@ -208,6 +212,7 @@ namespace MouseDock.Models
                 SurfaceHidden = SurfaceHidden,
                 TaskbarOffset = TaskbarOffset,
                 TaskbarFollowIcons = TaskbarFollowIcons,
+                TaskbarPinToTray = TaskbarPinToTray,
                 TaskbarIconOffset = TaskbarIconOffset,
             TaskbarStyle = TaskbarStyle,
                 TaskbarSizePercent = TaskbarSizePercent,
@@ -233,14 +238,17 @@ namespace MouseDock.Models
                 DesktopPetX = DesktopPetX,
                 DesktopPetY = DesktopPetY,
                 NotifyChargeCompleted = NotifyChargeCompleted,
-                ChargeEffect = ChargeEffect,
                 EdgeSizePercent = EdgeSizePercent,
                 EdgeInset = EdgeInset,
                 IconStyle = IconStyle,
                 IconFollowTheme=IconFollowTheme, IconHideBackground=IconHideBackground,
                 IconShape = IconShape,
                 DockBackground = DockBackground,
+                DockWidth = DockWidth,
+                DockHeight = DockHeight,
                 DockFollowWallpaperEngine = DockFollowWallpaperEngine,
+                DockWallpaperEngineSelection = DockWallpaperEngineSelection,
+                DockWallpaperLiveScene = DockWallpaperLiveScene,
                 MiniBackground = MiniBackground,
                 IconBackground = IconBackground,
                 AlwaysOnTop = AlwaysOnTop,

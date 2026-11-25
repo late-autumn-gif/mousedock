@@ -5,14 +5,15 @@ namespace MouseDock.Services;
 internal sealed class DesktopPetBehavior(Random random)
 {
     internal enum State { Idle, MicroAction, RandomAction, Interaction, Moving, Sleep, WakeUp, Transition }
-    internal enum Gesture { Lean, Hop, Wave }
-    internal readonly record struct Sample(State State, double Tilt = 0, double Lift = 0, bool Wave = false, bool Blink = false);
+    internal enum Gesture { Lean, Hop, Dizzy }
+    internal readonly record struct Sample(State State, double Tilt = 0, double Lift = 0, bool Dizzy = false, bool Blink = false);
+    internal const int DizzyDuration = 1600;
     private sealed record Action(Gesture Kind, int Weight, int Duration, int Cooldown);
     private static readonly Action[] Actions =
     [
         new(Gesture.Lean, 6, 1450, 18000),
         new(Gesture.Hop, 2, 780, 30000),
-        new(Gesture.Wave, 3, 1100, 24000)
+        new(Gesture.Dizzy, 2, DizzyDuration, 90000)
     ];
 
     private readonly long[] _readyAt = new long[Actions.Length];
@@ -91,7 +92,7 @@ internal sealed class DesktopPetBehavior(Random random)
                 {
                     Gesture.Lean => new(State.RandomAction, _direction * 4 * easing),
                     Gesture.Hop => new(State.RandomAction, Lift: -6 * easing),
-                    _ => new(State.RandomAction, _direction * 3 * easing, Wave: t is > .23 and < .77)
+                    _ => new(State.RandomAction, DizzyTilt(t) * _direction, Dizzy: true)
                 };
             }
             _active = -1;
@@ -130,6 +131,7 @@ internal sealed class DesktopPetBehavior(Random random)
     }
 
     private long _blinkUntil;
-    private long Delay(double frequency) => (long)(random.Next(6500, 15501) / frequency);
+    private long Delay(double frequency) => (long)(random.Next(14000, 32001) / frequency);
+    internal static double DizzyTilt(double t) => 4 * Math.Sin(t * Math.PI * 5) * Math.Sin(t * Math.PI);
     private static double Envelope(double t) => Math.Pow(Math.Sin(Math.PI * t), 2);
 }

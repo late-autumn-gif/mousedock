@@ -12,6 +12,7 @@ internal static partial class OriginalGpwProtocol
     internal const string G603Model = "Logitech G603";
     internal static bool IsG603Name(string name) =>
         string.Equals(name, "G603 Wireless Gaming Mouse", StringComparison.Ordinal);
+    internal static bool IsReceiver(ushort pid) => pid is 0xC539 or 0xC547;
     internal static bool IsCandidate(ushort vid, ushort pid) => vid == 0x046D && pid is 0xC539 or 0xC088 or 0xC547;
     internal static bool IsChannel(ushort vid, ushort pid, ushort page, ushort usage, int input, int output, int feature) =>
         IsCandidate(vid,pid) && page == 0xFF00 && input == 20 && output == 20 && feature == 0 &&
@@ -75,7 +76,13 @@ internal static partial class OriginalGpwProtocol
 
         internal ReferenceBatteryProtocol.Reading Read(ushort pid)
         {
-            if(pid==0xC547)return ReadSuperlight();
+            if (pid == 0xC547)
+            {
+                const byte slot = 1;
+                string name = ReadName(slot);
+                if (name == null) return Fail("C547 未取得配对外设的实时名称");
+                return IsSuperlightName(name) ? ReadSuperlight(name) : ReadPairedMouse(slot, name, allowVoltage: false);
+            }
             if (pid is not (0xC539 or 0xC088)) return Fail("PID 不属于本适配");
             // C539 is a receiver, not a model. Only read the paired device slot1.
             // A direct C088 device may expose the HID++ endpoint as slot1 or FF.
@@ -135,12 +142,10 @@ internal static partial class OriginalGpwProtocol
                 G603Model, name));
         }
 
-        private ReferenceBatteryProtocol.Reading ReadSuperlight()
+        private ReferenceBatteryProtocol.Reading ReadSuperlight(string name)
         {
             const string model="Logitech G PRO X SUPERLIGHT";
             ReferenceBatteryProtocol.Reading Stop(string reason,string name=null)=>ReferenceBatteryProtocol.Reading.Failed(reason+trace) with{Model=name==null?null:model,Identity=name};
-            string name=ReadName(1);
-            if(!IsSuperlightName(name))return Stop("C547尚未取得GPW2精确实时名称，不套用初代GPW模型");
             if(ReadName(1)!=name)return Stop("GPW2两次实时身份不一致");
             byte feature=Feature(1,0x1004);
             if(feature==0)return Stop("GPW2已确认，未提供可读取的1004百分比特征；不做电压猜测",name);

@@ -60,7 +60,12 @@ internal static class SharedDisplayStyleChecks
                 {
                     Require(new Rect(strip.RenderSize).Contains(number.TransformToAncestor(strip).TransformBounds(new Rect(number.RenderSize))),
                         $"{style} clips its upright battery number.");
-                    var expected = style == "battery" && number.Text == "0" ? Colors.White : Color.FromRgb(255, 204, 0);
+                    var device = (DeviceInfo)number.DataContext;
+                    var normal = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                    var expected = style == "battery"
+                        ? number.Text == "0" ? Colors.White : normal.Color
+                        : ((SolidColorBrush)AppearanceColors.BatteryState(normal, device.Level, 20,
+                            device.IsChargingActive, device.IsFullActive, text: true)).Color;
                     Require(((SolidColorBrush)number.Foreground).Color == expected, $"{style} uses the wrong text color.");
                 }
                 devices[0].Level = 73;

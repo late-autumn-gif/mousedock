@@ -5,11 +5,116 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MouseDock.Services;
 using MouseDock.Views;
+using MouseDock.Controls;
 
 internal static class DesktopPetInputChecks
 {
+    // Run explicitly on an interactive desktop. Deliver harmless inputs to our blank foreground
+    // window while the real pet receives background WM_INPUT and renders on its normal timer.
+    internal static void RunLive()
+    {
+        using var fixture = new AppearanceFixture();
+        fixture.Settings.DesktopPetBlink = fixture.Settings.DesktopPetRest = fixture.Settings.DesktopPetRandomActions = false;
+        var pet = new DesktopPetWindow(fixture.Battery, fixture.Settings);
+        var target = new Window { Title = "MouseDock input check", Width = 180, Height = 140,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen, Background = Brushes.White, Topmost = true };
+        var oldCursor = System.Windows.Forms.Cursor.Position;
+        try
+        {
+            pet.Show();
+            target.Show();
+            target.Activate();
+            target.UpdateLayout();
+            var hwnd = new WindowInteropHelper(target).Handle;
+            var scene = (BongoPetScene)typeof(DesktopPetWindow).GetField("_bongo", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            var art = (Image)scene.Children[0];
+            void Pump(int ms)
+            {
+                var loop = new DispatcherFrame();
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+                timer.Tick += (_, _) => { timer.Stop(); loop.Continue = false; };
+                timer.Start();
+                Dispatcher.PushFrame(loop);
+            }
+            void Guard() => Require(GetForegroundWindow() == hwnd, "Input test requires its own foreground window.");
+            void WaitForIdle(ImageSource expected)
+            {
+                long deadline = Environment.TickCount64 + 1000;
+                do { Pump(30); } while (scene.PoseIndex(false, Environment.TickCount64) != 0 && Environment.TickCount64 < deadline);
+                Require(scene.PoseIndex(false, Environment.TickCount64) == 0 && art.Source == expected, "After release, the dispatcher must restore the idle frame.");
+            }
+            var pos = target.PointToScreen(new Point(40, 60));
+            System.Windows.Forms.Cursor.Position = new((int)pos.X, (int)pos.Y);
+            if (GetForegroundWindow() != hwnd)
+            {
+                Require(WindowFromPoint(System.Windows.Forms.Cursor.Position) == hwnd, "Foreground fixture must be visible.");
+                mouse_event(0x02, 0, 0, 0, UIntPtr.Zero);
+                mouse_event(0x04, 0, 0, 0, UIntPtr.Zero);
+            }
+            Pump(120);
+            Guard();
+            var idle = art.Source;
+
+            var offset = scene.MouseTravel;
+            // Move toward the centre of the illustrated pad, away from either travel stop.
+            int dx = offset.X > 0 ? -32 : 32, dy = offset.Y > 0 ? -20 : 20;
+            System.Windows.Forms.Cursor.Position = new((int)pos.X + dx, (int)pos.Y + dy);
+            Pump(100);
+            Require((scene.MouseTravel.X - offset.X) * Math.Sign(dx) > .014 &&
+                (scene.MouseTravel.Y - offset.Y) * Math.Sign(dy) > .008, "A short physical stroke must move the displayed hand visibly.");
+            Guard();
+            keybd_event(0x87, 0, 0, UIntPtr.Zero); // F24
+            try
+            {
+                Pump(180);
+                Require(scene.PoseIndex(false, Environment.TickCount64) == 1 && art.Source == idle,
+                    "A background held function key must reach the displayed typing pose.");
+            }
+            finally { keybd_event(0x87, 0, 2, UIntPtr.Zero); }
+            WaitForIdle(idle);
+            Guard();
+            Require(WindowFromPoint(System.Windows.Forms.Cursor.Position) == hwnd, "Test click must land on the blank fixture.");
+            mouse_event(0x20, 0, 0, 0, UIntPtr.Zero); // Middle button down
+            try
+            {
+                Pump(160);
+                Require(scene.PoseIndex(false, Environment.TickCount64) == 2 && art.Source == idle, "Background middle click must reach the displayed pose.");
+            }
+            finally { mouse_event(0x40, 0, 0, 0, UIntPtr.Zero); }
+            WaitForIdle(idle);
+            var raw = (DesktopPetRawInput)typeof(DesktopPetWindow).GetField("_rawInput", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Guard();
+            keybd_event(0x41, 0x1e, 0, UIntPtr.Zero);
+            keybd_event(0x44, 0x20, 0, UIntPtr.Zero);
+            try
+            {
+                Pump(140);
+                Require(raw.IsScanHeld(0x1e) && raw.IsScanHeld(0x20), "Background A+D must retain both physical cap identities.");
+            }
+            finally
+            {
+                keybd_event(0x44, 0x20, 2, UIntPtr.Zero);
+                keybd_event(0x41, 0x1e, 2, UIntPtr.Zero);
+            }
+            Pump(120);
+            Require(!raw.IsScanHeld(0x1e) && !raw.IsScanHeld(0x20), "Both physical caps must release.");
+        }
+        finally
+        {
+            target.Close();
+            pet.Close();
+            System.Windows.Forms.Cursor.Position = oldCursor;
+        }
+    }
+
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(System.Drawing.Point point);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+
     internal static void Run()
     {
         using var fixture = new AppearanceFixture();
@@ -27,15 +132,17 @@ internal static class DesktopPetInputChecks
                 return pet.ContextMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, header));
             }
             void Click(string header) => Toggle(header).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            const string linkage = "é”®é¼ åŠ¨ä½œè”åŠ¨";
-            const string motion = "å‡å°‘åŠ¨æ€æ•ˆæžœ";
+            const string linkage = "¼üÊó¶¯×÷Áª¶¯";
+            const string motion = "¼õÉÙ¶¯Ì¬Ð§¹û";
 
-            Require(!Toggle(linkage).IsChecked && Usages(window).Length == 0, "Pet must not subscribe to input by default.");
+            Require(Toggle(linkage).IsChecked, "New settings must enable linkage on first show.");
             Click(linkage);
-            Require(Toggle(linkage).IsChecked, "Pet menu must reflect the opt-in.");
+            Require(!SettingsStore.Load().DesktopPetInputReaction && Usages(window).Length == 0, "Opt-out must persist and release input.");
+            Click(linkage);
+            Require(Toggle(linkage).IsChecked, "Pet menu must reflect re-enabled linkage.");
 
             Require(SettingsStore.Load().DesktopPetInputReaction && fixture.Settings.Clone().DesktopPetInputReaction,
-                "The opt-in must survive save and cloning.");
+                "The preference must survive save and cloning.");
 
             Require(DesktopPetRawInput.Classify(1, 0) == DesktopPetInputActivity.Keyboard &&
                 DesktopPetRawInput.Classify(1, 2) == DesktopPetInputActivity.Keyboard &&
@@ -53,33 +160,43 @@ internal static class DesktopPetInputChecks
 
             Require(Usages(window).SequenceEqual(new ushort[] { 2, 6 }), "The shown pet must receive background keyboard and mouse input.");
 
-            var overlay = (Canvas)type.GetField("_inputOverlay", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
-            var react = type.GetMethod("OnInputActivity", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            void Pulse(DesktopPetInputActivity activity, long now) => react.Invoke(pet, [activity, now]);
-            (bool Left, bool Right) PaintedSides() => RenderSides(pet, overlay);
+            var scene = (BongoPetScene)type.GetField("_bongo", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Require(scene.ActualWidth == 176 && scene.ActualHeight == 176,
+                "The default pet should fit a compact square beside the battery card.");
+            scene.SetButtons(true, false);
+            Require(scene.PoseIndex(false, 0) == 1, "Held key uses the keyboard pose.");
+            scene.SetButtons(true, true);
+            Require(scene.PoseIndex(true, 0) == 2, "Mouse pose has priority while both inputs are active.");
+            scene.SetButtons(true, false);
+            Require(scene.PoseIndex(false, 0) == 1, "Mouse release restores the held keyboard pose.");
+            scene.Clear();
+            Require(scene.PoseIndex(true, 0) == 3, "Idle may blink.");
             long start = Environment.TickCount64;
-            Pulse(DesktopPetInputActivity.Keyboard, start);
-            Require(PaintedSides() == (true, false), "Keyboard must draw only the left tap.");
-            Pulse(DesktopPetInputActivity.Mouse, start + 10);
-            Require(PaintedSides() == (true, true), "Mouse must independently draw the right tap.");
-            Pulse(DesktopPetInputActivity.Keyboard, start + 100);
-            pet.RenderPoseAt(start + 165);
-            Require(PaintedSides() == (false, true), "Repeats must not hold a cue open, and each cue must expire independently.");
-            pet.RenderPoseAt(start + 300);
-            Require(PaintedSides() == (false, false), "Both sides must return to idle.");
-            Pulse(DesktopPetInputActivity.Mouse, start + 320);
+            var react = type.GetMethod("OnInputActivity", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start, 0x1e]);
+            Require(scene.PoseIndex(false, start + 30) == 1, "A quick tap remains visible.");
+            Require(scene.PoseIndex(false, start + 100) == 0, "Tap expires and restores idle.");
+            scene.TrackPointer(new(50, 50), new(0, 0, 101, 101));
+
+            scene.SetButtons(false, true);
+            scene.ShowPose(false, start + 60);
+            var previousStroke = scene.KeyboardStroke;
+            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 62, 0x1e]);
+            scene.ShowPose(false, start + 64);
+            Require(scene.PoseIndex(false, start + 64) == 2 && scene.KeyboardStroke > previousStroke,
+                "Another quick keystroke must visibly depress the keyboard hand while the mouse stays held.");
             pet.Hide();
             Require(Usages(window).Length == 0, "Hiding the pet must unregister input.");
             pet.Show();
-            Require(Usages(window).Length == 2 && PaintedSides() == (false, false), "Showing the pet must restore input without replaying a tap.");
+            Require(Usages(window).Length == 2 && scene.PoseIndex(false, start + 100) == 0, "Showing the pet must restore input without replaying a tap.");
             pet.WindowState = WindowState.Minimized;
             Require(Usages(window).Length == 0, "Minimizing the pet must unregister input.");
             pet.WindowState = WindowState.Normal;
             Require(Usages(window).Length == 2, "Restoring a minimized pet must register input again.");
 
             Click(motion);
-            Pulse(DesktopPetInputActivity.Keyboard, start + 350);
-            Require(Usages(window).Length == 0 && PaintedSides() == (false, false), "Reduced motion must clear registration and block input responses.");
+            react.Invoke(pet, [DesktopPetInputActivity.Keyboard, start + 350, 0x1e]);
+            Require(Usages(window).Length == 0 && scene.PoseIndex(false, start + 360) == 0, "Reduced motion must clear registration and block input responses.");
             Click(motion);
             Click(linkage);
             Require(Usages(window).Length == 0 && !Toggle(linkage).IsChecked, "Turning linkage off must unregister input.");
@@ -89,25 +206,6 @@ internal static class DesktopPetInputChecks
         finally { pet.Close(); }
         Require(!Registrations().Any(item => item.Window == window),
             "Closing the pet must release its native registrations.");
-    }
-
-    private static (bool Left, bool Right) RenderSides(Window pet, Canvas overlay)
-    {
-        pet.UpdateLayout();
-        int width = (int)Math.Ceiling(overlay.ActualWidth);
-        int height = (int)Math.Ceiling(overlay.ActualHeight);
-        var image = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        image.Render(overlay);
-        byte[] pixels = new byte[width * height * 4];
-        image.CopyPixels(pixels, width * 4, 0);
-        bool left = false, right = false;
-        for (int i = 3; i < pixels.Length; i += 4)
-        {
-            if (pixels[i] < 10) continue;
-            if (i / 4 % width < width / 2) left = true;
-            else right = true;
-        }
-        return (left, right);
     }
 
     private static void Require(bool condition, string message)

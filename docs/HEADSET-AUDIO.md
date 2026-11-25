@@ -42,6 +42,6 @@
 - [NAudio 2.2.1 MMDevice](https://github.com/naudio/NAudio/blob/v2.2.1/NAudio.Wasapi/CoreAudioApi/MMDevice.cs)
 
 
-## 电量环音量条
+## 耳机电量环
 
-耳机电量环下方显示 Windows 播放音量。匹配到唯一耳机播放端点时，可在底条单击或拖动，松手提交并回读。重名、断开或读不到音量时，底条保持空轨。耳机设置窗仍可手动选择播放端点。
+耳机的三段电量弧使用同一颜色，电量下降时依次消耗左侧、底部和右侧。Windows 播放音量可在耳机控制窗调节。

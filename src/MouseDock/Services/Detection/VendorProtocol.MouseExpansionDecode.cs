@@ -13,6 +13,10 @@ internal static partial class VendorProtocol
         switch (family)
         {
             case "hechi":
+                if (b.Length != 64 || b[0] is not (10 or 11) || b[1] != 19 || b[3] != 0 ||
+                    b[2..].IndexOfAnyExcept((byte)0) < 0) return null;
+                return MouseExpansionValue(b[18],"HECHI device status", b[17] == 1,
+                    identity:$"HECHI:{b[15]}:{b[16]}");
             case "ausdom":
                 if (b.Length != 64 || !MouseExpansionPrefix(b,11,19) || b[3] != 0 ||
                     family == "ausdom" && b[4] > 7 || b.SequenceEqual(MouseExpansionPacket(64,11,19))) return null;

@@ -56,16 +56,8 @@ internal static class CharacterIdentityChecks
         {
             var strip = Strip(devices, settings, vertical, false);
             Arrange(strip);
-            var full = Children<TextBlock>(strip).Where(t => t.Name == "FullMark").ToArray();
-            Require(full[0].Visibility == Visibility.Visible && full[0].Text.Length > 0,
-                "Hiding battery numbers also hides the full-charge mark.");
-            Require(Children<TextBlock>(strip).Single(t => t.Name == "ChargingMark" &&
-                ReferenceEquals(t.DataContext, devices[1])).Visibility == Visibility.Visible,
-                "Hiding battery numbers also hides the charging mark.");
-            devices[0].IsStale = true;
-            Arrange(strip);
-            Require(full[0].Visibility == Visibility.Collapsed,
-                "Stale readings retain a full-charge mark.");
+            Require(!Children<TextBlock>(strip).Any(t => t.Name is "FullMark" or "ChargingMark"),
+                "Character cards must not display standalone charging or full-charge marks.");
             devices[0].IsStale = false;
         }
     }

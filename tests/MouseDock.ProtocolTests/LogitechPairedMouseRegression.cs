@@ -11,7 +11,7 @@ internal static class LogitechPairedMouseRegression
         void Check(bool ok, string message)
         {
             count++;
-            if (!ok) throw new Exception("C539 paired mouse: " + message);
+            if (!ok) throw new Exception("Logitech paired mouse: " + message);
         }
 
         var reported = new Link
@@ -120,6 +120,35 @@ internal static class LogitechPairedMouseRegression
             { WrongClient = true }, 0xC539).Level == -1,
             "Uncorrelated replies cannot identify or read a peripheral");
 
+        const ushort c547 = 0xC547;
+        const string syntheticName = "G304X";
+        var c547Mouse = new Link { Name = syntheticName, Unified = true, HasBattery = false };
+        var c547Reading = OriginalGpwProtocol.Read(c547Mouse, c547);
+        Check(c547Reading is { Level: 67, MouseTypeConfirmed: true } && c547Reading.Model == syntheticName &&
+            c547Mouse.NameReads == 2 && c547Mouse.TypeReads == 2 && c547Mouse.BatteryReads == 2,
+            "C547 can read direct percentage from a verified live mouse other than Superlight");
+        Check(OriginalGpwProtocol.Read(new Link { Name = syntheticName }, c547).Level == 67,
+            "C547 can use direct legacy HID++ percentage when unified percentage is unavailable");
+        var receiver = new Link { Name = "USB Receiver" };
+        Check(OriginalGpwProtocol.Read(receiver, c547).Level < 0 && receiver.BatteryReads == 0,
+            "C547 does not use a USB receiver label as peripheral identity");
+        var c547Keyboard = new Link { Name = syntheticName, DeviceType = 0 };
+        Check(OriginalGpwProtocol.Read(c547Keyboard, c547).Level < 0 && c547Keyboard.BatteryReads == 0,
+            "C547 cannot read a keyboard as a paired mouse");
+        Check(OriginalGpwProtocol.Read(new Link { Name = syntheticName, ChangeIdentity = true }, c547).Level < 0,
+            "C547 drops the reading when the live name changes");
+        Check(OriginalGpwProtocol.Read(new Link { Name = syntheticName, ChangeType = true }, c547).Level < 0,
+            "C547 drops the reading when the live mouse type changes");
+        var c547Voltage = new Link { Name = syntheticName, HasBattery = false, HasVoltage = true };
+        Check(OriginalGpwProtocol.Read(c547Voltage, c547) is { Level: -1, Model: syntheticName } &&
+            !c547Voltage.Requests.Any(r => r[2] == 0 && r[4] == 0x10 && r[5] == 1),
+            "C547 fallback leaves voltage-only models unknown without asking for a voltage");
+        Check(OriginalGpwProtocol.Read(new Link { Name = syntheticName, DropSecondBattery = true }, c547).Level < 0,
+            "C547 requires two valid percentage replies");
+        var superlight = new Link { Name = "PRO X Wireless", Unified = true, HasBattery = false };
+        Check(OriginalGpwProtocol.Read(superlight, c547) is { Level: 67, Model: "Logitech G PRO X SUPERLIGHT" }
+            && superlight.TypeReads == 0, "C547 keeps the established Superlight reader");
+
         InstanceScope.BeginScan();
         const string path = "test#vid_046d&pid_c539&mi_02&col02#PAIRED_MOUSE";
         string instance = InstanceScope.Register(path,
@@ -185,6 +214,37 @@ internal static class LogitechPairedMouseRegression
                 "Failure reports retain the reason without legacy device-info or serial bytes");
         }
         finally { BatteryReplay.Current = null; InstanceScope.BeginScan(); }
+
+        const string c547Path = "test#vid_046d&pid_c547&mi_02&col02#C547_MOUSE";
+        string c547Instance = InstanceScope.Register(c547Path,
+            [(@"USB\VID_046D&PID_C547\SYNTHETIC_C547_MOUSE", "usbccgp")]);
+        var c547Bucket = new HidDiscovery.Bucket
+        {
+            Vid = 0x046D, Pid = c547, InstanceId = c547Instance, Product = "USB Receiver",
+            Kind = DeviceKind.Keyboard
+        };
+        var c547Buckets = new Dictionary<string, HidDiscovery.Bucket> { [c547Instance] = c547Bucket };
+        var c547Channels = new List<HidDiscovery.VendorCollectionInfo>
+        {
+            new() { Path = c547Path, Vid = 0x046D, Pid = c547, UsagePage = 0xFF00,
+                Usage = 2, Input = 20, Output = 20 }
+        };
+        try
+        {
+            HidDiscovery.QueryOriginalGpwCollections(c547Buckets, c547Channels, false, null, (p, _, pid) =>
+            {
+                Check(p == c547Path && InstanceScope.Allows(p), "C547 opens only the report's scoped long collection");
+                return OriginalGpwProtocol.Read(new Link { Name = syntheticName }, pid);
+            });
+            Check(c547Bucket.ToDevice() is { Level: 67, Kind: DeviceKind.Mouse, Transport: "2.4G",
+                ReceiverDiscovered: true, PeripheralConfirmed: true, Name: syntheticName },
+                "C547 publishes the live name and battery as a wireless mouse");
+            HidDiscovery.QueryOriginalGpwCollections(c547Buckets, c547Channels, false, null, (_, _, _) =>
+                new(67, false, true, ReferenceBatteryProtocol.State.Online, "synthetic", syntheticName, syntheticName));
+            Check(c547Bucket.ToDevice() is { Level: -1, Transport: "2.4G", ReceiverDiscovered: true, PeripheralConfirmed: false },
+                "C547 never publishes a percentage without verified mouse type");
+        }
+        finally { InstanceScope.BeginScan(); }
         return count;
     }
 

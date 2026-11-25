@@ -553,16 +553,19 @@ namespace MouseDock
         {
             if (_tray == null) return;
             var trayTargets = TrayDeviceSelection.Resolve(Settings, Battery?.Devices);
+            bool deviceTraysCharging = trayTargets.Any(device => device.IsChargingNumber);
+            int breathFrame = deviceTraysCharging && SystemParameters.ClientAreaAnimation
+                ? (int)(Environment.TickCount64 % 1800 / 120) : 0;
             _deviceTrays?.Sync(trayTargets,
                 $"{Theme.Name}/{Theme.Accent}/{Theme.Text}/{Theme.TextDim}/{Settings.LowBatteryWarn}/" +
-                $"{_trayBlinkOn}/{string.Join(",", (Settings.TrayColors ?? new()).OrderBy(p => p.Key))}");
+                $"{_trayBlinkOn}/{breathFrame}/{string.Join(",", (Settings.TrayColors ?? new()).OrderBy(p => p.Key))}");
 
             var dev = Battery.VisibleDevices
                 .OrderByDescending(d => d.IsChargingActive).ThenByDescending(d => d.HasLevel).FirstOrDefault();
 
             int level = dev?.Level ?? -1;
             bool charging = dev?.IsChargingActive ?? false;
-            bool low = level >= 0 && !charging && level <= Settings.LowBatteryWarn;
+            bool low = level >= 0 && !charging && dev?.IsFullActive != true && level <= Settings.LowBatteryWarn;
 
             try
             {
@@ -581,7 +584,7 @@ namespace MouseDock
             catch { }
 
             bool animate = Settings.MultiTray
-                ? TrayDeviceSelection.NeedsAnimation(trayTargets, Settings.LowBatteryWarn) : low || charging;
+                ? TrayDeviceSelection.NeedsAnimation(trayTargets, Settings.LowBatteryWarn) : low || (charging && level >= 0);
             if (animate && SystemParameters.ClientAreaAnimation)
             {
                 if (_trayBlink == null)
@@ -589,11 +592,12 @@ namespace MouseDock
                     _trayBlink = new System.Windows.Forms.Timer { Interval = 600 };
                     _trayBlink.Tick += (_, __) =>
                     {
-                        _trayBlinkOn = !_trayBlinkOn;
+                        _trayBlinkOn = Environment.TickCount64 / 600 % 2 == 1;
                         UpdateTrayIcon();
                     };
                 }
 
+                _trayBlink.Interval = (Settings.MultiTray ? deviceTraysCharging : charging) ? 120 : 600;
                 if (!_trayBlink.Enabled) _trayBlink.Start();
             }
             else
@@ -628,22 +632,24 @@ namespace MouseDock
                 g.Clear(System.Drawing.Color.Transparent);
 
                 var palette = AppearanceColors.TrayPalette(Settings ?? new AppSettings(), Theme);
-                var shade = charging ? palette.Accent : level < 0 ? palette.TextDim :
-                    level <= (Settings?.LowBatteryWarn ?? 20) ? palette.Low : palette.Accent;
+                var normal = new SolidColorBrush(level < 0 ? palette.TextDim : palette.Accent);
+                var shade = ((SolidColorBrush)AppearanceColors.BatteryState(normal,
+                    level, Settings?.LowBatteryWarn ?? 20, charging, full)).Color;
                 System.Drawing.Color bg = System.Drawing.Color.FromArgb(shade.R, shade.G, shade.B);
                 var textColor = ColorContrast.Legible(palette.Text, new[] { shade });
                 var ink = System.Drawing.Color.FromArgb(textColor.R, textColor.G, textColor.B);
                 if (dim && !charging) bg = System.Drawing.Color.FromArgb(bg.R / 3, bg.G / 3, bg.B / 3);
-                if (charging && dim) bg = System.Drawing.Color.FromArgb(
-                    (bg.R * 3 + 255) / 4, (bg.G * 3 + 255) / 4, (bg.B * 3 + 255) / 4);
 
                 using (var path = RoundedRect(new System.Drawing.Rectangle(1, 1, size - 2, size - 2), 7))
                 using (var fill = new System.Drawing.SolidBrush(bg))
                     g.FillPath(fill, path);
 
                 string txt = level >= 0 ? level.ToString() : "—";
-                string mark = full ? "✓" : "";
-                if (mark.Length > 0) txt += " " + mark;
+                if (charging && level >= 0 && SystemParameters.ClientAreaAnimation)
+                {
+                    double phase = Math.Floor(Environment.TickCount64 % 1800 / 120d) / 15;
+                    ink = System.Drawing.Color.FromArgb((int)(255 * ChargeBreath.OpacityAt(phase)), ink.R, ink.G, ink.B);
+                }
                 float px = txt.Length >= 4 ? 9f : txt.Length >= 3 ? 12f : 15f;
                 using var font = new System.Drawing.Font("Segoe UI Symbol", px, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
                 using var fg = new System.Drawing.SolidBrush(ink);
@@ -860,83 +866,66 @@ namespace MouseDock
         public static void ShowQuickMenu(Window owner)
         {
             _trayHover?.Pin();
-            var theme = Theme;
+            CreateQuickMenu(owner).IsOpen = true;
+        }
+
+        internal static ContextMenu CreateQuickMenu(Window owner)
+        {
             var menu = new ContextMenu
             {
-                Background = new SolidColorBrush(Palette.Mix(theme.BgTop, Colors.Black, 0.2))
+                PlacementTarget = owner,
+                Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
             };
-
-            MenuItem Item(string header, Action action)
+            menu.Resources.MergedDictionaries.Add(new ResourceDictionary
             {
-                var mi = new MenuItem { Header = header, Foreground = new SolidColorBrush(theme.Text) };
-                mi.Click += (_, __) => action();
-                return mi;
-            }
+                Source = new Uri("/MouseDock;component/Views/DesktopPetMenu.xaml", UriKind.Relative)
+            });
+            ApplyCompactMenuTheme(menu);
 
-            // 显示方式三选一：同一时间只开一个，不再给三个独立开关
-            string mode = Settings.SurfaceMode;
-            menu.Items.Add(Item((mode == "dock" ? "● " : "○ ") + "主面板", () => SetSurface("dock")));
-            menu.Items.Add(Item((mode == "mini" ? "● " : "○ ") + "迷你窗", () => SetSurface("mini")));
-            menu.Items.Add(Item((mode == "icon" ? "● " : "○ ") + "悬浮图标", () => SetSurface("icon")));
-            menu.Items.Add(Item((mode == "taskbar" ? "● " : "○ ") + "任务栏电量", () => SetSurface("taskbar")));
-            menu.Items.Add(Item((mode == "edge" ? "● " : "○ ") + "屏幕右侧电量", () => SetSurface("edge")));
-            menu.Items.Add(Item((mode == "pet" ? "● " : "○ ") + "桌宠", () => SetSurface("pet")));
-            if (mode is "taskbar" or "edge")
+            foreach (var (mode, label) in new[]
             {
-                menu.Items.Add(new Separator());
-                bool edge = mode == "edge";
-                foreach (var (style, label) in TaskbarBatteryStrip.Styles(edge))
+                ("dock", "主面板"), ("mini", "迷你窗"), ("icon", "悬浮图标"),
+                ("taskbar", "任务栏电量"), ("edge", "屏幕右侧电量"), ("pet", "桌宠")
+            })
+            {
+                var item = new MenuItem
                 {
-                    var choice = Item(edge && style == "ring" ? "电量圆环" : label,
-                        () => { if (edge) SetEdgeStyle(style); else SetTaskbarStyle(style); });
-                    choice.IsCheckable = true;
-                    choice.IsChecked = TaskbarBatteryStrip.NormalizeStyle(edge ? Settings.EdgeStyle : Settings.TaskbarStyle) == style;
-                    menu.Items.Add(choice);
-                }
+                    Header = label,
+                    IsCheckable = true,
+                    IsChecked = Settings.SurfaceMode == mode
+                };
+                item.Click += (_, _) => SetSurface(mode);
+                menu.Items.Add(item);
             }
+
             menu.Items.Add(new Separator());
-            if (owner == Icon)
+            if (owner is DockWindow dock)
             {
-                foreach (var (character, label) in new[] { ("otter", "充电水獭"), ("rikka", "六花"), ("roxy", "洛琪希") })
-                {
-                    menu.Items.Add(Item("动态形象 · " + label, () =>
-                    {
-                        Settings.AnimatedCharacter = character;
-                        Settings.AnimatedPhotoBackground = true;
-                        Settings.IconMode = "photo";
-                        Icon.ApplyStyle("photo", true);
-                        SaveSettings();
-                    }));
-                }
-                menu.Items.Add(Item("背景 · 原照片", () =>
-                {
-                    Settings.AnimatedPhotoBackground = false;
-                    Settings.IconMode = "photo";
-                    Icon.ApplyStyle("photo", true);
-                    SaveSettings();
-                }));
-                menu.Items.Add(new Separator());
+                menu.Items.Add(dock.CreateWallpaperMenu());
+                menu.Items.Add(dock.CreateCardSizeMenu());
             }
-            foreach (var p in ThemePreset.Presets)
-            {
-                var preset = p;
-            menu.Items.Add(Item("主题 · " + preset.Name, () =>
-                {
-                    Settings.ThemeId = preset.Id;
-                    Settings.CustomBackground = "";
-                    RefreshTheme();
-                    SaveSettings();
-                    SettingsView?.Reload();
-                }));
-            }
-            menu.Items.Add(new Separator());
-            menu.Items.Add(Item("耳机控制…", ShowHeadsets));
-            menu.Items.Add(Item("设置…", () => ShowSettings(owner)));
-            menu.Items.Add(Item("退出", ExitApp));
+            var settings = new MenuItem { Header = "设置…" };
+            settings.Click += (_, _) => ShowSettings(owner);
+            menu.Items.Add(settings);
+            var exit = new MenuItem { Header = "退出" };
+            exit.Click += (_, _) => ExitApp();
+            menu.Items.Add(exit);
+            return menu;
+        }
 
-            menu.PlacementTarget = owner;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
-            menu.IsOpen = true;
+        internal static void ApplyCompactMenuTheme(ContextMenu menu)
+        {
+            var theme = Theme;
+            bool highContrast = SystemParameters.HighContrast;
+            var surface = highContrast ? SystemColors.MenuColor : Color.FromRgb(theme.Surface.R, theme.Surface.G, theme.Surface.B);
+            var hover = highContrast ? SystemColors.HighlightColor : Palette.Mix(surface, theme.Text, 0.09);
+            var resources = menu.Resources;
+            resources["PetMenuSurface"] = new SolidColorBrush(surface);
+            resources["PetMenuBorder"] = new SolidColorBrush(highContrast ? SystemColors.MenuTextColor : Palette.Mix(surface, theme.Text, 0.19));
+            resources["PetMenuText"] = new SolidColorBrush(highContrast ? SystemColors.MenuTextColor : ColorContrast.Legible(theme.Text, [surface]));
+            resources["PetMenuHover"] = new SolidColorBrush(hover);
+            resources["PetMenuHoverText"] = new SolidColorBrush(highContrast ? SystemColors.HighlightTextColor : ColorContrast.Legible(theme.Text, [hover]));
+            resources["PetMenuDisabled"] = new SolidColorBrush(highContrast ? SystemColors.GrayTextColor : ColorContrast.Legible(theme.TextDim, [surface], 3));
         }
 
         public static void SetEdgeStyle(string style)
@@ -947,7 +936,7 @@ namespace MouseDock
             SettingsView?.Reload();
         }
 
-        /// <summary>右键菜单切显示方式：三选一，顺带把另外两个藏起来。</summary>
+        /// <summary>切换当前显示方式，并恢复其可见状态。</summary>
         public static void SetSurface(string mode)
         {
             _trayHover?.Pin();
@@ -1493,7 +1482,7 @@ namespace MouseDock
         {
             if (IsTestProfile)
             {
-                if (manual) MessageBox.Show("隔离测试版不检查或下载更新。", "MouseDock 1.2.1 测试版");
+                if (manual) MessageBox.Show("隔离测试版不检查或下载更新。", $"MouseDock {UpdateService.CurrentVersionText} 测试版");
                 return;
             }
             try
@@ -1665,7 +1654,7 @@ namespace MouseDock
                     MainWindow is Window w && w.IsVisible ? w : null,
                     true,
                     ExportErrorReport,
-                    OpenFeedbackMail);
+                    Services.FeedbackService.OpenFeedbackMail);
 
                 if (Settings != null)
                 {
@@ -1704,24 +1693,6 @@ namespace MouseDock
             }
         }
 
-        /// <summary>写反馈邮件。</summary>
-        private void OpenFeedbackMail(string reportPath)
-        {
-            try
-            {
-                bool ok = Services.FeedbackService.OpenFeedbackMail(reportPath);
-
-                var msg = ok
-                    ? "\u5df2\u6253\u5f00\u7f51\u9875\u7248 QQ \u90ae\u7bb1\u3002\n\n\u6536\u4ef6\u4eba\u3001\u4e3b\u9898\u548c\u6b63\u6587\u90fd\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f\uff0c\n\u5728\u90ae\u4ef6\u9875\u9762\u6309 Ctrl+V \u76f4\u63a5\u7c98\u8d34\u5c31\u884c\u3002"
-                    : "\u6253\u5f00\u6d4f\u89c8\u5668\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u8bbf\u95ee mail.qq.com\u3002\n\n\u5185\u5bb9\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f\u3002";
-
-                if (!string.IsNullOrEmpty(reportPath))
-                    msg += "\n\n\u9519\u8bef\u62a5\u544a\uff1a\n" + reportPath + "\n\u8bf7\u628a\u5b83\u4f5c\u4e3a\u9644\u4ef6\u52a0\u5165\u90ae\u4ef6\u3002";
-
-                MessageBox.Show(msg, "MouseDock \u53cd\u9988", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch { }
-        }
 
 }
 }

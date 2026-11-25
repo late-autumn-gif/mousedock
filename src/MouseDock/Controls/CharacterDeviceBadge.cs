@@ -1,3 +1,4 @@
+using MouseDock.Views;
 using System;
 using System.Globalization;
 using System.Windows;
@@ -63,35 +64,15 @@ public sealed class CharacterDeviceBadge : Grid
         number.SetBinding(TextBlock.TextProperty, compact
             ? new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() }
             : new Binding(nameof(DeviceInfo.LevelText)));
-        if (!compact)
-            number.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(DeviceInfo.Level))
-                { Converter = new StateBrush(ink, artwork.Low, artwork.Muted) });
+        PercentageWarningConverter.Bind(number, ink,
+            artwork.CompactLowBatteryThreshold ?? App.Settings?.LowBatteryWarn ?? 20);
         row.Children.Add(number);
-        var full = new TextBlock { Name = "FullMark", Foreground = ink, FontSize = number.FontSize,
-            LineHeight = number.LineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
-            Margin = new Thickness(2, 0, 0, 0) };
-        full.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.ChargeMark)));
-        full.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.IsFullActive))
-            { Converter = new BooleanToVisibilityConverter() });
-        row.Children.Add(full);
-        var charging = new TextBlock { Name = "ChargingMark", Text = "\uE945",
-            FontFamily = new FontFamily("Segoe MDL2 Assets"), Foreground = ink,
-            FontSize = compact ? 8 : 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0) };
-        charging.SetBinding(VisibilityProperty, new Binding(nameof(DeviceInfo.IsChargingActive))
-            { Converter = new BooleanToVisibilityConverter() });
-        row.Children.Add(charging);
     }
 
     private sealed class NumberConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
             value is int level && level >= 0 ? level.ToString(CultureInfo.InvariantCulture) : "\u2014";
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
-    }
-    private sealed class StateBrush(Brush ink, Brush low, Brush muted) : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-            AppearanceColors.Battery(value is int level ? level : -1, ink, low, muted);
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
 }

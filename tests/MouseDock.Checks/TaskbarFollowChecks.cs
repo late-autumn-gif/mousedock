@@ -135,6 +135,101 @@ internal static class TaskbarFollowChecks
             "The strip must return when sufficient space is restored.");
     }
 
+    internal static void PinnedPlacement()
+    {
+        var method = typeof(TaskbarPlacement).GetMethod("TryPinToTray");
+        Require(method != null, "There is no fixed notification-area placement.");
+        Rect Pin(Rect bar, uint edge, Size size, double dpi, Rect tray, Rect[] occupied, double reserve = 0)
+        {
+            object[] args = [bar, edge, size, dpi, tray, occupied, Rect.Empty, reserve];
+            return (bool)method!.Invoke(null, args)! ? (Rect)args[6] : Rect.Empty;
+        }
+
+        var bar = new Rect(0, 1040, 1920, 40);
+        var tray = new Rect(1700, 1040, 220, 40);
+        var size = new Size(80, 40);
+        var expected = new Rect(1620, 1040, 80, 40);
+        foreach (var appRight in new[] { 1000, 1500, 1620 })
+            Require(Pin(bar, 3, size, 1, tray, [new Rect(0, 1040, appRight, 40), tray]) == expected,
+                "Opening apps moved the strip even though it still fit beside the tray.");
+        Require(Pin(bar, 3, size, 1, tray, [new Rect(1650, 1040, 20, 40), tray]).IsEmpty,
+            "A button in the reserved spot must trigger fallback instead of shifting left.");
+        Require(Pin(bar, 3, size, 1, tray, [new Rect(0, 1040, 1616, 40), tray], 8).IsEmpty,
+            "A small gap must not immediately switch the strip back from the screen edge.");
+        Require(Pin(bar, 3, size, 1, tray, [new Rect(0, 1040, 1612, 40), tray], 8) == expected,
+            "The recovery reserve must not change where the strip returns.");
+        Require(Pin(bar, 3, size, 1, Rect.Empty, []).IsEmpty,
+            "An unknown tray must not cause the strip to cover the system buttons.");
+        Require(Pin(bar, 3, size, 1, new Rect(1700, 900, 220, 40), []).IsEmpty,
+            "Tray geometry outside the taskbar must be rejected.");
+        Require(Pin(new Rect(-1920, 1000, 1920, 60), 3, size, 1.5,
+            new Rect(-300.25, 1000, 300, 60), []) == new Rect(-421, 1000, 120, 60),
+            "Physical-pixel placement must round away from the tray at high DPI.");
+        Require(Pin(new Rect(-64, 0, 64, 1080), 0, size, 1.5,
+            new Rect(-64, 900, 64, 180), []) == new Rect(-62, 780, 60, 120),
+            "Vertical taskbars must place the strip above the tray.");
+    }
+
+    internal static void PinnedLayout()
+    {
+        var assembly = typeof(TaskbarPlacement).Assembly;
+        var reader = assembly.GetType("MouseDock.Services.TaskbarLayoutReader")!;
+        var element = assembly.GetType("MouseDock.Services.TaskbarElement")!;
+        object Item(double left, double width, string cls, string id, bool hidden = false, int pid = 42) =>
+            Activator.CreateInstance(element, new Rect(left, 0, width, 40), cls, id, cls != "TrayNotifyWnd", hidden, pid)!;
+        object[] items = [
+            Item(800, 200, "TrayNotifyWnd", ""),
+            Item(780, 24, "SystemTray.NormalButton", "SystemTrayIcon"),
+            Item(600, 24, "SystemTray.NormalButton", "NotifyItemIcon", hidden: true),
+            Item(500, 24, "SystemTray.NormalButton", "NotifyItemIcon", pid: Environment.ProcessId),
+            Item(-24, 24, "SystemTray.NormalButton", "NotifyItemIcon")
+        ];
+        var elements = Array.CreateInstance(element, items.Length);
+        for (int i = 0; i < items.Length; i++) elements.SetValue(items[i], i);
+        var snapshot = reader.GetMethod("Build", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [new Rect(0, 0, 1000, 40), 3u, elements]);
+        Require(snapshot != null, "The tray alone is sufficient geometry for fixed placement.");
+        var tray = (Rect?)snapshot!.GetType().GetProperty("Tray")?.GetValue(snapshot);
+        Require(tray == new Rect(780, 0, 220, 40),
+            "The tray boundary must include its overflow button, but exclude hidden, own, and zero-area windows.");
+    }
+
+    internal static void PinnedPreferences()
+    {
+        using var fixture = new Fixture();
+        var window = new SettingsWindow();
+        try
+        {
+            window.Reload();
+            var selector = window.FindName("TaskbarPositionChoice") as ComboBox;
+            Require(selector != null, "There is no control for choosing fixed placement.");
+            var offsetRow = (FrameworkElement)window.FindName("TaskbarIconOffsetRow");
+            var manualRow = (FrameworkElement)window.FindName("TaskbarPositionRow");
+            fixture.Settings.TaskbarIconOffset = -24;
+            selector!.SelectedValue = "tray";
+            Require(offsetRow.Visibility == Visibility.Collapsed && manualRow.Visibility == Visibility.Collapsed,
+                "Fixed placement must hide both offset controls.");
+            var options = new JsonSerializerOptions {
+                NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals };
+            var restored = JsonSerializer.Deserialize<AppSettings>(
+                JsonSerializer.Serialize(fixture.Settings.Clone(), options), options)!;
+            var pin = typeof(AppSettings).GetProperty("TaskbarPinToTray");
+            Require(pin?.GetValue(restored) is true && restored.TaskbarOffset == 17 && restored.TaskbarIconOffset == -24,
+                "Restarting must preserve the fixed mode and both saved offsets.");
+            window.Reload();
+            Require(selector.SelectedValue is "tray", "Reload must show the saved placement mode.");
+            selector.SelectedValue = "manual";
+            Require(pin!.GetValue(fixture.Settings) is false && !fixture.Settings.TaskbarFollowIcons &&
+                manualRow.Visibility == Visibility.Visible && offsetRow.Visibility == Visibility.Collapsed,
+                "Choosing manual must resume the old percentage placement.");
+            selector.SelectedValue = "follow";
+            Require(pin.GetValue(fixture.Settings) is false && fixture.Settings.TaskbarFollowIcons &&
+                manualRow.Visibility == Visibility.Collapsed && offsetRow.Visibility == Visibility.Visible,
+                "Choosing follow must resume the old signed-offset placement.");
+        }
+        finally { window.Close(); }
+    }
+
     internal static void Preferences()
     {
         var property = typeof(AppSettings).GetProperty("TaskbarFollowIcons");
@@ -220,6 +315,31 @@ internal static class TaskbarFollowChecks
             "A late refresh modified a disposed reader.");
     }
 
+    internal static void PinnedRefresh()
+    {
+        var type = typeof(TaskbarPlacement).Assembly.GetType("MouseDock.Services.TaskbarLayoutReader")!;
+        var readingType = type.GetNestedType("Reading", BindingFlags.NonPublic)!;
+        var snapshotType = typeof(TaskbarPlacement).Assembly.GetType("MouseDock.Services.TaskbarLayoutSnapshot")!;
+        var publish = type.GetMethod("Publish", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        using var reader = (IDisposable)Activator.CreateInstance(type, Dispatcher.CurrentDispatcher, new Action(() => { }))!;
+        object Reading(Rect icons) => Activator.CreateInstance(readingType, new IntPtr(1), 42u,
+            Activator.CreateInstance(snapshotType, new Rect(0, 0, 1000, 40), 3u,
+                icons, new[] { new Rect(900, 0, 100, 40) }, DateTime.UtcNow)!)!;
+        var full = Reading(new Rect(300, 0, 400, 40));
+        var trayOnly = Reading(Rect.Empty);
+        publish.Invoke(reader, [full]);
+        publish.Invoke(reader, [trayOnly]);
+        var follow = type.GetField("_reading", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Require(ReferenceEquals(follow.GetValue(reader), full),
+            "A tray-only snapshot must not replace a usable application group.");
+        var tray = type.GetField("_trayReading", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Require(ReferenceEquals(tray.GetValue(reader), trayOnly),
+            "Fixed placement must use the latest measured tray bounds even without app-group bounds.");
+        publish.Invoke(reader, [null]);
+        Require(tray.GetValue(reader) == null && ReferenceEquals(follow.GetValue(reader), full),
+            "An explicitly failed refresh must stop fixed placement from relying on old collision geometry.");
+    }
+
     internal static void OverflowRouting()
     {
         using var fixture = new Fixture();
@@ -261,15 +381,14 @@ internal static class TaskbarFollowChecks
         try
         {
             window.Reload();
-            var check = window.FindName("TaskbarFollowIconsBox") as CheckBox;
+            var selector = (ComboBox)window.FindName("TaskbarPositionChoice");
             var row = (Grid)window.FindName("TaskbarPositionRow");
-            var offsetRow = window.FindName("TaskbarIconOffsetRow") as FrameworkElement;
+            var offsetRow = (FrameworkElement)window.FindName("TaskbarIconOffsetRow");
             var slider = window.FindName("TaskbarIconOffsetSlider") as Slider;
             var input = window.FindName("TaskbarIconOffsetInput") as TextBox;
-            Require(check != null, "The automatic-follow setting is missing.");
-            Require(offsetRow != null && slider != null && input != null,
+            Require(slider != null && input != null,
                 "The signed offset controls are missing.");
-            Require(check!.IsChecked == true && offsetRow!.IsEnabled &&
+            Require(selector.SelectedValue is "follow" && offsetRow.IsEnabled &&
                 offsetRow.Visibility == Visibility.Visible && row.Visibility == Visibility.Collapsed,
                 "Following must expose its editable offset and hide the manual percentage.");
             slider!.Value = -24;
@@ -288,11 +407,11 @@ internal static class TaskbarFollowChecks
             input.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
             Require(input.Text == "-300" && slider.Value == -300,
                 "Typed values outside the range must clamp consistently.");
-            check.IsChecked = false;
+            selector.SelectedValue = "manual";
             Require(!fixture.Settings.TaskbarFollowIcons && row.Visibility == Visibility.Visible &&
                 offsetRow.Visibility == Visibility.Collapsed && fixture.Settings.TaskbarOffset == 17,
                 "Turning off automatic placement must restore the saved manual offset.");
-            check.IsChecked = true;
+            selector.SelectedValue = "follow";
             Require(fixture.Settings.TaskbarFollowIcons && offsetRow.Visibility == Visibility.Visible &&
                 row.Visibility == Visibility.Collapsed && slider.Value == -300,
                 "Re-enabling following must preserve the independent signed gap.");
@@ -353,15 +472,27 @@ internal static class TaskbarFollowChecks
         var bar = (Rect)layoutType.GetProperty("Taskbar")!.GetValue(snapshot)!;
         var icons = (Rect)layoutType.GetProperty("Icons")!.GetValue(snapshot)!;
         var occupied = (Rect[])layoutType.GetProperty("Occupied")!.GetValue(snapshot)!;
+        var tray = (Rect)layoutType.GetProperty("Tray")!.GetValue(snapshot)!;
         var edge = (uint)layoutType.GetProperty("Edge")!.GetValue(snapshot)!;
         var placed = Follow(bar, edge, new Size(80, 40), 1, icons, occupied);
         Require(placed.IsEmpty || occupied.All(rect =>
             !rect.IntersectsWith(placed) || Rect.Intersect(rect, placed).Width == 0 || Rect.Intersect(rect, placed).Height == 0),
             "The real Explorer layout selected a position over an existing button.");
+        var canPin = TaskbarPlacement.TryPinToTray(bar, edge, new Size(40, 40), 1, tray, occupied,
+            out var pinned);
+        Require(!tray.IsEmpty, "Explorer did not expose a real notification area.");
+        bool vertical = edge == 0 || edge == 2;
+        if (canPin)
+            Require((vertical ? pinned.Bottom == Math.Floor(tray.Top) : pinned.Right == Math.Floor(tray.Left)) &&
+                occupied.All(rect => {
+                    var overlap = Rect.Intersect(rect, pinned);
+                    return overlap.IsEmpty || overlap.Width == 0 || overlap.Height == 0;
+                }), "Fixed placement must touch the measured tray without covering any real Explorer button.");
         Directory.CreateDirectory("artifacts/taskbar-follow");
         File.WriteAllText("artifacts/taskbar-follow/live-layout.json",
             JsonSerializer.Serialize(new { Bar = bar.ToString(), Icons = icons.ToString(),
-                Occupied = occupied.Select(r => r.ToString()), Placement = placed.ToString() }));
+                Occupied = occupied.Select(r => r.ToString()), Placement = placed.ToString(),
+                Tray = tray.ToString(), Pinned = pinned.ToString() }));
     }
 
     [DllImport("advapi32.dll")] private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);

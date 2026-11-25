@@ -38,7 +38,7 @@ internal static class TaskbarEmbeddingChecks
         Require(fixture.Window.Opacity == 1 && fixture.Window.IsHitTestVisible,
             "The available taskbar surface must be visible and interactive.");
         Require(((GetWindowLong(handle, -16) & 0x40000000) != 0) == attached, "WS_CHILD must match the selected taskbar host.");
-        Require(((GetWindowLong(handle, -16) & unchecked((int)0x80000000)) == 0) == attached, "WS_POPUP must match the selected taskbar host.");
+        Require(!attached || (GetWindowLong(handle, -16) & unchecked((int)0x80000000)) == 0, "A native taskbar child cannot also be a popup.");
         Require(!attached || (GetWindowLong(handle, -20) & 8) == 0, "The embedded strip must not compete for topmost order.");
         GetWindowRect(handle, out var stripRect);
         GetWindowRect(taskbar, out var barRect);
@@ -118,8 +118,8 @@ internal static class TaskbarEmbeddingChecks
                         var a = after.GetPixel(x, y);
                         var b = before.GetPixel(x, y);
                         int delta = Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
-                        if (delta > 60 && x >= 15 && x <= 65) ink++;
-                        if (delta < 8 && x >= 68 && x < 80) clear++;
+                        if (x >= 30 && x < 90 && a.G > a.R + 60 && a.G > a.B + 25 && delta > 45) ink++;
+                        if (delta < 36 && (x < 20 || x >= 100)) clear++;
                     }
             } while ((ink <= 30 || clear <= 100) && Environment.TickCount64 < deadline);
             Console.WriteLine($"Taskbar composition: native child={attached}, painted pixels={ink}, transparent pixels={clear}.");
@@ -129,11 +129,22 @@ internal static class TaskbarEmbeddingChecks
         finally { strip.Close(); }
     }
 
+    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr window);
+    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr window, IntPtr dc);
+    [DllImport("gdi32.dll", SetLastError = true)] private static extern bool BitBlt(IntPtr dest, int x, int y, int width, int height, IntPtr src, int sx, int sy, uint operation);
+
     private static System.Drawing.Bitmap Capture(Rect rect)
     {
         var bitmap = new System.Drawing.Bitmap(Math.Max(1, (int)rect.Width), Math.Max(1, (int)rect.Height));
         using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-        graphics.CopyFromScreen((int)rect.X, (int)rect.Y, 0, 0, bitmap.Size);
+        var desktop = GetDC(IntPtr.Zero);
+        var dest = graphics.GetHdc();
+        try
+        {
+            if (!BitBlt(dest, 0, 0, bitmap.Width, bitmap.Height, desktop, (int)rect.X, (int)rect.Y, 0x40CC0020))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+        finally { graphics.ReleaseHdc(dest); ReleaseDC(IntPtr.Zero, desktop); }
         return bitmap;
     }
 

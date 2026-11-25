@@ -4,7 +4,7 @@
         xmlns:c="clr-namespace:MouseDock.Controls"
         xmlns:v="clr-namespace:MouseDock.Views"
         Title="MouseDock"
-        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStyle="None" AllowsTransparency="True" Background="#01000000"
         ShowInTaskbar="False" Topmost="False" ResizeMode="NoResize"
         SizeToContent="WidthAndHeight" SnapsToDevicePixels="True" UseLayoutRounding="True"
         FontFamily="Segoe UI, Microsoft YaHei UI"
@@ -80,7 +80,7 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -109,7 +109,8 @@
             </Grid>
 
             <!-- 设备列表 -->
-            <ItemsControl x:Name="DeviceList" Grid.Row="1">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+            <ItemsControl x:Name="DeviceList">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <StackPanel />
@@ -142,7 +143,6 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                    <c:ChargingGlyph Active="{Binding IsChargingActive}" Full="{Binding IsFullActive}" Width="18" Height="17" Margin="0,0,4,0" VerticalAlignment="Center" />
                                     <TextBlock x:Name="Pct" Text="{Binding LevelText}" FontSize="24" FontWeight="SemiBold" Opacity="{Binding ValueOpacity}"
                                                Margin="0,0,7,0" VerticalAlignment="Center">
                                         <TextBlock.Foreground>
@@ -150,6 +150,8 @@
                                                 <Binding Path="Level" />
                                                 <Binding Path="LowBatteryThreshold" RelativeSource="{RelativeSource AncestorType=Window}" />
                                                 <Binding Path="Foreground" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                <Binding Path="IsChargingActive" />
+                                                <Binding Path="IsFullActive" />
                                             </MultiBinding>
                                         </TextBlock.Foreground>
                                     </TextBlock>
@@ -178,6 +180,7 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </ScrollViewer>
 
             <Border x:Name="DetailPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,8,0,0" Padding="10" BorderThickness="1" BorderBrush="{Binding TrackBrush, RelativeSource={RelativeSource AncestorType=Window}}" CornerRadius="10">
                 <StackPanel><TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>

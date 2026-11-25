@@ -72,13 +72,43 @@ internal static class EdgeDisplayChecks
             "Taskbar number overlaps the ring.");
     }
 
+    public static void HeadsetRing()
+    {
+        var settings = new AppSettings { EdgeGlyphColor = "#39A9F0" };
+        var theme = ThemePreset.ById("dusk");
+        foreach (var kind in Enum.GetValues<DeviceKind>())
+        {
+            var badge = ScreenEdgeWindow.CreateRingBadge(new DeviceInfo { Kind = kind, Level = 100 }, settings, theme);
+            badge.Ring.AnimateCharge = false;
+            badge.Measure(new Size(40, 56));
+            badge.Arrange(new Rect(0, 0, 40, 56));
+            badge.UpdateLayout();
+            var glyph = Children<DeviceGlyph>(badge.Ring).Single();
+            double maxSize = kind == DeviceKind.Headset ? 17 : 21;
+            Require(glyph.ActualWidth > 0 && glyph.ActualWidth <= maxSize && glyph.ActualHeight <= maxSize,
+                $"{kind} glyph is too large for its battery ring.");
+
+            var bitmap = new RenderTargetBitmap(40, 40, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(badge.Ring);
+            var pixel = new byte[4];
+            Color At(int x, int y)
+            {
+                bitmap.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+                return Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
+            }
+            var expected = ScreenEdgeWindow.ResolveForeground(settings, theme);
+            Require(At(7, 20) == expected && At(20, 33) == expected && At(33, 20) == expected,
+                $"{kind} battery segments must all use the configured fill.");
+        }
+    }
+
+
     public static void Charging()
     {
         var ring = new DeviceBatteryRing { Level = -1, Charging = true };
         ring.Measure(new Size(40, 40));
         ring.Arrange(new Rect(0, 0, 40, 40));
         ring.UpdateLayout();
-        Require(!ring.CompletionVisible, "An unknown charging level must not show a completion mark.");
         Require(!Children<TextBlock>(ring).Any(t => t.Name == "ChargingMark"),
             "The ring must show charging through animation without a lightning glyph.");
     }
@@ -156,7 +186,7 @@ internal static class EdgeDisplayChecks
             var panel = new StackPanel { Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal };
             foreach (int level in new[] { 100, 85, 0, -1, 9 })
             {
-                var device = new DeviceInfo { Kind = level == 100 ? DeviceKind.Keyboard : DeviceKind.Mouse,
+                var device = new DeviceInfo { Kind = level switch { 100 => DeviceKind.Keyboard, 85 => DeviceKind.Headset, _ => DeviceKind.Mouse },
                     Level = level, Charging = level == 85 || level == -1 };
                 panel.Children.Add((UIElement)Activator.CreateInstance(badgeType,
                     device, Brushes.DeepSkyBlue, show, vertical, 20, false)!);
@@ -168,7 +198,10 @@ internal static class EdgeDisplayChecks
             {
                 Require(number.Visibility == (show ? Visibility.Visible : Visibility.Collapsed), "Number switch ignored.");
                 if (show) Require(number.ActualWidth >= number.DesiredSize.Width, "Number text clipped.");
-                Require(((SolidColorBrush)number.Foreground).Color == Colors.DeepSkyBlue, "Color not applied to number.");
+                var device = (DeviceInfo)number.DataContext;
+                var expected = (SolidColorBrush)AppearanceColors.BatteryState(Brushes.DeepSkyBlue,
+                    device.Level, 20, device.IsChargingActive, device.IsFullActive, text: true);
+                Require(((SolidColorBrush)number.Foreground).Color == expected.Color, "Battery state color not applied to number.");
             }
             var image = new RenderTargetBitmap((int)Math.Ceiling(panel.ActualWidth * dpi / 96),
                 (int)Math.Ceiling(panel.ActualHeight * dpi / 96), dpi, dpi, PixelFormats.Pbgra32);

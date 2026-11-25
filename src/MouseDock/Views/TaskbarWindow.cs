@@ -158,11 +158,13 @@ namespace MouseDock.Views
         public void UpdateAnchor()
         {
             if (!IsVisible) return;
+            bool pinToTray = App.Settings.TaskbarPinToTray;
+            bool useMeasuredLayout = pinToTray || App.Settings.TaskbarFollowIcons;
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
                 Opacity = 0;
                 IsHitTestVisible = false;
-                SetOverflow(App.Settings.TaskbarFollowIcons && _strip?.DeviceCount > 0);
+                SetOverflow(useMeasuredLayout && _strip?.DeviceCount > 0);
                 return;
             }
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
@@ -176,12 +178,16 @@ namespace MouseDock.Views
             var contentSize = _vertical ? new Size(_strip.Height, _strip.Width) : new Size(_strip.Width, _strip.Height);
             contentSize = TaskbarPlacement.ScaleContent(contentSize, App.Settings.TaskbarSizePercent);
             Rect placement;
-            if (App.Settings.TaskbarFollowIcons)
+            if (useMeasuredLayout)
             {
                 _layout?.Request();
-                if (_layout == null || !_layout.TryGet(bounds, edge, out var snapshot) ||
-                    !TaskbarPlacement.TryFollow(bounds, edge, contentSize, dpi, snapshot.Icons, snapshot.Occupied,
-                        out placement, UsesScreenEdge ? 8 : 0, App.Settings.TaskbarIconOffset))
+                double reserve = UsesScreenEdge ? 8 : 0;
+                if (_layout == null || !_layout.TryGet(bounds, edge, out var snapshot, pinToTray) ||
+                    !(pinToTray
+                        ? TaskbarPlacement.TryPinToTray(bounds, edge, contentSize, dpi, snapshot.Tray,
+                            snapshot.Occupied, out placement, reserve)
+                        : TaskbarPlacement.TryFollow(bounds, edge, contentSize, dpi, snapshot.Icons, snapshot.Occupied,
+                            out placement, reserve, App.Settings.TaskbarIconOffset)))
                 {
                     Opacity = 0;
                     IsHitTestVisible = false;

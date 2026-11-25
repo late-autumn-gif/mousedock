@@ -75,6 +75,9 @@ namespace MouseDock.Services
         {
             var handle = new WindowInteropHelper(window).Handle;
             if (handle == IntPtr.Zero || parent == IntPtr.Zero || !IsWindow(parent)) return false;
+            // A transparent WPF child can disappear behind the Windows 11 taskbar compositor.
+            if (window.AllowsTransparency && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) &&
+                parent == FindWindow("Shell_TrayWnd", null)) return false;
             if (GetParent(handle) == parent) return true;
             var windowDpi = GetWindowDpiAwarenessContext(handle);
             var parentDpi = GetWindowDpiAwarenessContext(parent);

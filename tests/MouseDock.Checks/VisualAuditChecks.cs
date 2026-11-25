@@ -119,7 +119,7 @@ internal static class VisualAuditChecks
             Require(PercentColors(dock).Single() == ThemePreset.Presets[1].Text, "Normal values must use the selected theme.");
             device.Level = 20;
             dock.UpdateLayout();
-            Require(PercentColors(dock).Single() == Color.FromRgb(255, 138, 138),
+            Require(PercentColors(dock).Single() == Color.FromRgb(243, 99, 113),
                 "The percentage must turn red immediately when a live reading reaches the warning threshold.");
             device.Level = 21;
             dock.UpdateLayout();
@@ -131,7 +131,7 @@ internal static class VisualAuditChecks
             RefreshVisible(fixture.Battery);
             dock.RefreshDevices();
             dock.UpdateLayout();
-            Require(PercentColors(dock).Last() == Color.FromRgb(255, 138, 138), "Newly discovered low battery rows must receive warning color.");
+            Require(PercentColors(dock).Last() == Color.FromRgb(243, 99, 113), "Newly discovered low battery rows must receive warning color.");
         }
         finally { dock.Close(); }
     }
@@ -146,13 +146,13 @@ internal static class VisualAuditChecks
         try
         {
             dock.ApplyTheme(ThemePreset.Presets[0], false);
-            Require(PercentColors(dock).Single() == Color.FromRgb(255, 138, 138), "The dock ignored the configured 30% threshold.");
+            Require(PercentColors(dock).Single() == Color.FromRgb(243, 99, 113), "The dock ignored the configured 30% threshold.");
             fixture.Settings.LowBatteryWarn = 10;
             dock.ApplyTheme(ThemePreset.Presets[0], false);
             Require(PercentColors(dock).Single() == ThemePreset.Presets[0].Text, "Changing the threshold must restore normal text color.");
             fixture.Settings.LowBatteryWarn = 25;
             dock.ApplyTheme(ThemePreset.Presets[1], false);
-            Require(PercentColors(dock).Single() == Color.FromRgb(255, 138, 138), "The warning boundary must be inclusive and survive theme changes.");
+            Require(PercentColors(dock).Single() == Color.FromRgb(243, 99, 113), "The warning boundary must be inclusive and survive theme changes.");
         }
         finally { dock.Close(); }
     }

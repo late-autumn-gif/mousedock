@@ -8,7 +8,7 @@ namespace MouseDock.Services;
 internal static class TrayDeviceSelection
 {
     internal static bool NeedsAnimation(IEnumerable<DeviceInfo> devices, int threshold) =>
-        devices?.Any(device => device.IsChargingActive ||
+        devices?.Any(device => device.IsChargingNumber ||
             device.Level >= 0 && device.Level <= threshold && !device.IsFullActive) == true;
 
     internal static DeviceInfo[] Resolve(AppSettings settings, IEnumerable<DeviceInfo> devices)

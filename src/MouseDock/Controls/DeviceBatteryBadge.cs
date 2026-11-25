@@ -1,3 +1,4 @@
+using MouseDock.Views;
 using System;
 using System.Globalization;
 using System.Windows;
@@ -49,6 +50,7 @@ namespace MouseDock.Controls
             number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
             SetRow(number, below ? 1 : 0);
             SetColumn(number, below ? 0 : 1);
+            PercentageWarningConverter.Bind(number, foreground, lowThreshold);
             Children.Add(number);
             SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
             var description = new MultiBinding { Converter = new DescriptionConverter(), ConverterParameter = "\n" };

@@ -52,6 +52,8 @@ internal static class DpiProtocolRegression
         Check(Throws(()=>DpiProtocol.EncodeStage(801,800,"master")),"ATK master step is ten");
         Check(DpiProtocol.DecodeStage(DpiProtocol.EncodeStage(801,800,"3955"),"3955").X==801,
             "Pulsar 3955 uses its own one-DPI step");
+        Check(DpiProfiles.Native(0x3710,0x3501)?.Family == DpiFamily.Pulsar &&
+            DpiProfiles.Native(0x3710,0x1401) == null, "Only cMouse transports can use cMouse DPI writes");
         Check(DpiProfiles.PulsarSensor(150)==null && DpiProfiles.PulsarSensor(0)==null,"unknown Pulsar sensor models remain unavailable");
 
         var profile=DpiProfiles.Find(0x373B,0x11D8)!;

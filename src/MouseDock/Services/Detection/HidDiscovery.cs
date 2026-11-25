@@ -977,7 +977,7 @@ namespace MouseDock.Services.Detection
                     catch(Exception ex) { result=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name+": "+ex.Message); }
                 }
                 result ??= ReferenceBatteryProtocol.Reading.Failed("罗技读取器没有返回结果");
-                bool pairedMouse = b.Pid == 0xC539 && result.MouseTypeConfirmed &&
+                bool pairedMouse = OriginalGpwProtocol.IsReceiver(b.Pid) && result.MouseTypeConfirmed &&
                     !string.IsNullOrWhiteSpace(result.Identity) && (result.Model == result.Identity ||
                         result.Model == LogitechG403Battery.Model && LogitechG403Battery.IsName(result.Identity));
                 bool g603 = b.Pid == 0xC539 && result.Model == OriginalGpwProtocol.G603Model &&
@@ -1711,7 +1711,7 @@ namespace MouseDock.Services.Detection
                 if (HandledBy == HandledBy.OriginalGpw)
                 {
                     name=GpwModel ?? "罗技 Lightspeed 接收器（型号未确认）"; kind=DeviceKind.Mouse;
-                    transport=Pid==0xC539 ? "2.4G" : "有线";
+                    transport = OriginalGpwProtocol.IsReceiver(Pid) ? "2.4G" : "有线";
                     charging=Battery>=0 && GpwLive && Charging;
                 }
 
@@ -1757,7 +1757,7 @@ namespace MouseDock.Services.Detection
                     ConfirmedModel = ExtraRoute != null ? ExtraModel ?? "" : HandledBy == HandledBy.MchoseA7Ultra ? (Battery >= 0 ? VendorProtocol.A7UltraName : "") : HandledBy == HandledBy.RazerBlackShark ? RazerBlackSharkProtocol.Model : HandledBy == HandledBy.RogOmniMouse ? RogOmniMouseProtocol.Model : HandledBy == HandledBy.M137 ? M137Model ?? "" : HandledBy == HandledBy.RealTek ? Product?.Trim() ?? "" : HandledBy == HandledBy.VgnF1 ? VgnF1Model ?? "" : HandledBy == HandledBy.AulaF75 ? F75Model ?? "" : HandledBy == HandledBy.M9Pro ? M9ProModel ?? "" : RogScopeModel ?? (HandledBy == HandledBy.RogScope ? VendorProtocol.RogScopeRxWireless : null) ?? (HandledBy == HandledBy.MchoseModern ? ModernModel??"" : unresolved ? "" : HandledBy == HandledBy.ZeroRainy ? ZeroRainyModel ?? "" : HandledBy == HandledBy.MchoseG7 ? G7Model ?? "" : HandledBy == HandledBy.OriginalGpw ? GpwModel ?? "" : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaModel ?? "" : ReportedX23SeIdentified ? Product.Trim() : ReferenceIdentity != null ? ReferenceIdentityModel ?? ""
                         : ReferenceModel ?? (!string.IsNullOrEmpty(Identity) && !ReadStale ? name : "")),
                     InterfaceDiscovered = true,
-                    ReceiverDiscovered = HandledBy is HandledBy.MchoseA7Ultra or HandledBy.MonsGeekBatteryEvent or HandledBy.MonsGeekDongleStatus || zg4Receiver || (HandledBy == HandledBy.RazerBlackShark && Pid == RazerBlackSharkProtocol.WirelessPid) || HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? Pid==0xC539 : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
+                    ReceiverDiscovered = HandledBy is HandledBy.MchoseA7Ultra or HandledBy.MonsGeekBatteryEvent or HandledBy.MonsGeekDongleStatus || zg4Receiver || (HandledBy == HandledBy.RazerBlackShark && Pid == RazerBlackSharkProtocol.WirelessPid) || HandledBy is HandledBy.RogScope or HandledBy.RogOmniMouse || HandledBy == HandledBy.M9Pro || (HandledBy == HandledBy.M137 ? true : HandledBy == HandledBy.MchoseModern ? VendorProtocol.ModernMouseProfiles.TryGetValue((Product??"").Trim(),out var mp)&&mp.Receivers.Contains(Pid) : unresolved ? true : HandledBy == HandledBy.ZeroRainy ? Pid is 0x1155 or 0x124F or 0x5088 : HandledBy == HandledBy.MchoseG7 ? Vid==0x3837 && G7Model!=null : HandledBy == HandledBy.OriginalGpw ? OriginalGpwProtocol.IsReceiver(Pid) : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? (Vid == 0x089D && Pid == 0x062F) || (HandledBy == HandledBy.Inphic && (Vid==0x1D57 || Pid==0x5C2F)) : ReportedX23SeIdentified || ReferenceModel != null || LooksWireless(Product)),
                     PeripheralConfirmed = HandledBy == HandledBy.M9Pro ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.M137 ? false : HandledBy == HandledBy.RealTek ? Battery >= 0 && !ReadStale : HandledBy == HandledBy.MchoseModern ? false : unresolved ? false : HandledBy == HandledBy.ZeroRainy ? false : HandledBy == HandledBy.MchoseG7 ? false : HandledBy == HandledBy.OriginalGpw ? GpwLive : (HandledBy is HandledBy.Aula or HandledBy.Receiver33 or HandledBy.Inphic) ? AulaOnline : !StandardBattery && !ReportedX23SeIdentified && Battery >= 0 && !ReadStale,
                     Name = name,
                     Kind = kind,

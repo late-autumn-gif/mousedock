@@ -182,6 +182,7 @@ namespace MouseDock.Models
             }
         }
         public bool IsFullActive => _connected && _chargeFull && !_stale;
+        public bool IsChargingNumber => IsChargingActive && HasLevel;
         public bool IsChargingActive => _connected && _charging && !_stale && !_chargeFull;
         public bool HasChargeMark => IsFullActive;
         public string ChargeMark => IsFullActive ? "✓" : "";
@@ -193,7 +194,12 @@ namespace MouseDock.Models
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        private void Raise(string name)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+            if (name is nameof(IsChargingActive) or nameof(HasLevel))
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsChargingNumber)));
+        }
     }
 
     /// <summary>主题：卡片渐变 + 强调色 + 文字层级。</summary>

@@ -98,7 +98,7 @@ internal static class ReferenceStyleChecks
             "The battery ring must leave a top gap and render three separate arcs.");
         ring.Charging = true;
         Arrange(ring);
-        Require(AlphaAt(Snapshot(ring, 3), 20, 7) > 0, "Charging must show the plug in the top gap.");
+        Require(AlphaAt(Snapshot(ring, 3), 20, 7) == 0, "Charging leaves the ring free of a static plug marker.");
         ring.Charging = false;
         Arrange(ring);
         Require(AlphaAt(Snapshot(ring, 3), 20, 7) == 0, "Stopping charging must hide the plug.");
@@ -124,7 +124,9 @@ internal static class ReferenceStyleChecks
             CheckColor(ThemePreset.C("#00AAFF"), "medium");
             device.Level = 30;
             device.Charging = true;
-            CheckColor(ThemePreset.C("#B42332"), "low while charging");
+            CheckColor(ThemePreset.C("#A06BE5"), "charging color distinct from the selected blue");
+            device.Charging = false;
+            CheckColor(ThemePreset.C("#B42332"), "low while discharging");
             if (style == "battery")
             {
                 var glyph = Children<DeviceGlyph>(strip).Single();
@@ -212,11 +214,16 @@ internal static class ReferenceStyleChecks
                 for (int i = 0; i < numbers.Length; i++)
                 {
                     var number = numbers[i];
-                    var expectedColor = style == "battery" && i == 1 ? Colors.White : ThemePreset.C("#FFCC00");
-                    Require(((SolidColorBrush)number.Foreground).Color == expectedColor, $"{style} number uses the wrong color.");
+                    var normal = new SolidColorBrush(ThemePreset.C("#FFCC00"));
+                    var device = (DeviceInfo)number.DataContext;
+                    var glyphColor = style == "battery" && i == 1 ? Colors.White : normal.Color;
+                    var numberColor = style == "battery" ? glyphColor :
+                        ((SolidColorBrush)AppearanceColors.BatteryState(normal, device.Level, 20,
+                            device.IsChargingActive, device.IsFullActive, text: true)).Color;
+                    Require(((SolidColorBrush)number.Foreground).Color == numberColor, $"{style} number uses the wrong state color.");
                     if (glyphs.Length == numbers.Length)
-                        Require(((SolidColorBrush)glyphs[i].GlyphBrush).Color == expectedColor,
-                            $"{style} device glyph must use the number color.");
+                        Require(((SolidColorBrush)glyphs[i].GlyphBrush).Color == glyphColor,
+                            $"{style} changed the device glyph color.");
                     Require(new Rect(strip.RenderSize).Contains(number.TransformToAncestor(strip).TransformBounds(new Rect(number.RenderSize))),
                         $"{style} clips numbers in {(vertical ? "vertical" : "horizontal")} orientation.");
                 }

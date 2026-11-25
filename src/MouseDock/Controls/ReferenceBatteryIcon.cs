@@ -53,7 +53,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         {
             if (_models != null) foreach (var model in _models) PropertyChangedEventManager.RemoveHandler(model, OnDeviceChanged, "");
             if (_sweep != null)
-                for (int i = 0; i < _completed.Length; i++)
+                for (int i = 0; i < 6; i++)
                     if ((_models != null && i < _models.Count ? _models[i].Id : null) !=
                         (value != null && i < value.Count ? value[i].Id : null))
                         _sweep.Reset(i);
@@ -94,20 +94,16 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     public bool AnimateCompactCharge { get; set; }
     private ChargeSweep _sweep;
     private double _phase;
-    private readonly long[] _completed = new long[6];
-
-    private RingVolumeInput _volume;
 
     protected override void OnRender(DrawingContext drawing)
     {
         base.OnRender(drawing);
-        _volume?.Clear();
         if (ActualWidth < 1 || ActualHeight < 1) return;
         drawing.PushClip(new RectangleGeometry(new Rect(RenderSize)));
         if (Compact)
         {
             _sweep ??= new ChargeSweep(this);
-            _phase = _sweep.Phase(AnimateCompactCharge && CompactCharging && CompactLevel > LowBatteryThreshold &&
+            _phase = _sweep.Phase(AnimateCompactCharge && CompactCharging && CompactLevel > 0 &&
                 StyleName is "battery" or "plain" or "tile");
             DrawCompact(drawing);
         }
@@ -119,14 +115,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 : Devices.Take(6).ToArray();
             if (items.Length == 0) items = new[] { (DeviceKind.Mouse, -1, false, false) };
             _sweep ??= new ChargeSweep(this);
-            bool completing = false, fading = false;
-            for (int i = 0; i < items.Length; i++)
-            {
-                _completed[i] = _sweep.Completion(i, items[i].Charging && !items[i].Stale, IsFull(i));
-                completing |= _completed[i] < ChargeSweep.CompletionDuration;
-                fading |= _completed[i] < ChargeSweep.FadeDuration;
-            }
-            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale) || fading, style == "ring" && completing);
+            _phase = _sweep.Phase(items.Any(item => item.Charging && !item.Stale && item.Level >= 0));
             if (style == "multi") DrawMulti(drawing, items);
             else if (items.Length > 1) DrawRows(drawing, style, items);
             else DrawSingle(drawing, style, items[0]);
@@ -136,7 +125,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
 
     private bool IsFull(int slot) => _models != null && slot < _models.Count && _models[slot].IsFullActive;
 
-    private double DrawnLevel(int slot, int target, bool charging) => _sweep.Follow(slot, target, charging && _phase >= 0);
+    private double DrawnLevel(int slot, int target, bool charging, bool ring = false) =>
+        _sweep.Follow(slot, target, charging && _phase >= 0, ring ? 1050 : 300);
 
     private void DrawSingle(DrawingContext dc, string style, (DeviceKind Kind, int Level, bool Stale, bool Charging) item, int slot = 0)
     {
@@ -146,43 +136,42 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         dc.PushOpacity(StaleOpacity(item.Stale));
         var background = HideBackground ? Brushes.Transparent : Surface;
         var track = new Pen(Outline, 1.2);
-        double drawn = DrawnLevel(slot, item.Level, item.Charging && !item.Stale);
+        double drawn = DrawnLevel(slot, item.Level, item.Charging && !item.Stale, style == "ring");
         switch (style)
         {
             case "ring":
                 dc.DrawEllipse(background, null, new Point(48, 48), 45, 45);
-                DrawRing(dc, new Point(48, 48), 37, IsFull(slot) ? 100 : drawn, item.Charging && !item.Stale, item.Kind, slot, scale);
-                if (_completed[0] < ChargeSweep.CompletionDuration) Text(dc, "✓", 25, new Point(48, 48), Accent, 68);
-                else Number(dc, IsFull(0) ? 100 : item.Level, 25, new Point(48, 48), 68);
+                DrawRing(dc, new Point(48, 48), 37, IsFull(slot) ? 100 : drawn, item.Charging && !item.Stale && !IsFull(slot));
+                Number(dc, IsFull(0) ? 100 : item.Level, 25, new Point(48, 48), 68, charging: item.Charging && !item.Stale, full: IsFull(slot));
                 break;
             case "tile":
                 dc.DrawRoundedRectangle(background, HideBackground ? null : track, new Rect(4, 4, 88, 88), 22, 22);
-                Number(dc, item.Level, 29, new Point(48, 44), 78);
-                Bar(dc, new Rect(23, 73, 50, 2.4), drawn, item.Charging && !item.Stale ? _phase : -1);
+                Number(dc, item.Level, 29, new Point(48, 44), 78, charging: item.Charging && !item.Stale, full: IsFull(slot));
+                Bar(dc, new Rect(23, 73, 50, 2.4), drawn, item.Charging && !item.Stale ? _phase : -1,
+                    StatusBrush(item.Level, charging: item.Charging && !item.Stale, full: IsFull(slot)));
                 break;
             case "pill":
                 dc.DrawRoundedRectangle(background, null, new Rect(3, 24, 90, 48), 24, 24);
                 dc.DrawRoundedRectangle(StatusBrush(item.Level), null, new Rect(14, 37, 14, 22), 4, 4);
-                Number(dc, item.Level, 24, new Point(58, 48), 55);
+                Number(dc, item.Level, 24, new Point(58, 48), 55,
+                    breath: item.Charging && !item.Stale && item.Level >= 0 ? _phase : -1,
+                    charging: item.Charging && !item.Stale, full: IsFull(slot));
                 break;
             case "battery":
                 bool lowBattery = AppearanceColors.IsLowBattery(item.Level, LowBatteryThreshold);
-                var fill = BatteryStyleFill(item.Level);
+                var fill = BatteryStyleFill(item.Level, item.Charging && !item.Stale, IsFull(slot));
                 dc.DrawRoundedRectangle(background, track, new Rect(4, 25, 81, 48), 10, 10);
                 dc.DrawRoundedRectangle(fill, null, new Rect(89, 42, 4, 14), 2, 2);
                 ChargeSweep.Fill(dc, new Rect(9, 30, 71, 38), drawn / 100, 5,
-                    lowBattery ? fill : Alpha(fill, .7), item.Charging && !item.Stale && !lowBattery ? _phase : -1);
+                    lowBattery ? fill : Alpha(fill, .7), item.Charging && !item.Stale ? _phase : -1);
                 Number(dc, item.Level, 28, new Point(45, 49), 72, batteryStyle: true);
                 break;
             default:
-                Number(dc, item.Level, 34, new Point(48, 44), 88);
-                Bar(dc, new Rect(18, 76, 60, 2.5), drawn, item.Charging && !item.Stale ? _phase : -1);
+                Number(dc, item.Level, 34, new Point(48, 44), 88, charging: item.Charging && !item.Stale, full: IsFull(slot));
+                Bar(dc, new Rect(18, 76, 60, 2.5), drawn, item.Charging && !item.Stale ? _phase : -1,
+                    StatusBrush(item.Level, charging: item.Charging && !item.Stale, full: IsFull(slot)));
                 break;
         }
-        // The source single-device styles signal charging through color, with a separate pulse in styles without a charging ring.
-        if (_models != null && slot < _models.Count && _models[slot].IsFullActive)
-            Text(dc, "✓", 11, new Point(70, 62), Accent, 15);
-        else if (style != "ring" && item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(70, 62), 11);
         dc.Pop();
         dc.Pop();
         dc.Pop();
@@ -201,7 +190,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         {
             var item = items[i];
             double y = 6 + rowHeight * (i + .5);
-            double drawn = DrawnLevel(i, IsFull(i) ? 100 : item.Level, item.Charging && !item.Stale);
+            double drawn = DrawnLevel(i, IsFull(i) ? 100 : item.Level, item.Charging && !item.Stale, style == "ring");
             if (style == "pill")
                 dc.DrawRoundedRectangle(HideBackground ? Brushes.Transparent : Surface, null,
                     new Rect(5, 7 + i * rowHeight, width - 10, Math.Max(1, rowHeight - 5)), rowHeight / 2, rowHeight / 2);
@@ -212,11 +201,11 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (style == "ring")
             {
                 double radius = Math.Min(17, rowHeight * .3);
-                DrawRing(dc, new Point(31, y), radius, drawn, item.Charging && !item.Stale, item.Kind, i);
+                double glyphRatio = item.Kind == DeviceKind.Headset
+                    ? BatteryRingDrawing.HeadsetGlyphRadiusRatio : BatteryRingDrawing.GlyphRadiusRatio;
+                glyphSize = Math.Min(glyphSize, radius * glyphRatio);
+                DrawRing(dc, new Point(31, y), radius, drawn, item.Charging && !item.Stale);
             }
-            if (style == "ring" && _completed[i] < ChargeSweep.CompletionDuration)
-                Text(dc, "✓", glyphSize, new Point(31, y), Accent, glyphSize + 4);
-            else
             {
                 var glyphBounds = new Rect(31 - glyphSize / 2, y - glyphSize / 2, glyphSize, glyphSize);
                 bool batteryStyle = style == "battery";
@@ -225,17 +214,16 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
                 DeviceGlyph.Draw(dc, item.Kind, glyphBounds,
                     batteryStyle ? BatteryStyleInk(item.Level) : StatusBrush(item.Level), 1.8);
             }
-            Number(dc, item.Level, Math.Min(32, rowHeight * .6), new Point((width + 46) / 2, y), width - 62, batteryStyle: style == "battery");
+            Number(dc, item.Level, Math.Min(32, rowHeight * .6), new Point((width + 46) / 2, y), width - 62, batteryStyle: style == "battery",
+                breath: style is not ("ring" or "battery" or "plain") && item.Charging && !item.Stale && item.Level >= 0 ? _phase : -1,
+                charging: item.Charging && !item.Stale, full: IsFull(i));
             if (style is "battery" or "plain")
             {
                 bool lowBattery = style == "battery" && AppearanceColors.IsLowBattery(item.Level, LowBatteryThreshold);
                 Bar(dc, new Rect(59, y + rowHeight * .35, Math.Max(0, width - 76), 2), drawn,
-                    item.Charging && !item.Stale && !lowBattery ? _phase : -1,
-                    style == "battery" ? BatteryStyleFill(item.Level) : null);
+                    item.Charging && !item.Stale ? _phase : -1,
+                    style == "battery" ? BatteryStyleFill(item.Level, item.Charging && !item.Stale, IsFull(i)) : StatusBrush(item.Level, charging: item.Charging && !item.Stale, full: IsFull(i)));
             }
-            if (style != "ring" && IsFull(i))
-                Text(dc, "✓", 9, new Point(width - 20, y + rowHeight * .23), Accent, 13);
-            else if (style != "ring" && item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(width - 20, y + rowHeight * .23), 9);
             dc.Pop();
         }
     }
@@ -253,23 +241,23 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             dc.PushOpacity(StaleOpacity(item.Stale));
             var identity = _models != null && i < _models.Count
                 ? new SolidColorBrush(IconComposition.IdentityColor(_models[i].Id)) : Alpha(Ink, .85);
-            var glyphBounds = new Rect(center - 14, cell.Y + 3, 22, 22);
+            var glyphBounds = new Rect(center - 11, cell.Y + 3, 22, 22);
             if (TransparentFloating) DeviceGlyph.Draw(dc, item.Kind, glyphBounds, HaloInk, 4);
             DeviceGlyph.Draw(dc, item.Kind, glyphBounds, FloatingContrast(identity), 1.8);
-            dc.DrawEllipse(StatusBrush(item.Level), null, new Point(center + 14, cell.Y + 13), 2.5, 2.5);
+            dc.PushOpacity(ChargeBreath.OpacityAt(item.Charging && !item.Stale && item.Level >= 0 ? _phase : -1));
             Text(dc, item.Level < 0 ? "\u2014" : item.Level.ToString(CultureInfo.InvariantCulture),
                 Math.Min(31, cell.Width * .58), new Point(center, cell.Y + cell.Height * .73),
-                StatusBrush(item.Level, true), cell.Width - 4);
-            if (item.Charging && !item.Stale) DrawChargingPulse(dc, new Point(center + 14, cell.Y + 27), 9);
+                StatusBrush(item.Level, true, item.Charging && !item.Stale, IsFull(i)), cell.Width - 4);
+            dc.Pop();
             dc.Pop();
         }
     }
 
-    private void Number(DrawingContext dc, int level, double size, Point center, double maxWidth, bool batteryStyle = false)
+    private void Number(DrawingContext dc, int level, double size, Point center, double maxWidth, bool batteryStyle = false, double breath = -1, bool charging = false, bool full = false)
     {
         string value = level < 0 ? "\u2014" : level.ToString(CultureInfo.InvariantCulture);
         bool outline = batteryStyle && AppearanceColors.IsLowBattery(level, LowBatteryThreshold);
-        var ink = batteryStyle ? BatteryStyleInk(level) : StatusBrush(level, true);
+        var ink = batteryStyle ? BatteryStyleInk(level) : StatusBrush(level, true, charging, full);
         var digits = Format(value, size, ink);
         var suffix = Format(level < 0 ? "" : "%", size * .45, ink);
         double width = digits.Width + suffix.Width + 2;
@@ -281,40 +269,34 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             width = digits.Width + suffix.Width + 2;
         }
         double left = center.X - width / 2;
+        dc.PushOpacity(ChargeBreath.OpacityAt(breath));
         LegibleText(dc, digits, new Point(left, center.Y - digits.Height / 2), outline);
         LegibleText(dc, suffix, new Point(left + digits.Width + 2, center.Y + digits.Height * .36 - suffix.Height), outline);
+        dc.Pop();
     }
 
-    private void DrawRing(DrawingContext dc, Point center, double radius, double level, bool charging,
-        DeviceKind kind, int slot, double scale = 0)
+    private void DrawRing(DrawingContext dc, Point center, double radius, double level, bool charging)
     {
-        bool headset = kind == DeviceKind.Headset;
-        int? volume = null;
-        if (headset && radius > 0 && _models != null && slot < _models.Count)
-        {
-            Rect hit = BatteryRingDrawing.VolumeBounds(center, radius);
-            if (scale > 0)
-                hit = new Rect((ActualWidth - 96 * scale) / 2 + hit.X * scale,
-                    (ActualHeight - 96 * scale) / 2 + hit.Y * scale, hit.Width * scale, hit.Height * scale);
-            volume = (_volume ??= new RingVolumeInput(this)).Track(hit, _models[slot]);
-        }
-        BatteryRingDrawing.Draw(dc, center, radius, level, Outline, StatusBrush((int)Math.Round(level)),
-            charging ? FloatingContrast(Ink) : null, headset ? FloatingContrast(Ink) : null, headset, volume);
+        var fill = StatusBrush((int)Math.Round(level), charging: charging);
+        BatteryRingDrawing.Draw(dc, center, radius, level, Outline, fill);
+        ChargeSweep.Absorb(dc, center, radius, charging && level >= 0 ? _phase : -1, fill);
     }
 
-    private void Bar(DrawingContext dc, Rect bounds, double level, double phase = -1, Brush fill = null)
+    private void Bar(DrawingContext dc, Rect bounds, double level, double phase, Brush fill)
     {
         dc.DrawRoundedRectangle(Outline, null, bounds, bounds.Height / 2, bounds.Height / 2);
         if (level <= 0) return;
-        ChargeSweep.HorizontalLine(dc, bounds, level / 100, bounds.Height / 2, fill ?? StatusBrush((int)Math.Round(level)), phase);
+        ChargeSweep.HorizontalLine(dc, bounds, level / 100, bounds.Height / 2, fill, phase);
     }
-    private Brush BatteryStyleFill(int level) => level < 0 ? FloatingContrast(Muted)
-        : AppearanceColors.IsLowBattery(level, LowBatteryThreshold) ? AppearanceColors.LowBatteryFill : FloatingContrast(Accent);
+    private Brush BatteryStyleFill(int level, bool charging, bool full) => level < 0 ? FloatingContrast(Muted)
+        : FloatingContrast(AppearanceColors.BatteryState(Accent, level, LowBatteryThreshold, charging, full));
 
     private Brush BatteryStyleInk(int level) => level < 0 ? FloatingContrast(Muted)
         : AppearanceColors.IsLowBattery(level, LowBatteryThreshold) ? Brushes.White : FloatingContrast(Ink);
 
-    private Brush StatusBrush(int level, bool text = false) => FloatingContrast(AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted));
+    private Brush StatusBrush(int level, bool text = false, bool charging = false, bool full = false) =>
+        FloatingContrast(level < 0 ? Muted : AppearanceColors.BatteryState(text ? Ink : Accent,
+            level, LowBatteryThreshold, charging, full, text));
     private FormattedText Format(string text, double size, Brush brush) => new(text, CultureInfo.CurrentCulture,
         FlowDirection.LeftToRight, new Typeface("Segoe UI"), Math.Max(1, size), brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
     private void Text(DrawingContext dc, string text, double size, Point center, Brush brush, double maxWidth)
@@ -323,8 +305,6 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         if (value.Width > maxWidth) value = Format(text, size * maxWidth / value.Width, brush);
         LegibleText(dc, value, new Point(center.X - value.Width / 2, center.Y - value.Height / 2));
     }
-    private void DrawChargingPulse(DrawingContext dc, Point center, double size) =>
-        ChargeSweep.Pulse(dc, center, Math.Max(2, size * .28), _phase);
     private static Brush Brush(string color) => new SolidColorBrush(ThemePreset.C(color));
     private static Brush Alpha(Brush source, double opacity) { var brush = source.Clone(); brush.Opacity *= opacity; return brush; }
 
@@ -333,8 +313,8 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
         var outline = Alpha(Ink, .3);
         var background = HideBackground ? Brushes.Transparent : Alpha(Surface, .85);
         bool low = AppearanceColors.IsLowBattery(CompactLevel, LowBatteryThreshold);
-        Brush accent = low ? AppearanceColors.LowBatteryFill
-            : UseStatusColors ? Brush(CompactCharging ? "#38BDF8" : "#34D399") : Accent;
+        Brush accent = AppearanceColors.BatteryState(UseStatusColors ? Brush("#34D399") : Accent,
+            CompactLevel, LowBatteryThreshold, CompactCharging, DataContext is DeviceInfo { IsFullActive: true });
         var track = new Pen(outline, 1);
         if (CompactLevel < 0) track.DashStyle = DashStyles.Dash;
         double width = ActualWidth, height = ActualHeight;
@@ -355,7 +335,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             {
                 var inside = body;
                 inside.Inflate(-3, -3);
-                ChargeSweep.Fill(drawing, inside, fraction, 2, low ? accent : Alpha(accent, .65), low ? -1 : _phase, Vertical);
+                ChargeSweep.Fill(drawing, inside, fraction, 2, low ? accent : Alpha(accent, .65), _phase, Vertical);
             }
         }
         if (StyleName is "tile" or "plain")
@@ -366,7 +346,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
             if (CompactLevel > 0)
             {
                 ChargeSweep.HorizontalLine(drawing, new Rect(from.X, from.Y - 1, Math.Max(1, to.X - from.X), 2),
-                    fraction, 1, accent, low ? -1 : _phase);
+                    fraction, 1, accent, _phase);
             }
         }
     }

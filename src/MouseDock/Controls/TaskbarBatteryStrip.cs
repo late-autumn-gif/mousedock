@@ -1,3 +1,4 @@
+using MouseDock.Views;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -130,7 +131,7 @@ public sealed class TaskbarBatteryStrip : Border
                 });
             if (card)
             {
-                stack.Children.Add(CreateCard(items[i], showNumber, vertical, textBrush));
+                stack.Children.Add(CreateCard(items[i], showNumber, vertical, textBrush, lowThreshold));
                 continue;
             }
             stack.Children.Add(CreateBadge(items[i], StyleName, cell, showNumber, vertical, foreground,
@@ -142,7 +143,7 @@ public sealed class TaskbarBatteryStrip : Border
     /// 迷你卡片：半透明圆角底（任务栏透出来）、左上角图标、粗体百分比、底部型号。
     /// 全部用矢量元素，不做图片缩放，所以缩小后不糊。
     /// </summary>
-    private static Border CreateCard(DeviceInfo device, bool showNumber, bool vertical, Brush textBrush)
+    private static Border CreateCard(DeviceInfo device, bool showNumber, bool vertical, Brush textBrush, int lowThreshold)
     {
         var size = CardSize(vertical);
         var card = new Border
@@ -208,16 +209,8 @@ public sealed class TaskbarBatteryStrip : Border
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
         if (vertical) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         grid.Children.Add(number);
-
-        var charging = new ChargingGlyph
-        {
-            Name = "ChargingMark", Width = 10, Height = 10,
-            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 3, 2), IsHitTestVisible = false
-        };
-        charging.SetBinding(ChargingGlyph.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
-        charging.SetBinding(ChargingGlyph.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
-        grid.Children.Add(charging);
+        PercentageWarningConverter.Bind(number, textBrush, lowThreshold);
+        number.SetBinding(ChargeBreath.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingNumber)));
 
         foreach (var property in new[] { ToolTipProperty, AutomationProperties.NameProperty })
         {
@@ -308,11 +301,7 @@ public sealed class TaskbarBatteryStrip : Border
             };
             ringNumber.SetBinding(TextBlock.TextProperty,
                 new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
-            var numberStyle = new Style(typeof(TextBlock));
-            var completed = new DataTrigger { Binding = new Binding(nameof(DeviceBatteryRing.CompletionVisible)) { Source = ring }, Value = true };
-            completed.Setters.Add(new Setter(OpacityProperty, 0d));
-            numberStyle.Triggers.Add(completed);
-            ringNumber.Style = numberStyle;
+            PercentageWarningConverter.Bind(ringNumber, textBrush, lowThreshold);
             badge.Children.Add(ringNumber);
             return Finish(badge, device);
         }
@@ -364,25 +353,13 @@ public sealed class TaskbarBatteryStrip : Border
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
         if (style == "battery")
             ApplyBatteryFillContrast(row, glyph, number, textBrush, lowThreshold);
+        else PercentageWarningConverter.Bind(number, textBrush, lowThreshold);
         if (stacked) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
         row.Children.Add(number);
         badge.Children.Add(row);
-        AttachCharging(badge, device, textBrush);
+        if (style is "panel" or "pill" or "multi")
+            number.SetBinding(ChargeBreath.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingNumber)));
         return Finish(badge, device);
-    }
-
-    /// <summary>充电标记叠在右上角，不占图标和数字的位置。</summary>
-    private static void AttachCharging(Grid badge, DeviceInfo device, Brush textBrush)
-    {
-        var charging = new ChargingGlyph
-        {
-            Name = "ChargingMark", Width = 10, Height = 10,
-            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 3, 2), IsHitTestVisible = false
-        };
-        charging.SetBinding(ChargingGlyph.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
-        charging.SetBinding(ChargingGlyph.FullProperty, new Binding(nameof(DeviceInfo.IsFullActive)));
-        badge.Children.Add(charging);
     }
 
     /// <summary>挂上悬停提示与读屏名称，返回格子本身。</summary>

@@ -26,6 +26,10 @@ internal static class Program
         }
         if (args.Contains("--settings-drag-fixture")) return LightUiChecks.RunDragFixture(true);
         if (args.Contains("--card-drag-fixture")) return LightUiChecks.RunDragFixture();
+        if (args.Contains("--card-resize-live")) return WallpaperEngineChecks.RunResizeLive();
+        if (args.Length == 2 && args[0] == "--wallpaper-playback") return WallpaperEngineChecks.RunPlayback(args[1]);
+        if (args.Length == 2 && args[0] == "--wallpaper-scene-live")
+            return WallpaperEngineChecks.RunSceneLive(args[1]);
         if (args.Contains("--wallpaper-engine-live"))
             return WallpaperEngineChecks.RunLive();
         if (args.Length == 2 && args[0] == "--startup-surface")
@@ -49,14 +53,19 @@ internal static class Program
         }
         if (args.Contains("--r98-live"))
             return R98KeyboardChecks.RunLive();
+        if (args.Length == 2 && args[0] == "--bongo") { BongoSceneChecks.Run(args[1]); return 0; }
+        if (args.Contains("--pet-input-live")) { DesktopPetInputChecks.RunLive(); Console.WriteLine("PASS background input"); return 0; }
+        if (args.Contains("--pet-menu")) { AuditChecks.DesktopPet(); Console.WriteLine("PASS desktop pet menu and device list"); return 0; }
         if (args.Contains("--pet-input"))
         {
-            DesktopPetInputChecks.Run();
-            Console.WriteLine("PASS desktop pet input opt-in, native registration and overlays.");
+            if (args.Length == 2) BongoSceneChecks.Run(args[1]);
+            else DesktopPetInputChecks.Run();
+            Console.WriteLine("PASS desktop pet typing and mouse click rendering.");
             return 0;
         }
         var checks = new (string Name, Action Check)[]
         {
+            ("Device quick menu uses compact themed rows and one active mode", QuickMenuChecks.Run),
             ("Xbox system battery bands reach cards without cached percentages", () => XboxWirelessUiChecks.Run()),
             ("Scyrox receiver protocol reaches the normal visible battery card", () => ScyroxLegacyUiChecks.Run()),
             ("MCHOSE reported keyboard battery remains visible in the normal card", () => MchoseFeedbackUiChecks.Run()),
@@ -93,7 +102,7 @@ internal static class Program
             ("Character device captions stay below artwork with live independent values", CharacterIdentityChecks.Captions),
             ("Character devices share stable identities across floating and compact surfaces", CharacterIdentityChecks.Floating),
             ("Character device editor isolates per-device drafts", CharacterIdentityChecks.Editor),
-            ("Character previews preserve settings and charge marks without numbers", CharacterIdentityChecks.PreviewAndFull),
+            ("Character previews preserve settings without charge marks", CharacterIdentityChecks.PreviewAndFull),
             ("Device photos retain independent artwork and captions on every surface", DevicePhotoChecks.Surfaces),
             ("Device photo editor separates images crops and applied drafts", DevicePhotoChecks.Editor),
             ("Device photos preserve legacy fallback and tolerate missing images", DevicePhotoChecks.LegacyAndMissing),
@@ -102,7 +111,8 @@ internal static class Program
             ("Only one of the six display modes is visible", UiRegressionChecks.ExclusiveSurfaces),
             ("Desktop pet behavior schedules idle interaction rest and landing", AuditChecks.DesktopPetBehaviorSchedule),
             ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
-            ("Desktop pet input is opt-in and reacts only while visible with motion enabled", DesktopPetInputChecks.Run),
+            ("Desktop pet card portraits remain stable through expression changes", AuditChecks.DesktopPetHeaderExpressions),
+            ("Desktop pet input defaults on and reacts only while visible with motion enabled", DesktopPetInputChecks.Run),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
@@ -124,6 +134,9 @@ internal static class Program
             ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
             ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),
             ("Reference themes apply across settings and resized picture overrides", ReferenceThemeChecks.Surfaces),
+            ("Card edges resize independently and save dimensions", WallpaperEngineChecks.CardResize),
+            ("Wallpaper Engine stretches the wallpaper across the whole card", WallpaperEngineChecks.WallpaperFraming),
+            ("Wallpaper Engine catalog and card selection", WallpaperEngineChecks.CatalogAndMenu),
             ("Wallpaper Engine background is opt-in and keeps saved images", WallpaperEngineChecks.Preferences),
             ("Wallpaper Engine uses the selected monitor's configured wallpaper on empty CLI output", WallpaperEngineChecks.Monitor),
             ("Wallpaper Engine resolves local video and scene/web previews without escaping project paths", WallpaperEngineChecks.Assets),
@@ -148,6 +161,10 @@ internal static class Program
             ("Taskbar follow retains fresh geometry across a failed refresh", TaskbarFollowChecks.RefreshContinuity),
             ("Taskbar follow overflow preserves surface selection and returns", TaskbarFollowChecks.OverflowRouting),
             ("Taskbar follow has a working automatic/manual setting", TaskbarFollowChecks.SettingsControl),
+            ("Taskbar pin stays beside the tray as apps open and close", TaskbarFollowChecks.PinnedPlacement),
+            ("Taskbar pin recognizes the tray without an application group", TaskbarFollowChecks.PinnedLayout),
+            ("Taskbar pin persists without losing either offset", TaskbarFollowChecks.PinnedPreferences),
+            ("Taskbar pin caches tray layout without replacing a valid follow layout", TaskbarFollowChecks.PinnedRefresh),
             ("Taskbar follow reads the live Explorer layout without blocking", () =>
             {
                 if (TaskbarFollowChecks.IsLowIntegrity())
@@ -190,7 +207,7 @@ internal static class Program
             ("Taskbar placement stays inside a scaled taskbar", CheckPlacement),
             ("Taskbar placement clamps offset and supports vertical taskbars", CheckEdges),
             ("Battery ring drains left bottom and right in order", CheckThreeSegmentRing),
-            ("Headset ring drains the left arc first and scopes volume", CheckHeadsetRing),
+            ("Screen edge headset ring leaves glyph clearance and uses one battery color", EdgeDisplayChecks.HeadsetRing),
             ("Battery ring preserves transparency and renders full/empty/unknown distinctly", CheckRing),
             ("Each connected selected device keeps its own glyph and battery", CheckDevices),
             ("Saved selection survives asynchronous discovery", CheckSelection),
@@ -214,7 +231,7 @@ internal static class Program
             ("K87 safe mode never opens a device", MchoseKeyboardChecks.SafeMode),
             ("K87 battery and charging reach the detected device", MchoseKeyboardChecks.Merge),
             ("Battery numbers update live without percent signs", EdgeDisplayChecks.Badge),
-            ("Charging displays a separate bolt including unknown battery", EdgeDisplayChecks.Charging),
+            ("Unknown charge stays free of standalone marks", EdgeDisplayChecks.Charging),
             ("Edge preferences survive clone and serialization", EdgeDisplayChecks.SettingsRoundTrip),
             ("Right edge layout handles DPI and small screens", EdgeDisplayChecks.Placement),
             ("Right edge remains exclusive with other surfaces", EdgeDisplayChecks.Exclusive),
@@ -307,38 +324,6 @@ internal static class Program
         return pixels;
     }
 
-    private static void CheckHeadsetRing()
-    {
-        var headset = new DeviceInfo { Kind = DeviceKind.Headset, Name = "HyperX Cloud III Wireless" };
-        var output = new AudioEndpointInfo("render-a", "Headphones (HyperX Cloud III Wireless)", false, Guid.Empty, 3, 44, false);
-        var unrelated = output with { Id = "render-b", Name = "Speakers (Other device)" };
-        Require(RingVolumeInput.Endpoint(headset, [output, unrelated])?.Id == "render-a", "Volume resolves a single matching output.");
-        Require(RingVolumeInput.Endpoint(headset, [output, output with { Id = "duplicate" }]) == null,
-            "Ambiguous matches never receive a volume change.");
-        Require(RingVolumeInput.Endpoint(headset, [output with { Capture = true }]) == null,
-            "Microphone inputs are ineligible.");
-        headset.Connected = false;
-        Require(RingVolumeInput.Endpoint(headset, [output]) == null, "Disconnected headsets are ineligible.");
-
-        var center = new Point(50, 50);
-        var bar = BatteryRingDrawing.VolumeBounds(center, 30);
-        var bitmap = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
-        var drawing = new DrawingVisual();
-        using (var dc = drawing.RenderOpen())
-            BatteryRingDrawing.Draw(dc, center, 30, 50, Brushes.Gray, Brushes.Red, null, Brushes.Lime, true, 50);
-        bitmap.Render(drawing);
-        var pixel = new byte[4];
-        Color At(int x, int y)
-        {
-            bitmap.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
-            return Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
-        }
-        Require(At(79, 50) == Colors.Red && At(20, 50) == Colors.Gray,
-            "At half battery the right is filled and the left is depleted.");
-        int y = (int)(bar.Y + bar.Height / 2);
-        Require(At(42, y) == Colors.Lime && At(59, y) == Colors.Gray, "Volume fills its own bar from the left.");
-    }
-
     private static void CheckThreeSegmentRing()
     {
         bool FilledAt(double level, double angle)
@@ -346,7 +331,7 @@ internal static class Program
             var image = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
-                BatteryRingDrawing.Draw(dc, new Point(50, 50), 30, level, Brushes.Gray, Brushes.Red, null);
+                BatteryRingDrawing.Draw(dc, new Point(50, 50), 30, level, Brushes.Gray, Brushes.Red);
             image.Render(visual);
             double radians = angle * Math.PI / 180;
             int x = (int)Math.Floor(50 + 30 * Math.Sin(radians));
@@ -537,7 +522,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         try
         {
-            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null, null, null, false])!;
+            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null, null, null, false, null])!;
             string kind = result.GetType().GetProperty("FailureKind")!.GetValue(result)!.ToString()!;
             Require(kind == "WriteFailed", $"A directory target must fail at the write step, got {kind}.");
 
@@ -561,7 +546,7 @@ internal static class Program
             string blocked = Path.Combine(dir, "blocked");
             File.WriteAllText(blocked, "x");
             var result = tryExport.Invoke(null,
-                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null, null, null, false])!;
+                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null, null, null, false, null])!;
             string log = result.GetType().GetProperty("LogPath")!.GetValue(result) as string ?? "";
             Require(!string.IsNullOrEmpty(log), "A failed export must report where its log went.");
             Require(File.Exists(log), $"The diagnostic log must exist, got {log}.");

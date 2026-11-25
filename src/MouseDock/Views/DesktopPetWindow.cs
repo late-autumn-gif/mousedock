@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -20,22 +21,25 @@ namespace MouseDock.Views;
 
 internal sealed class DesktopPetWindow : Window
 {
-    private enum Pose { Idle, Wave, Low, Transition, Charging, Celebrate, Hover, Click, Drag, Skill, Burst }
+    private enum Pose { Transition, Celebrate, Click, Dizzy }
     private const int ClickDuration = 1200;
     private const string KeqingId = "keqing";
-    private const int CombatFrameMilliseconds = 50;
-    private static readonly TimeSpan IdleInterval = TimeSpan.FromMilliseconds(33);
-    private static readonly TimeSpan CombatInterval = TimeSpan.FromMilliseconds(CombatFrameMilliseconds);
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(1d / 60);
 
-    private sealed record Character(string Id, string Name, string Atlas, int InteractionRow, int HeaderColumn, Brush Surface, Brush Outline, Brush Accent, bool HasBlink);
+    private sealed record Character(string Id, string Name, int HeaderColumn, bool HasBlink = true);
 
     private static readonly Character[] Characters =
     {
-        new("shin-chan", "蜡笔小新", "shin-chan-pet.png", 0, 0, Paint(22, 34, 51), Paint(85, 117, 148), Paint(147, 224, 249), true),
-        new("xin-yue-hu", "心月狐", "xin-yue-hu-pet.png", 1, 2, Paint(40, 24, 36), Paint(239, 202, 139), Paint(160, 235, 203), true),
-        new("rikka", "小鸟游六花", "rikka-takanashi-pet.png", 2, 1, Paint(23, 25, 50), Paint(170, 143, 237), Paint(144, 235, 249), true),
-        new(KeqingId, "刻晴", "keqing-pet-poses.png", 0, 0, Paint(35, 25, 53), Paint(174, 140, 232), Paint(222, 192, 255), true)
+        new("shin-chan", "蜡笔小新", 0),
+        new("xin-yue-hu", "心月狐", 2),
+        new("rikka", "小鸟游六花", 1),
+        new(KeqingId, "刻晴", 0)
     };
+    private static readonly Brush CardSurface = Paint(40, 42, 40);
+    private static readonly Brush CardLine = Paint(75, 77, 72);
+    private static readonly Brush CardInk = Paint(241, 240, 232);
+    private static readonly Brush CardMuted = Paint(190, 192, 181);
+    private static readonly Brush CardAccent = Paint(185, 207, 171);
 
     private static Brush Paint(byte r, byte g, byte b)
     {
@@ -46,9 +50,6 @@ internal sealed class DesktopPetWindow : Window
 
     private readonly BatteryService _battery;
     private readonly AppSettings _settings;
-    private ImageSource[] _frames;
-    private ImageSource[] _skillFrames;
-    private ImageSource[] _burstFrames;
     private Character _skin;
     private readonly Border _bubble;
     private readonly Image _headerPortrait = new()
@@ -58,23 +59,20 @@ internal sealed class DesktopPetWindow : Window
         Margin = new Thickness(0, 0, 13, 0)
     };
     private readonly Image _character = new() { Width = 144, Height = 144, Stretch = Stretch.Uniform };
-    private readonly DesktopPetInputOverlay _inputOverlay = new();
-    private readonly Canvas _sparks = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-    private readonly TextBlock[] _stars = { new() { Text = "✦", FontSize = 13 }, new() { Text = "✦", FontSize = 8 } };
-    private readonly ScaleTransform _breath = new(1, 1);
-    private readonly RotateTransform _tilt = new();
-    private readonly TranslateTransform _lift = new();
+    private readonly BongoPetScene _bongo;
     private readonly ScaleTransform _size = new(1, 1);
-    private readonly StackPanel _deviceList = new();
+    private readonly RotateTransform _petTilt = new();
+    private readonly TranslateTransform _petLift = new();
+    private readonly StackPanel _deviceList = new() { Width = 248 };
     private DeviceInfo[] _listedDevices = Array.Empty<DeviceInfo>();
     private readonly DispatcherTimer _timer;
     private DesktopPetRawInput _rawInput;
     private DeviceInfo _device;
     private Pose _action;
     private long _actionUntil;
+    private long _actionStarted;
     private readonly DesktopPetBehavior _behavior;
-    private double _lookAngle;
-    private long _hoverAt;
+
     private bool _charging;
     private bool _refreshQueued;
     private bool _closed;
@@ -82,9 +80,9 @@ internal sealed class DesktopPetWindow : Window
     private bool _dragging;
     private bool _hovering;
     private System.Drawing.Point? _press;
+    private bool _doubleClick;
     private Point _dragOrigin;
-    private long _dragStartedAt;
-    private double _look;
+
 
     internal DesktopPetWindow(BatteryService battery, AppSettings settings)
         : this(battery, settings, Random.Shared)
@@ -107,18 +105,19 @@ internal sealed class DesktopPetWindow : Window
         Topmost = settings.AlwaysOnTop;
         UseLayoutRounding = true;
 
-        _character.RenderTransformOrigin = new Point(.5, .98);
-        _character.RenderTransform = new TransformGroup { Children = { _breath, _tilt, _lift } };
-        var artwork = new Grid();
-        artwork.Children.Add(_character);
-        artwork.Children.Add(_sparks);
-        artwork.Children.Add(_inputOverlay);
-        foreach (var star in _stars) _sparks.Children.Add(star);
+        _bongo = new BongoPetScene(_character);
+        var motion = new TransformGroup();
+        motion.Children.Add(_petTilt);
+        motion.Children.Add(_petLift);
+        var artwork = new Grid { RenderTransform = motion, RenderTransformOrigin = new Point(.5, .92) };
+        artwork.Children.Add(_bongo);
         var portrait = new Border { Background = Brushes.Transparent, Child = artwork };
-        portrait.MouseEnter += (_, _) => { _hovering = true; _hoverAt = Environment.TickCount64; RenderPose(); };
+        portrait.MouseEnter += (_, _) => { _hovering = true; RenderPose(); };
         portrait.MouseLeave += (_, _) => { _hovering = false; RenderPose(); };
         portrait.MouseLeftButtonDown += (_, e) =>
         {
+            if (e.ClickCount > 2) return;
+            _doubleClick = e.ClickCount == 2;
             _press = System.Windows.Forms.Cursor.Position;
             _dragOrigin = PointToScreen(new Point());
             _hovering = false;
@@ -128,8 +127,6 @@ internal sealed class DesktopPetWindow : Window
         };
         portrait.MouseMove += (_, e) =>
         {
-            var point = e.GetPosition(portrait);
-            _look = Math.Clamp((point.X - portrait.ActualWidth / 2) / (portrait.ActualWidth / 2), -1, 1);
             if (_press is not System.Drawing.Point start || e.LeftButton != MouseButtonState.Pressed || _settings.DesktopPetLocked)
                 return;
 
@@ -142,7 +139,6 @@ internal sealed class DesktopPetWindow : Window
                     Math.Abs(dy) < SystemParameters.MinimumVerticalDragDistance * dpi.DpiScaleY)
                     return;
                 _dragging = true;
-                _dragStartedAt = Environment.TickCount64;
                 _actionUntil = 0;
                 RenderPose();
             }
@@ -155,7 +151,11 @@ internal sealed class DesktopPetWindow : Window
             bool wasDragging = _dragging;
             EndPointerGesture();
             portrait.ReleaseMouseCapture();
-            if (!wasDragging && portrait.IsMouseOver) Play(Pose.Click, ClickDuration);
+            if (!wasDragging && portrait.IsMouseOver)
+            {
+                if (_doubleClick) Play(Pose.Dizzy, DesktopPetBehavior.DizzyDuration);
+                else Play(Pose.Click, ClickDuration);
+            }
             e.Handled = true;
         };
         portrait.LostMouseCapture += (_, _) => EndPointerGesture();
@@ -166,21 +166,16 @@ internal sealed class DesktopPetWindow : Window
             e.Handled = true;
         };
 
-        var heading = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(9, 8, 0, 7) };
-        heading.Children.Add(new TextBlock { Text = "✦", FontSize = 17, Foreground = Brushes.Gold, Margin = new Thickness(0, 0, 8, 0) });
-        heading.Children.Add(new TextBlock { Text = "设备电量", FontSize = 19, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
-        var batteryContent = new StackPanel { Width = 300 };
-        batteryContent.Children.Add(heading);
-        batteryContent.Children.Add(_deviceList);
         _bubble = new Border
         {
-            Child = batteryContent, CornerRadius = new CornerRadius(23), BorderThickness = new Thickness(1.5),
-            Padding = new Thickness(9, 0, 9, 9), Margin = new Thickness(0, 80, 0, 0)
+            Child = _deviceList, Background = CardSurface, BorderBrush = CardLine,
+            CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1),
+            Padding = new Thickness(11, 11, 11, 7), Margin = new Thickness(0, 80, 0, 0)
         };
         ApplyCharacter(Characters.FirstOrDefault(item => item.Id == settings.DesktopPetCharacter) ?? Characters[0]);
         var layout = new StackPanel { Orientation = Orientation.Horizontal, LayoutTransform = _size };
-        portrait.VerticalAlignment = VerticalAlignment.Center;
-        portrait.Margin = new Thickness(4, 9, 8, 4);
+        portrait.VerticalAlignment = VerticalAlignment.Bottom;
+        portrait.Margin = new Thickness(2, 2, 7, 1);
         layout.Children.Add(portrait);
         var card = new Grid { VerticalAlignment = VerticalAlignment.Center };
         card.Children.Add(_bubble);
@@ -189,7 +184,16 @@ internal sealed class DesktopPetWindow : Window
         Content = layout;
 
         ContextMenu = new ContextMenu();
-        ContextMenu.Opened += (_, _) => BuildMenu();
+        ContextMenu.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("/MouseDock;component/Views/DesktopPetMenu.xaml", UriKind.Relative)
+        });
+        ContextMenu.Opened += (_, _) =>
+        {
+            _actionUntil = 0;
+            BuildMenu();
+            RenderPose();
+        };
         _timer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = IdleInterval };
         _timer.Tick += (_, _) => RenderPose();
         IsVisibleChanged += (_, _) =>
@@ -198,7 +202,6 @@ internal sealed class DesktopPetWindow : Window
             else
             {
                 SyncInputRegistration();
-                if (_action is Pose.Skill or Pose.Burst) _actionUntil = 0;
                 _behavior.Reset();
                 _timer.Stop();
             }
@@ -213,30 +216,23 @@ internal sealed class DesktopPetWindow : Window
 
     private void ApplyCharacter(Character skin)
     {
-        if (skin.Id == KeqingId)
+        _bongo.SetSkin(skin.Id);
+        _headerPortrait.Source = skin.Id == KeqingId
+            ? LoadKeqingCardPortrait()
+            : LoadCardPortrait(skin);
+        var (width, height, top) = skin.Id switch
         {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _skillFrames ??= LoadFrames("keqing-pet-skill.png", 6, 4, 21);
-            _burstFrames ??= LoadFrames("keqing-pet-burst.png", 6, 7, 37);
-            _headerPortrait.Source = LoadArtwork("keqing-pet-header.png");
-        }
-        else if (skin.Id == "shin-chan")
-        {
-            _frames = LoadFrames(skin.Atlas, 3, 3, 9);
-            _headerPortrait.Source = new CroppedBitmap((BitmapSource)_frames[0], new Int32Rect(75, 0, 362, 307));
-        }
-        else
-        {
-            LoadBuiltInCharacter(skin);
-        }
-
-        _character.Source = _frames[0];
+            "shin-chan" => (128, 82, 8),
+            KeqingId => (128, 84, 6),
+            _ => (102, 102, 0)
+        };
+        _headerPortrait.Width = width;
+        _headerPortrait.Height = height;
+        _headerPortrait.Margin = new Thickness(0, top, 13, 0);
         _skin = skin;
         _behavior.Reset();
         _actionUntil = 0;
         Title = $"MouseDock · {skin.Name}桌宠";
-        _bubble.Background = skin.Surface;
-        _bubble.BorderBrush = skin.Outline;
         _listedDevices = Array.Empty<DeviceInfo>();
         _deviceList.Children.Clear();
     }
@@ -244,42 +240,46 @@ internal sealed class DesktopPetWindow : Window
     private static BitmapImage LoadArtwork(string file) =>
         new(new Uri($"pack://application:,,,/MouseDock;component/Assets/Characters/{file}"));
 
-    private static ImageSource[] LoadFrames(string file, int columns, int rows, int count)
+    private static ImageSource LoadKeqingCardPortrait()
     {
-        var atlas = LoadArtwork(file);
-        int width = atlas.PixelWidth / columns, height = atlas.PixelHeight / rows;
-        return Enumerable.Range(0, count).Select(index =>
+        var artwork = LoadArtwork("keqing-pet-perched.png");
+        var source = new Rect(0, 0, artwork.PixelWidth, artwork.PixelHeight);
+        var portrait = new DrawingGroup();
+        using (var drawing = portrait.Open())
         {
-            var frame = new CroppedBitmap(atlas, new Int32Rect(index % columns * width, index / columns * height, width, height));
-            frame.Freeze();
-            return (ImageSource)frame;
-        }).ToArray();
+            // Keep the face behind the rim and place the two existing gloves on top of it.
+            drawing.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, 320, 210));
+            drawing.PushClip(new RectangleGeometry(new Rect(0, 0, 320, 185)));
+            drawing.DrawImage(artwork, source);
+            drawing.Pop();
+            DrawGlove("M 87,282 L 91,267 Q 104,252 121,247 Q 125,242 134,245 L 152,253 L 157,267 L 150,279 L 144,283 Z", 17);
+            DrawGlove("M 245,282 L 241,264 Q 227,249 217,248 Q 210,241 203,248 L 188,254 L 182,268 L 190,279 L 198,283 Z", -11);
+
+            void DrawGlove(string outline, double x)
+            {
+                drawing.PushTransform(new TranslateTransform(x, -73));
+                drawing.PushClip(Geometry.Parse(outline));
+                drawing.DrawImage(artwork, source);
+                drawing.Pop();
+                drawing.Pop();
+            }
+        }
+        portrait.Freeze();
+        return new DrawingImage(portrait);
     }
 
-    private void LoadBuiltInCharacter(Character skin)
+    private static ImageSource LoadCardPortrait(Character skin)
     {
-        var atlas = LoadArtwork(skin.Atlas);
-        int width = atlas.PixelWidth / 3, height = atlas.PixelHeight / 2;
-        var interactions = LoadArtwork("desktop-pet-interactions.png");
-        // The transparent gutters in the gesture atlas are not evenly spaced.
-        int[] columns = { 0, 399, 837, interactions.PixelWidth };
-        int[] rows = { 0, 388, 793, interactions.PixelHeight };
-        int gestureTop = rows[skin.InteractionRow];
-        int gestureHeight = rows[skin.InteractionRow + 1] - gestureTop;
-        _frames = Enumerable.Range(0, 9).Select(index =>
-        {
-            int gesture = index - 6;
-            var frame = index < 6
-                ? new CroppedBitmap(atlas, new Int32Rect(index % 3 * width, index / 3 * height, width, height))
-                : new CroppedBitmap(interactions, new Int32Rect(columns[gesture], gestureTop, columns[gesture + 1] - columns[gesture], gestureHeight));
-            frame.Freeze();
-            return (ImageSource)frame;
-        }).ToArray();
-
         var headers = LoadArtwork("desktop-pet-headers.png");
         int headerWidth = headers.PixelWidth / 3;
-        _headerPortrait.Source = new CroppedBitmap(headers,
-            new Int32Rect(skin.HeaderColumn * headerWidth, 0, headerWidth, headers.PixelHeight / 2));
+        int rowHeight = headers.PixelHeight / 2;
+        // The sleeve line meets the rim, with the fingers hanging over the front.
+        var cell = skin.Id == "shin-chan"
+            ? new Int32Rect(64, rowHeight + 176, 416, 264)
+            : new Int32Rect(skin.HeaderColumn * headerWidth, 0, headerWidth, rowHeight);
+        var portrait = new CroppedBitmap(headers, cell);
+        portrait.Freeze();
+        return portrait;
     }
 
     private bool Motion => !_settings.DesktopPetReduceMotion && SystemParameters.ClientAreaAnimation;
@@ -313,13 +313,14 @@ internal sealed class DesktopPetWindow : Window
     {
         bool enabled = InputReactionEnabled;
         _rawInput?.SetEnabled(enabled);
-        if (!enabled) _inputOverlay.Clear();
+
+        if (!enabled) _bongo.Clear();
     }
 
-    private void OnInputActivity(DesktopPetInputActivity activity, long now)
+    private void OnInputActivity(DesktopPetInputActivity activity, long now, int detail)
     {
         if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
-            _inputOverlay.Flash(activity, now);
+            _bongo.Tap(activity, now, detail);
     }
 
     private void OnRefresh(object sender, EventArgs e) => QueueRefresh();
@@ -368,9 +369,11 @@ internal sealed class DesktopPetWindow : Window
     private void Play(Pose pose, int duration)
     {
         if (!Motion) return;
-        if (_action == pose && Environment.TickCount64 < _actionUntil) return;
+        long now = Environment.TickCount64;
+        if (now < _actionUntil && (_action == pose || _action == Pose.Dizzy && pose == Pose.Click)) return;
         _action = pose;
-        _actionUntil = Environment.TickCount64 + duration;
+        _actionStarted = now;
+        _actionUntil = now + duration;
         RenderPose();
     }
 
@@ -381,85 +384,50 @@ internal sealed class DesktopPetWindow : Window
 
     internal void RenderPoseAt(long now)
     {
-        if (InputReactionEnabled) _inputOverlay.Advance(now);
-        else _inputOverlay.Clear();
+        if (InputReactionEnabled && !_dragging && !_press.HasValue && ContextMenu?.IsOpen != true)
+        {
+            bool left = DesktopPetRawInput.IsDown(1), right = DesktopPetRawInput.IsDown(2);
+            _bongo.SetButtons(_rawInput?.KeyboardDown == true,
+                left || right || DesktopPetRawInput.IsDown(4) ||
+                DesktopPetRawInput.IsDown(5) || DesktopPetRawInput.IsDown(6));
+            if (_rawInput != null) _bongo.UpdateLights(now, _rawInput.IsScanHeld, left, right);
+            _bongo.TrackPointer(System.Windows.Forms.Cursor.Position, System.Windows.Forms.SystemInformation.VirtualScreen);
+        }
+        else _bongo.Clear();
 
-        bool inAction = Motion && now < _actionUntil &&
+        bool animate = Motion && IsVisible && ContextMenu?.IsOpen != true;
+        bool inAction = animate && !_dragging && now >= _actionStarted && now < _actionUntil &&
             (_action != Pose.Transition || _charging) && (_action != Pose.Celebrate || _device?.IsFullActive == true);
-        Pose pose = inAction ? _action : _charging ? Pose.Charging :
-            IsLow && (_skin.Id != "shin-chan" || !Motion || now % 5500 < 1350) ? Pose.Low : Pose.Idle;
-        if (Motion && _dragging) pose = Pose.Drag;
-        else if (Motion && !inAction && _hovering) pose = Pose.Hover;
         var sample = default(DesktopPetBehavior.Sample);
-        if (Motion && IsVisible)
+        if (animate)
         {
             sample = _behavior.Update(now, _hovering || _press.HasValue, _dragging,
-                (!_hovering && !_press.HasValue) && (inAction || _charging || IsLow),
-                _settings.DesktopPetRandomActions, _settings.DesktopPetRest,
+                inAction || _charging || IsLow, _settings.DesktopPetRandomActions, _settings.DesktopPetRest,
                 _skin.HasBlink && _settings.DesktopPetBlink, _settings.DesktopPetMotionSpeed,
                 _settings.DesktopPetActionFrequency);
-            if (pose == Pose.Idle && !IsLow)
-            {
-                if (sample.Blink) pose = Pose.Transition;
-                else if (sample.Wave) pose = Pose.Wave;
-            }
         }
-        else
-        {
-            _behavior.Reset();
-        }
+        else _behavior.Reset();
 
-        ImageSource[] combatFrames = pose switch
+        double tilt = sample.Tilt;
+        double lift = sample.Lift;
+        var expression = sample.Dizzy ? PetExpression.Dizzy : sample.Blink ? PetExpression.Blink :
+            sample.State == DesktopPetBehavior.State.Sleep ? PetExpression.Rest : PetExpression.Neutral;
+        if (inAction && _action == Pose.Dizzy)
         {
-            Pose.Skill => _skillFrames,
-            Pose.Burst => _burstFrames,
-            _ => null
-        };
-        var interval = combatFrames != null ? CombatInterval :
-            sample.State == DesktopPetBehavior.State.Sleep ? TimeSpan.FromMilliseconds(140) : IdleInterval;
-        if (_timer.Interval != interval) _timer.Interval = interval;
-        var image = combatFrames == null ? _frames[(int)pose] : CombatFrame(combatFrames, now);
-        if (!ReferenceEquals(_character.Source, image)) _character.Source = image;
-        _breath.ScaleY = Motion && combatFrames == null ? 1 + (pose == Pose.Charging ? .024 : .012) *
-            Math.Sin(now / (pose == Pose.Charging ? 230d :
-                sample.State == DesktopPetBehavior.State.Sleep ? 1050d : 700d)) : 1;
-        double dragTime = Math.Min(700, now - _dragStartedAt);
-        double clickProgress = pose == Pose.Click ? 1 - Math.Clamp((_actionUntil - now) / (double)ClickDuration, 0, 1) : 0;
-        double clickMotion = Math.Sin(clickProgress * Math.PI);
-        double hoverTime = (now - _hoverAt) / 1400d;
-        double inspection = hoverTime is > 1 and < 2 ? Math.Sin((hoverTime - 1) * Math.PI) : 0;
-        double hoverTarget = pose == Pose.Hover ? _look * (4 + inspection) : 0;
-        _lookAngle = Motion ? _lookAngle + (hoverTarget - _lookAngle) * .36 : 0;
-        _tilt.Angle = pose switch
+            double progress = (now - _actionStarted) / (double)(_actionUntil - _actionStarted);
+            tilt = DesktopPetBehavior.DizzyTilt(progress);
+            expression = PetExpression.Dizzy;
+        }
+        else if (inAction && _action is Pose.Click or Pose.Celebrate)
         {
-            Pose.Drag => Math.Sin(dragTime * Math.PI / 175) * 7,
-            Pose.Hover => _lookAngle,
-            Pose.Click => (_skin.Id == "rikka" ? 5 : -3) * clickMotion,
-            Pose.Wave when inAction => 7 * Math.Sin((_actionUntil - now) / 95d),
-            _ => sample.Tilt + _lookAngle
-        };
-        _lift.Y = pose == Pose.Drag ? -6 : -4 * clickMotion + sample.Lift;
-        bool sparkling = (_skin.Id is "rikka" or KeqingId) && Motion && pose is Pose.Charging or Pose.Celebrate;
-        _sparks.Visibility = sparkling ? Visibility.Visible : Visibility.Collapsed;
-        if (sparkling)
-        {
-            double progress = pose == Pose.Celebrate ? 1 - Math.Clamp((_actionUntil - now) / 1450d, 0, 1) : 0;
-            for (int i = 0; i < _stars.Length; i++)
-            {
-                var star = _stars[i];
-                star.Foreground = pose == Pose.Celebrate ? Brushes.Gold : Brushes.Violet;
-                star.Opacity = (1 - progress) * (.65 + .35 * Math.Sin(now / 220d + i * 2));
-                Canvas.SetLeft(star, 108 + i * 12 + progress * (6 + i * 9));
-                Canvas.SetTop(star, 13 + i * 13 - progress * 10);
-            }
+            expression = PetExpression.Smile;
+            double progress = (now - _actionStarted) / (double)(_actionUntil - _actionStarted);
+            lift = -(_action == Pose.Celebrate ? 5 : 2) * Math.Pow(Math.Sin(Math.PI * progress), 2);
         }
 
-    }
-
-    private ImageSource CombatFrame(ImageSource[] frames, long now)
-    {
-        long startedAt = _actionUntil - frames.Length * CombatFrameMilliseconds;
-        return frames[(now - startedAt) / CombatFrameMilliseconds];
+        _petTilt.Angle = tilt;
+        _petLift.Y = lift;
+        _bongo.ShowPose(expression, now);
     }
 
     private void RebuildList()
@@ -471,54 +439,62 @@ internal sealed class DesktopPetWindow : Window
             return;
         }
 
-        var accent = ((SolidColorBrush)_skin.Accent).Color;
+        var accent = ((SolidColorBrush)CardAccent).Color;
         foreach (var device in _listedDevices)
         {
-            _deviceList.Children.Add(new Border { Height = 1, Background = _skin.Outline, Opacity = .46, Margin = new Thickness(4, 0, 4, 0) });
-            var row = new Grid { DataContext = device, Margin = new Thickness(9, 5, 9, 5), MinHeight = 38 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
+            var row = new Grid { DataContext = device, Margin = new Thickness(4, 0, 4, 0), MinHeight = 34 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
             row.ColumnDefinitions.Add(new ColumnDefinition());
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62) });
-            var glyph = new DeviceGlyph { Width = 22, Height = 22, GlyphBrush = _skin.Accent, HorizontalAlignment = HorizontalAlignment.Left };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+
+            var glyph = new DeviceGlyph { Width = 16, Height = 16, GlyphBrush = device == _device ? CardAccent : CardMuted,
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             glyph.SetBinding(DeviceGlyph.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
             row.Children.Add(glyph);
-
-            var details = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-            var name = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+            var name = new TextBlock { Foreground = CardInk, FontSize = 13, VerticalAlignment = VerticalAlignment.Center,
+                FontWeight = device == _device ? FontWeights.SemiBold : FontWeights.Normal,
+                TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 5, 0) };
             name.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Name)));
-            details.Children.Add(name);
-            var meter = new MeterBar
-            {
-                Height = 6, BarHeight = 5, Margin = new Thickness(0, 4, 28, 0), ShowDot = false,
-                Accent = accent, Accent2 = accent, MotionEnabled = Motion
-            };
+            Grid.SetColumn(name, 1);
+            row.Children.Add(name);
+
+            var meter = new MeterBar { Height = 4, Width = 24, BarHeight = 4, ShowDot = false,
+                TrackBrush = CardLine, Accent = accent, Accent2 = accent, MotionEnabled = Motion };
             meter.SetBinding(MeterBar.ValueProperty, new Binding(nameof(DeviceInfo.LevelFraction)));
             meter.SetBinding(MeterBar.ChargingProperty, new Binding(nameof(DeviceInfo.IsChargingActive)));
             meter.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
-            details.Children.Add(meter);
-            Grid.SetColumn(details, 1);
-            row.Children.Add(details);
+            var meterStyle = new Style(typeof(MeterBar));
+            var unknown = new DataTrigger { Binding = new Binding(nameof(DeviceInfo.Level)), Value = -1 };
+            unknown.Setters.Add(new Setter(VisibilityProperty, Visibility.Hidden));
+            meterStyle.Triggers.Add(unknown);
+            meter.Style = meterStyle;
+            Grid.SetColumn(meter, 2);
+            row.Children.Add(meter);
 
-            var reading = new TextBlock
-            {
-                Foreground = _skin.Accent, FontSize = 17, FontWeight = FontWeights.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
-            };
+            var reading = new TextBlock { FontSize = 13, FontWeight = FontWeights.Medium,
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            Typography.SetNumeralAlignment(reading, FontNumeralAlignment.Tabular);
             reading.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)));
+            PercentageWarningConverter.Bind(reading, CardInk, _settings.LowBatteryWarn);
             reading.SetBinding(OpacityProperty, new Binding(nameof(DeviceInfo.ValueOpacity)));
-            Grid.SetColumn(reading, 2);
+            Grid.SetColumn(reading, 3);
             row.Children.Add(reading);
             var item = new Button
             {
                 Content = row, Padding = new Thickness(0), BorderThickness = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch, Cursor = Cursors.Hand,
-                Background = device == _device ? new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)) : Brushes.Transparent
+                Background = Brushes.Transparent
             };
             var border = new FrameworkElementFactory(typeof(Border));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(5));
             border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
             border.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
-            item.Template = new ControlTemplate(typeof(Button)) { VisualTree = border };
+            var template = new ControlTemplate(typeof(Button)) { VisualTree = border };
+            var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
+            hover.Setters.Add(new Setter(BackgroundProperty, CardLine));
+            template.Triggers.Add(hover);
+            item.Template = template;
             item.SetBinding(ToolTipProperty, new Binding(nameof(DeviceInfo.StatusText)) { Source = device });
             item.Click += (_, _) => Follow(device.Id);
             _deviceList.Children.Add(item);
@@ -534,6 +510,7 @@ internal sealed class DesktopPetWindow : Window
 
     private void BuildMenu()
     {
+        App.ApplyCompactMenuTheme(ContextMenu);
         ContextMenu.Items.Clear();
         var characters = new MenuItem { Header = "桌宠角色" };
         foreach (var skin in Characters)
@@ -545,67 +522,33 @@ internal sealed class DesktopPetWindow : Window
                 SaveAndRefresh();
             }, ReferenceEquals(_skin, skin));
         ContextMenu.Items.Add(characters);
-        if (_skin.Id == KeqingId)
-        {
-            var actions = new MenuItem { Header = "刻晴动作", IsEnabled = Motion };
-            Add(actions.Items, "星斗归位（元素战技）", () => Play(Pose.Skill, _skillFrames.Length * CombatFrameMilliseconds));
-            Add(actions.Items, "天街巡游（元素爆发）", () => Play(Pose.Burst, _burstFrames.Length * CombatFrameMilliseconds));
-            Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
-            Add(actions.Items, "打招呼", () => Play(Pose.Click, ClickDuration));
-            ContextMenu.Items.Add(actions);
-        }
 
-        else
-        {
-            var actions = new MenuItem { Header = "桌宠动作", IsEnabled = Motion };
-            Add(actions.Items, "挥手", () => Play(Pose.Wave, 850));
-            Add(actions.Items, "打招呼", () => Play(Pose.Click, ClickDuration));
-            ContextMenu.Items.Add(actions);
-        }
-
-        var display = new MenuItem { Header = "显示设备", IsEnabled = _battery.Devices.Any(d => d.Connected && d.RecognitionEnabled && !d.Hidden) };
+        var display = new MenuItem { Header = "显示设备" };
         foreach (var device in _battery.Devices.Where(d => d.Connected && d.RecognitionEnabled && !d.Hidden))
         {
             var item = new MenuItem { Header = device.Name, IsCheckable = true, IsChecked = device.Selected, StaysOpenOnClick = true };
             item.Click += (_, _) => _battery.SetSelected(device, item.IsChecked);
             display.Items.Add(item);
         }
+        display.IsEnabled = display.HasItems;
         ContextMenu.Items.Add(display);
-
-        var follow = new MenuItem { Header = "跟随设备" };
-        Add(follow.Items, "自动选择", () => Follow(""), _settings.DesktopPetDevice == "");
-        foreach (var device in _listedDevices)
-            Add(follow.Items, device.Name, () => Follow(device.Id), _settings.DesktopPetDevice == device.Id);
-        ContextMenu.Items.Add(follow);
 
         var sizes = new MenuItem { Header = "桌宠大小" };
         foreach (int size in new[] { 50, 75, 100, 125, 150 })
             Add(sizes.Items, $"{size}%", () => ChangeSize(size), _settings.DesktopPetSize == size);
         ContextMenu.Items.Add(sizes);
+        ContextMenu.Items.Add(new Separator());
         Add(ContextMenu.Items, "锁定位置", () => { _settings.DesktopPetLocked = !_settings.DesktopPetLocked; App.SaveSettings(); }, _settings.DesktopPetLocked);
         Add(ContextMenu.Items, "减少动态效果", () => { _settings.DesktopPetReduceMotion = !_settings.DesktopPetReduceMotion; _actionUntil = 0; SaveAndRefresh(); }, _settings.DesktopPetReduceMotion);
         Add(ContextMenu.Items, "键鼠动作联动", () =>
         {
             _settings.DesktopPetInputReaction = !_settings.DesktopPetInputReaction;
             SyncInputRegistration();
+            RenderPose();
             App.SaveSettings();
         }, _settings.DesktopPetInputReaction);
-        var behavior = new MenuItem { Header = "待机行为" };
-        Add(behavior.Items, "随机小动作", () => { _settings.DesktopPetRandomActions ^= true; SaveBehavior(); }, _settings.DesktopPetRandomActions);
-        Add(behavior.Items, "随机眨眼（支持的角色）", () => { _settings.DesktopPetBlink ^= true; SaveBehavior(); }, _settings.DesktopPetBlink);
-        Add(behavior.Items, "静息模式", () => { _settings.DesktopPetRest ^= true; SaveBehavior(); }, _settings.DesktopPetRest);
-        var speed = new MenuItem { Header = "动作速度" };
-        var frequency = new MenuItem { Header = "随机动作频率" };
-        foreach (int value in new[] { 50, 100, 150 })
-        {
-            Add(speed.Items, $"{value}%", () => { _settings.DesktopPetMotionSpeed = value; SaveBehavior(); }, _settings.DesktopPetMotionSpeed == value);
-            Add(frequency.Items, $"{value}%", () => { _settings.DesktopPetActionFrequency = value; SaveBehavior(); }, _settings.DesktopPetActionFrequency == value);
-        }
-        behavior.Items.Add(speed);
-        behavior.Items.Add(frequency);
-        ContextMenu.Items.Add(behavior);
-
         Add(ContextMenu.Items, "满电提醒（全局）", () => { _settings.NotifyChargeCompleted = !_settings.NotifyChargeCompleted; App.SaveSettings(); }, _settings.NotifyChargeCompleted);
+        ContextMenu.Items.Add(new Separator());
         Add(ContextMenu.Items, "设置…", () => App.ShowSettings(this));
         Add(ContextMenu.Items, "隐藏桌宠", App.ToggleCurrentSurface);
     }
@@ -620,13 +563,6 @@ internal sealed class DesktopPetWindow : Window
     private void SaveAndRefresh()
     {
         Refresh(rebuild: true);
-        App.SaveSettings();
-    }
-
-    private void SaveBehavior()
-    {
-        _behavior.Reset();
-        RenderPose();
         App.SaveSettings();
     }
 

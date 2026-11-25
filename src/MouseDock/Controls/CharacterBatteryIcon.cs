@@ -153,10 +153,8 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             numberBounds = new Rect(textLeft, plate.Y, Math.Max(1, plate.Right - textLeft), plate.Height);
         }
         if (ShowNumber)
-            Text(dc, (Level < 0 ? "\u2014" : Level + "%") + (Full && !Stale ? " ✓" : ""),
+            Text(dc, Level < 0 ? "\u2014" : Level + "%",
                 numberBounds, Math.Min(plate.Height * .8, 24), StatusBrush(Level, true), true);
-        else if (ShowGlyph && !Stale && Full)
-            Text(dc, "✓", numberBounds, plate.Height * .7, Accent, true);
         dc.Pop();
     }
 
@@ -202,10 +200,11 @@ public sealed class CharacterBatteryIcon : FrameworkElement
             Brush PhotoInk(Brush brush, double minimum = 4.5) => new SolidColorBrush(ColorContrast.Legible(
                 (brush as SolidColorBrush)?.Color ?? Colors.White, new[] { Color.FromRgb(23, 23, 23) }, minimum));
             var ink = PhotoInk(Ink);
-            var low = PhotoInk(Low);
             var muted = PhotoInk(Muted);
             var accent = PhotoInk(Accent, 3);
-            Brush Status(int level, bool text = false) => AppearanceColors.Battery(level, text ? ink : accent, low, muted);
+            Brush Status(int level, bool text, bool charging, bool full) => level < 0 ? muted :
+                PhotoInk(AppearanceColors.BatteryState(text ? ink : accent, level,
+                    CompactLowBatteryThreshold ?? App.Settings?.LowBatteryWarn ?? 20, charging, full, text));
 
             dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(232, 0, 0, 0)), null,
                 new Rect(bounds.X, top, bounds.Width, bounds.Bottom - top));
@@ -217,14 +216,13 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                 var row = new Rect(bounds.X + 7, top + i * rowHeight, bounds.Width - 14, rowHeight - 3);
                 dc.PushOpacity(stale ? .45 : 1);
                 double lineHeight = row.Height * .46;
+                bool charging = (device?.IsChargingActive ?? Charging) && !stale;
                 DeviceGlyph.Draw(dc, device?.Kind ?? Kind,
-                    new Rect(row.X, row.Y + 3, 14, 14), Status(level, true), 1.6);
+                    new Rect(row.X, row.Y + 3, 14, 14), Status(level, true, charging, device?.IsFullActive ?? Full), 1.6);
                 var number = new Rect(row.Right - 69, row.Y - 1, 69, lineHeight);
                 string value = level < 0 ? "\u2014" : level + "%";
-                bool charging = (device?.IsChargingActive ?? Charging) && !stale;
-                if ((device?.IsFullActive ?? Full) && !stale) value += " ✓";
 
-                Text(dc, value, number, Math.Min(20, row.Height * .45), Status(level, true), true);
+                Text(dc, value, number, Math.Min(20, row.Height * .45), Status(level, true, charging, device?.IsFullActive ?? Full), true);
                 Label(dc, device?.Name ?? "", new Rect(row.X + 20, row.Y + 1, Math.Max(1, row.Width - 91), lineHeight),
                     Math.Min(12, row.Height * .24), ink);
                 string status = device == null ? (level < 0 ? "电量未知" : "已连接") :
@@ -235,18 +233,18 @@ public sealed class CharacterBatteryIcon : FrameworkElement
                 var bar = new Rect(row.X, row.Bottom - 2, row.Width, 1.6);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), null, bar);
                 double drawn = _chargeSweep.Follow(i, level, charging && phase >= 0);
-                ChargeSweep.HorizontalLine(dc, bar, drawn / 100, .8, Status(level), charging ? phase : -1);
+                ChargeSweep.HorizontalLine(dc, bar, drawn / 100, .8, Status(level, false, charging, device?.IsFullActive ?? Full), charging ? phase : -1);
                 dc.Pop();
             }
         }
         dc.Pop();
     }
 
-    private Brush ProgressBrush() => CompactLowBatteryThreshold is int threshold
-        ? Level < 0 ? Muted : AppearanceColors.IsLowBattery(Level, threshold) ? AppearanceColors.LowBatteryFill : Accent
-        : StatusBrush(Level);
+    private Brush ProgressBrush() => StatusBrush(Level);
 
-    private Brush StatusBrush(int level, bool text = false) => AppearanceColors.Battery(level, text ? Ink : Accent, Low, Muted);
+    private Brush StatusBrush(int level, bool text = false) => level < 0 ? Muted :
+        AppearanceColors.BatteryState(text ? Ink : Accent, level,
+            CompactLowBatteryThreshold ?? App.Settings?.LowBatteryWarn ?? 20, Charging && !Stale, Full && !Stale, text);
 
     private void Label(DrawingContext dc, string text, Rect bounds, double size, Brush ink)
     {

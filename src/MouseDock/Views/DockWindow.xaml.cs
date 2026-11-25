@@ -48,6 +48,7 @@ namespace MouseDock.Views
             InitializeComponent();
             _themeBackground = Root.Background;
             InitializeWallpaper(readWallpaper);
+            InitializeCardResize();
             LowBatteryThreshold = App.Settings.LowBatteryWarn;
             App.Battery.Refreshed += (_, __) => RefreshDevices();
             App.Battery.SourceChanged += (_, __) => RefreshDevices();
@@ -158,7 +159,8 @@ namespace MouseDock.Views
         {
             style = (style ?? "standard").ToLowerInvariant();
             _bareDensity = style == "bare";
-            Root.Width = style == "compact" ? 288 : 316;
+            _defaultCardWidth = style == "compact" ? 288 : 316;
+            if (SizeToContent != SizeToContent.Manual) Root.Width = _defaultCardWidth;
             switch (style)
             {
                 case "compact":
@@ -188,7 +190,7 @@ namespace MouseDock.Views
         private void ApplyBareBackground()
         {
             var brush = new SolidColorBrush(App.Theme.Surface);
-            PictureBackground.SetWallpaper(Root, null, brush);
+            PictureBackground.SetWallpaper(Root, null, surfaceOverride: brush);
             Root.Background = brush;
         }
 
@@ -410,19 +412,22 @@ namespace MouseDock.Views
 
     public sealed class PercentageWarningConverter : IMultiValueConverter
     {
-        private static readonly Brush WarningBrush = CreateWarningBrush();
-
-        private static Brush CreateWarningBrush()
-        {
-            var brush = new SolidColorBrush(Color.FromRgb(0xFF, 0x8A, 0x8A));
-            brush.Freeze();
-            return brush;
-        }
-
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
-            values[0] is int level && level >= 0 && values[1] is int threshold && level <= threshold
-                ? WarningBrush
-                : values[2];
+            values[0] is int level && values[2] is Brush normal
+                ? AppearanceColors.BatteryState(normal, level, values[1] is int threshold ? threshold : App.Settings?.LowBatteryWarn ?? 20,
+                    values.Length > 3 && values[3] is true, values.Length > 4 && values[4] is true, text: true)
+                : DependencyProperty.UnsetValue;
+
+        internal static void Bind(TextBlock text, Brush normal, int threshold)
+        {
+            var binding = new MultiBinding { Converter = new PercentageWarningConverter() };
+            binding.Bindings.Add(new Binding(nameof(DeviceInfo.Level)));
+            binding.Bindings.Add(new Binding { Source = threshold });
+            binding.Bindings.Add(new Binding { Source = normal });
+            binding.Bindings.Add(new Binding(nameof(DeviceInfo.IsChargingActive)));
+            binding.Bindings.Add(new Binding(nameof(DeviceInfo.IsFullActive)));
+            text.SetBinding(TextBlock.ForegroundProperty, binding);
+        }
 
         public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
             throw new NotSupportedException();

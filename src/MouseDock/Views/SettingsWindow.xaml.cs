@@ -129,7 +129,7 @@ namespace MouseDock.Views
                 AutoUpdateBox.IsEnabled = !App.IsTestProfile;
                 AutoUpdateBox.ToolTip = App.IsTestProfile ? "隔离测试版不访问更新源" : null;
                 ApplySurfaceButtons(s.SurfaceMode);
-                DockWallpaperEngineBox.IsChecked = s.DockFollowWallpaperEngine;
+                DockWallpaperEngineBox.IsChecked = s.DockFollowWallpaperEngine && string.IsNullOrEmpty(s.DockWallpaperEngineSelection);
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
                 ReferenceCharacterChoices.SelectedItem = ReferenceCharacterChoices.Items.OfType<ComboBoxItem>()
@@ -138,11 +138,10 @@ namespace MouseDock.Views
                 RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
-                TaskbarFollowIconsBox.IsChecked = s.TaskbarFollowIcons;
+                TaskbarPositionChoice.SelectedValue = s.TaskbarPinToTray ? "tray" : s.TaskbarFollowIcons ? "follow" : "manual";
                 TaskbarIconOffsetSlider.Value = TaskbarPlacement.NormalizeIconOffset(s.TaskbarIconOffset);
                 TaskbarIconOffsetInput.Text = TaskbarIconOffsetSlider.Value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
                 RebuildTaskbarStyles();
-                ChargeEffectChoice.SelectedIndex = s.ChargeEffect == "wave" ? 1 : 0;
                 RebuildEdgeStyles();
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(s, App.Theme));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
@@ -332,6 +331,8 @@ namespace MouseDock.Views
         {
             if (_loading) return;
             App.Settings.DockFollowWallpaperEngine = DockWallpaperEngineBox.IsChecked == true;
+            App.Settings.DockWallpaperEngineSelection = "";
+            App.Settings.DockWallpaperLiveScene = false;
             App.Dock?.ApplyBackground(App.Settings.DockBackground);
             App.SaveSettings();
         }
@@ -341,6 +342,13 @@ namespace MouseDock.Views
             var editor = new BackgroundEditorWindow(App.Settings) { Owner = this };
             if (editor.ShowDialog() != true) return;
             var draft = editor.Draft;
+            if (!string.Equals(App.Settings.CustomBackground, draft.CustomBackground, StringComparison.OrdinalIgnoreCase))
+            {
+                App.Settings.DockBackground = "";
+                App.Settings.DockWallpaperEngineSelection = "";
+                App.Settings.DockWallpaperLiveScene = false;
+                App.Settings.DockFollowWallpaperEngine = false;
+            }
             App.Settings.CustomBackground = draft.CustomBackground;
             App.Settings.CustomAccent = draft.CustomAccent;
             App.Settings.BackgroundZoom = draft.BackgroundZoom;
@@ -363,6 +371,7 @@ namespace MouseDock.Views
 
         private void OnClearBackground(object sender, RoutedEventArgs e)
         {
+            App.Settings.DockBackground = "";
             App.Settings.CustomBackground = "";
             App.Settings.CustomAccent = "";
             App.RefreshTheme();
@@ -570,7 +579,7 @@ namespace MouseDock.Views
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
-                Services.FeedbackService.OpenFeedbackMail(export.Path);
+                Services.FeedbackService.OpenFeedbackMail(export);
             }
             catch (System.Exception ex)
             {
@@ -590,7 +599,7 @@ namespace MouseDock.Views
             {
                 Views.AboutWindow.Show(this, false,
                     owner => App.ExportErrorReport(owner ?? this),
-                    p => Services.FeedbackService.OpenFeedbackMail(p));
+                    Services.FeedbackService.OpenFeedbackMail);
             }
             catch { }
         }
@@ -758,7 +767,6 @@ namespace MouseDock.Views
             App.SetSurface(mode);
         }
 
-        private void OnPickIconBackground(object sender, RoutedEventArgs e) => App.PickBackground("icon");
 
         private void OnTaskbarOffsetChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
@@ -769,10 +777,12 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        private void OnTaskbarFollowIconsChanged(object sender, RoutedEventArgs e)
+        private void OnTaskbarPositionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_loading) return;
-            App.Settings.TaskbarFollowIcons = TaskbarFollowIconsBox.IsChecked == true;
+            if (_loading || TaskbarPositionChoice?.SelectedValue is not string mode) return;
+            App.Settings.TaskbarPinToTray = mode == "tray";
+            if (!App.Settings.TaskbarPinToTray)
+                App.Settings.TaskbarFollowIcons = mode == "follow";
             ApplyTaskbarPositionControls(App.Settings.SurfaceMode);
             App.Taskbar?.UpdateAnchor();
             App.SaveSettings();
@@ -807,16 +817,10 @@ namespace MouseDock.Views
         private void ApplyTaskbarPositionControls(string mode)
         {
             bool taskbar = mode == "taskbar";
-            TaskbarFollowIconsBox.Visibility = taskbar ? Visibility.Visible : Visibility.Collapsed;
-            TaskbarIconOffsetRow.Visibility = taskbar && App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
-            TaskbarPositionRow.Visibility = taskbar && !App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private void OnChargeEffectChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_loading || App.Settings == null || ChargeEffectChoice == null) return;
-            App.Settings.ChargeEffect = ChargeEffectChoice.SelectedIndex == 1 ? "wave" : "lightning";
-            App.SaveSettings();
+            TaskbarPositionChoiceRow.Visibility = taskbar ? Visibility.Visible : Visibility.Collapsed;
+            bool showOffset = taskbar && !App.Settings.TaskbarPinToTray;
+            TaskbarIconOffsetRow.Visibility = showOffset && App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
+            TaskbarPositionRow.Visibility = showOffset && !App.Settings.TaskbarFollowIcons ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void OnEdgePositionChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1062,11 +1066,7 @@ namespace MouseDock.Views
             App.Settings.ClickThrough = ClickThroughBox.IsChecked == true;
             App.ApplyWindowBehavior();
             App.SaveSettings();
-        }        private void OnClearIconBackground(object sender, RoutedEventArgs e) => App.SetBackground("icon", "");
-        private void OnPickDockBg(object sender, RoutedEventArgs e) => App.PickBackground("dock");
-        private void OnClearDockBg(object sender, RoutedEventArgs e) => App.SetBackground("dock", "");
-        private void OnPickMiniBg(object sender, RoutedEventArgs e) => App.PickBackground("mini");
-        private void OnClearMiniBg(object sender, RoutedEventArgs e) => App.SetBackground("mini", "");
+        }
 
         /// <summary>三个形态按钮里高亮选中的那个，其余压暗。</summary>
         private void ApplySurfaceButtons(string mode)

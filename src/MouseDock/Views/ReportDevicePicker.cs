@@ -22,9 +22,10 @@ namespace MouseDock.Views
             public string Detail;
         }
 
-        internal static DeviceInfo Pick(Window owner, IReadOnlyList<DeviceInfo> devices, out bool canceled, out bool cableConnected)
+        internal static DeviceInfo Pick(Window owner, IReadOnlyList<DeviceInfo> devices, out bool canceled, out bool cableConnected, out bool guided)
         {
             canceled = true;
+            guided = false;
             cableConnected = false;
 
             var window = new Window
@@ -165,6 +166,10 @@ namespace MouseDock.Views
             ok.Click += (_, __) => Accept(window, list);
 
             buttons.Children.Add(cancel);
+            var adaptation = new Button { Content = "适配新设备", Height = 30, Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(0, 0, 8, 0) };
+            bool newDevice = false;
+            adaptation.Click += (_, __) => { newDevice = true; Accept(window, list); };
+            buttons.Children.Add(adaptation);
             buttons.Children.Add(ok);
             bottom.Children.Add(buttons);
             root.Children.Add(bottom);
@@ -175,6 +180,7 @@ namespace MouseDock.Views
             bool? result = window.ShowDialog();
             if (result != true) return null;
 
+            guided = newDevice;
             canceled = false;
             cableConnected = chargingTest.IsChecked == true;
             return (window.Tag as Target)?.Device;
