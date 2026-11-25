@@ -61,7 +61,7 @@ public sealed class CharacterDeviceBadge : Grid
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
         };
         number.SetBinding(TextBlock.TextProperty, compact
-            ? new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() }
+            ? new Binding(nameof(DeviceInfo.CompactLevelText))
             : new Binding(nameof(DeviceInfo.LevelText)));
         if (!compact)
             number.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(DeviceInfo.Level))
@@ -82,12 +82,6 @@ public sealed class CharacterDeviceBadge : Grid
         row.Children.Add(charging);
     }
 
-    private sealed class NumberConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-            value is int level && level >= 0 ? level.ToString(CultureInfo.InvariantCulture) : "\u2014";
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
-    }
     private sealed class StateBrush(Brush ink, Brush low, Brush muted) : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>

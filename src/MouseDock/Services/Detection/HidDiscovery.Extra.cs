@@ -30,7 +30,7 @@ public static partial class HidDiscovery
                     DeviceKind.Headset => HandledBy.ExtraHeadset,
                     _ => HandledBy.ExtraKeyboard
                 };
-                bucket.Battery = -1; bucket.Charging = bucket.ChargeFull = bucket.ReadStale = false;
+                bucket.Battery = -1; bucket.IsBatteryEstimated = false; bucket.Charging = bucket.ChargeFull = bucket.ReadStale = false;
                 bucket.BatterySource = ""; bucket.ExtraModel = null;
             }
             var trace = new BatteryReplay.Trace();
@@ -79,7 +79,7 @@ public static partial class HidDiscovery
                 ReferenceBatteryProtocol.State.Charging or ReferenceBatteryProtocol.State.Full;
             bool valid = reading.Level is >= 0 and <= 100 && active;
             trace.Add("reader-result", active, result: BatteryReplay.SafeLabel(reading.Diagnostic));
-            Record(reading.Status.ToString(), reading.Model, valid ? reading.Level : -1);
+            Record(reading.Status.ToString(), reading.Model, valid && !reading.IsBatteryEstimated ? reading.Level : -1);
             if (active && (valid || reading.ChargingKnown))
             {
                 var destination = bucket;
@@ -92,13 +92,14 @@ public static partial class HidDiscovery
                     buckets[child] = destination;
                 }
                 destination.Battery = valid ? reading.Level : -1;
+                destination.IsBatteryEstimated = valid && reading.IsBatteryEstimated;
                 destination.Charging = reading.ChargingKnown && reading.Charging;
                 destination.ChargeFull = reading.Status == ReferenceBatteryProtocol.State.Full;
                 destination.BatterySource = route.Reader + " · " + reading.Diagnostic;
                 destination.ExtraModel = reading.Model;
             }
             else bucket.BatteryFailures.Add(route.Reader + " · " + reading.Diagnostic);
-            LastDiagnostics.Add($"{instance} {route.Reader}: {reading.Status}, {reading.Level}, {reading.Diagnostic}");
+            LastDiagnostics.Add($"{instance} {route.Reader}: {reading.Status}, {(reading.IsBatteryEstimated ? "≈" : "")}{reading.Level}, {reading.Diagnostic}");
         }
     }
 }

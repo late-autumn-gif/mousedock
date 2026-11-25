@@ -302,7 +302,7 @@ namespace MouseDock.Services
         private readonly List<DeviceInfo> _mirror = new List<DeviceInfo>();
         private readonly Dictionary<string, int> _misses = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _absent = new Dictionary<string, int>();
-        private readonly Dictionary<string, (int Level, DateTime At)> _lastKnown = new Dictionary<string, (int, DateTime)>();
+        private readonly Dictionary<string, (int Level, bool Estimated, DateTime At)> _lastKnown = new Dictionary<string, (int, bool, DateTime)>();
         private int _refreshSeconds = 5;
         private DevicePreferences _preferences;
         private bool _applyingPreferences;
@@ -425,7 +425,7 @@ namespace MouseDock.Services
                         DpiCapturedAt = d.Dpi > 0 && !d.IsStale ? DateTimeOffset.UtcNow : default,
                         Id = d.Id, Name = d.Name, Kind = d.Kind, Source = d.Source,
                         Transport = d.Transport, Detail = d.Detail, Note = d.Note, DpiSettings = d.DpiSettings,
-                        Connected = d.Connected, Level = d.Level, BatteryBand = d.BatteryBand, Charging = d.Charging, ChargeFull = d.ChargeFull,
+                        Connected = d.Connected, Level = d.Level, IsBatteryEstimated = d.IsBatteryEstimated, BatteryBand = d.BatteryBand, Charging = d.Charging, ChargeFull = d.ChargeFull,
                         Selected = d.Selected, IsStale = d.IsStale,
                         DetectionIds = d.DetectionIds?.ToArray()
                     }).ToList();
@@ -440,7 +440,7 @@ namespace MouseDock.Services
             foreach (var incoming in snapshot)
             {
                 _preferences.Apply(incoming);
-                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.BatteryBand = ""; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; incoming.Dpi = -1; incoming.DpiSettings = null; }
+                if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.IsBatteryEstimated = false; incoming.BatteryBand = ""; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; incoming.Dpi = -1; incoming.DpiSettings = null; }
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
                 if (!incoming.Connected)
                 {
@@ -483,6 +483,7 @@ namespace MouseDock.Services
                     misses++;
                     _misses[incoming.Id] = misses;
                     incoming.Level = existing.Level;
+                    incoming.IsBatteryEstimated = existing.IsBatteryEstimated;
                     incoming.Charging = existing.Charging;
                     incoming.IsStale = true; // Cached charge flags must not keep a live charging animation running.
                 }
@@ -495,7 +496,7 @@ namespace MouseDock.Services
                 {
                     _misses[incoming.Id] = 0;
                     incoming.IsStale = false;
-                    _lastKnown[incoming.Id] = (incoming.Level, DateTime.UtcNow);
+                    _lastKnown[incoming.Id] = (incoming.Level, incoming.IsBatteryEstimated, DateTime.UtcNow);
                 }
 
                 _absent[incoming.Id] = 0;
@@ -509,6 +510,7 @@ namespace MouseDock.Services
                         && (DateTime.UtcNow - last.At).TotalMinutes < 10)
                     {
                         incoming.Level = last.Level;
+                        incoming.IsBatteryEstimated = last.Estimated;
                         incoming.IsStale = true;
                     }
                     _mirror.Add(incoming);
@@ -521,6 +523,7 @@ namespace MouseDock.Services
                     existing.Name = incoming.Name;
                     existing.Kind = incoming.Kind;
                     existing.Level = incoming.Level;
+                    existing.IsBatteryEstimated = incoming.IsBatteryEstimated;
                     existing.BatteryBand = incoming.BatteryBand;
                     existing.Dpi = incoming.Dpi;
                     existing.DpiSettings = incoming.DpiSettings;
@@ -644,6 +647,7 @@ namespace MouseDock.Services
             _misses.Remove(device.Id);
             device.Level = -1;
             device.BatteryBand = "";
+            device.IsBatteryEstimated = false;
             device.Charging = false;
             device.ChargeFull = false;
             device.IsStale = false;

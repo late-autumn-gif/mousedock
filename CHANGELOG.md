@@ -1,5 +1,9 @@
 # MouseDock 更新日志
 
+## DualSense 电量（2026-11-25）
+
+- 修复 [Issue #44](https://github.com/late-autumn-gif/mousedock/issues/44)。在面板和任务栏显示 DualSense 的档位估算，例如 `≈95%`，并保留充电状态和原始档位。设备明确充满时显示 `100%`。USB 与蓝牙报文均纳入回归。39,635 项离线协议及集成断言、25 项电量相关 WPF 检查通过，Pico 2W 适配器待实机复测。
+
 ## 前行者 S7／S9 电量（2026-11-25）
 
 补齐 S7 Pro、S7 Max、S7 Ultra、S9 Pro、S9 Max、S9 Ultra、S9 Ultra+ 的有线与 2.4G 电量路径。共享接收器按 HID 产品名和配对 UUID 验证型号，读取前后核对配对身份。39,627 项离线协议及集成断言通过。电量待实机验证，DPI 待研究。详见[设备协议清单](docs/MouseDock设备协议清单.md)。

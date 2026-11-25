@@ -1497,6 +1497,7 @@ namespace MouseDock.Services.Detection
             public readonly HashSet<string> Interfaces = new HashSet<string>();
             public DeviceKind Kind = DeviceKind.Other;
             public int Battery = -1;
+            public bool IsBatteryEstimated;
             public bool Charging;
             public bool ChargeFull;
             public bool ReadStale;
@@ -1763,6 +1764,7 @@ namespace MouseDock.Services.Detection
                     Kind = kind,
                     Transport = transport,
                     Level = Battery,
+                    IsBatteryEstimated = Battery >= 0 && IsBatteryEstimated,
                     Dpi = Dpi,
                     DpiSettings = DpiSettings,
                     DpiSlots = DpiSlots,

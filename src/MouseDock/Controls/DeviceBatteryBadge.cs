@@ -46,7 +46,7 @@ namespace MouseDock.Controls
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed
             };
-            number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.Level)) { Converter = new NumberConverter() });
+            number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.CompactLevelText)));
             SetRow(number, below ? 1 : 0);
             SetColumn(number, below ? 0 : 1);
             Children.Add(number);
@@ -75,12 +75,5 @@ namespace MouseDock.Controls
                 throw new NotSupportedException();
         }
 
-        private sealed class NumberConverter : IValueConverter
-        {
-            public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-                value is int level && level >= 0 ? level.ToString(CultureInfo.InvariantCulture) : "\u2014";
-            public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
-                Binding.DoNothing;
-        }
     }
 }

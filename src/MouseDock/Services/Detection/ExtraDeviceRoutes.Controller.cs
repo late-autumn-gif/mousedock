@@ -26,8 +26,10 @@ internal static partial class ExtraDeviceRoutes
             if (existing.Kind != DeviceKind.Controller || !existing.Connected || !item.Connected) continue;
             // Exact physical ID only; system wireless metadata does not depend on a percentage being available.
             if (!string.IsNullOrEmpty(item.Transport)) existing.Transport = item.Transport;
-            if (existing.Level >= 0 || item.Level < 0 && string.IsNullOrEmpty(item.BatteryBand)) continue;
+            if (existing.Level >= 0 && (!existing.IsBatteryEstimated || item.Level < 0 || item.IsBatteryEstimated)) continue;
+            if (item.Level < 0 && string.IsNullOrEmpty(item.BatteryBand)) continue;
             existing.Level = item.Level;
+            existing.IsBatteryEstimated = item.IsBatteryEstimated;
             existing.BatteryBand = item.BatteryBand;
             existing.HandledBy = HandledBy.SystemController;
             existing.Charging = item.Charging;
