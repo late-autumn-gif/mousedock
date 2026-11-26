@@ -25,6 +25,9 @@ internal sealed record DpiSignature(ushort Page, ushort Usage, int Input, int Ou
             DpiFamily.Scyrox => Input==64&&Output==64&&InputIds.SetEquals(new byte[]{8})&&OutputIds.SetEquals(new byte[]{8}),
             DpiFamily.Sora => false,
             DpiFamily.Rapoo => Input is 19 or 20&&InputIds.Contains(7),
+            // 雷蛇：系统鼠标集合（UsagePage 1 / Usage 2）上 Feature 91 字节、Input 9 字节、无 Output。
+            // 该集合不暴露 Feature 能力表，所以不核对 FeatureIds，靠报文结构校验。
+            DpiFamily.Razer => Input==9&&Output==0&&Feature==91,
             _=>false
         };
     }
@@ -41,7 +44,10 @@ internal sealed record DpiConnection(DpiProfile Profile,string InstanceId,DpiCha
     internal static DpiConnection Resolve(string instance,ushort vid,ushort pid,IEnumerable<DpiChannel> channels)
     {
         var profile=DpiProfiles.Native(vid,pid)??throw new InvalidOperationException("此型号尚未开放原生 DPI 控制");
-        var selected=channels.Where(c=>c.Vid==vid&&c.Pid==pid&&c.InstanceId==instance).ToArray();
+        // 设备身份来自电量扫描（偏好里可能被规范化成小写），而通道枚举里的实例号固定是大写十六进制，
+        // 这里必须忽略大小写比较，否则原生 DPI 会误报“没有满足报告能力的 DPI 接口”。
+        var selected=channels.Where(c=>c.Vid==vid&&c.Pid==pid&&
+            string.Equals(c.InstanceId,instance,StringComparison.OrdinalIgnoreCase)).ToArray();
         DpiChannel One(Func<DpiChannel,bool> predicate,bool optional=false)
         {
             var matches=selected.Where(predicate).GroupBy(c=>c.Path,StringComparer.OrdinalIgnoreCase).Select(g=>g.First()).ToArray();
@@ -135,9 +141,13 @@ internal sealed class DpiNativeLink : IDpiLink,IDisposable
         {
             foreach(var channel in new[]{connection.Main,connection.Output,connection.Feature}.Where(c=>c!=null).DistinctBy(c=>c.Path,StringComparer.OrdinalIgnoreCase))
             {
-                bool featureOnly=connection.Profile.Family==DpiFamily.Sora||channel==connection.Feature&&connection.Profile.Family==DpiFamily.Rapoo;
-                uint access=connection.Profile.Family==DpiFamily.Rapoo&&channel==connection.Main?ReadAccess:ReadAccess|WriteAccess;
-                IntPtr h=CreateFile(channel.Path,access,3,IntPtr.Zero,3,featureOnly?0:Overlapped,IntPtr.Zero);
+                // 雷蛇的系统鼠标集合只接受 dwDesiredAccess=0 的零权限句柄（读写权限会被 Win32=5 拒绝），
+                // 但 SetFeature/GetFeature 在该句柄上照常工作；打开时必须带 OVERLAPPED 才能稳定拿到句柄。
+                bool razer=connection.Profile.Family==DpiFamily.Razer;
+                bool featureOnly=razer||connection.Profile.Family==DpiFamily.Sora||channel==connection.Feature&&connection.Profile.Family==DpiFamily.Rapoo;
+                uint access=razer?0u:connection.Profile.Family==DpiFamily.Rapoo&&channel==connection.Main?ReadAccess:ReadAccess|WriteAccess;
+                uint flags=razer?Overlapped:featureOnly?0:Overlapped;
+                IntPtr h=CreateFile(channel.Path,access,3,IntPtr.Zero,3,flags,IntPtr.Zero);
                 if(h==IntPtr.Zero||h==new IntPtr(-1))throw new IOException("DPI 接口打开失败 Win32="+Marshal.GetLastWin32Error());
                 IntPtr signal=IntPtr.Zero;
                 try
@@ -161,6 +171,8 @@ internal sealed class DpiNativeLink : IDpiLink,IDisposable
     public byte[] Read(int timeoutMs)
     {
         guard();
+        // 雷蛇只用 Feature 报文收发，输入集合不参与 DPI 读写。
+        if(connection.Profile.Family==DpiFamily.Razer)return null;
         var channel=connection.Main;
         if(channel.Signature.Input<=0)return null;
         var target=handles[channel.Path];var b=new byte[channel.Signature.Input];
@@ -180,12 +192,24 @@ internal sealed class DpiNativeLink : IDpiLink,IDisposable
     public bool SetFeature(byte[] packet)
     {
         guard();
+        var channel=connection.Feature??throw new IOException("没有独立的 DPI Feature 接口");
+        if(connection.Profile.Family==DpiFamily.Razer)
+        {
+            if(packet==null||packet.Length!=channel.Signature.Feature)throw new IOException("DPI Feature 报文长度未获批准");
+            return HidD_SetFeature(handles[channel.Path].Handle,packet,packet.Length);
+        }
         throw new IOException("DPI Feature 写入尚未取得精确报告布局，未开放原生控制");
     }
     public byte[] GetFeature(byte reportId,int length)
     {
         guard();
         var channel=connection.Feature??throw new IOException("没有独立的 DPI Feature 接口");
+        if(connection.Profile.Family==DpiFamily.Razer)
+        {
+            if(reportId!=0||length!=channel.Signature.Feature)throw new IOException("此 DPI Feature 读取未开放");
+            var buffer=new byte[channel.Signature.Feature];
+            return HidD_GetFeature(handles[channel.Path].Handle,buffer,buffer.Length)?buffer:null;
+        }
         bool rapoo=connection.Profile.Family==DpiFamily.Rapoo&&reportId==8&&length==33;
         if(!rapoo)throw new IOException("此 DPI Feature 读取未开放");
         var b=new byte[channel.Signature.Feature];b[0]=reportId;
@@ -255,4 +279,5 @@ internal sealed class DpiNativeLink : IDpiLink,IDisposable
     [DllImport("hid.dll")]private static extern int HidP_GetCaps(IntPtr prep,ref Caps caps);
     [DllImport("hid.dll")]private static extern int HidP_GetValueCaps(int type,byte[] caps,ref ushort length,IntPtr prep);
     [DllImport("hid.dll",SetLastError=true)]private static extern bool HidD_GetFeature(IntPtr h,byte[] b,int length);
+    [DllImport("hid.dll",SetLastError=true)]private static extern bool HidD_SetFeature(IntPtr h,byte[] b,int length);
 }

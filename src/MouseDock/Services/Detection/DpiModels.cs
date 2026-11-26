@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace MouseDock.Services.Detection;
 
-public enum DpiFamily { Atk, Z7, Scyrox, Rapoo, Sora, Catalog, Pulsar, MchoseReadOnly }
+public enum DpiFamily { Atk, Z7, Scyrox, Rapoo, Sora, Catalog, Pulsar, MchoseReadOnly, Razer }
 
 public readonly record struct DpiStage(int X, int Y)
 {

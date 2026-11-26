@@ -139,6 +139,8 @@ public sealed class DpiWindow : Window
     internal void RenderSnapshot(DpiSnapshot state,int? selectedStage=null)
     {
         snapshot=state;
+        // 窗口里读/写成功后立刻把卡片上的数值同步过去，不必等下一次周期扫描。
+        if(state!=null&&state.Current.X>0)device.Dpi=state.Current.X;
         CurrentText.Text=state?.Current.Label??"DPI 未确认";
         bool currentOnly=state?.Family==DpiFamily.MchoseReadOnly;
         subtitle.Text=state==null?"":currentOnly?$"扫描于 {state.CapturedAt.LocalDateTime:HH:mm:ss} · 只读":state.Context.StartsWith("live:")?state.Note:$"当前第 {state.Active+1} 档 · {state.Stages.Count} 档"+(state.Writable?"":" · 只读");

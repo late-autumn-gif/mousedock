@@ -26,7 +26,13 @@ internal static class DpiProfiles
         new DpiProfile(0x3554, 0xF58A, 0xFF02, 2, "VXE R1 Pro Max", DpiFamily.Catalog, Cid: 2, Mid: 27, Codec: "step50"),
         new DpiProfile(0x3554, 0xF58C, 0xFF02, 2, "VXE R1 Pro Max", DpiFamily.Catalog, true, Cid: 2, Mid: 27, Codec: "step50"),
         new DpiProfile(0x3554, 0xF58E, 0xFF02, 2, "VXE R1 SE+", DpiFamily.Catalog, WriteApproved: false, Cid: 2, Mid: 32, Codec: "se"),
-        new DpiProfile(0x3554, 0xF58F, 0xFF02, 2, "VXE R1 SE+", DpiFamily.Catalog, true, Cid: 2, Mid: 32, Codec: "se")
+        new DpiProfile(0x3554, 0xF58F, 0xFF02, 2, "VXE R1 SE+", DpiFamily.Catalog, true, Cid: 2, Mid: 32, Codec: "se"),
+        // Razer DPI/档位走系统鼠标集合上的 91 字节 Feature 报文（class 0x04），
+        // 与电量同一通道。Windows 不为该集合提供任何 Feature 能力表，
+        // 句柄必须零权限打开，详情见 DpiNativeLink。0x007B 为 Viper Ultimate 无线接收器，
+        // 0x007A 为同款鼠标 USB 直连。
+        new DpiProfile(0x1532, 0x007B, 0x0001, 0x0002, "Razer Viper Ultimate", DpiFamily.Razer),
+        new DpiProfile(0x1532, 0x007A, 0x0001, 0x0002, "Razer Viper Ultimate", DpiFamily.Razer, true)
     });
 
     // DB227 cMouse 1.3.13. The live CID/MID selects the sensor codec before writing.

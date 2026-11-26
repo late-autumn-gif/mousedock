@@ -97,6 +97,9 @@ public static partial class HidDiscovery
                 destination.ChargeFull = reading.Status == ReferenceBatteryProtocol.State.Full;
                 destination.BatterySource = route.Reader + " · " + reading.Diagnostic;
                 destination.ExtraModel = reading.Model;
+                // 雷蛇等扩展协议会在电量会话里顺带给出当前 DPI：只填数值，
+                // 档位编辑仍走原生 DPI 窗口，避免误入旧式档位写入路径。
+                if (active && reading.DpiValue > 0) destination.Dpi = reading.DpiValue;
             }
             else bucket.BatteryFailures.Add(route.Reader + " · " + reading.Diagnostic);
             LastDiagnostics.Add($"{instance} {route.Reader}: {reading.Status}, {(reading.IsBatteryEstimated ? "≈" : "")}{reading.Level}, {reading.Diagnostic}");

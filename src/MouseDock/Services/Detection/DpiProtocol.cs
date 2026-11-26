@@ -284,6 +284,80 @@ internal static class DpiProtocol
         throw Invalid("Sora DPI 配置校验失败");
     }
 
+    // 雷蛇 class 0x04（DPI）：91 字节 Feature 报文，[2]=事务号 0xFF、[6]=2、[7]=4、[8]=命令，
+    // 参数自 [9] 起，[89]=[3..89) 的异或校验；成功回包 [1]=2 并回显事务号/类别/命令。
+    // 0x85=读当前 DPI（args[0]=storage，args[1-2]=X、args[3-4]=Y 大端），0x05=写当前 DPI；
+    // 0x86=读档位表（args[0]=storage，回包 args[1]=当前档位编号、args[2]=档数、随后每 7 字节一档），
+    // 0x06=写档位表（切档与改档值都走这条，回写后当前 DPI 会跟随所选档位）。
+    private const int RazerReport=91, RazerMin=100, RazerMax=20000;
+    private const byte RazerDpiClass=4, RazerTransaction=0xFF, RazerStore=1;
+    private static int Be(byte[] b,int i)=>b[i]<<8|b[i+1];
+    private static void PutBe(byte[] b,int i,int value){b[i]=(byte)(value>>8);b[i+1]=(byte)value;}
+    internal static byte RazerChecksum(byte[] b)
+    {
+        byte x=0;for(int i=3;i<89;i++)x^=b[i];return x;
+    }
+    internal static byte[] RazerRequest(byte command,Action<byte[]> fill)
+    {
+        var b=new byte[RazerReport];b[2]=RazerTransaction;b[6]=2;b[7]=RazerDpiClass;b[8]=command;
+        if(fill!=null)fill(b);
+        b[89]=RazerChecksum(b);return b;
+    }
+    private static byte[] RazerConfirm(IDpiLink link,byte[] query)
+    {
+        byte status=0;
+        for(int i=0;i<8;i++)
+        {
+            link.Delay(60);
+            var b=link.GetFeature(0,RazerReport);
+            if(b==null||b.Length!=RazerReport)continue;
+            if(b[2]==RazerTransaction&&b[7]==RazerDpiClass&&b[8]==query[8]&&b[89]==RazerChecksum(b))status=b[1];
+            if(b[0]!=0||b[1]!=2||b[2]!=RazerTransaction||b[7]!=RazerDpiClass||b[8]!=query[8]||
+                b[89]!=RazerChecksum(b)||b.AsSpan().SequenceEqual(query))continue;
+            return b;
+        }
+        // 0x04 是雷蛇的“超时/未响应”，无线鼠标休眠时最常见。
+        throw new TimeoutException(status==4?"鼠标未响应（状态 0x04，多半在休眠）：请移动或按键唤醒后重新读取":
+            "雷蛇 DPI 回复超时，请唤醒鼠标后重试");
+    }
+    private static byte[] RazerExchange(IDpiLink link,byte command,Action<byte[]> fill)
+    {
+        var query=RazerRequest(command,fill);
+        if(!link.SetFeature(query))throw new IOException("雷蛇 DPI 命令未完整发送");
+        return RazerConfirm(link,query);
+    }
+    private static (byte[] Ids,DpiStage[] Rows,byte Token) RazerTable(IDpiLink link)
+    {
+        var b=RazerExchange(link,0x86,p=>p[9]=0);
+        int count=b[11];
+        if(b[9]!=0||count is <1 or >5)throw Invalid("雷蛇档位表无效");
+        var ids=new byte[count];var rows=new DpiStage[count];
+        for(int i=0;i<count;i++)
+        {
+            int at=12+i*7;ids[i]=b[at];
+            int x=Be(b,at+1),y=Be(b,at+3);
+            if(b[at+5]!=0||b[at+6]!=0||x<RazerMin||x>RazerMax||y<RazerMin||y>RazerMax)
+                throw Invalid("雷蛇档位数据超出范围");
+            rows[i]=new(x,y);
+        }
+        return (ids,rows,b[10]);
+    }
+    private static DpiSnapshot ReadRazer(DpiProfile profile,IDpiLink link)
+    {
+        var table=RazerTable(link);
+        int active=Array.IndexOf(table.Ids,table.Token);
+        if(active<0)throw Invalid("雷蛇当前档位编号不在档位表中");
+        var dpi=RazerExchange(link,0x85,null);
+        int x=Be(dpi,10),y=Be(dpi,12);
+        if(dpi[9]!=0||x<RazerMin||x>RazerMax||y<RazerMin||y>RazerMax)throw Invalid("雷蛇当前 DPI 读数无效");
+        bool synced=table.Rows[active].X==x&&table.Rows[active].Y==y;
+        if(!synced)table.Rows[active]=new(x,y);
+        string context="razer|"+string.Join(",",table.Ids);
+        return new(profile,active,table.Rows,context,RazerMin,RazerMax,1,note:synced?
+            $"{RazerMin}–{RazerMax} DPI；{table.Rows.Length} 档，写入会保存到鼠标当前配置文件":
+            "当前 DPI 与档位表不一致，已按设备实时值显示；写入后两边会重新对齐");
+    }
+
     internal static byte[] RapooPacket(byte command, int address, int count, byte[] data = null)
     {
         if (command is not (164 or 165) || count is < 1 or > 14 || data != null && data.Length != count)
@@ -387,6 +461,7 @@ internal static class DpiProtocol
         DpiFamily.Sora=>ReadSora(profile,link),
         DpiFamily.Rapoo=>ReadRapoo(profile,link),
         DpiFamily.Pulsar=>PulsarSession(link,()=>PulsarSnapshot(profile,link)),
+        DpiFamily.Razer=>ReadRazer(profile,link),
         _=>throw Invalid("此型号尚未适配 DPI")
     };
 
@@ -464,6 +539,26 @@ internal static class DpiProtocol
                 if(!value.HasValue){Write(RapooPacket(165,baseAddress+664,1,new[]{(byte)stage}));RapooResponse(link,0);}
                 else foreach(int axis in new[]{648,712})
                 {var data=new byte[2];Put(data,0,value.Value);Write(RapooPacket(165,baseAddress+axis+stage*2,2,data));RapooResponse(link,0);}
+            }
+            else if(profile.Family==DpiFamily.Razer)
+            {
+                // 切档（value 为空）只改当前档位编号；改档值则整表回写，档位编号沿用读取时的顺序。
+                string[] context=before.Context.Split('|');
+                if(context.Length!=2||context[0]!="razer")throw Invalid("雷蛇档位上下文无效");
+                var ids=context[1].Split(',').Select(v=>byte.Parse(v,System.Globalization.NumberStyles.None,System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                if(ids.Length!=target.Stages.Count||target.Stages.Count>5||ids.Distinct().Count()!=ids.Length||ids.Any(v=>v<1||v>5))
+                    throw Invalid("雷蛇档位数量或编号在写入时变化");
+                var packet=new byte[RazerReport];
+                packet[2]=RazerTransaction;packet[6]=2;packet[7]=RazerDpiClass;packet[8]=0x06;
+                packet[9]=RazerStore;packet[10]=ids[target.Active];packet[11]=(byte)target.Stages.Count;
+                for(int i=0;i<target.Stages.Count;i++)
+                {
+                    int at=12+i*7;packet[at]=ids[i];
+                    PutBe(packet,at+1,target.Stages[i].X);PutBe(packet,at+3,target.Stages[i].Y);
+                }
+                packet[89]=RazerChecksum(packet);
+                Write(packet,true);
+                RazerConfirm(link,packet);
             }
             link.Delay(100);
             var after=profile.Family==DpiFamily.Pulsar?PulsarSnapshot(profile,link):Read(profile,link);

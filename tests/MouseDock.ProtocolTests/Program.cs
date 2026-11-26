@@ -434,6 +434,7 @@ assertions += AulaSc630DpiRegression.Run() + VgnF1DpiRegression.Run();
 assertions += SupportAuditRegression.Run();
 assertions += SuperlightRegression.Run();
 assertions += LogitechDpiRegression.Run();
+assertions += RazerDpiRegression.Run();
 assertions += ModernMouseRegression.Run();
 assertions += UpdateReleaseRegression.Run();
 assertions += UpdateInstallRegression.Run();
