@@ -12,6 +12,8 @@ internal static class ReferenceBatteryProtocol
     {
         internal bool IsBatteryEstimated { get; init; }
         internal MouseDpiState Dpi { get; init; }
+        /// <summary>与电量同一次会话顺带读到的硬件 DPI；-1 表示这次没读或设备不提供。</summary>
+        internal int DpiValue { get; init; } = -1;
         internal bool MouseTypeConfirmed { get; init; }
         internal static Reading Failed(string reason) => new(-1, false, false, State.Failed, reason);
     }

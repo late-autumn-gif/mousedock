@@ -61,7 +61,10 @@ namespace MouseDock
         private static bool IsDiagnosticCommand(string[] args) =>
             args.Contains("--detect") || args.Contains("--probe") || args.Contains("--battery") ||
             args.Contains("--capture24g") || args.Contains("--vendorbt") || args.Contains("--hfpbat") ||
-            args.Contains("--replay-report") || args.Contains("--shot");
+            args.Contains("--replay-report") || args.Contains("--shot") || IsDpiCommand(args);
+
+        private static bool IsDpiCommand(string[] args) =>
+            args.Contains("--dpi") || args.Contains("--dpi-set");
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -279,6 +282,14 @@ namespace MouseDock
             if (e.Args.Contains("--detect"))
             {
                 RunDetectReport();
+                Shutdown();
+                return;
+            }
+
+            if (IsDpiCommand(e.Args))
+            {
+                AttachConsole(-1);
+                RunDpiReport(e.Args);
                 Shutdown();
                 return;
             }
@@ -1272,6 +1283,61 @@ namespace MouseDock
             string path = WriteDetectReport(out string content);
             Console.WriteLine(content);
             Console.WriteLine("报告已写入: " + path);
+        }
+
+        /// <summary>命令行核对原生 DPI：--dpi [VID:PID] 读取；--dpi-set 档位(从1起) 数值|switch 写入一次。</summary>
+        private static void RunDpiReport(string[] args)
+        {
+            ushort vid = 0x1532, pid = 0x007B;
+            foreach (string arg in args)
+            {
+                if (arg.Length == 9 && arg[4] == ':' &&
+                    ushort.TryParse(arg.AsSpan(0, 4), System.Globalization.NumberStyles.HexNumber, null, out ushort v) &&
+                    ushort.TryParse(arg.AsSpan(5, 4), System.Globalization.NumberStyles.HexNumber, null, out ushort p))
+                { vid = v; pid = p; }
+            }
+            Services.Detection.DpiProfile profile = Services.Detection.DpiProfiles.Find(vid, pid);
+            if (profile == null) { Console.WriteLine($"未收录 {vid:X4}:{pid:X4} 的原生 DPI"); return; }
+            if (Settings.SafeMode) { Console.WriteLine("安全模式已启用，DPI 诊断已停止"); return; }
+            var instances = Services.Detection.HidDiscovery.EnumerateDpiChannels(vid, pid)
+                .Where(c => c.Signature.Main(profile, c.Interface))
+                .Select(c => c.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (instances.Length == 0) { Console.WriteLine("没有满足报告能力的通道"); return; }
+            if (instances.Length > 1) { Console.WriteLine("找到多个同型号设备，请仅保留目标设备后重试"); return; }
+            string instance = instances[0];
+            var device = new Models.DeviceInfo
+            {
+                Id = instance, Detail = $"{vid:X4}:{pid:X4}", Kind = Models.DeviceKind.Mouse,
+                Name = profile.Model, Connected = true, RecognitionEnabled = true
+            };
+            var service = Dpi;
+            try
+            {
+                var before = Task.Run(() => service.ReadAsync(device)).GetAwaiter().GetResult();
+                PrintDpi("读取", before);
+                int at = Array.IndexOf(args, "--dpi-set");
+                if (at >= 0 && at + 2 < args.Length)
+                {
+                    int stage = int.Parse(args[at + 1]) - 1;
+                    int? value = args[at + 2].Equals("switch", StringComparison.OrdinalIgnoreCase)
+                        ? null : int.Parse(args[at + 2]);
+                    var after = Task.Run(() => service.ApplyAsync(before, stage, value)).GetAwaiter().GetResult();
+                    PrintDpi("写入后", after);
+                }
+            }
+            catch (Exception ex)
+            {
+                Exception root = ex; while (root.InnerException != null) root = root.InnerException;
+                Console.WriteLine($"失败: {root.GetType().Name}: {root.Message}");
+            }
+        }
+
+        private static void PrintDpi(string title, Services.Detection.DpiSnapshot snapshot)
+        {
+            Console.WriteLine($"[{title}] {snapshot.Model}  当前档位 {snapshot.Active + 1}/{snapshot.Stages.Count}  {snapshot.Current.Label}  可写={snapshot.Writable}  范围 {snapshot.Minimum}-{snapshot.Maximum} 步进 {snapshot.Step}");
+            for (int i = 0; i < snapshot.Stages.Count; i++)
+                Console.WriteLine($"  第 {i + 1} 档{(i == snapshot.Active ? " · 使用中" : "")} {snapshot.Stages[i].Label}");
+            Console.WriteLine("  说明: " + snapshot.Note);
         }
 
         /// <summary>生成探测报告（HID + 蓝牙），返回文件路径。</summary>
