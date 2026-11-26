@@ -38,7 +38,8 @@ internal static partial class VendorProtocol
     private static readonly Dictionary<ushort, string> RogPairedKeyboards = new()
     {
         [0x1B7A] = RogScopeRxWireless,
-        [0x1C25] = RogAzothX
+        [0x1C25] = RogAzothX,
+        [0x1DA4] = "ROG 夜魔 Extreme 20 周年版"
     };
 
     internal static bool IsRogOmni(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1ACE;

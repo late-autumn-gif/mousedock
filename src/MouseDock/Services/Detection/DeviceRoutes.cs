@@ -163,7 +163,13 @@ internal static class DeviceRoutes
             return new Route { Reader = "AtkV75X", Kind = DeviceKind.Keyboard, Transport = null };
         if (VendorProtocol.IsAulaF99(vid, pid, product))
             return new Route { Reader = "AulaF99", Kind = DeviceKind.Keyboard, Transport = null };
+        if (IsExxGamma75(vid, pid, product))
+            return new Route { Kind = DeviceKind.Keyboard };
         if (MchoseKeyboardProtocol.IsSupportedDevice(vid, pid, product))
             return new Route { Reader = "MchoseKeyboard", Kind = DeviceKind.Keyboard, Transport = null };        return null;
     }
+
+    internal static bool IsExxGamma75(ushort vid, ushort pid, string product) =>
+        vid == 0x1CA6 && pid is 0x1C2D or 0x1C37 or 0x1C45 &&
+        string.Equals(product?.Trim(), "EXXGamma75", StringComparison.OrdinalIgnoreCase);
 }

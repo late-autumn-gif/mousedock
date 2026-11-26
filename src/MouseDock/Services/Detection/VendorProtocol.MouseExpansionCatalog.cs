@@ -61,7 +61,8 @@ internal static partial class VendorProtocol
         if (vid == 0x1532 && pid == 0x00F0) return "razer-carbon";
         if (vid == 0x1532 && MouseExpansionRazer.Contains(pid)) return "razer";
         if (vid == 0x391D && MouseExpansionPid(pid,0x102E,0x1A2A,0x1037,0x1A29)) return "vgn-ld";
-        if (vid == 0x391D && MouseExpansionPid(pid,0x1A05,0x102D)) return "vgn-master";
+        if (vid == 0x391D && pid is 0x102D or 0x1A05 or 0x1A1A or 0x1A2F or 0x1A30 or 0x1A31 or 0x1A32 or 0x1A33)
+            return "vgn-master";
         if (vid == 0x391D && pid == 0x1A01) return "vgn-se";
         if (vid == 0x3837 && MouseExpansionPid(pid,0x1014,0x1018,0x101C,0x4026,0x4028,0x4033,0x4034,0x4037,0x4038,0x4040)) return "mchose4d";
         if (vid == 0x3837 && pid==0x100C) return "mchose-old";
@@ -71,7 +72,7 @@ internal static partial class VendorProtocol
         if (IsRapooVt7(vid, pid)) return "rapoo-vt7";
         if (vid == 0x24AE && pid == 0x1423) return "rapoo-short";
         if (vid == 0x24AE && pid == 0x14A5) return "rapoo-active";
-        if (vid == 0x24AE && MouseExpansionPid(pid,0x1470,0x1412,0x14A2,0x14A7,0x1B0D,0x14A1,0x185A)) return "rapoo";
+        if (vid == 0x24AE && MouseExpansionPid(pid,0x1470,0x1412,0x14A2,0x14A7,0x1B0D,0x14A1,0x185A,0x1B20,0x1B21)) return "rapoo";
         if (vid == 0x3434 && MouseExpansionPid(pid,0xD028,0xD048)) return "keychron";
         if (vid == 0x1E71 && MouseExpansionPid(pid,0x2101,0x2129)) return "nzxt";
         if (vid == 0x320F && pid == 0x706E) return "hecate";
@@ -214,7 +215,8 @@ internal static partial class VendorProtocol
             "rapoo-vt7" => Io(19, 7) && l.Features.Count == 0,
             "mchose-g3a" => Io(65, 0) && l.Features.Count == 0,
             "rapoo-short" => l.Input == 13 && l.Inputs.SetEquals(new byte[]{7}),
-            "rapoo" => l.Input is 7 or 19 or 20 && l.Inputs.Count == 1,
+            "rapoo" => l.Input is 7 or 19 or 20 && l.Inputs.Count == 1 &&
+                (l.Channel.Pid is not (0x1B20 or 0x1B21) || l.Input is 19 or 20 && l.InputId == 7),
             "rapoo-active" => l.Channel.Usage==2&&l.Input==19&&l.Inputs.SetEquals(new byte[]{7})&&l.Output==0&&l.Feature==0 ||
                 l.Channel.Usage==14&&l.Output==33&&l.Outputs.SetEquals(new byte[]{6})&&l.Input==0&&l.Feature==0,
             "rapoo-office" => l.Output is >=3 and <=65 && l.Outputs.SetEquals(new byte[]{0xBA}),

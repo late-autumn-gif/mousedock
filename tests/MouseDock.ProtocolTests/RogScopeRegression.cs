@@ -80,6 +80,11 @@ internal static class RogScopeRegression
         var unknownPairing = (byte[])rx2.Clone();
         unknownPairing[5] = 0x5F; unknownPairing[6] = 0x1B;
         Check(!VendorProtocol.RogOmniHasScopeRx(unknownPairing), "Unknown paired model must not be read");
+        var anniversary = (byte[])rx2.Clone();
+        anniversary[5] = 0xA4;
+        anniversary[6] = 0x1D;
+        Check(VendorProtocol.RogPairedModel(anniversary, out _) == "ROG 夜魔 Extreme 20 周年版",
+            "Standard Omni pairing identifies the anniversary keyboard");
         var duplicateRx2 = (byte[])rx2.Clone();
         duplicateRx2[9] = 0x25; duplicateRx2[10] = 0x1C;
         Check(!VendorProtocol.RogOmniHasScopeRx(duplicateRx2), "Duplicate RX2 slots must not be accepted");

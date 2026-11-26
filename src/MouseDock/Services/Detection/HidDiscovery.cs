@@ -1585,6 +1585,11 @@ namespace MouseDock.Services.Detection
                     kind = DeviceKind.Keyboard;
                     physicalKey = "wobkey-rainy75";
                 }
+                else if (DeviceRoutes.IsExxGamma75(Vid, Pid, Product))
+                {
+                    name = "EXX 伽马 75";
+                    kind = DeviceKind.Keyboard;
+                }
                 else if (VendorMap.TryKnownReceiver($"{Vid:X4}:{Pid:X4}", out string knownName, out DeviceKind knownKind, out string knownKey))
                 {
                     name = knownName;

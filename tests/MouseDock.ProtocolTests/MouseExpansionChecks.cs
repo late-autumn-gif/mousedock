@@ -26,6 +26,26 @@ internal static class MouseExpansionChecks
         Check(!VendorProtocol.ExtraMouseCandidate(0x391D, 0x1A21, ""), "ambiguous KC2 per-report length closed");
         Check(!VendorProtocol.ExtraMouseCandidate(0x362D, 0xFF09, ""), "ambiguous RIDLAG per-report length closed");
         Check(!VendorProtocol.ExtraMouseCandidate(0x0B05, 0x1AD0, ""), "existing OMNI ownership retained");
+        foreach (ushort pid in new ushort[] { 0x1A1A, 0x1A2F, 0x1A30, 0x1A31, 0x1A32, 0x1A33 })
+        {
+            Check(ExtraDeviceRoutes.Primary(0x391D, pid, "") is { Family: "vgn-master" } &&
+                DeviceRoutes.IsKnown(0x391D, pid, ""), "VGN Dragonfly identity reaches the existing battery reader");
+            Check(!VendorProtocol.ExtraMouseCandidate(0x391E, pid, ""), "VGN Dragonfly matching is scoped to the vendor");
+        }
+        foreach (ushort pid in new ushort[] { 0x1B20, 0x1B21 })
+        {
+            Check(ExtraDeviceRoutes.Primary(0x24AE, pid, "") is { Family: "rapoo", Transport: "2.4G" },
+                "VT2 RT V2 receiver uses the passive path");
+            var channel = new HidDiscovery.VendorCollectionInfo { Vid = 0x24AE, Pid = pid,
+                Path = "fixture&mi_01", UsagePage = 0xFF00, Usage = 2, Input = 19 };
+            var layout = new VendorProtocol.MouseExpansionLayoutInfo(channel, new() { 7 }, new(), new(), 0);
+            Check(VendorProtocol.MouseExpansionChannel("rapoo", channel) && VendorProtocol.MouseExpansionLayout("rapoo", layout),
+                "VT2 RT V2 accepts the Report 7 battery channel without a mouse input collection");
+            Check(!VendorProtocol.MouseExpansionLayout("rapoo", layout with { Inputs = new() { 8 } }),
+                "VT2 RT V2 rejects an unrelated report ID");
+            channel.Input = 7;
+            Check(!VendorProtocol.MouseExpansionLayout("rapoo", layout), "VT2 RT V2 rejects the legacy short layout");
+        }
         Check(VendorProtocol.ExtraMouseCandidate(0x5253, 0x1020, "MCHOSE L7 Pro"),
             "L7 notification route requires its product identity");
         Check(!VendorProtocol.ExtraMouseCandidate(0x5253, 0x1020, "MCHOSE A7 Pro") &&

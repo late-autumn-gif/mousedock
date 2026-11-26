@@ -54,8 +54,12 @@ internal static partial class VendorProtocol
                 b => b.Length == 17 && MouseExpansionPrefix(b,8,3,0) && b[6] == 1) != null;
             if (!Online()) return MouseExpansionSleep("VGN master mouse offline");
             ReferenceBatteryProtocol.Reading value = null;
-            for (int i=0;i<2;i++) value = Decoded(MouseExpansionCompx(4),"compx");
-            return value != null && Online() ? value : ReferenceBatteryProtocol.Reading.Failed("VGN master live read failed");
+            for (int i = 0; i < 2; i++)
+            {
+                value = Decoded(MouseExpansionCompx(4), "compx");
+                if (value == null) return ReferenceBatteryProtocol.Reading.Failed("VGN master battery reply missing");
+            }
+            return Online() ? value : MouseExpansionSleep("VGN master mouse went offline");
         }
         if (family == "vgn-ld")
         {

@@ -32,6 +32,7 @@ internal static partial class VendorProtocol
             "freq" or "freq-sc311" or "mloong" => vid == 0xA8A4 ? "USB" : "2.4G",
             "mchose-g3a" => "2.4G",
             "rapoo-vt7" => pid == 0x1413 ? "2.4G" : "USB",
+            "rapoo" when pid is 0x1B20 or 0x1B21 => "2.4G",
             "nzxt" => pid == 0x2129 ? "USB" : "2.4G",
             "keychron" => pid == 0xD048 ? "USB" : "2.4G",
             "sora-v2" => pid is >= 0xAE11 and <= 0xAE16 ? "USB" : "2.4G",
