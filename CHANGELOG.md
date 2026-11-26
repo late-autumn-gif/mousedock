@@ -1,5 +1,11 @@
 # MouseDock 更新日志
 
+## 雷蛇 Viper Ultimate（2026-11-26）
+
+- 修复 Viper Ultimate 的 HID 电量查询，显示设备报告的充电状态和当前 DPI。原生 DPI 窗口支持读取、编辑和切换档位，写入后回读确认。
+- 增加 DPI 命令行诊断，沿用安全模式和设备识别设置。同型号设备同时连接时，命令行停止选择。
+- 无线验证来自随附适配记录。有线配置与离线覆盖见 [DPI 验证记录](docs/MOUSE-DPI.md)。
+
 ## DualSense 电量（2026-11-25）
 
 - 修复 [Issue #44](https://github.com/late-autumn-gif/mousedock/issues/44)。在面板和任务栏显示 DualSense 的档位估算，例如 `≈95%`，并保留充电状态和原始档位。设备明确充满时显示 `100%`。USB 与蓝牙报文均纳入回归。在 v1.2.4 源码基线上通过 39,546 项离线协议及集成断言、25 项电量相关 WPF 检查，Pico 2W 适配器待实机复测。

@@ -158,7 +158,13 @@ internal static partial class VendorProtocol
             Channel = channel;
             Trace = trace;
             bool passive = family is "incott" or "sc900" or "rapoo" or "rapoo-short" or "rapoo-vt7" or "delux-pro" or "x23-pro" or "mchose-l7";
-            handle = CreateFile(channel.Path, GENERIC_READ | (passive ? 0 : GENERIC_WRITE),
+            // 雷蛇的 91 字节控制报文挂在 MI_00 的系统鼠标顶层集合上（用法页 1/2）。
+            // 该集合对任何带读写权限的句柄都返回 Win32=5，只有零权限句柄能打开；
+            // Feature 报文收发不需要读写权限，所以这条路径只用 Feature。
+            bool featureOnly = family == "razer" && channel.Vid == 0x1532 && IsRazerViperUltimate(channel.Pid) &&
+                channel.UsagePage == 1 && channel.Usage == 2 && Input == 9 && Output == 0 && Feature == 91;
+            handle = CreateFile(channel.Path,
+                featureOnly ? 0u : GENERIC_READ | (passive ? 0u : GENERIC_WRITE),
                 FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
             if (handle == IntPtr.Zero || handle == new IntPtr(-1))
             {
@@ -190,10 +196,17 @@ internal static partial class VendorProtocol
                     Inputs = ReadDescriptorReportIds(prep, 0, caps.NumberInputValueCaps, caps.NumberInputButtonCaps);
                     Outputs = ReadDescriptorReportIds(prep, 1, caps.NumberOutputValueCaps, caps.NumberOutputButtonCaps);
                     Features = ReadDescriptorReportIds(prep, 2, caps.NumberFeatureValueCaps, caps.NumberFeatureButtonCaps);
+                    // 雷蛇这 90 字节厂商 Feature 报文在 Windows 侧不给任何能力表
+                    // （NumberFeatureValueCaps/ButtonCaps 都是 0），但报文编号就是 0。
+                    // 不补上的话 SetFeature/GetFeature 的编号白名单会把这条通道判死。
+                    if (featureOnly && Features.Count == 0) Features.Add(0);
                 }
                 finally { HidD_FreePreparsedData(prep); }
-                signal = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
-                if (signal == IntPtr.Zero) throw new IOException("Mouse input event unavailable");
+                if (!featureOnly)
+                {
+                    signal = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
+                    if (signal == IntPtr.Zero) throw new IOException("Mouse input event unavailable");
+                }
             }
             catch { Dispose(); throw; }
         }

@@ -155,6 +155,8 @@ internal static partial class VendorProtocol
         }
         return result;
     }
+    private static bool IsRazerViperUltimate(ushort pid) => pid is 0x007A or 0x007B;
+
     private static ReferenceBatteryProtocol.Reading MouseExpansionReadRazer(string family,ushort pid,MouseExpansionLink l)
     {
         int Read(byte command)
@@ -178,15 +180,50 @@ internal static partial class VendorProtocol
             },family=="razer-carbon"?40:50,5);
             return raw==null?-1:raw[10];
         }
+        bool? charging=null;
         if(family=="razer-carbon")
         {
             int charge=Read(RazerBatteryFeature.ChargingStatus);
             if(charge is <0 or >1)return ReferenceBatteryProtocol.Reading.Failed("Razer Carbon charging state unavailable");
+            charging=charge==1;
         }
         int level=Read(RazerBatteryFeature.BatteryLevel);
         if(level<0)return ReferenceBatteryProtocol.Reading.Failed("Razer battery response unavailable");
         if(family=="razer-carbon"&&level==255)return MouseExpansionSleep("Razer Carbon battery unavailable");
-        return MouseExpansionValue(family=="razer-carbon"?level*100/255:(int)Math.Round(level*100.0/255),
-            "Razer device-reported 0..255 battery scale");
+        bool viperUltimate = family == "razer" && IsRazerViperUltimate(pid);
+        if(viperUltimate)
+        {
+            // 0x84 充电查询：多数雷蛇鼠标支持，少数型号（Basilisk X HyperSpeed、
+            // Viper V3 HyperSpeed 等）不支持。查询失败或回值不是 0/1 时按“充电未知”处理，
+            // 不影响电量本身。
+            int charge=Read(RazerBatteryFeature.ChargingStatus);
+            if(charge is 0 or 1)charging=charge==1;
+        }
+        var reading=MouseExpansionValue(family=="razer-carbon"?level*100/255:(int)Math.Round(level*100.0/255),
+            "Razer device-reported 0..255 battery scale",charging);
+        // 电量读完后顺带用同一条 Feature 通道读一次当前 DPI，好让卡片直接显示数值；
+        // 读不到（休眠/型号不支持）就保持 -1，电量结果不受影响。
+        if (!viperUltimate || reading == null) return reading;
+        int dpi = RazerLiveDpi(l);
+        return dpi > 0 ? reading with { DpiValue = dpi } : reading;
+    }
+    private static byte[] RazerDpiFrame(MouseExpansionLink l,byte command,Action<byte[]> fill)
+    {
+        var packet=DpiProtocol.RazerRequest(command,fill);
+        return l.FeatureExchange(packet,b=>b.Length==91&&b[0]==0&&b[1]==2&&b[2]==0xFF&&b[7]==4&&
+            b[8]==command&&b[89]==DpiProtocol.RazerChecksum(b)&&!b.AsSpan().SequenceEqual(packet),3,60);
+    }
+    private static int RazerLiveDpi(MouseExpansionLink l)
+    {
+        try
+        {
+            var table=RazerDpiFrame(l,0x86,p=>p[9]=0);
+            if(table==null||table[9]!=0||table[11] is <1 or >5)return -1;
+            var live=RazerDpiFrame(l,0x85,null);
+            if(live==null||live[9]!=0)return -1;
+            int x=live[10]<<8|live[11],y=live[12]<<8|live[13];
+            return x is >=100 and <=20000&&y is >=100 and <=20000?x:-1;
+        }
+        catch(Exception){return -1;}
     }
 }
