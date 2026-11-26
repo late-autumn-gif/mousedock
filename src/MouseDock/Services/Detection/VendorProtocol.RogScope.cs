@@ -37,8 +37,12 @@ internal static partial class VendorProtocol
     /// </summary>
     private static readonly Dictionary<ushort, string> RogPairedKeyboards = new()
     {
+        [0x1A85] = "ROG 夜魔",
+        [0x1AB0] = "ROG 游侠 II 96",
+        [0x1B42] = "ROG 夜魔 Extreme",
         [0x1B7A] = RogScopeRxWireless,
         [0x1C25] = RogAzothX,
+        [0x1CF1] = "ROG 夜魔 Extreme SE",
         [0x1DA4] = "ROG 夜魔 Extreme 20 周年版"
     };
 

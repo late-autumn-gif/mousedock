@@ -29,6 +29,9 @@ internal static partial class VendorProtocol
                 "logitech-x3" => MouseExpansionLogitech(link),
                 "infinity100" => MouseExpansionInfinity100(link,featureId),
                 "pulsar" => MouseExpansionPulsar(link),
+                "rog8k" when IsRog8kReceiver(vid, pid) && inputId == 3 && outputId == 3 &&
+                    inputLength is >= 21 and <= 65 && outputLength is >= 21 and <= 65 =>
+                    MouseExpansionRog8k(link, inputLength, outputLength),
                 "rawm" => MouseExpansionRawm(pid,link),
                 "exx" => MouseExpansionExx(pid,link),
                 "get10" => MouseExpansionGet10(vid,pid,revision,link),
@@ -44,6 +47,21 @@ internal static partial class VendorProtocol
             return result??ReferenceBatteryProtocol.Reading.Failed(family+": invalid battery percentage");
         }
         catch (IOException ex) { return ReferenceBatteryProtocol.Reading.Failed(family + ": " + ex.Message); }
+    }
+
+    private static ReferenceBatteryProtocol.Reading MouseExpansionRog8k(ReferenceBatteryProtocol.ILink link,
+        int inputLength, int outputLength)
+    {
+        var request = MouseExpansionPacket(outputLength, 3, 0x12, 7);
+        ReferenceBatteryProtocol.Reading reading = null;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            var raw = MouseExpansionExchange(link, request, b => b.Length == inputLength &&
+                MouseExpansionDecode("rog8k", b) != null, 1200);
+            reading = MouseExpansionDecode("rog8k", raw);
+            if (reading.Status == ReferenceBatteryProtocol.State.Sleep) return reading;
+        }
+        return reading;
     }
 
     private static byte[] MouseExpansionExchange(ReferenceBatteryProtocol.ILink link,byte[] request,

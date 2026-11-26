@@ -1749,9 +1749,12 @@ namespace MouseDock.Services.Detection
                 }
                 if (ExtraRoute != null)
                 {
-                    name = ExtraModel ?? (ExtraRoute.Family == "RapooVt3Max" && RapooVt3MaxProtocol.IsCandidate(Vid, Pid)
-                        ? RapooVt3MaxProtocol.Model + " 接收器"
-                        : Product ?? "未确认型号的设备");
+                    name = ExtraModel ?? (ExtraRoute.Family switch
+                    {
+                        "RapooVt3Max" when RapooVt3MaxProtocol.IsCandidate(Vid, Pid) => RapooVt3MaxProtocol.Model + " 接收器",
+                        "rog8k" => "ROG SPEEDNOVA 8K 鼠标",
+                        _ => Product ?? "未确认型号的设备"
+                    });
                     kind = ExtraRoute.Kind;
                     transport = ExtraRoute.Transport ?? transport;
                     charging = Charging;

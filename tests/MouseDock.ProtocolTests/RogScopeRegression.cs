@@ -85,6 +85,20 @@ internal static class RogScopeRegression
         anniversary[6] = 0x1D;
         Check(VendorProtocol.RogPairedModel(anniversary, out _) == "ROG 夜魔 Extreme 20 周年版",
             "Standard Omni pairing identifies the anniversary keyboard");
+        foreach (var (pid, model) in new (ushort, string)[]
+        {
+            (0x1A85, "ROG 夜魔"), (0x1AB0, "ROG 游侠 II 96"),
+            (0x1B42, "ROG 夜魔 Extreme"), (0x1CF1, "ROG 夜魔 Extreme SE")
+        })
+        {
+            var pairedKeyboard = (byte[])rx2.Clone();
+            pairedKeyboard[5] = (byte)pid;
+            pairedKeyboard[6] = (byte)(pid >> 8);
+            Check(VendorProtocol.RogPairedModel(pairedKeyboard, out _) == model, "Standard Omni admits the exact keyboard pairing");
+            pairedKeyboard[9] = 0x25;
+            pairedKeyboard[10] = 0x1C;
+            Check(VendorProtocol.RogPairedModel(pairedKeyboard, out _) == null, "Multiple known keyboards remain ambiguous");
+        }
         var duplicateRx2 = (byte[])rx2.Clone();
         duplicateRx2[9] = 0x25; duplicateRx2[10] = 0x1C;
         Check(!VendorProtocol.RogOmniHasScopeRx(duplicateRx2), "Duplicate RX2 slots must not be accepted");

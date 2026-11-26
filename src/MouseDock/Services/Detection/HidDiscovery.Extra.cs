@@ -19,6 +19,14 @@ public static partial class HidDiscovery
         {
             var route = ExtraDeviceRoutes.Find(bucket.Vid, bucket.Pid, bucket.Product);
             if (route == null) continue;
+            bool primaryFound = QueryRoute(bucket, route);
+            if (ExtraDeviceRoutes.Rog8kMouse(bucket.Vid, bucket.Pid) is { } mouseRoute &&
+                QueryRoute(bucket, mouseRoute) && !primaryFound)
+                buckets.Remove(bucket.InstanceId);
+        }
+
+        bool QueryRoute(Bucket bucket, ExtraDeviceRoutes.Route route)
+        {
             if (!route.SharedReceiver)
             {
                 bucket.ExtraRoute = route;
@@ -36,37 +44,40 @@ public static partial class HidDiscovery
             var trace = new BatteryReplay.Trace();
             string instance = bucket.InstanceId;
             string legacy = $"hid-{bucket.Vid:X4}-{bucket.Pid:X4}";
+            bool mouseChild = route.SharedReceiver && route.Kind == DeviceKind.Mouse;
+            string childPrefix = instance + (mouseChild ? "-mouse-" : "-keyboard-");
             Bucket Child(string child) => new()
             {
                 InstanceId = child, Vid = bucket.Vid, Pid = bucket.Pid, Path = bucket.Path,
                 Product = bucket.Product, Kind = route.Kind, ExtraRoute = route,
-                HandledBy = HandledBy.ExtraKeyboard
+                HandledBy = mouseChild ? HandledBy.ExtraMouse : HandledBy.ExtraKeyboard
             };
             void Record(string status, string model = null, int level = -1) =>
                 BatteryReplay.Current?.AddQuery(instance, null, route.Reader, status, model, level, trace);
             var disabledChildren = route.SharedReceiver
-                ? preferences?.DisabledDescendants(instance + "-keyboard-") : null;
+                ? preferences?.DisabledDescendants(childPrefix) : null;
             if (disabledChildren?.Length > 0)
             {
                 foreach (string child in disabledChildren) buckets[child] = Child(child);
                 Record("RecognitionDisabled");
-                continue;
+                return mouseChild;
             }
             if (string.IsNullOrEmpty(instance) || safeMode ||
                 !(preferences?.CanRead(instance, legacy, VendorMap.PhysicalKeyFromName(bucket.Product)) ?? true))
             {
                 bucket.BatteryFailures.Add(safeMode ? "安全模式已跳过扩展协议" : "此实例识别已停用");
                 Record(safeMode ? "SafeMode" : "RecognitionDisabled");
-                continue;
+                return false;
             }
             var selected = collections.Where(c => c.Vid == bucket.Vid && c.Pid == bucket.Pid &&
-                InstanceScope.ForPath(c.Path, "") == instance)
+                InstanceScope.ForPath(c.Path, "") == instance &&
+                (!mouseChild || VendorProtocol.MouseExpansionChannel(route.Family, c)))
                 .GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase).Select(group => group.First()).ToArray();
             if (selected.Length == 0)
             {
                 bucket.BatteryFailures.Add(route.Reader + " · 未找到本实例的可用集合");
                 Record("MissingChannel");
-                continue;
+                return false;
             }
             ReferenceBatteryProtocol.Reading reading;
             using (InstanceScope.Enter(instance))
@@ -85,8 +96,8 @@ public static partial class HidDiscovery
                 var destination = bucket;
                 if (route.SharedReceiver)
                 {
-                    if (string.IsNullOrWhiteSpace(reading.Identity)) continue;
-                    string child = instance + "-keyboard-" + Convert.ToHexString(SHA256.HashData(
+                    if (string.IsNullOrWhiteSpace(reading.Identity)) return false;
+                    string child = childPrefix + Convert.ToHexString(SHA256.HashData(
                         Encoding.UTF8.GetBytes(reading.Identity)))[..12];
                     destination = Child(child);
                     buckets[child] = destination;
@@ -103,6 +114,7 @@ public static partial class HidDiscovery
             }
             else bucket.BatteryFailures.Add(route.Reader + " · " + reading.Diagnostic);
             LastDiagnostics.Add($"{instance} {route.Reader}: {reading.Status}, {(reading.IsBatteryEstimated ? "≈" : "")}{reading.Level}, {reading.Diagnostic}");
+            return active && (valid || reading.ChargingKnown);
         }
     }
 }

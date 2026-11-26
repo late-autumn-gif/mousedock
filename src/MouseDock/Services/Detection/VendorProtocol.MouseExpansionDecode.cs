@@ -92,7 +92,7 @@ internal static partial class VendorProtocol
             case "rog8k":
                 if (b.Length is < 21 or > 65 || !MouseExpansionPrefix(b,3,0x12,7,0,0) || b[10] > 1) return null;
                 return b[5] == 0 ? MouseExpansionSleep("ROG 8K mouse offline") :
-                    MouseExpansionValue(b[5],"ROG 8K device-reported percentage");
+                    MouseExpansionValue(b[5],"ROG 8K device-reported percentage", identity: "report-03-mouse");
             case "x7":
                 if (b.Length != 64 || !MouseExpansionPrefix(b,0x55,0x12) || b[2] is < 5 or > 60 ||
                     b[4] > 1 || (b[7] & 15) != 1 || b[8] != 1) return null;

@@ -7,6 +7,7 @@ namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
     private static bool MouseExpansionPid(ushort pid, params ushort[] ids) => Array.IndexOf(ids, pid) >= 0;
+    internal static bool IsRog8kReceiver(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1AD0;
     private static readonly HashSet<ushort> MouseExpansionWl = new()
     { 0xA867,0xA866,0xA886,0xA885,0xA869,0xA868,0xA881,0xA880,0xA884,0xA883,0xA871,0xA870,
       0xA861,0xA860,0xA857,0xA856,0xA882,0xA864,0xA863,0xA859,0xA873,0xA872,0xA875,0xA874,0xA879,0xA878 };
@@ -53,7 +54,7 @@ internal static partial class VendorProtocol
         if (vid == 0x3554 && MouseExpansionPid(pid,0xF507,0xF508) ||
             vid == 0x25A7 && MouseExpansionPid(pid,0xFA7B,0xFA7C)) return "compx";
         if (vid == 0x361D && MouseExpansionPid(pid,0x100,0x300,0x301,0x310,0x311)) return "finalmouse";
-        if (vid == 0x0B05 && pid == 0x1AD0) return "rog8k";
+        if (IsRog8kReceiver(vid, pid)) return "rog8k";
         if (vid == 0x0B05 && MouseExpansionPid(pid,0x1A72,0x1A70,0x1B0C,0x1B0A,0x197F,0x197D,0x1A1A,0x1A18,
             0x1A94,0x1A92,0x1A68,0x1A66,0x1979,0x1977,0x19F4,0x1A8D,0x1AF5,0x1AF3,0x1C57,0x1C56)) return "rog-standard";
         if (vid == 0x3151 && pid == 0x5007) return "infinity100";
@@ -130,7 +131,8 @@ internal static partial class VendorProtocol
             "sonix" => At(3,0xFFFF,1), "vgn-ld" => At(-1,0xFFA0,2),
             "vgn-master" => At(1,0xFF02,2),
             "vgn-se" or "freq" or "freq-sc311" or "mloong" => At(family is "vgn-se" or "freq-sc311" ? 2 : -1,0xFF01,0x10),
-            "rog8k" => At(2,0xFF01,1), "rog-standard" => MouseExpansionMi(c.Path,0) && c.UsagePage >= 0xFF00,
+            "rog8k" => At(2,0xFF01,1),
+            "rog-standard" => MouseExpansionMi(c.Path,0) && c.UsagePage >= 0xFF00,
             "infinity100" or "aj159-pro" => At(2,0xFFFF,2),
             "infinity97" => MouseExpansionMi(c.Path,1) && c.Usage == 1 && c.UsagePage is 0xFF13 or 0xFF14,
             "steel" => At(3,0xFFC0,1), "incott" or "sc900" => At(-1,0xFF05,1),
@@ -199,7 +201,7 @@ internal static partial class VendorProtocol
             "freq-sc311" => l.Revision==0x273 && Io(65,0),
             "vgn-ld" => l.Output is 33 or 64 && l.Input is >=4 and <=65 && l.Outputs.SetEquals(new byte[]{0xA0}) && l.Inputs.Count > 0 && !l.Inputs.Contains(0),
             "rog8k" => l.Input is >=21 and <=65 && l.Output is >=21 and <=65 &&
-                l.Inputs.SetEquals(new byte[]{3}) && l.Outputs.SetEquals(new byte[]{3}),
+                l.Inputs.SetEquals(new byte[] { 3 }) && l.Outputs.SetEquals(new byte[] { 3 }),
             "vaxee" => F(64,14), "infinity100" or "aj159-pro" or "royuan-mouse" => F(65,0),
             "infinity97" => l.Channel.UsagePage==0xFF13&&F(62,20) ||
                 l.Channel.UsagePage==0xFF14&&(l.Feature is >=62 and <=65&&l.Features.SetEquals(new byte[]{20}) ||

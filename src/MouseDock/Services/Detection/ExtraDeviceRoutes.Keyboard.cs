@@ -8,7 +8,8 @@ internal static partial class ExtraDeviceRoutes
     {
         if (route != null || !VendorProtocol.ExtraKeyboardCandidate(vid, pid, product)) return;
         string family = VendorProtocol.ExtraKeyboardFamily(vid, pid, product);
-        route = new(DeviceKind.Keyboard, family, SharedReceiver: family == "Logi")
+        route = new(DeviceKind.Keyboard, family, VendorProtocol.IsRog8kReceiver(vid, pid) ? "2.4G" : null,
+            SharedReceiver: family == "Logi")
         { Query = VendorProtocol.ReadExtraKeyboard };
     }
 }

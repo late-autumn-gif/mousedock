@@ -86,7 +86,6 @@ internal static partial class VendorProtocol
             "cube" => MouseExpansionCubeRequest(),
             "aula-v9" or "delux" => MouseExpansionReport4(0x1A),
             "rog-standard" => MouseExpansionPacket(65,0,0x12,7),
-            "rog8k" => MouseExpansionPacket(l.Output,3,0x12,7,0,0),
             "nzxt" => MouseExpansionPacket(64,0x4E,2,0x81,0,0xB0),
             "x7" => MouseExpansionPacket(65,0,0xAA,0x12,0,0),
             "mchose4d" => MouseExpansionPacket(64,0x4D,1,1,0,0,9,0,0,8),

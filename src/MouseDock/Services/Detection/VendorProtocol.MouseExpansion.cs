@@ -19,7 +19,7 @@ internal static partial class VendorProtocol
         !IsScopedG7(vid,pid,product) && !IsScopedInphic(vid,pid,product) &&
         !IsMchoseA7V2(vid,pid) &&
         !IsScopedModernMouse(vid, pid, product) &&
-        !IsRogOmni(vid,pid) && !(vid==0x0B05&&pid==0x1AD0) &&
+        !IsRogOmni(vid,pid) &&
         !M9ProProtocol.IsCandidate(vid, pid, product) &&
         MouseExpansionFamily(vid, pid, product) != null;
 
@@ -127,7 +127,7 @@ internal static partial class VendorProtocol
         "ipi" or "mchose-a5" or "dareu" or "sora-v3" or "sora-v2" or "vaxee" or "sonix" or "vk-m5" or "royuan-mouse" or
         "razer" or "razer-carbon" => MouseExpansionReadFeature(family, vid, pid, link),
         "hechi" or "ausdom" or "sc525" or "scyrox" or "zynoo" or "waizowl" or "nordic54" or "nk" or
-        "compx" or "hitscan" or "hts" or "steel" or "akko" or "cube" or "rog-standard" or "rog8k" or
+        "compx" or "hitscan" or "hts" or "steel" or "akko" or "cube" or "rog-standard" or
         "vgn-ld" or "vgn-master" or "vgn-se" or "keychron" or "nzxt" or
         "hecate" or "aula-v9" or "delux" or "x7" or "mchose4d" =>
             MouseExpansionReadOutput(family, vid, pid, link),

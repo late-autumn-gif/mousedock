@@ -113,6 +113,62 @@ internal static class ExtraDiscoveryRegression
         typeReply[4] = 3;
         Check(LogitechHidpp.IsMouseType(typeReply), "confirmed HID++ mouse type was rejected");
         Check(!LogitechHidpp.IsMouseType(typeReply.AsSpan(0, 5)), "truncated type was accepted");
+        InstanceScope.BeginScan();
+        const string pairPath = "rog&mi_02&col01";
+        const string mousePath = "rog&mi_02&col03";
+        var lineage = new[] { (@"USB\VID_0B05&PID_1AD0\ONE", "") };
+        string rog = InstanceScope.Register(pairPath, lineage);
+        InstanceScope.Register(mousePath, lineage);
+        const string otherPath = "other&mi_02&col03";
+        InstanceScope.Register(otherPath, new[] { (@"USB\VID_0B05&PID_1AD0\TWO", "") });
+        HidDiscovery.VendorCollectionInfo RogChannel(string path, ushort page) => new()
+        { Path = path, Vid = 0x0B05, Pid = 0x1AD0, UsagePage = page, Usage = 1, Input = 64, Output = 64 };
+        channels = new() { RogChannel(pairPath, 0xFF02), RogChannel(mousePath, 0xFF01), RogChannel(otherPath, 0xFF01) };
+        Dictionary<string, HidDiscovery.Bucket> RogBuckets() => new()
+        {
+            [rog] = new() { InstanceId = rog, Vid = 0x0B05, Pid = 0x1AD0, Product = "ROG 8K Receiver", Path = pairPath }
+        };
+        bool keyboardOnline = true, mouseOnline = true;
+        int mouseQueries = 0;
+        ReferenceBatteryProtocol.Reading RogQuery(ExtraDeviceRoutes.Route route, ushort vid, ushort pid,
+            string product, IReadOnlyList<HidDiscovery.VendorCollectionInfo> selected, BatteryReplay.Trace trace)
+        {
+            if (route.Kind == DeviceKind.Keyboard)
+                return keyboardOnline ? new(72, false, false, ReferenceBatteryProtocol.State.Online, "fresh", "ROG 夜魔")
+                    : ReferenceBatteryProtocol.Reading.Failed("keyboard absent");
+            mouseQueries++;
+            Check(selected.Count == 1 && selected[0].Path == mousePath && InstanceScope.Allows(mousePath),
+                "SPEEDNOVA mouse reader received a keyboard or unrelated receiver channel");
+            return mouseOnline ? new(53, false, false, ReferenceBatteryProtocol.State.Online, "fresh", Identity: "report-03-mouse")
+                : ReferenceBatteryProtocol.Reading.Failed("mouse absent");
+        }
+        buckets = RogBuckets();
+        HidDiscovery.QueryExtraDevices(buckets, channels, false, null, RogQuery);
+        var rogMouse = buckets.Values.Single(b => b.Kind == DeviceKind.Mouse).ToDevice();
+        Check(buckets.Count == 2 && buckets[rog].ToDevice() is { Kind: DeviceKind.Keyboard, Level: 72 } &&
+            rogMouse is { Level: 53, ConfirmedModel: "", Transport: "2.4G" },
+            "SPEEDNOVA publishes both paired roles without guessing the mouse model");
+        keyboardOnline = false;
+        buckets = RogBuckets();
+        HidDiscovery.QueryExtraDevices(buckets, channels, false, null, RogQuery);
+        Check(buckets.Count == 1 && buckets.ContainsKey(rogMouse.Id),
+            "mouse-only receiver has a stable mouse ID and no placeholder keyboard");
+        keyboardOnline = true;
+        mouseOnline = false;
+        buckets = RogBuckets();
+        HidDiscovery.QueryExtraDevices(buckets, channels, false, null, RogQuery);
+        Check(buckets.Count == 1 && buckets[rog].Battery == 72, "keyboard-only receiver keeps its prior device ID");
+        int previousMouseQueries = mouseQueries;
+        var rogPreferences = new DevicePreferences(new());
+        rogPreferences.Disable(new DeviceInfo { Id = rogMouse.Id });
+        buckets = RogBuckets();
+        HidDiscovery.QueryExtraDevices(buckets, channels, false, rogPreferences, RogQuery);
+        Check(mouseQueries == previousMouseQueries && buckets[rog].Battery == 72 && buckets[rogMouse.Id].Battery < 0,
+            "disabling the SPEEDNOVA mouse does not disable its keyboard");
+        buckets = RogBuckets();
+        HidDiscovery.QueryExtraDevices(buckets, channels, true, null, RogQuery);
+        Check(mouseQueries == previousMouseQueries && buckets.Count == 1 && buckets[rog].Battery < 0,
+            "safe mode does not query either SPEEDNOVA role");
         return checks;
     }
 }

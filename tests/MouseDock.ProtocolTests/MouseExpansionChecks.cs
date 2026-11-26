@@ -25,7 +25,32 @@ internal static class MouseExpansionChecks
         Check(!VendorProtocol.ExtraMouseCandidate(0x260D, 0x1166, ""), "estimated Dareu route suppressed");
         Check(!VendorProtocol.ExtraMouseCandidate(0x391D, 0x1A21, ""), "ambiguous KC2 per-report length closed");
         Check(!VendorProtocol.ExtraMouseCandidate(0x362D, 0xFF09, ""), "ambiguous RIDLAG per-report length closed");
-        Check(!VendorProtocol.ExtraMouseCandidate(0x0B05, 0x1AD0, ""), "existing OMNI ownership retained");
+        Check(VendorProtocol.ExtraMouseCandidate(0x0B05, 0x1AD0, "") &&
+            ExtraDeviceRoutes.Primary(0x0B05, 0x1AD0, "") is { Family: "RogOmni", Transport: "2.4G" },
+            "SPEEDNOVA mouse is admitted alongside the existing keyboard route");
+        byte[] Rog8kReply(byte level)
+        {
+            var report = new byte[64];
+            report[0] = 3; report[1] = 0x12; report[2] = 7; report[5] = level;
+            return report;
+        }
+        ReferenceBatteryProtocol.Reading ReadRog8k(ReplayLink link, ushort pid = 0x1AD0) =>
+            VendorProtocol.MouseExpansionTransaction("rog8k", 0x0B05, pid, "", link,
+                inputId: 3, outputId: 3, outputLength: 64, inputLength: 64);
+        var rog8k = new ReplayLink(_ => Rog8kReply(54));
+        Check(ReadRog8k(rog8k) is { Level: 54, ChargingKnown: false, Identity: "report-03-mouse" } &&
+            rog8k.Writes.Count == 2 && rog8k.Writes.All(r => r.SequenceEqual(Rog8kReply(0))),
+            "SPEEDNOVA requests battery twice, with mouse role and charging unknown");
+        var shortRog8k = new ReplayLink(_ => Rog8kReply(54)[..32]);
+        Check(ReadRog8k(shortRog8k).Level < 0, "SPEEDNOVA rejects short replies inside its native 64-byte report");
+        var echoedRog8k = new ReplayLink(request => request);
+        Check(ReadRog8k(echoedRog8k).Level < 0, "SPEEDNOVA rejects an echoed request");
+        int rogPass = 0;
+        var interruptedRog8k = new ReplayLink(_ => ++rogPass == 1 ? Rog8kReply(54) : null!);
+        Check(ReadRog8k(interruptedRog8k).Level < 0, "SPEEDNOVA cannot publish the first reply after a timeout");
+        var wrongRog8k = new ReplayLink(_ => Rog8kReply(54));
+        Check(ReadRog8k(wrongRog8k, 0x1ACE).Level < 0 && wrongRog8k.Writes.Count == 0,
+            "SPEEDNOVA cannot send Report 3 to the ordinary Omni route");
         foreach (ushort pid in new ushort[] { 0x1A1A, 0x1A2F, 0x1A30, 0x1A31, 0x1A32, 0x1A33 })
         {
             Check(ExtraDeviceRoutes.Primary(0x391D, pid, "") is { Family: "vgn-master" } &&
