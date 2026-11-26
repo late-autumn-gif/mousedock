@@ -29,6 +29,8 @@ internal static partial class VendorProtocol
                 "logitech-x3" => MouseExpansionLogitech(link),
                 "infinity100" => MouseExpansionInfinity100(link,featureId),
                 "pulsar" => MouseExpansionPulsar(link),
+                "sonix" when IsPulsarSonix(vid, pid) && page == 0xFFFF && featureId == 0 && featureLength == 65 =>
+                    ReadPulsarSonix(link, pid),
                 "rog8k" when IsRog8kReceiver(vid, pid) && inputId == 3 && outputId == 3 &&
                     inputLength is >= 21 and <= 65 && outputLength is >= 21 and <= 65 =>
                     MouseExpansionRog8k(link, inputLength, outputLength),
@@ -62,6 +64,28 @@ internal static partial class VendorProtocol
             if (reading.Status == ReferenceBatteryProtocol.State.Sleep) return reading;
         }
         return reading;
+    }
+
+    private static ReferenceBatteryProtocol.Reading ReadPulsarSonix(ReferenceBatteryProtocol.ILink link, ushort pid)
+    {
+        int ReadRegister(byte register, int maximum)
+        {
+            var request = MouseExpansionPacket(65, 0, 0, 8, register, 1);
+            int checksum = request[2] + request[3] + request[4];
+            request[63] = (byte)checksum;
+            request[64] = (byte)(checksum >> 8);
+            return MouseExpansionFeature(link, request,
+                b => b.Length == 65 && MouseExpansionPrefix(b, 0, 1, 8, register, 1) && b[7] <= maximum,
+                attempts: 40, delay: 10)[7];
+        }
+
+        int level = -1;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            level = ReadRegister(0x81, 100);
+            ReadRegister(0x83, 1);
+        }
+        return MouseExpansionValue(level, "Sonix device-reported percentage", model: PulsarSonixWiredModel(pid));
     }
 
     private static byte[] MouseExpansionExchange(ReferenceBatteryProtocol.ILink link,byte[] request,

@@ -43,6 +43,10 @@ IPI 飘88 Pro、VGN N75 V2、Rainy75 V2、Pulsar 扩展分支、NinjaForce、Sor
 | SPEEDNOVA 8K `0B05:1AD0` | 鼠标经 MI02 `FF01:1` 的唯一 Report 03 双向集合取得两次符合 Windows 原生长度的有效电量回复。与已识别的键盘分别显示。配对鼠标型号和充电状态未知 | 离线回归通过，待实机 |
 | 普通 Omni `0B05:1ACE` | 夜魔 `1A85`、游侠 II 96 `1AB0`、夜魔 Extreme `1B42`、夜魔 Extreme SE `1CF1`。唯一已知键盘配对且前后配对表一致时读取电量 | 配对回归通过，待实机 |
 
+### Pulsar 有线电量扩展
+
+Xlite V3、X2 V2、X2H 和 X2A 的 USB 直连身份分别为 `3710:1401` 至 `3710:1404`。复用现有 Sonix 读取器，要求同一实例具有唯一 MI03 `FFFF:1` 集合和 65 字节无编号 Feature。两轮有效读数后显示设备报告的百分比，充电状态未知。接口和报文已通过离线回归，四款设备待实机。对应无线接收器及 DPI 以各自记录为准。
+
 同一型号的有线、接收器和配对身份可分别占一行。每行独立记录电量与 DPI。
 
 - **理论实现**表示 MouseDock 已有对应读取或设置路径，实际设备须满足表中身份和接口条件。
@@ -82,10 +86,10 @@ IPI 飘88 Pro、VGN N75 V2、Rainy75 V2、Pulsar 扩展分支、NinjaForce、Sor
 | Sora V2 8K 0x1915:0xAE14 | 有线直连 | 理论实现 | 待核对 |
 | Sora V2 8K 0x1915:0xAE15 | 有线直连 | 理论实现 | 待核对 |
 | Sora V2 8K 0x1915:0xAE16 | 有线直连 | 理论实现 | 待核对 |
-| Pulsar X2A Wired 0x3710:0x1404 | 有线直连 | 待核对 | 待核对 |
-| Pulsar X2H Wired 0x3710:0x1403 | 有线直连 | 待核对 | 待核对 |
-| Pulsar X2 V2 Wired 0x3710:0x1402 | 有线直连 | 待核对 | 待核对 |
-| Pulsar Xlite V3 Wired 0x3710:0x1401 | 有线直连 | 待核对 | 待核对 |
+| Pulsar X2A Wired 0x3710:0x1404 | 有线直连 | 理论实现 | 待核对 |
+| Pulsar X2H Wired 0x3710:0x1403 | 有线直连 | 理论实现 | 待核对 |
+| Pulsar X2 V2 Wired 0x3710:0x1402 | 有线直连 | 理论实现 | 待核对 |
+| Pulsar Xlite V3 Wired 0x3710:0x1401 | 有线直连 | 理论实现 | 待核对 |
 | 雷柏 V700DIY-98 长续航版 0x24AE:0x1924 | 以记录中的接口为准 | 待核对 | 未开放 |
 | ATK V75X 0x320F:0x5088 | 2.4G | 待核对 | 未开放 |
 | 无线键盘（8FFF） 0x1A2C:0x8FFF | 2.4G | 待核对 | 未开放 |

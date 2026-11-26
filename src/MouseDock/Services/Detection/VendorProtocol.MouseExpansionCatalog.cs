@@ -8,6 +8,17 @@ internal static partial class VendorProtocol
 {
     private static bool MouseExpansionPid(ushort pid, params ushort[] ids) => Array.IndexOf(ids, pid) >= 0;
     internal static bool IsRog8kReceiver(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1AD0;
+    private static string PulsarSonixWiredModel(ushort pid) => pid switch
+    {
+        0x1401 => "Pulsar Xlite V3",
+        0x1402 => "Pulsar X2 V2",
+        0x1403 => "Pulsar X2H",
+        0x1404 => "Pulsar X2A",
+        _ => null
+    };
+
+    private static bool IsPulsarSonix(ushort vid, ushort pid) =>
+        vid == 0x3710 && (pid is 0x5402 or 0x5403 || PulsarSonixWiredModel(pid) != null);
     private static readonly HashSet<ushort> MouseExpansionWl = new()
     { 0xA867,0xA866,0xA886,0xA885,0xA869,0xA868,0xA881,0xA880,0xA884,0xA883,0xA871,0xA870,
       0xA861,0xA860,0xA857,0xA856,0xA882,0xA864,0xA863,0xA859,0xA873,0xA872,0xA875,0xA874,0xA879,0xA878 };
@@ -49,7 +60,7 @@ internal static partial class VendorProtocol
         if (vid == 0x373B && MouseExpansionPid(pid,0x1031,0x102E,0x11D9,0x11B6) ||
             vid == 0x3554 && MouseExpansionPid(pid,0xF502,0xF503,0xF58A,0xF58C,0xF58E,0xF58F,0xF5F6,
                 0xFB3D,0xFB3E,0xFB5E,0xFB5F,0xF50D)) return "compx";
-        if (vid == 0x3710 && MouseExpansionPid(pid,0x5402,0x5403)) return "sonix";
+        if (IsPulsarSonix(vid, pid)) return "sonix";
         if (vid == 0x3710 && MouseExpansionPulsarPids.Contains(pid)) return "pulsar";
         if (vid == 0x3554 && MouseExpansionPid(pid,0xF507,0xF508) ||
             vid == 0x25A7 && MouseExpansionPid(pid,0xFA7B,0xFA7C)) return "compx";

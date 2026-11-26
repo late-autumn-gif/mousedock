@@ -65,25 +65,6 @@ internal static partial class VendorProtocol
             return raw==null?ReferenceBatteryProtocol.Reading.Failed("IPI Feature3 battery missing"):
                 MouseExpansionDecode("ipi",raw);
         }
-        if(family=="sonix")
-        {
-            int Read(byte register)
-            {
-                var request=MouseExpansionPacket(65,0,0,8,register,1);
-                int sum=request.AsSpan(1,62).ToArray().Sum(x=>(int)x);
-                request[63]=(byte)sum;request[64]=(byte)(sum>>8);
-                var raw=l.FeatureExchange(request,b=>b.Length==65&&MouseExpansionPrefix(b,0,1,8,register,1)&&
-                    b[7] <= (register==0x81?100:1),40,10);
-                return raw==null?-1:raw[7];
-            }
-            int level=-1;
-            for(int i=0;i<2;i++)
-            {
-                level=Read(0x81);
-                if(level<0||Read(0x83)<0)return ReferenceBatteryProtocol.Reading.Failed("Sonix power register unavailable");
-            }
-            return MouseExpansionValue(level,"Sonix device-reported percentage");
-        }
         if(family=="vaxee")
         {
             int Read(byte command)

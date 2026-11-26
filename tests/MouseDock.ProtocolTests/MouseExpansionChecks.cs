@@ -13,6 +13,50 @@ internal static class MouseExpansionChecks
             if (!result) throw new InvalidOperationException("Mouse expansion: " + name);
         }
         Check(VendorProtocol.ExtraMouseCandidate(0x373B, 0x1196, ""), "HECHI admitted");
+        const string sonix = "sonix";
+        ReferenceBatteryProtocol.Reading ReadSonix(ushort pid, ReplayLink link) =>
+            VendorProtocol.MouseExpansionTransaction(sonix, 0x3710, pid, "", link, page: 0xFFFF);
+        byte[] SonixReply(byte[] request, byte level = 47)
+        {
+            var reply = (byte[])request.Clone();
+            reply[1] = 1;
+            reply[7] = request[3] == 0x81 ? level : (byte)1;
+            return reply;
+        }
+        foreach (var (pid, model) in new (ushort, string)[]
+        {
+            (0x1401, "Pulsar Xlite V3"), (0x1402, "Pulsar X2 V2"),
+            (0x1403, "Pulsar X2H"), (0x1404, "Pulsar X2A")
+        })
+        {
+            Check(ExtraDeviceRoutes.Primary(0x3710, pid, "") is { Family: sonix, Transport: "USB" } &&
+                DeviceRoutes.IsKnown(0x3710, pid, ""), "Pulsar wired identity reaches discovery");
+            var channel = new HidDiscovery.VendorCollectionInfo { Vid = 0x3710, Pid = pid,
+                Path = "pulsar&mi_03", UsagePage = 0xFFFF, Usage = 1, Feature = 65 };
+            var layout = new VendorProtocol.MouseExpansionLayoutInfo(channel, new(), new(), new() { 0 }, 0);
+            Check(VendorProtocol.MouseExpansionChannel(sonix, channel) && VendorProtocol.MouseExpansionLayout(sonix, layout) &&
+                !VendorProtocol.MouseExpansionLayout(sonix, layout with { Features = new() { 0, 1 } }),
+                "Pulsar requires an exact unnumbered Feature channel");
+            channel.Path = "pulsar&mi_01";
+            Check(!VendorProtocol.MouseExpansionChannel(sonix, channel), "Pulsar rejects unrelated interfaces");
+            var link = new ReplayLink(request => SonixReply(request));
+            var reading = ReadSonix(pid, link);
+            Check(reading is { Level: 47, ChargingKnown: false } && reading.Model == model &&
+                link.Writes.Select(report => report[3]).SequenceEqual(new byte[] { 0x81, 0x83, 0x81, 0x83 }) &&
+                link.Writes.All(report => report[63] == 9 + report[3] && report[64] == 0),
+                "Pulsar publishes two confirmed reads with the exact wired model and no guessed charging");
+        }
+        Check(ReadSonix(0x5403, new ReplayLink(request => SonixReply(request, 0))) is { Level: 0, Model: null },
+            "Fusion receiver retains real zero and unresolved paired model");
+        var unrelatedSonix = new ReplayLink(request => SonixReply(request));
+        Check(ReadSonix(0x1405, unrelatedSonix).Level < 0 && unrelatedSonix.Writes.Count == 0,
+            "Adjacent PID is not granted Sonix access");
+        int sonixReads = 0;
+        Check(ReadSonix(0x1401, new ReplayLink(request => ++sonixReads > 2 ? null! : SonixReply(request))).Level < 0 &&
+            ReadSonix(0x1401, new ReplayLink(request => SonixReply(request, 101))).Level < 0 &&
+            ReadSonix(0x1401, new ReplayLink(request => SonixReply(request)[..64])).Level < 0 &&
+            ReadSonix(0x1401, new ReplayLink(request => request)).Level < 0,
+            "Pulsar rejects timeout, invalid percentage, short replies and echoes");
         Check(!VendorProtocol.ExtraMouseCandidate(0x373B, 0x1197, ""), "adjacent HECHI rejected");
         Check(!VendorProtocol.ExtraMouseCandidate(0x3837, 0x1012, ""), "MagDock rejected");
         Check(!VendorProtocol.ExtraMouseCandidate(0x1B1C, 0x1B7F, ""), "pending Dark Core rejected");

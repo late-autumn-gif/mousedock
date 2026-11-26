@@ -37,6 +37,7 @@ internal static partial class VendorProtocol
             "keychron" => pid == 0xD048 ? "USB" : "2.4G",
             "sora-v2" => pid is >= 0xAE11 and <= 0xAE16 ? "USB" : "2.4G",
             "sora-v3" => pid == 0xE010 ? "USB" : "2.4G",
+            "sonix" when PulsarSonixWiredModel(pid) != null => "USB",
             "exx" => pid == 0x3A87 ? "USB" : "2.4G",
             "hechi" => pid == 0x1147 ? "USB" : "2.4G",
             "s9" => FindS9Profile(vid, pid, product).Wired ? "USB" : "2.4G",
@@ -124,7 +125,7 @@ internal static partial class VendorProtocol
         string product, MouseExpansionLink link) => family switch
     {
         "feature83" or "lamzu83" or "luna83" or "ko83" or "wl83" or "gwolves" or "gwolves-old" or
-        "ipi" or "mchose-a5" or "dareu" or "sora-v3" or "sora-v2" or "vaxee" or "sonix" or "vk-m5" or "royuan-mouse" or
+        "ipi" or "mchose-a5" or "dareu" or "sora-v3" or "sora-v2" or "vaxee" or "vk-m5" or "royuan-mouse" or
         "razer" or "razer-carbon" => MouseExpansionReadFeature(family, vid, pid, link),
         "hechi" or "ausdom" or "sc525" or "scyrox" or "zynoo" or "waizowl" or "nordic54" or "nk" or
         "compx" or "hitscan" or "hts" or "steel" or "akko" or "cube" or "rog-standard" or
