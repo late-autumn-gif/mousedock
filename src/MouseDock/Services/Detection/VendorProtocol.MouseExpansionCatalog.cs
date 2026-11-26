@@ -8,6 +8,7 @@ internal static partial class VendorProtocol
 {
     private static bool MouseExpansionPid(ushort pid, params ushort[] ids) => Array.IndexOf(ids, pid) >= 0;
     internal static bool IsRog8kReceiver(ushort vid, ushort pid) => vid == 0x0B05 && pid == 0x1AD0;
+    private static bool IsPulsarNordicReceiver(ushort vid, ushort pid) => vid == 0x3554 && pid is 0xF508 or 0xF509;
     private static string PulsarSonixWiredModel(ushort pid) => pid switch
     {
         0x1401 => "Pulsar Xlite V3",
@@ -62,7 +63,8 @@ internal static partial class VendorProtocol
                 0xFB3D,0xFB3E,0xFB5E,0xFB5F,0xF50D)) return "compx";
         if (IsPulsarSonix(vid, pid)) return "sonix";
         if (vid == 0x3710 && MouseExpansionPulsarPids.Contains(pid)) return "pulsar";
-        if (vid == 0x3554 && MouseExpansionPid(pid,0xF507,0xF508) ||
+        if (IsPulsarNordicReceiver(vid, pid)) return "pulsar-nordic";
+        if (vid == 0x3554 && pid == 0xF507 ||
             vid == 0x25A7 && MouseExpansionPid(pid,0xFA7B,0xFA7C)) return "compx";
         if (vid == 0x361D && MouseExpansionPid(pid,0x100,0x300,0x301,0x310,0x311)) return "finalmouse";
         if (IsRog8kReceiver(vid, pid)) return "rog8k";
@@ -138,6 +140,7 @@ internal static partial class VendorProtocol
             "nk" => MouseExpansionMi(c.Path,1) && c.Usage == 2 && c.UsagePage is 0xFF02 or 0xFF04,
             "nordic54" or "vaxee" => At(-1,0xFF05,1),
             "compx" or "hts" or "hitscan" or "pulsar" => At(family is "pulsar" or "hitscan" ? 1 : -1,0xFF02,2),
+            "pulsar-nordic" => At(-1,0xFF02,2) && c.Input == 17 && c.Output == 17,
             "x23-compx" => c.Vid==0x35BB ? MouseExpansionMi(c.Path,1)&&c.Usage==2&&c.UsagePage is 0xFF02 or 0xFF04 : c.UsagePage>=0xFF00,
             "sonix" => At(3,0xFFFF,1), "vgn-ld" => At(-1,0xFFA0,2),
             "vgn-master" => At(1,0xFF02,2),
@@ -204,7 +207,7 @@ internal static partial class VendorProtocol
             "feature83" or "lamzu83" or "luna83" or "ko83" or "wl83" or "gwolves" or "gwolves-old" or
             "sonix" or "mchose-a5" => F(65,0),
             "ipi" or "s9" or "vk-m2" => F(64,3),
-            "compx" or "hts" or "hitscan" or "pulsar" or "x23-compx" or "vgn-master" => Io(17,8),
+            "compx" or "hts" or "hitscan" or "pulsar" or "pulsar-nordic" or "x23-compx" or "vgn-master" => Io(17,8),
             "nordic54" => Io(64,8), "akko" or "cube" or "hecate" or "delux" or "aula-v9" => Io(64,4),
             "steel" or "rog-standard" or "vgn-se" or "x7" or "rawm" => Io(65,0),
             "exx" => Io(65,0) && l.Feature==0,

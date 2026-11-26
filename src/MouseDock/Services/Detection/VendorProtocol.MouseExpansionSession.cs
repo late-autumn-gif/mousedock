@@ -29,6 +29,9 @@ internal static partial class VendorProtocol
                 "logitech-x3" => MouseExpansionLogitech(link),
                 "infinity100" => MouseExpansionInfinity100(link,featureId),
                 "pulsar" => MouseExpansionPulsar(link),
+                "pulsar-nordic" when IsPulsarNordicReceiver(vid, pid) && page == 0xFF02 &&
+                    inputId == 8 && outputId == 8 && inputLength == 17 && outputLength == 17 =>
+                    ReadPulsarNordicReceiver(link),
                 "sonix" when IsPulsarSonix(vid, pid) && page == 0xFFFF && featureId == 0 && featureLength == 65 =>
                     ReadPulsarSonix(link, pid),
                 "rog8k" when IsRog8kReceiver(vid, pid) && inputId == 3 && outputId == 3 &&

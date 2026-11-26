@@ -5,6 +5,30 @@ namespace MouseDock.Services.Detection;
 
 internal static partial class VendorProtocol
 {
+    private static ReferenceBatteryProtocol.Reading ReadPulsarNordicReceiver(ReferenceBatteryProtocol.ILink link)
+    {
+        byte[] Query(byte command, int payloadSize) => MouseExpansionExchange(link, MouseExpansionCompx(command),
+            b => b.Length == 17 && MouseExpansionPrefix(b, 8, command, 0) && b[5] == payloadSize &&
+                MouseExpansionSum(b) == 0x55, 600);
+
+        var before = Query(3, 1);
+        if (before[6] != 1) return MouseExpansionSleep("Pulsar receiver did not report an online mouse");
+
+        int level = -1;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            var battery = Query(4, 2);
+            int voltage = battery[8] << 8 | battery[9];
+            if (battery[6] > 100 || battery[7] > 1 || (voltage != 0 && (voltage < 2500 || voltage > 5000)))
+                return ReferenceBatteryProtocol.Reading.Failed("Invalid Pulsar Nordic battery reply");
+            level = battery[6];
+        }
+
+        var after = Query(3, 1);
+        if (after[6] != 1) return MouseExpansionSleep("Pulsar mouse went offline");
+        return MouseExpansionValue(level, "Pulsar Nordic device-reported percentage");
+    }
+
     private static ReferenceBatteryProtocol.Reading MouseExpansionPulsar(ReferenceBatteryProtocol.ILink link)
     {
         bool holdAttempted=false;

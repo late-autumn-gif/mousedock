@@ -13,6 +13,50 @@ internal static class MouseExpansionChecks
             if (!result) throw new InvalidOperationException("Mouse expansion: " + name);
         }
         Check(VendorProtocol.ExtraMouseCandidate(0x373B, 0x1196, ""), "HECHI admitted");
+        const string nordic = "pulsar-nordic";
+        var onlinePulsar = Convert.FromHexString("0803000000010165074500000000000097");
+        var batteryPulsar = Convert.FromHexString("080400000002640010690000000000006A");
+        byte[] NordicReply(byte[] request) => request[1] == 3 ? onlinePulsar : batteryPulsar;
+        ReferenceBatteryProtocol.Reading ReadNordic(ushort pid, ReplayLink link) =>
+            VendorProtocol.MouseExpansionTransaction(nordic, 0x3554, pid, "", link,
+                inputId: 8, outputId: 8, inputLength: 17, outputLength: 17, page: 0xFF02);
+        foreach (ushort pid in new ushort[] { 0xF508, 0xF509 })
+        {
+            Check(ExtraDeviceRoutes.Primary(0x3554, pid, "") is { Family: nordic, Transport: "2.4G" } &&
+                DeviceRoutes.IsKnown(0x3554, pid, ""), "Pulsar Nordic receiver reaches detection");
+            var channel = new HidDiscovery.VendorCollectionInfo { Vid = 0x3554, Pid = pid,
+                Path = "receiver&mi_01", UsagePage = 0xFF02, Usage = 2, Input = 17, Output = 17 };
+            var layout = new VendorProtocol.MouseExpansionLayoutInfo(channel, new() { 8 }, new() { 8 }, new(), 0);
+            Check(VendorProtocol.MouseExpansionChannel(nordic, channel) && VendorProtocol.MouseExpansionLayout(nordic, layout) &&
+                !VendorProtocol.MouseExpansionLayout(nordic, layout with { Inputs = new() { 8, 9 } }),
+                "Pulsar Nordic requires its dedicated 17-byte Report 8");
+            channel.UsagePage = 0xFF04;
+            Check(!VendorProtocol.MouseExpansionChannel(nordic, channel), "Pulsar Nordic rejects unrelated usage pages");
+            var link = new ReplayLink(NordicReply);
+            Check(ReadNordic(pid, link) is { Level: 100, ChargingKnown: false, Model: null } &&
+                link.Writes.Select(report => report[1]).SequenceEqual(new byte[] { 3, 4, 4, 3 }) &&
+                link.Writes.All(report => report[6] == 0 && (Sum(report) & 255) == 0x55),
+                "Pulsar Nordic verifies online status before and after two fresh reads without a hold command");
+        }
+        var offlinePulsar = (byte[])onlinePulsar.Clone();
+        offlinePulsar[6] = 0;
+        offlinePulsar[^1]++;
+        var offlineLink = new ReplayLink(_ => offlinePulsar);
+        Check(ReadNordic(0xF508, offlineLink).Status == ReferenceBatteryProtocol.State.Sleep && offlineLink.Writes.Count == 1,
+            "Pulsar Nordic skips battery I/O when the mouse is offline");
+        int statusRequests = 0;
+        var disconnectLink = new ReplayLink(request => request[1] == 3 && ++statusRequests == 2 ? offlinePulsar : NordicReply(request));
+        Check(ReadNordic(0xF508, disconnectLink).Level < 0, "Pulsar Nordic does not publish a reading after disconnect");
+        var wrongReply = (byte[])batteryPulsar.Clone();
+        wrongReply[6] = 101;
+        wrongReply[^1]--;
+        Check(ReadNordic(0xF508, new ReplayLink(request => request[1] == 4 ? wrongReply : onlinePulsar)).Level < 0 &&
+            ReadNordic(0xF508, new ReplayLink(request => request[1] == 4 ? request : onlinePulsar)).Level < 0 &&
+            ReadNordic(0xF508, new ReplayLink(request => request[1] == 4 ? batteryPulsar[..16] : onlinePulsar)).Level < 0,
+            "Pulsar Nordic rejects excessive percentage, echoed requests and short replies");
+        var unrelatedNordic = new ReplayLink(NordicReply);
+        Check(ReadNordic(0xF507, unrelatedNordic).Level < 0 && unrelatedNordic.Writes.Count == 0,
+            "Pulsar Nordic receiver queries exclude wired identity");
         const string sonix = "sonix";
         ReferenceBatteryProtocol.Reading ReadSonix(ushort pid, ReplayLink link) =>
             VendorProtocol.MouseExpansionTransaction(sonix, 0x3710, pid, "", link, page: 0xFFFF);

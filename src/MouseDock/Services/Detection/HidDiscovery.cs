@@ -1753,6 +1753,7 @@ namespace MouseDock.Services.Detection
                     {
                         "RapooVt3Max" when RapooVt3MaxProtocol.IsCandidate(Vid, Pid) => RapooVt3MaxProtocol.Model + " 接收器",
                         "rog8k" => "ROG SPEEDNOVA 8K 鼠标",
+                        "pulsar-nordic" => "Pulsar 2.4G 鼠标",
                         _ => Product ?? "未确认型号的设备"
                     });
                     kind = ExtraRoute.Kind;
