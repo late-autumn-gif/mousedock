@@ -281,7 +281,7 @@ internal static class ReferenceStyleChecks
             foreach (string style in new[] { "character", "portrait" })
                 Require(((Panel)window.FindName("IconStyleChoices")).Children.OfType<Button>().Any(b => (string)b.Tag == style),
                     $"Floating settings omit {style}.");
-            Require(window.FindName("ReferenceCharacterChoices") is ComboBox, "Character selection is inaccessible.");
+            Require(window.FindName("ReferenceCharacterChoices") is Panel { Children.Count: 3 }, "Character selection is inaccessible.");
             settings.TaskbarStyle = settings.EdgeStyle = "character";
             settings.IconFollowTheme = true;
             taskbar = new TaskbarWindow();

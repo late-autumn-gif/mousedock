@@ -739,7 +739,6 @@ namespace MouseDock.Views
                 styles.Items.Add(item);
             }
             menu.Items.Add(styles);
-            menu.Items.Add(App.CreateCharacterEditorAction(this, "icon"));
 
             var follow = new MenuItem { Header = "跟随界面主题色", IsCheckable = true, IsChecked = App.Settings.IconFollowTheme };
             follow.Click += (_, _) =>

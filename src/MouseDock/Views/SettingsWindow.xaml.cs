@@ -127,8 +127,8 @@ namespace MouseDock.Views
                 SyncMiniAppearance();
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
-                ReferenceCharacterChoices.SelectedItem = ReferenceCharacterChoices.Items.OfType<ComboBoxItem>()
-                    .FirstOrDefault(item => (string)item.Tag == s.ReferenceCharacter) ?? ReferenceCharacterChoices.Items[0];
+                var choices = ReferenceCharacterChoices.Children.OfType<RadioButton>();
+                (choices.FirstOrDefault(choice => Equals(choice.Tag, s.ReferenceCharacter)) ?? choices.First()).IsChecked = true;
                 RingContinuous.IsChecked = s.ContinuousBatteryRing;
                 RingSegmented.IsChecked = !s.ContinuousBatteryRing;
                 SyncIconScale();
@@ -764,9 +764,15 @@ namespace MouseDock.Views
             App.SaveSettings();RebuildIconStyles();RebuildTaskbarStyles();RebuildEdgeStyles();
         }
 
-        private void OnReferenceCharacterChanged(object sender, SelectionChangedEventArgs e)
+        private void OnEditCharacter(object sender, RoutedEventArgs e)
         {
-            if (_loading || ReferenceCharacterChoices.SelectedItem is not ComboBoxItem { Tag: string kind }) return;
+            var editor = new CharacterEditorWindow(App.Settings, mode: null) { Owner = this };
+            if (editor.ShowDialog() == true) App.ApplyCharacterEdit(editor);
+        }
+
+        private void OnReferenceCharacterChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading || sender is not RadioButton { Tag: string kind }) return;
             App.Settings.ReferenceCharacter = kind;
             App.RefreshDeviceViews();
             App.SaveSettings();

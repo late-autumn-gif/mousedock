@@ -140,13 +140,6 @@ public partial class App
         catch { MessageBox.Show("请在 Windows 设置中打开「系统 → 声音」。", "声音设置"); }
     }
 
-    internal static MenuItem CreateCharacterEditorAction(Window owner, string surface) =>
-        MenuAction("编辑角色与照片…", () =>
-        {
-            var editor = new CharacterEditorWindow(Settings, mode: null, surfaceMode: surface) { Owner = owner };
-            if (editor.ShowDialog() == true) ApplyCharacterEdit(editor);
-        });
-
     internal static void ApplyCharacterEdit(CharacterEditorWindow editor)
     {
         editor.ApplyTo(Settings);

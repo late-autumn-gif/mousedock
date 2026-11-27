@@ -5,6 +5,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MouseDock.Controls;
 using MouseDock.Models;
+using MouseDock.Services;
 using MouseDock.Views;
 using System.Reflection;
 using System.IO;
@@ -59,16 +60,52 @@ internal static class CharacterEditorChecks
         var settings = new SettingsWindow();
         fixture.Set("Icon", icon); fixture.Set("SettingsView", settings);
         icon.ApplyStyle("ring", false);
+        var taskbar = new TaskbarWindow();
+        var edge = new ScreenEdgeWindow();
         var editor = new CharacterEditorWindow(fixture.Settings, "portrait");
         try
         {
-            Require(icon.CreateIconMenu().Items.OfType<MenuItem>().Any(item => Equals(item.Header, "编辑角色与照片…")),
-                "Floating icon menu has no character editor entry.");
+            foreach (var menu in new[] { icon.CreateIconMenu(), MouseDock.App.CreateQuickMenu(taskbar), MouseDock.App.CreateQuickMenu(edge) })
+                Require(!menu.Items.OfType<MenuItem>().Any(item => Equals(item.Header, "编辑角色与照片…")),
+                    "A battery surface still exposes the character editor in its context menu.");
+            settings.ShowActivated = false;
+            settings.ShowInTaskbar = false;
+            settings.Show();
+            var characters = (Panel)settings.FindName("ReferenceCharacterChoices");
+            var choices = characters.Children.OfType<RadioButton>().ToArray();
+            Require(choices.Length == 3 && choices.All(choice => choice.Focusable && choice.IsTabStop),
+                "The default character choices are missing or inaccessible.");
+            choices.Single(choice => Equals(choice.Tag, "asuka")).IsChecked = true;
+            settings.Reload();
+            Require(choices.Single(choice => choice.IsChecked == true).Tag as string == "asuka" &&
+                SettingsStore.Load().ReferenceCharacter == "asuka", "The default character did not persist.");
+            var button = (Button)settings.FindName("EditCharacterButton");
+            characters.BringIntoView();
+            TaskbarEmbeddingChecks.Pump(220);
+            var root = (FrameworkElement)settings.Content;
+            var shot = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            shot.Render(root);
+            Directory.CreateDirectory("artifacts");
+            using (var output = File.Create("artifacts/default-character-settings.png"))
+            {
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(shot));
+                encoder.Save(output);
+            }
+            string? openedSurface = null;
+            settings.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                var dialog = settings.OwnedWindows.OfType<CharacterEditorWindow>().SingleOrDefault();
+                openedSurface = dialog?.SurfaceMode;
+                dialog?.Close();
+            }));
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(openedSurface == "icon", "Settings did not open the editor for the selected surface.");
             MouseDock.App.ApplyCharacterEdit(editor);
             Require((string)typeof(IconWindow).GetField("_activeStyle", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(icon)! == "portrait" &&
                 fixture.Settings.SurfaceMode == "icon", "Completing the editor leaves the visible floating style unchanged.");
         }
-        finally { editor.Close(); }
+        finally { editor.Close(); taskbar.Close(); edge.Close(); }
     }
 
     internal static void CompactSurface()

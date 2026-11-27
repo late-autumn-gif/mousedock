@@ -347,14 +347,35 @@
                             <StackPanel x:Name="ReferenceAppearanceOptions" Margin="0,10,0,0">
                                 <CheckBox x:Name="IconFollowThemeBox" Content="跟随界面主题色" Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged"/>
                                 <CheckBox x:Name="IconHideBackgroundBox" Content="隐藏图标底色" Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged"/>
-                                <Grid Margin="0,8,0,0">
-                                    <TextBlock Text="默认角色" Style="{StaticResource RowText}"/>
-                                    <ComboBox x:Name="ReferenceCharacterChoices" Width="160" HorizontalAlignment="Right" SelectionChanged="OnReferenceCharacterChanged">
-                                        <ComboBoxItem Content="星蓝" Tag="rei"/>
-                                        <ComboBoxItem Content="橘焰" Tag="asuka"/>
-                                        <ComboBoxItem Content="薄荷芽" Tag="peek"/>
-                                    </ComboBox>
-                                </Grid>
+                                <DockPanel Margin="0,12,0,8">
+                                    <Button x:Name="EditCharacterButton" DockPanel.Dock="Right" Content="编辑角色与照片…"
+                                            Style="{StaticResource GhostButton}" Click="OnEditCharacter" Margin="8,0,0,0"/>
+                                    <TextBlock x:Name="ReferenceCharacterLabel" Text="默认角色" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <UniformGrid x:Name="ReferenceCharacterChoices" Columns="3" Margin="0,0,-8,-8"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=ReferenceCharacterLabel}">
+                                    <RadioButton GroupName="ReferenceCharacter" Tag="rei" Style="{StaticResource DisplayChoice}"
+                                                 Checked="OnReferenceCharacterChanged" AutomationProperties.Name="星蓝">
+                                        <StackPanel Margin="0,2">
+                                            <Image Width="36" Height="36" Source="../Assets/Characters/widget-blue.png"/>
+                                            <TextBlock Text="星蓝" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton GroupName="ReferenceCharacter" Tag="asuka" Style="{StaticResource DisplayChoice}"
+                                                 Checked="OnReferenceCharacterChanged" AutomationProperties.Name="橘焰">
+                                        <StackPanel Margin="0,2">
+                                            <Image Width="36" Height="36" Source="../Assets/Characters/widget-orange.png"/>
+                                            <TextBlock Text="橘焰" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton GroupName="ReferenceCharacter" Tag="peek" Style="{StaticResource DisplayChoice}"
+                                                 Checked="OnReferenceCharacterChanged" AutomationProperties.Name="薄荷芽">
+                                        <StackPanel Margin="0,2">
+                                            <Image Width="36" Height="36" Source="../Assets/Characters/widget-mint.png"/>
+                                            <TextBlock Text="薄荷芽" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                </UniformGrid>
                             </StackPanel>
                             <StackPanel x:Name="TaskbarPositionChoiceRow" Margin="0,16,0,0">
                                 <TextBlock x:Name="TaskbarPositionTitle" Text="任务栏显示位置" FontWeight="SemiBold"/>

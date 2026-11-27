@@ -901,8 +901,6 @@ namespace MouseDock
                 follow.Click += (_, _) => SetMiniFollowThemeBackground(follow.IsChecked);
                 menu.Items.Add(follow);
             }
-            if (owner is TaskbarWindow or ScreenEdgeWindow)
-                menu.Items.Add(CreateCharacterEditorAction(owner, owner is TaskbarWindow ? "taskbar" : "edge"));
             AddDeviceMenuActions(menu.Items, owner, includeRescan: owner is not DockWindow);
             menu.Items.Add(new Separator());
             menu.Items.Add(MenuAction("设置…", () => ShowSettings(owner)));
