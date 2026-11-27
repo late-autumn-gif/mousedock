@@ -569,11 +569,21 @@
                                     <TextBlock Text="组件底色、图标、文字与电量环" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </DockPanel>
-                            <DockPanel>
+                            <DockPanel Margin="0,0,0,9">
                                 <Button DockPanel.Dock="Right" Content="编辑配色…" Tag="tray" Style="{StaticResource GhostButton}" Click="OnEditColors" AutomationProperties.Name="编辑系统托盘配色"/>
                                 <StackPanel Margin="0,0,10,0">
                                     <TextBlock Text="系统托盘" FontWeight="SemiBold"/>
                                     <TextBlock Text="通知区域的电量图标与文字" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <DockPanel>
+                                <Button x:Name="EditChargingColorButton" DockPanel.Dock="Right" Content="编辑配色…" Style="{StaticResource GhostButton}" Click="OnPickChargingColor" AutomationProperties.Name="编辑充电颜色"/>
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="充电颜色" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                        <Ellipse x:Name="ChargingColorSwatch" Width="10" Height="10" Stroke="{DynamicResource ControlOutlineBrush}" Margin="0,0,6,0"/>
+                                        <TextBlock x:Name="ChargingColorLabel" FontSize="11" Opacity="0.75"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </DockPanel>
                         </StackPanel>

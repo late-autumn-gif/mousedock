@@ -233,6 +233,7 @@ internal static class Program
             ("Failed export leaves a diagnostic log", CheckReportFailureLog),
             ("Mini battery text updates without rebuilding devices", AuditChecks.MiniLiveReading),
             ("Mini appearance shares menu, settings, and saved palette", MiniAppearanceChecks.Run),
+            ("Charging color saves, resets, and refreshes the visible battery display", MiniAppearanceChecks.ChargingColor),
             ("Settings can reopen after a system close", AuditChecks.ClosedSettings),
             ("Merged channels preserve charging status", AuditChecks.ChargingMerge),
             ("Failed polls preserve the last reading and recover", AuditChecks.CachedReading),

@@ -95,6 +95,7 @@ namespace MouseDock.Views
                 CurrentThemeText.Text = "当前 · " + current.Name;
                 foreach (var r in rows) r.IsSelected = r == current;
                 UpdateLowBatterySwatch();
+                UpdateChargingSwatch();
 
                 var theme = App.Theme;
 
@@ -614,6 +615,25 @@ namespace MouseDock.Views
             RebuildTaskbarStyles();
             RebuildEdgeStyles();
             App.SaveSettings();
+        }
+
+        private void OnPickChargingColor(object sender, RoutedEventArgs e)
+        {
+            var settings = App.Settings;
+            var editor = new ColorEditorWindow("充电颜色", "统一调整各电量组件在充电时使用的颜色。",
+                settings.ChargingColor, AppearanceColors.DefaultChargingColor, App.Theme) { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            settings.ChargingColor = editor.SelectedHex;
+            App.RefreshChargingAppearance();
+            UpdateChargingSwatch();
+            App.SaveSettings();
+        }
+
+        private void UpdateChargingSwatch()
+        {
+            var custom = AppearanceColors.CustomChargingBrush(App.Settings) as SolidColorBrush;
+            ChargingColorSwatch.Fill = custom ?? new SolidColorBrush(AppearanceColors.DefaultChargingColor);
+            ChargingColorLabel.Text = custom == null ? "默认颜色" : Palette.ToHex(custom.Color);
         }
 
         private void OnPickLowBatteryColor(object sender, RoutedEventArgs e)

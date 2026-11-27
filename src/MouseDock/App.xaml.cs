@@ -568,7 +568,7 @@ namespace MouseDock
                 ? (int)(Environment.TickCount64 % 1800 / 120) : 0;
             _deviceTrays?.Sync(trayTargets,
                 $"{Theme.Name}/{Theme.Accent}/{Theme.Text}/{Theme.TextDim}/{Settings.LowBatteryWarn}/{AppearanceColors.LowBatteryOverride(Settings)}/" +
-                $"{_trayBlinkOn}/{breathFrame}/{string.Join(",", (Settings.TrayColors ?? new()).OrderBy(p => p.Key))}");
+                $"{Settings.ChargingColor}/{_trayBlinkOn}/{breathFrame}/{string.Join(",", (Settings.TrayColors ?? new()).OrderBy(p => p.Key))}");
 
             var dev = Battery.VisibleDevices
                 .OrderByDescending(d => d.IsChargingActive).ThenByDescending(d => d.HasLevel).FirstOrDefault();
@@ -999,6 +999,12 @@ namespace MouseDock
             Taskbar?.UpdateDevices();
             Edge?.UpdateDevices();
             UpdateTrayIcon();
+        }
+
+        internal static void RefreshChargingAppearance()
+        {
+            RefreshTheme();
+            _desktopPet?.RefreshBatteryAppearance();
         }
 
         public static void ApplyTheme(bool animate)

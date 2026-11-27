@@ -31,7 +31,7 @@ public sealed class TaskbarBatteryStrip : Border
         $"{settings.CharacterTransparentBackground}|{settings.CharacterBackgroundColor}|{settings.ContinuousBatteryRing}|" +
         $"{CharacterAssignments.CacheKey(settings)}|" +
         $"{PhotoAssignments.CacheKey(settings)}|" +
-        $"{theme.Surface}|{theme.Text}|{theme.Accent}|{theme.Low}|{theme.TextDim}";
+        $"{theme.Surface}|{theme.Text}|{theme.Accent}|{theme.Low}|{theme.TextDim}|{settings.ChargingColor}";
 
     /// <summary>卡片样式下单张卡片的逻辑尺寸（未被 Viewbox 缩放前的原始尺寸）。</summary>
     internal static Size CardSize(bool vertical) => vertical ? new Size(40, 62) : new Size(58, 40);

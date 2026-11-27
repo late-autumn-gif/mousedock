@@ -664,6 +664,8 @@ internal sealed class DesktopPetWindow : Window
         SetPetPosition(_roamX);
     }
 
+    internal void RefreshBatteryAppearance() => RebuildList();
+
     private void RebuildList()
     {
         _deviceList.Children.Clear();

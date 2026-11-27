@@ -10,8 +10,10 @@ public static class AppearanceColors
     internal static readonly SolidColorBrush LowBatteryFill = (SolidColorBrush)Solid(ThemePreset.C("#B42332"));
     private static (string Value, Brush Brush) _customLow;
 
-    private static readonly Brush ChargingFill = Solid(Color.FromRgb(53, 168, 231));
+    internal static readonly Color DefaultChargingColor = Color.FromRgb(53, 168, 231);
+    private static readonly Brush ChargingFill = Solid(DefaultChargingColor);
     private static readonly Brush AlternateChargingFill = Solid(Color.FromRgb(160, 107, 229));
+    private static (string Value, Brush Brush) _customCharging;
     private static readonly Brush LowBatteryText = Solid(Color.FromRgb(243, 99, 113));
 
     internal static Brush BatteryState(Brush normal, int level, int threshold, bool charging, bool full = false, bool text = false)
@@ -19,7 +21,8 @@ public static class AppearanceColors
         if (full) return normal;
         if (charging && level >= 0)
         {
-            var color = ((SolidColorBrush)ChargingFill).Color;
+            if (CustomChargingBrush(App.Settings) is { } custom) return custom;
+            var color = DefaultChargingColor;
             return normal is SolidColorBrush solid &&
                 Math.Abs(color.R - solid.Color.R) + Math.Abs(color.G - solid.Color.G) + Math.Abs(color.B - solid.Color.B) < 95
                 ? AlternateChargingFill : ChargingFill;
@@ -35,6 +38,14 @@ public static class AppearanceColors
     }
 
     internal static bool IsLowBattery(int level, int threshold) => level >= 0 && level <= threshold;
+
+    internal static Brush CustomChargingBrush(AppSettings settings)
+    {
+        string value = settings?.ChargingColor;
+        if (_customCharging.Value != value)
+            _customCharging = (value, TryColor(value, out var color) ? Solid(color) : null);
+        return _customCharging.Brush;
+    }
 
     internal static string LowBatteryOverride(AppSettings settings) =>
         settings?.LowBatteryColor ?? settings?.ThemeColors?.GetValueOrDefault("low");

@@ -139,6 +139,82 @@ internal static class MiniAppearanceChecks
         Require(low.Text == "默认颜色" && SettingsStore.Load().LowBatteryColor == "", "The low-battery color did not reset.");
     }
 
+    internal static void ChargingColor()
+    {
+        using var fixture = new AppearanceFixture();
+        var device = fixture.Battery.VisibleDevices.Single();
+        device.Connected = true;
+        device.Level = 16;
+        device.Charging = true;
+        var mini = new MiniWindow { ShowActivated = false };
+        fixture.Set("Mini", mini);
+        mini.Show();
+        var view = new SettingsWindow { ShowActivated = false };
+        fixture.Set("SettingsView", view);
+        view.Reload();
+        view.SelectSection("appearance");
+        view.Show();
+
+        var button = (Button)view.FindName("EditChargingColorButton");
+        var label = (TextBlock)view.FindName("ChargingColorLabel");
+        var swatch = (System.Windows.Shapes.Ellipse)view.FindName("ChargingColorSwatch");
+        var normal = Brushes.White;
+        var defaultCharging = AppearanceColors.BatteryState(normal, 16, 20, true);
+        var defaultAlternative = AppearanceColors.BatteryState(defaultCharging, 16, 20, true);
+        var originalKey = MouseDock.Controls.TaskbarBatteryStrip.AppearanceKey(fixture.Settings, App.Theme);
+        Require(label.Text == "默认颜色" && AppearanceColors.DefaultChargingColor == ((SolidColorBrush)defaultCharging).Color &&
+            defaultCharging != defaultAlternative, "Existing profiles lost the default charging colors.");
+
+        void Open() => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        const string hex = "#E38736";
+        Edit(view, Open, (_, panel) =>
+        {
+            var input = Descendants<TextBox>(panel).Single();
+            input.Text = "#xyz";
+            Press(panel, "完成");
+            input.Text = hex;
+            Press(panel, "完成");
+        });
+        var color = ThemePreset.C(hex);
+        Require(label.Text == hex && ((SolidColorBrush)swatch.Fill).Color == color &&
+            SettingsStore.Load().Clone().ChargingColor == hex, "The charging color did not display and persist.");
+        Require(((SolidColorBrush)AppearanceColors.BatteryState(defaultCharging, 16, 20, true)).Color == color &&
+            AppearanceColors.BatteryState(normal, 16, 20, false) != swatch.Fill &&
+            AppearanceColors.BatteryState(normal, -1, 20, true) == normal &&
+            AppearanceColors.BatteryState(normal, 100, 20, true, full: true) == normal,
+            "Charging color did not respect full, unknown, and low-battery states.");
+        Require(MouseDock.Controls.TaskbarBatteryStrip.AppearanceKey(fixture.Settings, App.Theme) != originalKey,
+            "Taskbar and screen-edge visuals did not invalidate on a charging color change.");
+        TaskbarEmbeddingChecks.Pump(100);
+        Require(VisualText(mini, device.MiniText).Any(text => text.Foreground is SolidColorBrush ink && ink.Color == color),
+            "The already-visible mini window did not update its charging number.");
+        button.BringIntoView();
+        TaskbarEmbeddingChecks.Pump(100);
+        Capture((FrameworkElement)view.Content, "charging-color-settings");
+        Edit(view, Open, (editor, panel) =>
+        {
+            Capture((FrameworkElement)editor.Content, "charging-color-editor");
+            Press(panel, "恢复默认");
+            var cancel = Buttons(panel).Single(item => Equals(item.Content, "取消"));
+            ((IInvokeProvider)new ButtonAutomationPeer(cancel).GetPattern(PatternInterface.Invoke)).Invoke();
+        });
+        Require(label.Text == hex && SettingsStore.Load().ChargingColor == hex, "Cancel changed the charging color.");
+        Edit(view, Open, (_, panel) =>
+        {
+            Press(panel, "恢复默认");
+            Press(panel, "完成");
+        });
+        Require(label.Text == "默认颜色" && SettingsStore.Load().ChargingColor == null &&
+            AppearanceColors.BatteryState(normal, 16, 20, true) == defaultCharging, "Reset did not restore the default charging color.");
+    }
+
+    private static IEnumerable<TextBlock> VisualText(DependencyObject parent, string value)
+    {
+        if (parent is TextBlock text && text.Text == value) yield return text;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            foreach (var child in VisualText(VisualTreeHelper.GetChild(parent, i), value)) yield return child;
+    }
+
     private static Color Top(Border root) => ((LinearGradientBrush)root.Background).GradientStops[0].Color;
 
     private static IEnumerable<T> Descendants<T>(DependencyObject node) where T : DependencyObject =>

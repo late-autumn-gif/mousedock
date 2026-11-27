@@ -103,10 +103,11 @@ namespace MouseDock.Controls
             fill.Freeze();
 
             var fillRect = new Rect(0, y, Math.Min(fw, w), h);
-            Brush stateFill = Services.AppearanceColors.BatteryState(new SolidColorBrush(Accent),
+            var normalFill = new SolidColorBrush(Accent);
+            Brush stateFill = Services.AppearanceColors.BatteryState(normalFill,
                 (int)Math.Round(Value * 100), App.Settings?.LowBatteryWarn ?? 20,
                 Charging, DataContext is Models.DeviceInfo { IsFullActive: true });
-            Brush actualFill = stateFill is SolidColorBrush solid && solid.Color == Accent ? fill : stateFill;
+            Brush actualFill = ReferenceEquals(stateFill, normalFill) ? fill : stateFill;
             ChargeSweep.HorizontalLine(dc, track, fraction, r, actualFill, phase);
 
             if (ShowDot && !Charging && fw > h + 2)
