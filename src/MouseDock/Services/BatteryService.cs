@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -298,6 +299,9 @@ namespace MouseDock.Services
     public sealed class BatteryService : IDisposable
     {
         private readonly DispatcherTimer _timer;
+        private static readonly TimeSpan Sc580ZeroConfirmationDelay = TimeSpan.FromMilliseconds(1200);
+        private readonly DispatcherTimer _sc580ConfirmationTimer;
+        private readonly Dictionary<string, long> _pendingSc580Zeros = new();
         private IBatterySource _source;
         private readonly List<DeviceInfo> _mirror = new List<DeviceInfo>();
         private readonly Dictionary<string, int> _misses = new Dictionary<string, int>();
@@ -346,6 +350,13 @@ namespace MouseDock.Services
             _refreshSeconds = Math.Max(5, settings.RefreshSeconds);
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_refreshSeconds) };
             _timer.Tick += (_, __) => Poll();
+            // Dispatcher ticks have coarser resolution than the monotonic confirmation clock.
+            _sc580ConfirmationTimer = new DispatcherTimer { Interval = Sc580ZeroConfirmationDelay + TimeSpan.FromMilliseconds(50) };
+            _sc580ConfirmationTimer.Tick += (_, __) =>
+            {
+                _sc580ConfirmationTimer.Stop();
+                Poll();
+            };
             if (start) { _timer.Start(); Poll(); }
         }
 
@@ -357,6 +368,8 @@ namespace MouseDock.Services
             if (changedSettings || _source == null || _source.Key != key)
             {
                 _source = CreateSource(settings, _preferences);
+                _pendingSc580Zeros.Clear();
+                _sc580ConfirmationTimer.Stop();
                 foreach (var d in Devices) d.PropertyChanged -= OnDeviceChanged;
                 _mirror.Clear();
                 Devices.Clear();
@@ -414,6 +427,7 @@ namespace MouseDock.Services
             string[] reset = _pendingCacheReset.ToArray();
             _pendingCacheReset.Clear();
             List<DeviceInfo> snapshot = null;
+            long scanStarted = Stopwatch.GetTimestamp();
             try
             {
                 snapshot = await System.Threading.Tasks.Task.Run(() =>
@@ -442,6 +456,25 @@ namespace MouseDock.Services
                 _preferences.Apply(incoming);
                 if (!incoming.RecognitionEnabled) { incoming.Level = -1; incoming.IsBatteryEstimated = false; incoming.BatteryBand = ""; incoming.Charging = false; incoming.ChargeFull = false; incoming.IsStale = false; incoming.Dpi = -1; incoming.DpiSettings = null; }
                 var existing = _mirror.FirstOrDefault(x => x.Id == incoming.Id);
+                if (incoming.Connected && incoming.RecognitionEnabled && !incoming.IsStale &&
+                    incoming.Level == 0 && incoming.HandledByLabel == nameof(Detection.HandledBy.M137) &&
+                    incoming.ConfirmedModel == Detection.M137FeatureProtocol.ModelForIdentity("M137") &&
+                    (existing is not { Level: 0 } || existing.ConfirmedModel != incoming.ConfirmedModel ||
+                     existing.Transport != incoming.Transport))
+                {
+                    if (_pendingSc580Zeros.TryGetValue(incoming.Id, out long firstZero) &&
+                        Stopwatch.GetElapsedTime(firstZero, scanStarted) >= Sc580ZeroConfirmationDelay)
+                        _pendingSc580Zeros.Remove(incoming.Id);
+                    else
+                    {
+                        _pendingSc580Zeros.TryAdd(incoming.Id, Stopwatch.GetTimestamp());
+                        _sc580ConfirmationTimer.Start();
+                        incoming.Level = -1;
+                        incoming.Note = "SC580 的 0% 待读取确认。" + incoming.Note;
+                    }
+                }
+                else
+                    _pendingSc580Zeros.Remove(incoming.Id);
                 if (!incoming.Connected)
                 {
                     if (existing != null)
@@ -545,6 +578,9 @@ namespace MouseDock.Services
 
             // 只保留本轮快照里还存在的设备：拔掉/断开的立即从界面移除
             var alive = new HashSet<string>(snapshot.Select(d => d.Id));
+            foreach (string id in _pendingSc580Zeros.Keys.Where(id => !alive.Contains(id)).ToArray())
+                _pendingSc580Zeros.Remove(id);
+            if (_pendingSc580Zeros.Count == 0) _sc580ConfirmationTimer.Stop();
             for (int i = Devices.Count - 1; i >= 0; i--)
             {
                 if (alive.Contains(Devices[i].Id)) continue;
@@ -626,6 +662,7 @@ namespace MouseDock.Services
 
         public void Reidentify(DeviceInfo device)
         {
+            _pendingSc580Zeros.Remove(device.Id);
             _preferences.Enable(device, forceRefresh: true);
             foreach (string key in DevicePreferences.Keys(device)) _pendingCacheReset.Add(key);
             // Query again without deleting the last real percentage or confirmed
@@ -643,6 +680,7 @@ namespace MouseDock.Services
 
         private void ClearReading(DeviceInfo device)
         {
+            _pendingSc580Zeros.Remove(device.Id);
             _lastKnown.Remove(device.Id);
             _misses.Remove(device.Id);
             device.Level = -1;
@@ -671,6 +709,7 @@ namespace MouseDock.Services
         {
             _disposed = true;
             _timer?.Stop();
+            _sc580ConfirmationTimer.Stop();
             foreach (var d in Devices) d.PropertyChanged -= OnDeviceChanged;
         }
     }
