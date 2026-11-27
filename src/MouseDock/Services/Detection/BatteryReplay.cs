@@ -206,6 +206,10 @@ internal static partial class BatteryReplay
 
     private static bool MatchesChannel(string protocol, Collection channel, Collection[] collections)
     {
+        if (protocol == M137FeatureProtocol.Reader)
+            return IsM137FeatureChannel(channel) && collections.Count(c => c.Receiver == channel.Receiver &&
+                !c.Excluded && M137FeatureProtocol.MatchesChannel(c.Vid, c.Pid, c.Page, c.Usage,
+                    c.Input, c.Output, c.Feature)) == 1;
         if (protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute or VendorProtocol.MonsGeekStatusRoute)
             return VendorProtocol.MatchesReportedReceiverChannel(protocol, channel.Vid, channel.Pid, channel.Product,
                 channel.InterfaceLabel, channel.Page, channel.Usage, channel.Input, channel.Output, channel.Feature);
@@ -326,6 +330,7 @@ internal static partial class BatteryReplay
         if (channel == null || !MatchesChannel(query.Protocol, channel, collections))
             return new(query.Receiver, query.Interface, query.Protocol,
                 query.Interface == null ? query.Status : "collection-mismatch", query.Model, null, null, "unavailable");
+        if (query.Protocol == M137FeatureProtocol.Reader) return ReplayM137Feature(query);
         if (query.Protocol is VendorProtocol.A7UltraRoute or VendorProtocol.MonsGeekRoute)
             return ReplayReportedReceiver(query);
         if (query.Protocol == VendorProtocol.MonsGeekStatusRoute)

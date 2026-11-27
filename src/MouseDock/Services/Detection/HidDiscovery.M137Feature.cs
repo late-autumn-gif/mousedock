@@ -21,13 +21,16 @@ public static partial class HidDiscovery
             b.M137Model = null;
             b.Battery = -1; b.Charging = false; b.ReadStale = false; b.Identity = ""; b.BatterySource = "";
 
+            var scan = BatteryReplay.Current;
             if (safeMode)
             {
+                scan?.AddQuery(b.InstanceId, null, M137FeatureProtocol.Reader, "safe-mode", null);
                 b.BatteryFailures.Add("安全模式已跳过 M137 身份查询");
                 continue;
             }
             if (!(preferences?.CanRead(b.InstanceId, $"hid-{b.Vid:X4}-{b.Pid:X4}") ?? true))
             {
+                scan?.AddQuery(b.InstanceId, null, M137FeatureProtocol.Reader, "recognition-disabled", null);
                 b.BatteryFailures.Add("此实例识别已停用");
                 continue;
             }
@@ -41,21 +44,27 @@ public static partial class HidDiscovery
                 .ToList();
             if (channels.Count != 1)
             {
+                scan?.AddQuery(b.InstanceId, null, M137FeatureProtocol.Reader, "collection-missing-or-ambiguous", null);
                 b.BatteryFailures.Add($"本实例 FF00/0001 Feature33 接口数={channels.Count}，需要唯一接口");
                 continue;
             }
 
-            var scan = BatteryReplay.Current;
-            var trace = scan == null ? null : new BatteryReplay.Trace();
+            string path = channels[0].Path;
+            var trace = new BatteryReplay.Trace();
             ReferenceBatteryProtocol.Reading result;
             using (InstanceScope.Enter(b.InstanceId))
             {
-                try { result = query(channels[0].Path, trace); }
+                try { result = query(path, trace); }
                 catch (Exception ex)
                 {
+                    trace.Add("exception", false, result: ex.GetType().Name);
                     result = ReferenceBatteryProtocol.Reading.Failed("M137 查询异常：" + ex.GetType().Name);
                 }
             }
+            scan?.AddQuery(b.InstanceId, path, M137FeatureProtocol.Reader, result?.Status.ToString() ?? "Failed",
+                result?.Model, result?.Level ?? -1, trace);
+            if (scan == null)
+                M137ZeroHistory.Recent.Observe(b.InstanceId, path, result, trace.Snapshot(), DateTimeOffset.UtcNow);
             if (result?.Model != null)
             {
                 b.M137Model = result.Model;
@@ -68,8 +77,6 @@ public static partial class HidDiscovery
             }
             if (b.Battery < 0)
                 b.BatteryFailures.Add(result?.Diagnostic ?? "M137 读取器未返回结果");
-            scan?.AddQuery(b.InstanceId, channels[0].Path, "M137", result?.Status.ToString() ?? "Failed",
-                b.M137Model, b.Battery, trace);
             LastDiagnostics.Add(
                 $"{b.InstanceId} M137：型号={b.M137Model ?? "未知"} 电量={b.Battery} {result?.Diagnostic}");
         }

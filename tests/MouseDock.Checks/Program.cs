@@ -533,19 +533,14 @@ internal static class Program
     /// </summary>
     private static void CheckReportFailureClassification()
     {
-        var service = ProductionType("MouseDock.Services.FeedbackService");
-        var tryExport = service.GetMethod("TryExportReport", BindingFlags.Public | BindingFlags.Static)!;
-
         string dir = Path.Combine(Path.GetTempPath(), "mousedock-report-fail-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
-            var result = tryExport.Invoke(null, [new AppSettings(), new List<DeviceInfo>(), dir, null, null, null, null, false, null])!;
-            string kind = result.GetType().GetProperty("FailureKind")!.GetValue(result)!.ToString()!;
-            Require(kind == "WriteFailed", $"A directory target must fail at the write step, got {kind}.");
-
-            string detail = result.GetType().GetProperty("Detail")!.GetValue(result) as string ?? "";
-            Require(!string.IsNullOrWhiteSpace(detail), "The failure must carry the real exception message.");
+            var result = FeedbackService.TryExportReport(new AppSettings(), [], dir);
+            Require(result.FailureKind == ReportExportFailureKind.WriteFailed,
+                $"A directory target must fail at the write step, got {result.FailureKind}.");
+            Require(!string.IsNullOrWhiteSpace(result.Detail), "The failure must carry the real exception message.");
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
     }
@@ -553,9 +548,6 @@ internal static class Program
     /// <summary>失败必须留下日志，作者才能看出是 IOException、权限还是别的。</summary>
     private static void CheckReportFailureLog()
     {
-        var service = ProductionType("MouseDock.Services.FeedbackService");
-        var tryExport = service.GetMethod("TryExportReport", BindingFlags.Public | BindingFlags.Static)!;
-
         string dir = Path.Combine(Path.GetTempPath(), "mousedock-report-log-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
@@ -563,9 +555,8 @@ internal static class Program
             // A file used as a directory forces the write step to fail without relying on ACLs.
             string blocked = Path.Combine(dir, "blocked");
             File.WriteAllText(blocked, "x");
-            var result = tryExport.Invoke(null,
-                [new AppSettings(), new List<DeviceInfo>(), Path.Combine(blocked, "report.zip"), null, null, null, null, false, null])!;
-            string log = result.GetType().GetProperty("LogPath")!.GetValue(result) as string ?? "";
+            var result = FeedbackService.TryExportReport(new AppSettings(), [], Path.Combine(blocked, "report.zip"));
+            string log = result.LogPath;
             Require(!string.IsNullOrEmpty(log), "A failed export must report where its log went.");
             Require(File.Exists(log), $"The diagnostic log must exist, got {log}.");
             Require(File.ReadAllText(log).Contains("WriteFailed"), "The log must name the failing step.");

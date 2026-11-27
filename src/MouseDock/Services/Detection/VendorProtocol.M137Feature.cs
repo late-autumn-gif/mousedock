@@ -8,7 +8,7 @@ namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
     /// <summary>
-    /// 248A:5B2F 的官方 GetInfo：两次事务、每次最多两次 GET；SC580 的零值需要两轮一致。
+    /// 248A:5B2F 的官方 GetInfo：两次事务、每次最多两次 GET，SC580 跳零时增加一次确认。
     /// 只读，不发配置命令。
     /// </summary>
     internal static ReferenceBatteryProtocol.Reading ReadM137Feature(string path, BatteryReplay.Trace trace)
@@ -28,12 +28,18 @@ internal static partial class VendorProtocol
             var caps = Caps(h);
             if (!M137FeatureProtocol.MatchesChannel(0x248A, 0x5B2F, caps.UsagePage, caps.Usage,
                     caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength))
+            {
+                trace?.Add("validate-channel", false, result: "collection-mismatch");
                 return ReferenceBatteryProtocol.Reading.Failed("M137 集合签名不符，未发送查询");
+            }
             var ids = FeatureReportIds(h, caps);
             if (!ids.Contains(M137FeatureProtocol.ReportId))
+            {
+                trace?.Add("validate-channel", false, result: "feature-report-id-missing");
                 return ReferenceBatteryProtocol.Reading.Failed(
                     "M137 未确认 report12（候选 " +
                     string.Join("/", ids.Select(x => x.ToString("X2"))) + "），未发送查询");
+            }
 
             return M137FeatureProtocol.Read(
                 packet => HidD_SetFeature(h, packet, packet.Length),
@@ -42,6 +48,7 @@ internal static partial class VendorProtocol
         }
         catch (Exception ex)
         {
+            trace?.Add("exception", false, result: ex.GetType().Name);
             return ReferenceBatteryProtocol.Reading.Failed("M137 读取异常: " + ex.Message);
         }
         finally { CloseHandle(h); }
