@@ -63,7 +63,11 @@ internal static class MiniAppearanceChecks
             var choices = Descendants<RadioButton>(panel).ToArray();
             input.Text = "#202B29";
             choices[1].IsChecked = true;
-            input.Text = "#FFFFFF";
+            var white = PickPreset(panel, "#FFFFFF");
+            Require(input.Text == "#FFFFFF" && editor.Draft["text"] == "#FFFFFF" &&
+                editor.Draft["background"] == "#202B29", "A preset did not update only the active field.");
+            Require(System.Windows.Automation.AutomationProperties.GetItemStatus(white) == "当前颜色",
+                "The selected preset did not expose its current state.");
             choices[2].IsChecked = true;
             var wheel = Descendants<Canvas>(panel).Single();
             var key = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(wheel), 0, Key.Up)
@@ -166,13 +170,16 @@ internal static class MiniAppearanceChecks
             defaultCharging != defaultAlternative, "Existing profiles lost the default charging colors.");
 
         void Open() => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        const string hex = "#E38736";
+        const string hex = "#F97316";
         Edit(view, Open, (_, panel) =>
         {
             var input = Descendants<TextBox>(panel).Single();
             input.Text = "#xyz";
             Press(panel, "完成");
-            input.Text = hex;
+            PickPreset(panel, hex);
+            var brightness = Descendants<Slider>(panel).Single();
+            Require(input.Text == hex && Math.Abs(brightness.Value - 249 / 255d) < .001,
+                "Preset did not recover invalid HEX and update brightness.");
             Press(panel, "完成");
         });
         var color = ThemePreset.C(hex);
@@ -194,6 +201,7 @@ internal static class MiniAppearanceChecks
         Edit(view, Open, (editor, panel) =>
         {
             Capture((FrameworkElement)editor.Content, "charging-color-editor");
+            PickPreset(panel, "#38BDF8");
             Press(panel, "恢复默认");
             var cancel = Buttons(panel).Single(item => Equals(item.Content, "取消"));
             ((IInvokeProvider)new ButtonAutomationPeer(cancel).GetPattern(PatternInterface.Invoke)).Invoke();
@@ -221,6 +229,15 @@ internal static class MiniAppearanceChecks
         node is T item ? [item] : LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>().SelectMany(Descendants<T>);
 
     private static IEnumerable<Button> Buttons(DependencyObject node) => Descendants<Button>(node);
+
+    private static Button PickPreset(StackPanel panel, string hex)
+    {
+        var swatch = Buttons(panel).Single(button => Equals(button.Tag, hex));
+        Require(swatch.Focusable && swatch.IsTabStop, "The preset is missing from keyboard navigation.");
+        ((IInvokeProvider)new ButtonAutomationPeer(swatch).GetPattern(PatternInterface.Invoke)).Invoke();
+        TaskbarEmbeddingChecks.Pump(50);
+        return swatch;
+    }
 
     private static void Edit(Window owner, Action open, Action<ColorEditorWindow, StackPanel> interact)
     {

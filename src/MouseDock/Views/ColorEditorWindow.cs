@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -21,6 +22,12 @@ public sealed class ColorEditorWindow : Window
     private static readonly BitmapSource WheelImage = CreateWheel();
     private const double WheelSize = 188;
     private const double WheelCenter = WheelSize / 2;
+    private static readonly (string Name, string Hex)[] CommonColors =
+    [
+        ("红色", "#EF4444"), ("橙色", "#F97316"), ("黄色", "#FACC15"), ("粉色", "#F472B6"),
+        ("绿色", "#22C55E"), ("薄荷", "#5EEAD4"), ("蓝色", "#38BDF8"), ("紫色", "#A78BFA"),
+        ("白色", "#FFFFFF"), ("浅灰", "#CBD5E1"), ("深灰", "#475569"), ("黑色", "#000000")
+    ];
     private readonly List<Role> _roles;
     private readonly List<RadioButton> _choices = new();
     private readonly List<Ellipse> _swatches = new();
@@ -30,6 +37,8 @@ public sealed class ColorEditorWindow : Window
     private readonly Ellipse _dim, _marker;
     private readonly Canvas _wheel;
     private readonly Brush _outline;
+    private readonly List<Button> _presetButtons = new();
+    private readonly Brush _selection;
     private Role _active;
     private bool _syncing;
     private double _hue, _saturation, _value;
@@ -59,6 +68,7 @@ public sealed class ColorEditorWindow : Window
         var text = ColorContrast.Legible(palette.Text, [palette.BgTop, panelColor]);
         var muted = Brush(ColorContrast.Legible(palette.TextDim, [palette.BgTop, panelColor]));
         var accent = ColorContrast.Legible(palette.Accent, [panelColor], 3);
+        _selection = Brush(accent);
         _outline = Brush(Palette.Mix(panelColor, text, .32));
         Foreground = Brush(text);
         FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI");
@@ -70,7 +80,7 @@ public sealed class ColorEditorWindow : Window
         {
             Text = roles.Count == 1 ? roles[0].Description : title == "迷你窗配色"
                 ? "设置独立底色会关闭主题背景色跟随。"
-                : "选择要调整的元素，再用色轮或 HEX 输入配色。",
+                : "先选要调整的元素，再点选常用色，或用色轮和 HEX 微调。",
             Foreground = muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 15)
         });
 
@@ -110,6 +120,11 @@ public sealed class ColorEditorWindow : Window
         var picker = new Border { Child = controls, Background = Brush(panelColor), CornerRadius = new CornerRadius(12) };
         if (roles.Count > 1) Grid.SetColumn(picker, 1);
         body.Children.Add(picker);
+
+        controls.Children.Add(new TextBlock { Text = "常用颜色", FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6) });
+        controls.Children.Add(CreatePresetGrid(panelColor, text));
+        controls.Children.Add(new TextBlock { Text = "色轮", Foreground = muted, Margin = new Thickness(0, 10, 0, 5) });
 
         _wheel = new Canvas
         {
@@ -267,6 +282,47 @@ public sealed class ColorEditorWindow : Window
 
     private Color Resolve(Role role) => AppearanceColors.TryColor(Draft.GetValueOrDefault(role.Key), out var color) ? color : role.Default;
 
+    private UniformGrid CreatePresetGrid(Color panelColor, Color text)
+    {
+        var grid = new UniformGrid { Columns = 4, Margin = new Thickness(-2, 0, -2, 0) };
+        var template = SurfaceTemplate(typeof(Button), 6);
+        var background = Brush(Palette.Mix(panelColor, text, .06));
+        var hover = Brush(Palette.Mix(panelColor, text, .12));
+        foreach (var (name, hex) in CommonColors)
+        {
+            var content = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            content.Children.Add(new Border
+            {
+                Width = 24, Height = 10, CornerRadius = new CornerRadius(3), Background = Brush(ThemePreset.C(hex)),
+                BorderBrush = _outline, BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 0, 2)
+            });
+            content.Children.Add(new TextBlock { Text = name, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center });
+            var button = new Button
+            {
+                Tag = hex, Content = content, ToolTip = name + " " + hex, Cursor = Cursors.Hand,
+                Margin = new Thickness(2), Padding = new Thickness(2, 4, 2, 3), MinHeight = 36,
+                Foreground = Foreground, Background = background, BorderBrush = _outline,
+                BorderThickness = new Thickness(1), Template = template
+            };
+            button.Resources["Hover"] = hover;
+            button.Resources["Focus"] = _selection;
+            AutomationProperties.SetName(button, "选用" + name);
+            AutomationProperties.SetHelpText(button, hex);
+            button.Click += (_, _) =>
+            {
+                var color = ThemePreset.C(hex);
+                _syncing = true;
+                _hex.Text = hex;
+                _syncing = false;
+                SetColor(color);
+                SetWheel(color);
+            };
+            _presetButtons.Add(button);
+            grid.Children.Add(button);
+        }
+        return grid;
+    }
+
     private void LoadRole(Role role)
     {
         _active = role;
@@ -291,6 +347,15 @@ public sealed class ColorEditorWindow : Window
         _hex.BorderBrush = valid ? _outline : Brushes.IndianRed;
         _message.Text = !valid ? "输入 #RRGGBB，例如 #367A68" :
             AppearanceColors.TryColor(Draft.GetValueOrDefault(_active.Key), out _) ? "自定义颜色" : "默认颜色";
+        var current = valid ? Palette.ToHex(Resolve(_active)) : null;
+        foreach (var button in _presetButtons)
+        {
+            bool selected = Equals(button.Tag, current);
+            button.BorderBrush = selected ? _selection : _outline;
+            button.BorderThickness = new Thickness(selected ? 2 : 1);
+            button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
+            AutomationProperties.SetItemStatus(button, selected ? "当前颜色" : "");
+        }
     }
 
     private void SetWheel(Color color)
