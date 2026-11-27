@@ -177,6 +177,7 @@ namespace MouseDock.Services
             var snapshotAt = DateTimeOffset.UtcNow;
             var preferences = App.Battery?.Preferences ?? new DevicePreferences(settings ?? new AppSettings());
             var scope = selected == null ? null : DevicePreferences.Keys(selected);
+            var sc580History = Detection.M137ZeroHistory.Recent.Snapshot(scope, aliases, snapshotAt);
             bool safeMode = settings?.SafeMode == true;
             if (guided)
             {
@@ -213,10 +214,11 @@ namespace MouseDock.Services
                     if (note.PowerState == "不支持充电") break;
                 }
                 return await Task.Run(() => TryExportReport(settings, null, target, selected,
-                    rounds.ToArray(), snapshot, snapshotAt, phases: phases.ToArray()));
+                    rounds.ToArray(), snapshot, snapshotAt, phases: phases.ToArray(), sc580History: sc580History));
             }
             return await Task.Run(() => TryExportReport(settings, null, target, selected,
-                CaptureRounds(preferences, scope, safeMode, aliases), snapshot, snapshotAt, cableConnected)).ConfigureAwait(true);
+                CaptureRounds(preferences, scope, safeMode, aliases), snapshot, snapshotAt, cableConnected,
+                sc580History: sc580History)).ConfigureAwait(true);
         }
 
         internal sealed record PhaseNote(string Stage, string Model, string Transport, int? ReferencePercent,
@@ -272,7 +274,9 @@ namespace MouseDock.Services
         /// </summary>
         public static ReportExportResult TryExportReport(AppSettings settings, IEnumerable<DeviceInfo> detected,
                                                          string zipPath = null, DeviceInfo target = null,
-                                                         Detection.BatteryReplay.Capture[] rounds = null, DisplayReading[] snapshot = null, DateTimeOffset? snapshotAt = null, bool cableConnected = false, AdaptationPhase[] phases = null)
+                                                         Detection.BatteryReplay.Capture[] rounds = null, DisplayReading[] snapshot = null,
+                                                         DateTimeOffset? snapshotAt = null, bool cableConnected = false,
+                                                         AdaptationPhase[] phases = null, Detection.M137ZeroHistory.Entry[] sc580History = null)
         {
             string resolvedTarget = null;
             string temporaryPath = null;
@@ -292,7 +296,10 @@ namespace MouseDock.Services
                                                  "目标路径没有上级目录。");
 
             snapshotAt ??= DateTimeOffset.UtcNow;
-            snapshot ??= CreateDisplaySnapshot(target == null ? detected ?? Array.Empty<DeviceInfo>() : new[] { target });
+            var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            snapshot ??= CreateDisplaySnapshot(target == null ? detected ?? Array.Empty<DeviceInfo>() : new[] { target }, aliases);
+            sc580History ??= Detection.M137ZeroHistory.Recent.Snapshot(target == null ? null : DevicePreferences.Keys(target),
+                aliases, snapshotAt.Value);
             rounds ??= Array.Empty<Detection.BatteryReplay.Capture>();
 
             var series = DescribeSeries(rounds);
@@ -306,7 +313,7 @@ namespace MouseDock.Services
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    AddText(zip, "summary.txt", BuildSummary(settings, target != null, snapshot, rounds, series, cableConnected) +
+                    AddText(zip, "summary.txt", BuildSummary(settings, target != null, snapshot, rounds, series, cableConnected, sc580History) +
                         (phases == null ? "" : string.Join(Environment.NewLine, phases.Select(p =>
                             $"用户标注 {p.User.Stage}：{p.User.Model} / {p.User.Transport} / {p.User.PowerState} / 参考电量 {p.User.ReferencePercent?.ToString() ?? "未知"}；样本 {p.Entry}"))));
                     AddText(zip, "report.json", JsonSerializer.Serialize(new
@@ -318,6 +325,7 @@ namespace MouseDock.Services
                         DisplaySnapshotAt = snapshotAt, DisplaySnapshot = snapshot,
                         UserContext = cableConnected ? "cable-connected" : null,
                         Series = series,
+                        Sc580ZeroHistory = sc580History,
                         Rounds = rounds.Select((r, i) => new
                         {
                             Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, r.ScanError,
@@ -401,7 +409,8 @@ namespace MouseDock.Services
                 }).ToArray();
 
         private static string BuildSummary(AppSettings settings, bool single, DisplayReading[] snapshot,
-            Detection.BatteryReplay.Capture[] rounds, ReadingSeries[] series, bool cableConnected)
+            Detection.BatteryReplay.Capture[] rounds, ReadingSeries[] series, bool cableConnected,
+            Detection.M137ZeroHistory.Entry[] sc580History)
         {
             var sb = new StringBuilder();
             sb.AppendLine("MouseDock 设备诊断报告");
@@ -414,6 +423,16 @@ namespace MouseDock.Services
             {
                 sb.AppendLine($"  {item.Name} {item.VidPid} {item.Transport} {(item.IsBatteryEstimated ? "≈" : "")}{item.Percent?.ToString() ?? (string.IsNullOrEmpty(item.BatteryBand) ? "—" : "系统读数 " + item.BatteryBand)} ({item.Freshness})");
                 sb.AppendLine($"    DPI {item.Dpi?.ToString() ?? "—"}；档位 {(item.DpiSlots == null ? "—" : string.Join(", ", item.DpiSlots))}；状态 {item.DpiStatus ?? "unknown"}；协议 {item.DpiProtocol ?? "—"}");
+            }
+            if (sc580History.Length > 0)
+            {
+                sb.AppendLine("SC580 近期跳零记录");
+                foreach (var item in sc580History)
+                {
+                    string outcome = item.FinalPercent.HasValue ? $"{item.FinalPercent}%" : "未知";
+                    string kind = item.ExtraRecheck ? "复核结果" : "本轮结果";
+                    sb.AppendLine($"  {item.At.ToLocalTime():O} {item.Receiver} {item.PreviousPercent}% → 0%，{kind} {outcome}");
+                }
             }
             for (int i = 0; i < rounds.Length; i++)
             {

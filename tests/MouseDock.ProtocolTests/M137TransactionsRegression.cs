@@ -85,6 +85,7 @@ internal static class M137TransactionsRegression
         var aliases = new Dictionary<string, string>();
         var previousScan = BatteryReplay.Current;
         string file = Path.Combine(Path.GetTempPath(), $"mousedock-sc580-{Guid.NewGuid():N}.zip");
+        string historyFile = Path.Combine(Path.GetTempPath(), $"mousedock-sc580-history-{Guid.NewGuid():N}.zip");
         try
         {
             BatteryReplay.Capture Capture(Link link, bool safeMode = false)
@@ -146,10 +147,56 @@ internal static class M137TransactionsRegression
             check(retry.Queries[0].Samples[1] is { Result: "invalid-frame", Hex: null } &&
                 BatteryReplay.Replay(retry.Queries[0], retry.Collections).Percent == 71,
                 "An invalid reply keeps its retry position without exporting unrecognized bytes");
+
+            BatteryReplay.Current = null;
+            void Poll(Link link) => HidDiscovery.QueryM137Feature(new() { [instance] = bucket }, new() { channel },
+                false, null, (_, trace) => link.Read(trace));
+            Poll(new Link(first, Frame("M137", 0)));
+            Poll(new Link(first, Frame("M137", 0), Frame("M137", 71)));
+            Poll(new Link(Frame("M137", 71), Frame("M137", 70)));
+            Poll(new Link(Frame("M137", 0), Frame("M137", 0)));
+            Poll(new Link(Frame("M137", 0), Frame("M137", 0)));
+            Poll(new Link(Frame("M137", 70), Frame("M137", 70)));
+            Poll(new Link(Frame("M137", 0), Frame("M137", 69)));
+
+            check(FeedbackService.TryExportReport(new AppSettings(), new[] { device }, historyFile, device).Succeeded,
+                "A report can be exported after the SC580 has recovered");
+            using (var historyZip = ZipFile.OpenRead(historyFile))
+            using (var manifest = JsonDocument.Parse(historyZip.GetEntry("report.json")!.Open()))
+            {
+                check(manifest.RootElement.TryGetProperty("Sc580ZeroHistory", out var history) &&
+                    history.GetArrayLength() == 4,
+                    "Report retains within-poll and between-poll transitions without repeating stable zero");
+                check(history[0].GetProperty("FinalPercent").ValueKind == JsonValueKind.Null &&
+                    history[1].GetProperty("FinalPercent").GetInt32() == 71 &&
+                    history[2].GetProperty("FinalPercent").GetInt32() == 0 &&
+                    history[3].GetProperty("FinalPercent").GetInt32() == 69,
+                    "The historical records preserve the outcome of each individual poll");
+                check(!history.GetRawText().Contains(instance) && !history.GetRawText().Contains("PRIVATE"),
+                    "The historical records contain only a receiver alias and sanitized evidence");
+            }
+            var other = new DeviceInfo { Id = "instance-other-sc580", Name = device.Name };
+            check(FeedbackService.TryExportReport(new AppSettings(), new[] { other }, historyFile, other).Succeeded,
+                "Another receiver can be exported separately");
+            using (var otherZip = ZipFile.OpenRead(historyFile))
+            using (var manifest = JsonDocument.Parse(otherZip.GetEntry("report.json")!.Open()))
+                check(manifest.RootElement.GetProperty("Sc580ZeroHistory").GetArrayLength() == 0,
+                    "The selected receiver never inherits history from a different receiver");
+
+            for (int i = 51; i <= 67; i++)
+                Poll(new Link(Frame("M137", i), Frame("M137", 0), Frame("M137", i)));
+            var recent = M137ZeroHistory.Recent;
+            var now = DateTimeOffset.UtcNow;
+            var limited = recent.Snapshot(new[] { instance }, aliases, now);
+            check(limited.Length == 16 && limited[0].PreviousPercent == 52 && limited[^1].PreviousPercent == 67,
+                "Only the latest 16 events are retained");
+            check(recent.Snapshot(new[] { instance }, aliases, now.AddMinutes(16)).Length == 0,
+                "SC580 history expires after 15 minutes");
         }
         finally
         {
             File.Delete(file);
+            File.Delete(historyFile);
             BatteryReplay.Current = previousScan;
             InstanceScope.BeginScan();
         }

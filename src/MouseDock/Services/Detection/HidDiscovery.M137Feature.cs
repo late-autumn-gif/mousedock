@@ -50,19 +50,21 @@ public static partial class HidDiscovery
             }
 
             string path = channels[0].Path;
-            var trace = scan == null ? null : new BatteryReplay.Trace();
+            var trace = new BatteryReplay.Trace();
             ReferenceBatteryProtocol.Reading result;
             using (InstanceScope.Enter(b.InstanceId))
             {
                 try { result = query(path, trace); }
                 catch (Exception ex)
                 {
-                    trace?.Add("exception", false, result: ex.GetType().Name);
+                    trace.Add("exception", false, result: ex.GetType().Name);
                     result = ReferenceBatteryProtocol.Reading.Failed("M137 查询异常：" + ex.GetType().Name);
                 }
             }
             scan?.AddQuery(b.InstanceId, path, M137FeatureProtocol.Reader, result?.Status.ToString() ?? "Failed",
                 result?.Model, result?.Level ?? -1, trace);
+            if (scan == null)
+                M137ZeroHistory.Recent.Observe(b.InstanceId, path, result, trace.Snapshot(), DateTimeOffset.UtcNow);
             if (result?.Model != null)
             {
                 b.M137Model = result.Model;

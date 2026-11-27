@@ -38,6 +38,7 @@ internal static partial class M137FeatureProtocol
                 bool valid = TryPercent(get, out int current, out string currentIdentity);
                 bool known = valid && ModelForIdentity(currentIdentity) != null;
                 bool same = known && (identity == null || identity == currentIdentity);
+                bool recheckZero = same && transaction == 1 && currentIdentity == "M137" && level > 0 && current == 0;
                 if (trace != null)
                 {
                     byte[] evidence = null;
@@ -50,7 +51,8 @@ internal static partial class M137FeatureProtocol
                         evidence[18] = get[18];
                     }
                     trace.Add("get-feature", true, getSequence, evidence, keep: true,
-                        result: !valid ? "invalid-frame" : !known ? "unknown-model" : !same ? "model-mismatch" : "accepted");
+                        result: !valid ? "invalid-frame" : !known ? "unknown-model" : !same ? "model-mismatch" :
+                            recheckZero ? "zero-recheck" : "accepted");
                 }
                 if (!valid) continue;
                 if (!known)
@@ -59,7 +61,7 @@ internal static partial class M137FeatureProtocol
                 if (!same)
                     return ReferenceBatteryProtocol.Reading.Failed(
                         "M137 事务间型号不一致，未采用；最近RX=" + hex);
-                if (transaction == 1 && currentIdentity == "M137" && level > 0 && current == 0)
+                if (recheckZero)
                     transactionCount = 3;
                 level = current;
                 identity = currentIdentity;
