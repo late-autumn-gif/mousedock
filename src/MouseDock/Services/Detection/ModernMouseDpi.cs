@@ -63,19 +63,21 @@ internal static class ModernMouseDpi
         return BuildRequest(0x0103, data);
     }
 
-    internal static MouseDpiState ReadSettings(ReferenceBatteryProtocol.ILink link, MouseDpiChange change)
+    internal static MouseDpiState ReadSettings(ReferenceBatteryProtocol.ILink link, MouseDpiChange change, BatteryReplay.Trace evidence = null)
     {
         long deadline = link.Now + 1700;
         byte[] Exchange(ushort command, byte[] request, int minimum)
         {
             int drain = 0;
             while (link.Now < deadline && drain < 24 && link.Read(1) is { Length: > 0 }) drain++;
+            evidence?.Add($"dpi-request-{command:X4}", true, raw: request, keep: true);
             if (drain == 24 || link.Now >= deadline || !link.Write(request, 200)) return null;
             long end = Math.Min(deadline, link.Now + 350);
             while (link.Now < end)
             {
                 var reply = link.Read((int)Math.Max(1, end - link.Now));
                 if (reply == null) return null;
+                evidence?.Add($"dpi-response-{command:X4}", true, raw: reply, keep: true);
                 if (!reply.AsSpan().SequenceEqual(request) && TryPayload(reply, command, minimum, out _)) return reply;
             }
             return null;

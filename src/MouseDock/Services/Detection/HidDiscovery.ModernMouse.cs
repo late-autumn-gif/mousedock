@@ -18,10 +18,14 @@ public static partial class HidDiscovery
             string why=safe?"安全模式未查询MHUB":!(preferences?.CanRead(b.InstanceId,null)??true)||!(preferences?.CanRead($"hid-{b.Vid:X4}-{b.Pid:X4}",VendorMap.PhysicalKeyFromName(b.Product))??true)?"此实例识别已停用":channels.Count!=1?"本实例MHUB精确集合不唯一/缺失":null;
             if(why!=null){b.BatteryFailures.Add(why);LastDiagnostics.Add($"{b.InstanceId} MHUB边界：{why}");continue;}
             ReferenceBatteryProtocol.Reading r;
+            var scan = BatteryReplay.Current;
+            var trace = scan == null ? null : new BatteryReplay.Trace();
+            if (scan != null) scan.Active = trace;
             using(InstanceScope.Enter(b.InstanceId)){try{r=query(channels[0].Path,b.Vid,b.Pid);}catch(Exception ex){r=ReferenceBatteryProtocol.Reading.Failed(ex.GetType().Name);}}
             r??=ReferenceBatteryProtocol.Reading.Failed("读取器未返回结果");
             if(r.Level is >=0 and <=100 && (r.Status is ReferenceBatteryProtocol.State.Online or ReferenceBatteryProtocol.State.Charging) && string.Equals(r.Model,b.Product?.Trim(),StringComparison.OrdinalIgnoreCase)){b.Battery=r.Level;b.Charging=r.ChargingKnown&&r.Charging;b.BatterySource=r.Diagnostic;b.ModernModel=r.Model;}
             else b.BatteryFailures.Add(r.Diagnostic);
+            scan?.AddQuery(b.InstanceId, channels[0].Path, "MchoseModern", r.Status.ToString(), b.Product, b.Battery, trace);
             if (r.Dpi is { } dpi)
             {
                 b.DpiSettings = dpi;

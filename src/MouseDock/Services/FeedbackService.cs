@@ -311,16 +311,33 @@ namespace MouseDock.Services
                             $"用户标注 {p.User.Stage}：{p.User.Model} / {p.User.Transport} / {p.User.PowerState} / 参考电量 {p.User.ReferencePercent?.ToString() ?? "未知"}；样本 {p.Entry}"))));
                     AddText(zip, "report.json", JsonSerializer.Serialize(new
                     {
-                        Schema = phases == null ? 2 : 3, AdaptationPhases = phases, Scope = target == null ? "all" : "single",
+                        Schema = phases == null ? 2 : 3, ReportFormatVersion = 2,
+                        Capabilities = new
+                        {
+                            DpiSnapshot = true,
+                            RawDpiFrames = false,
+                            RawBatteryFrames = rounds.Any(r => r.Queries.Any(q => q.Samples.Any(s => s.Hex != null))),
+                            FirmwareVersion = false,
+                            UserEventTimeline = phases != null
+                        },
+                        EvidenceLimitations = new[] { "当前版本未采集 DPI 原始请求和响应帧", "未经验证的厂商写入命令不会被报告触发" },
+                        AdaptationPhases = phases, Scope = target == null ? "all" : "single",
                         AppVersion = UpdateService.CurrentVersionText,
                         WindowsVersion = Environment.OSVersion.VersionString,
                         SafeMode = settings?.SafeMode == true, RefreshSeconds = settings?.RefreshSeconds,
                         DisplaySnapshotAt = snapshotAt, DisplaySnapshot = snapshot,
                         UserContext = cableConnected ? "cable-connected" : null,
+                        SupportStatus = snapshot.Select(item => new
+                        {
+                            item.Name,
+                            Status = item.DpiStatus == "captured" ? "protocol-read" : "identified-only",
+                            Battery = item.Percent.HasValue ? "protocol-read" : "unknown",
+                            Dpi = item.Dpi.HasValue ? "protocol-read" : "unavailable"
+                        }),
                         Series = series,
                         Rounds = rounds.Select((r, i) => new
                         {
-                            Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, r.ScanError,
+                            Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, DurationMs = (r.FinishedAt - r.StartedAt).TotalMilliseconds, r.ScanError,
                             Dpi = r.DpiObservations
                         })
                     }, new JsonSerializerOptions { WriteIndented = true }));
@@ -409,6 +426,7 @@ namespace MouseDock.Services
             sb.AppendLine($"范围: {(single ? "单设备（按实例限定）" : "全部设备")}");
             if (cableConnected) sb.AppendLine("用户标注: 插线后采样。");
             sb.AppendLine($"安全模式: {(settings?.SafeMode == true ? "开" : "关")}；应用刷新: {settings?.RefreshSeconds} 秒");
+            sb.AppendLine("报告能力: DPI 快照=是；DPI 原始帧=否；固件版本=否；用户阶段时间线=" + (rounds.Length > 0 ? "有采样" : "无") + "。");
             sb.AppendLine("界面快照仅记录采样前的显示状态；系统手柄另采集有界电池报告，新设备分阶段报告另列所选 BLE 设备的 GATT 读数。");
             foreach (var item in snapshot)
             {
@@ -427,7 +445,7 @@ namespace MouseDock.Services
                 foreach (var dpi in round.DpiObservations ?? Array.Empty<Detection.BatteryReplay.DpiObservation>())
                     sb.AppendLine($"  {dpi.Receiver} {dpi.Model} DPI {dpi.Current?.ToString() ?? "—"}；档位 {(dpi.Slots.Length == 0 ? "—" : string.Join(", ", dpi.Slots))}；状态 {dpi.Status}；协议 {dpi.Protocol ?? "—"}");
                 foreach (var query in round.Queries)
-                    sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}");
+                    sb.AppendLine($"  {query.Receiver} / 接口 {query.Interface?.ToString() ?? "—"} {query.Protocol}: {query.Status}；阶段 {query.FailureStage ?? "unknown"}");
             }
             foreach (var item in series.Where(item => item.Assessment == "repeated-100-unverified"))
                 sb.AppendLine($"  {item.Receiver} {item.Transport} 连续 {item.Samples} 次上报 100%；实时电量未验证。");
