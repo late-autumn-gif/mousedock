@@ -1,4 +1,9 @@
+using System.IO;
+using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
+using MouseDock.Models;
+using MouseDock.Services;
 using MouseDock.Services.Detection;
 
 internal static class M137TransactionsRegression
@@ -61,7 +66,93 @@ internal static class M137TransactionsRegression
             "A rejected GET can retry without losing the independent second transaction");
         var failed = new Link(Frame("M137", 50), Frame("M137", 50)) { WriteOk = false };
         Check(failed.Read().Level == -1 && failed.Gets == 0, "SET failure stops before GET");
+        CheckFeedbackReport(Check);
         return count;
+    }
+
+    private static void CheckFeedbackReport(Action<bool, string> check)
+    {
+        const string path = @"\\?\hid#vid_248a&pid_5b2f&mi_01&col04#PRIVATE-SC580-SERIAL";
+        const string product = "Wireless-Receiver";
+        InstanceScope.BeginScan();
+        string instance = InstanceScope.Register(path, new[] { (@"USB\VID_248A&PID_5B2F\PRIVATE-SC580-SERIAL", "USB") });
+        var channel = new HidDiscovery.VendorCollectionInfo
+        {
+            Path = path, Vid = 0x248A, Pid = 0x5B2F, Product = product,
+            UsagePage = 0xFF00, Usage = 1, Input = 0, Output = 0, Feature = 33
+        };
+        var bucket = new HidDiscovery.Bucket { InstanceId = instance, Vid = 0x248A, Pid = 0x5B2F, Product = product };
+        var aliases = new Dictionary<string, string>();
+        var previousScan = BatteryReplay.Current;
+        string file = Path.Combine(Path.GetTempPath(), $"mousedock-sc580-{Guid.NewGuid():N}.zip");
+        try
+        {
+            BatteryReplay.Capture Capture(Link link, bool safeMode = false)
+            {
+                var scan = new BatteryReplay.Scan(aliases);
+                scan.AddCollection(instance, path, 0x248A, 0x5B2F, product, 0xFF00, 1, 0, 0, 33, false,
+                    reportIds: "IN[] OUT[] FEATURE[0C]");
+                BatteryReplay.Current = scan;
+                HidDiscovery.QueryM137Feature(new() { [instance] = bucket }, new() { channel }, safeMode, null,
+                    (_, trace) => link.Read(trace));
+                return scan.Finish(new[] { instance });
+            }
+
+            var first = Frame("M137", 72);
+            "PRIVATE-ID"u8.CopyTo(first.AsSpan(20));
+            var recovered = Capture(new Link(first, Frame("M137", 0), Frame("M137", 71)));
+            check(recovered.Queries.Length == 1, "The SC580 query must be included in the selected-device report");
+            var recovery = recovered.Queries.Single();
+            check(recovery.Interface == recovered.Collections.Single().Interface && recovery.ObservedPercent == 71 &&
+                recovery.Samples.Select(s => s.Stage).SequenceEqual(new[]
+                    { "set-feature", "get-feature", "set-feature", "get-feature", "set-feature", "get-feature" }),
+                "The report binds all three transactions to the actual control collection");
+            var reads = recovery.Samples.Where(s => s.Stage == "get-feature").ToArray();
+            check(reads.Select(s => Convert.FromHexString(s.Hex!)[18]).SequenceEqual(new byte[] { 72, 0, 71 }) &&
+                Convert.FromHexString(reads[0].Hex!).AsSpan(19).IndexOfAnyExcept((byte)0) < 0 &&
+                reads.All(s => s.At.HasValue), "Replies preserve all battery samples and omit private bytes");
+            var unknown = Capture(new Link(first, Frame("M137", 0)));
+            var failure = unknown.Queries.Single();
+            check(failure.ObservedPercent == null &&
+                failure.Samples.Last() is { Stage: "get-feature", NativeError: 31, Hex: null },
+                "A failed recheck retains its stage and native error without reporting zero");
+            var skip = new Link();
+            check(Capture(skip, safeMode: true).Queries.Single() is { Status: "safe-mode", Samples.Length: 0 } &&
+                skip.Sets == 0 && skip.Gets == 0, "Safe mode records the skip without I/O");
+
+            var device = new DeviceInfo { Id = instance, Name = "SC580" };
+            check(FeedbackService.TryExportReport(new AppSettings(), new[] { device }, file, device,
+                new[] { recovered, unknown }).Succeeded, "SC580 ZIP export succeeds");
+            using var archive = ZipFile.OpenRead(file);
+            using var text = new StreamReader(archive.GetEntry(BatteryReplay.EntryName)!.Open());
+            string evidence = text.ReadToEnd();
+            check(!evidence.Contains("PRIVATE-SC580-SERIAL") && !evidence.Contains(instance),
+                "The ZIP omits native paths and physical instance IDs");
+            using var replay = JsonDocument.Parse(BatteryReplay.ReplayFile(file));
+            var rounds = replay.RootElement.GetProperty("Rounds");
+            check(rounds[0].GetProperty("Results")[0].GetProperty("Percent").GetInt32() == 71 &&
+                rounds[0].GetProperty("Results")[0].GetProperty("Charging").ValueKind == JsonValueKind.Null &&
+                rounds[1].GetProperty("Results")[0].GetProperty("Percent").ValueKind == JsonValueKind.Null,
+                "Offline ZIP replay distinguishes recovery from failure without guessing charging");
+            check(BatteryReplay.Replay(recovery with { Samples = recovery.Samples[..4], ObservedPercent = 0 },
+                recovered.Collections).Percent == null, "Offline replay needs a complete zero recheck");
+            check(BatteryReplay.Replay(recovery, new[]
+                { recovered.Collections[0] with { Receiver = "receiver-other" } }).Percent == null,
+                "Offline replay cannot borrow a collection from another receiver");
+            check(BatteryReplay.Replay(recovery with { Samples = recovery.Samples.Select((sample, index) =>
+                index == 3 ? sample with { Sequence = 1 } : sample).ToArray() }, recovered.Collections).Percent == null,
+                "Offline replay rejects a reply with the wrong request sequence");
+            var retry = Capture(new Link(new byte[33], first, Frame("M137", 71)));
+            check(retry.Queries[0].Samples[1] is { Result: "invalid-frame", Hex: null } &&
+                BatteryReplay.Replay(retry.Queries[0], retry.Collections).Percent == 71,
+                "An invalid reply keeps its retry position without exporting unrecognized bytes");
+        }
+        finally
+        {
+            File.Delete(file);
+            BatteryReplay.Current = previousScan;
+            InstanceScope.BeginScan();
+        }
     }
 
     private static byte[] Frame(string model, int percent)
@@ -79,7 +170,7 @@ internal static class M137TransactionsRegression
         internal readonly List<byte[]> Requests = new();
         internal int Sets, Gets;
         internal bool WriteOk = true;
-        internal ReferenceBatteryProtocol.Reading Read() => M137FeatureProtocol.Read(
+        internal ReferenceBatteryProtocol.Reading Read(BatteryReplay.Trace? trace = null) => M137FeatureProtocol.Read(
             packet =>
             {
                 Requests.Add(packet.ToArray()); Sets++;
@@ -95,6 +186,6 @@ internal static class M137TransactionsRegression
             milliseconds =>
             {
                 if (milliseconds != 16) throw new Exception("Unexpected M137 delay");
-            }, () => 31);
+            }, () => 31, trace);
     }
 }
