@@ -8,7 +8,7 @@ namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
     /// <summary>
-    /// 248A:5B2F 的官方 GetInfo：两次事务、每次最多两次 GET，同型号采用第二次电量。
+    /// 248A:5B2F 的官方 GetInfo：两次事务、每次最多两次 GET，SC580 跳零时增加一次确认。
     /// 只读，不发配置命令。
     /// </summary>
     internal static ReferenceBatteryProtocol.Reading ReadM137Feature(string path)

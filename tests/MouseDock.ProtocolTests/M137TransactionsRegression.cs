@@ -26,14 +26,29 @@ internal static class M137TransactionsRegression
         Check(link.Requests.Select(p => p[4]).SequenceEqual(new byte[] { 0, 1, 2, 3 }),
             "Prepared SET and GET buffers retain the official sequence order");
 
-        foreach (var levels in new (int First, int Second)[] { (79, 80), (80, 79), (0, 1), (99, 100), (100, 0) })
+        foreach (var levels in new (int First, int Second)[] { (79, 80), (80, 79), (0, 1), (99, 100), (0, 0) })
         {
             var changing = new Link(Frame("M137", levels.First), Frame("M137", levels.Second));
             var updated = changing.Read();
             Check(updated.Level == levels.Second && updated.Identity == "M137" &&
-                updated.Status == ReferenceBatteryProtocol.State.Online,
+                updated.Status == ReferenceBatteryProtocol.State.Online && changing.Sets == 2,
                 $"A valid {levels.First} to {levels.Second} update must publish the second percentage");
         }
+
+        var transientZero = new Link(Frame("M137", 72), Frame("M137", 0), Frame("M137", 71));
+        Check(transientZero.Read() is { Level: 71, Identity: "M137" } && transientZero.Sets == 3,
+            "A lone SC580 zero must be rechecked using a fresh GetInfo transaction");
+        var confirmedZero = new Link(Frame("M137", 1), Frame("M137", 0), Frame("M137", 0));
+        Check(confirmedZero.Read() is { Level: 0, Identity: "M137" } && confirmedZero.Sets == 3,
+            "Two consecutive zero readings must still be accepted");
+        Check(new Link(Frame("M137", 72), Frame("M137", 0)).Read().Level == -1,
+            "A timeout while confirming zero must not publish a live percentage");
+        Check(new Link(Frame("M137", 72), Frame("M137", 0), Frame("M139", 0)).Read().Level == -1,
+            "A different model cannot confirm the SC580 zero");
+        var otherModel = new Link(Frame("M139", 72), Frame("M139", 0));
+        Check(otherModel.Read() is { Level: 0, Identity: "M139" } && otherModel.Sets == 2,
+            "The SC580 zero recheck does not apply to another receiver model");
+
         Check(new Link(Frame("M137", 50), Frame("M139", 50)).Read().Level == -1,
             "A changed model is rejected even when its percentage is unchanged");
         Check(new Link(Frame("M137", 50)).Read().Level == -1,

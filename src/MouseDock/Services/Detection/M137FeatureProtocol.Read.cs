@@ -10,7 +10,8 @@ internal static partial class M137FeatureProtocol
         byte sequence = 0;
         int level = -1;
         string identity = null, hex = "";
-        for (int transaction = 0; transaction < 2; transaction++)
+        int transactionCount = 2;
+        for (int transaction = 0; transaction < transactionCount; transaction++)
         {
             var set = Request(sequence++);
             if (!setFeature(set))
@@ -29,7 +30,9 @@ internal static partial class M137FeatureProtocol
                         "M137 身份 " + currentIdentity + " 未收录型号，未采用读数；最近RX=" + hex);
                 if (level >= 0 && identity != currentIdentity)
                     return ReferenceBatteryProtocol.Reading.Failed(
-                        "M137 两次事务型号不一致，未采用；最近RX=" + hex);
+                        "M137 事务间型号不一致，未采用；最近RX=" + hex);
+                if (transaction == 1 && currentIdentity == "M137" && level > 0 && current == 0)
+                    transactionCount = 3;
                 level = current;
                 identity = currentIdentity;
                 accepted = 1;
@@ -38,8 +41,11 @@ internal static partial class M137FeatureProtocol
                 return ReferenceBatteryProtocol.Reading.Failed("M137 事务未取得有效身份帧；最近RX=" + hex);
         }
         string model = ModelForIdentity(identity) ?? DisplayForIdentity(identity);
+        string source = transactionCount == 3
+            ? "M137 GetInfo SC580 跳零复核，采用第三次同型号电量"
+            : "M137 GetInfo 两次有效同型号事务，采用第二次电量";
         return new(level, false, false, ReferenceBatteryProtocol.State.Online,
-            "M137 GetInfo 两次有效同型号事务，采用第二次电量；充电状态未确认；最近RX=" + hex,
+            source + "；充电状态未确认；最近RX=" + hex,
             model, identity);
     }
 }
