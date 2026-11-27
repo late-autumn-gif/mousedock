@@ -18,6 +18,7 @@ internal static class AuditChecks
         ChargingMerge();
         PollInterval();
         CachedReading();
+        Sc580ZeroConfirmation();
         FifthMiniCell();
         MiniLiveReading();
         ClosedSettings();
@@ -348,6 +349,47 @@ internal static class AuditChecks
         Require(battery.Devices.Single().Level == 64 && !battery.Devices.Single().IsStale,
             "A successful reading must replace the cached level and clear stale state.");
         }
+    }
+
+    private static void Sc580ZeroConfirmation()
+    {
+        using var battery = EmptyService(out _);
+        var source = new SharedSource { Reading = 72 };
+        source.Device.Name = source.Device.ConfirmedModel = "狼蛛 SC580";
+        source.Device.HandledByLabel = "M137";
+        source.Device.Transport = "2.4G";
+        SetSource(battery, source);
+        Wait(battery.PollAsync());
+        source.Reading = 0;
+        Wait(battery.PollAsync());
+        Wait(battery.PollAsync());
+        Require(battery.Devices.Single() is { Level: 72, IsStale: true },
+            "Even two closely spaced zero scans must retain the last valid SC580 percentage.");
+
+        void WaitForConfirmation()
+        {
+            var refreshed = new TaskCompletionSource();
+            void OnRefreshed(object? _, EventArgs __)
+            {
+                if (battery.Devices.Single() is { IsStale: false })
+                    refreshed.TrySetResult();
+            }
+            battery.Refreshed += OnRefreshed;
+            try { Wait(refreshed.Task.WaitAsync(TimeSpan.FromSeconds(5))); }
+            finally { battery.Refreshed -= OnRefreshed; }
+        }
+
+        source.Reading = 72;
+        WaitForConfirmation();
+        Require(battery.Devices.Single() is { Level: 72, IsStale: false },
+            "Recovery on the scheduled confirmation must restore a fresh reading.");
+
+        source.Reading = 0;
+        Wait(battery.PollAsync());
+        WaitForConfirmation();
+        Require(battery.Devices.Single() is { Level: 0, IsStale: false },
+            "A separate scheduled scan can confirm an actual zero.");
+        Console.WriteLine("AUDIT SC580: transient zero held, recovery refreshed, sustained zero confirmed.");
     }
 
     internal static void FifthMiniCell()

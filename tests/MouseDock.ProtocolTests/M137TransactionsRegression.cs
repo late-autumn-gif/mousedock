@@ -59,6 +59,12 @@ internal static class M137TransactionsRegression
             "An unrecognized identity stays unknown");
         Check(new Link(new byte[33], Frame("M137", 50), Frame("M137", 50)).Read().Level == 50,
             "A rejected GET can retry without losing the independent second transaction");
+        var retry = new Link(null!, Frame("M137", 72), Frame("M137", 72));
+        Check(retry.Read().Level == 72 && retry.Sets == 2 && retry.Gets == 3,
+            "A transient native GET failure can recover using the remaining GET attempt");
+        var unavailable = new Link(null!, null!);
+        Check(unavailable.Read().Level == -1 && unavailable.Sets == 1 && unavailable.Gets == 2,
+            "Consecutive native GET failures stop within the existing query budget");
         var failed = new Link(Frame("M137", 50), Frame("M137", 50)) { WriteOk = false };
         Check(failed.Read().Level == -1 && failed.Gets == 0, "SET failure stops before GET");
         return count;
@@ -89,7 +95,8 @@ internal static class M137TransactionsRegression
             {
                 Requests.Add(packet.ToArray()); Gets++;
                 if (replies.Count == 0) return false;
-                replies.Dequeue().CopyTo(packet, 0);
+                if (replies.Dequeue() is not { } reply) return false;
+                reply.CopyTo(packet, 0);
                 return true;
             },
             milliseconds =>

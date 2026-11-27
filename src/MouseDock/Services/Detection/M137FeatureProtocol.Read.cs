@@ -30,6 +30,7 @@ internal static partial class M137FeatureProtocol
                 {
                     int error = lastError();
                     trace?.Add("get-feature", false, requestSequence, nativeError: error);
+                    if (attempt == 0) continue;
                     return ReferenceBatteryProtocol.Reading.Failed("M137 GET_FEATURE 失败 Win32=" + error);
                 }
                 hex = Convert.ToHexString(get);
