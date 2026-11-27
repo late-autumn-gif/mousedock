@@ -12,7 +12,7 @@ public static partial class HidDiscovery
     /// </summary>
     internal static void QueryM137Feature(Dictionary<string, Bucket> buckets,
         List<VendorCollectionInfo> collections, bool safeMode, DevicePreferences preferences,
-        Func<string, ReferenceBatteryProtocol.Reading> query)
+        Func<string, BatteryReplay.Trace, ReferenceBatteryProtocol.Reading> query)
     {
         foreach (var b in buckets.Values)
         {
@@ -45,10 +45,12 @@ public static partial class HidDiscovery
                 continue;
             }
 
+            var scan = BatteryReplay.Current;
+            var trace = scan == null ? null : new BatteryReplay.Trace();
             ReferenceBatteryProtocol.Reading result;
             using (InstanceScope.Enter(b.InstanceId))
             {
-                try { result = query(channels[0].Path); }
+                try { result = query(channels[0].Path, trace); }
                 catch (Exception ex)
                 {
                     result = ReferenceBatteryProtocol.Reading.Failed("M137 查询异常：" + ex.GetType().Name);
@@ -66,6 +68,8 @@ public static partial class HidDiscovery
             }
             if (b.Battery < 0)
                 b.BatteryFailures.Add(result?.Diagnostic ?? "M137 读取器未返回结果");
+            scan?.AddQuery(b.InstanceId, channels[0].Path, "M137", result?.Status.ToString() ?? "Failed",
+                b.M137Model, b.Battery, trace);
             LastDiagnostics.Add(
                 $"{b.InstanceId} M137：型号={b.M137Model ?? "未知"} 电量={b.Battery} {result?.Diagnostic}");
         }

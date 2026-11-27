@@ -8,17 +8,21 @@ namespace MouseDock.Services.Detection;
 internal static partial class VendorProtocol
 {
     /// <summary>
-    /// 248A:5B2F 的官方 GetInfo：两次事务、每次最多两次 GET，同型号采用第二次电量。
+    /// 248A:5B2F 的官方 GetInfo：两次事务、每次最多两次 GET；SC580 的零值需要两轮一致。
     /// 只读，不发配置命令。
     /// </summary>
-    internal static ReferenceBatteryProtocol.Reading ReadM137Feature(string path)
+    internal static ReferenceBatteryProtocol.Reading ReadM137Feature(string path, BatteryReplay.Trace trace)
     {
         if (string.IsNullOrWhiteSpace(InstanceScope.Current) || !InstanceScope.Allows(path))
             return ReferenceBatteryProtocol.Reading.Failed("缺少匹配的物理实例，未发送查询");
         IntPtr h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
             IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
         if (h == IntPtr.Zero || h == new IntPtr(-1))
-            return ReferenceBatteryProtocol.Reading.Failed("M137 接口打开失败 Win32=" + Marshal.GetLastWin32Error());
+        {
+            int error = Marshal.GetLastWin32Error();
+            trace?.Add("open", false, nativeError: error);
+            return ReferenceBatteryProtocol.Reading.Failed("M137 接口打开失败 Win32=" + error);
+        }
         try
         {
             var caps = Caps(h);
@@ -34,7 +38,7 @@ internal static partial class VendorProtocol
             return M137FeatureProtocol.Read(
                 packet => HidD_SetFeature(h, packet, packet.Length),
                 packet => HidD_GetFeature(h, packet, packet.Length),
-                Thread.Sleep, Marshal.GetLastWin32Error);
+                Thread.Sleep, Marshal.GetLastWin32Error, trace);
         }
         catch (Exception ex)
         {
