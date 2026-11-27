@@ -1162,6 +1162,7 @@ namespace MouseDock
 
         public static void ApplyWindowBehavior()
         {
+            Taskbar?.ApplyTopmostPreference();
             if (_desktopPet != null) _desktopPet.Topmost = Settings.AlwaysOnTop;
             foreach (var w in new Window[] { Dock, Mini, Icon, Edge })
             {

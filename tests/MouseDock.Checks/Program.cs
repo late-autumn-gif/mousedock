@@ -198,6 +198,7 @@ internal static class Program
             ("Bluetooth late results preserve published snapshots and recover", BluetoothStageChecks.LateResults),
             ("Bluetooth late results respect changed recognition preferences", BluetoothStageChecks.PreferenceChanges),
             ("Taskbar uses native attachment or the Windows 11 overlay", TaskbarEmbeddingChecks.AttachedToTaskbar),
+            ("Taskbar persistent topmost follows the saved window preference", TaskbarEmbeddingChecks.TopmostPreference),
             ("Embedded taskbar follows its parent without refresh", TaskbarEmbeddingChecks.FollowsParentWithoutRefresh),
             ("Taskbar retains visible alpha composition", TaskbarEmbeddingChecks.TransparentComposition),
             ("Taskbar recovers after its native host is destroyed", TaskbarEmbeddingChecks.HostLossRecovery),

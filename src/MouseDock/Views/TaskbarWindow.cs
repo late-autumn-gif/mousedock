@@ -63,6 +63,7 @@ namespace MouseDock.Views
                 else
                 {
                     _anchorTimer.Stop();
+                    if (!App.Settings.AlwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
                     SetOverflow(false);
                 }
             };
@@ -167,10 +168,14 @@ namespace MouseDock.Views
         public void UpdateAnchor()
         {
             if (!IsVisible) return;
+            bool alwaysOnTop = App.Settings.AlwaysOnTop;
+            if (alwaysOnTop) TaskbarAnchor.Detach(this);
+            Topmost = alwaysOnTop;
             bool pinToTray = App.Settings.TaskbarPinToTray;
             bool useMeasuredLayout = pinToTray || App.Settings.TaskbarFollowIcons;
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
+                if (!alwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
                 Opacity = 0;
                 IsHitTestVisible = false;
                 SetOverflow(useMeasuredLayout && _strip?.DeviceCount > 0);
@@ -179,6 +184,7 @@ namespace MouseDock.Views
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
             if (_strip == null || _strip.DeviceCount == 0)
             {
+                if (!alwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
                 Opacity = 0;
                 IsHitTestVisible = false;
                 SetOverflow(false);
@@ -198,6 +204,7 @@ namespace MouseDock.Views
                         : TaskbarPlacement.TryFollow(bounds, edge, contentSize, dpi, snapshot.Icons, snapshot.Occupied,
                             out placement, reserve, App.Settings.TaskbarIconOffset)))
                 {
+                    if (!alwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
                     Opacity = 0;
                     IsHitTestVisible = false;
                     SetOverflow(true);
@@ -205,13 +212,24 @@ namespace MouseDock.Views
                 }
             }
             else placement = TaskbarPlacement.Calculate(bounds, edge, contentSize, App.Settings.TaskbarOffset, dpi);
-            bool attached = TaskbarAnchor.AttachToTaskbar(this);
-            if (!attached) TaskbarAnchor.Detach(this);
+            bool attached = !alwaysOnTop && TaskbarAnchor.AttachToTaskbar(this);
+            if (!alwaysOnTop && !attached) TaskbarAnchor.Detach(this);
             TaskbarAnchor.Move(this, placement);
-            TaskbarAnchor.EnsureOrder(this, attached);
-            Opacity = 1;
-            IsHitTestVisible = true;
+            bool visible = TaskbarAnchor.EnsureOrder(this, attached, alwaysOnTop, placement);
+            Opacity = visible ? 1 : 0;
+            IsHitTestVisible = visible;
             SetOverflow(false);
+        }
+
+        internal void ApplyTopmostPreference()
+        {
+            if (Topmost == App.Settings.AlwaysOnTop) return;
+            if (!App.Settings.AlwaysOnTop)
+            {
+                Topmost = false;
+                TaskbarAnchor.ClearOverlayTopmost(this);
+            }
+            UpdateAnchor();
         }
 
         private void SetOverflow(bool value)

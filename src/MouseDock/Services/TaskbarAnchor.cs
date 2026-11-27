@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Interop;
 
@@ -32,6 +33,11 @@ namespace MouseDock.Services
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
         [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr window, StringBuilder name, int length);
+        [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(
+            IntPtr window, int attribute, out NativeRect rect, int size);
         [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr window, ref NativePoint point);
         [DllImport("user32.dll")] private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
         [DllImport("user32.dll")] private static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
@@ -45,6 +51,10 @@ namespace MouseDock.Services
             public uint ParentProcessId;
         }
         private static readonly ConditionalWeakTable<Window, FailedAttachment> FailedAttachments = new();
+        private const int TopmostStyle = 0x00000008;
+        private const uint OrderOnly = 0x0001 | 0x0002 | 0x0010 | 0x0200;
+        private static readonly IntPtr Topmost = new(-1);
+        private static readonly IntPtr NotTopmost = new(-2);
 
         private static Rect Convert(NativeRect r) =>
             new Rect(r.Left, r.Top, Math.Max(0, r.Right - r.Left), Math.Max(0, r.Bottom - r.Top));
@@ -65,7 +75,7 @@ namespace MouseDock.Services
             if(Marshal.GetLastPInvokeError()!=0)return false;
             int style=GetWindowLong(handle,-16);
             SetWindowLong(handle,-16,(style & ~0x40000000) | unchecked((int)0x80000000));
-            SetWindowPos(handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010|0x0020);
+            SetWindowPos(handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0004|0x0010|0x0020);
             return GetParent(handle)==IntPtr.Zero;
         }
 
@@ -149,34 +159,77 @@ namespace MouseDock.Services
                     0x0004 | 0x0010 | 0x0200); // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER
         }
 
-        public static void EnsureOrder(Window window, bool attached)
+        internal static void ClearOverlayTopmost(Window window)
         {
             var handle = new WindowInteropHelper(window).Handle;
-            if (handle == IntPtr.Zero) return;
+            if (handle != IntPtr.Zero && GetParent(handle) == IntPtr.Zero && IsTopmost(handle))
+                SetWindowPos(handle, NotTopmost, 0, 0, 0, 0, OrderOnly);
+        }
+
+        private static bool IsTopmost(IntPtr handle) => (GetWindowLong(handle, -20) & TopmostStyle) != 0;
+
+        internal static bool ForegroundCoversPlacement(IntPtr foreground, IntPtr strip, IntPtr taskbar, Rect placement)
+        {
+            if (foreground == IntPtr.Zero || foreground == strip || foreground == taskbar || !IsWindowVisible(foreground))
+                return false;
+            if (DwmGetWindowAttribute(foreground, 9, out var rect, Marshal.SizeOf<NativeRect>()) != 0 &&
+                !GetWindowRect(foreground, out rect)) return false;
+            var overlap = Rect.Intersect(Convert(rect), placement);
+            if (overlap.IsEmpty || overlap.Width <= 0 || overlap.Height <= 0) return false;
+            var name = new StringBuilder(128);
+            GetClassName(foreground, name, name.Capacity);
+            return name.ToString() is not ("Progman" or "WorkerW");
+        }
+
+        public static bool EnsureOrder(Window window, bool attached, bool alwaysOnTop, Rect placement)
+        {
+            var handle = new WindowInteropHelper(window).Handle;
+            if (handle == IntPtr.Zero) return false;
             if (attached)
             {
                 // Moving above a sibling preserves the parent and the existing composition surface.
                 if (GetWindow(handle, 3) != IntPtr.Zero)
                     SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
-                return;
+                return true;
+            }
+            if (alwaysOnTop)
+            {
+                if (!IsTopmost(handle)) SetWindowPos(handle, Topmost, 0, 0, 0, 0, OrderOnly);
+                return true;
             }
             var taskbar = FindWindow("Shell_TrayWnd", null);
-            if (taskbar == IntPtr.Zero || !IsWindowVisible(taskbar)) return;
+            if (taskbar == IntPtr.Zero || !IsWindowVisible(taskbar) ||
+                ForegroundCoversPlacement(GetForegroundWindow(), handle, taskbar, placement))
+            {
+                ClearOverlayTopmost(window);
+                return false;
+            }
+
+            // The standalone fallback only joins the shell's band while the
+            // taskbar is visible and the foreground window leaves this area free.
+            bool shellTopmost = IsTopmost(taskbar);
+            if (shellTopmost && !IsTopmost(handle))
+            {
+                var previous = GetWindow(taskbar, 3);
+                SetWindowPos(handle, Topmost, 0, 0, 0, 0, OrderOnly);
+                if (previous != IntPtr.Zero)
+                    SetWindowPos(handle, previous, 0, 0, 0, 0, OrderOnly);
+                return true;
+            }
+            if (!shellTopmost) ClearOverlayTopmost(window);
             // Repair only when the taskbar is above us, leaving its flyouts above both windows.
             for (var above = GetWindow(handle, 3); above != IntPtr.Zero; above = GetWindow(above, 3))
             {
                 if (above != taskbar) continue;
                 var previous = GetWindow(taskbar, 3);
-                while (previous != IntPtr.Zero && !IsWindowVisible(previous))
-                    previous = GetWindow(previous, 3);
-                // Inserting a non-topmost window after a topmost sibling does not
-                // reliably promote it. Enter the band once, then retain flyout order.
-                if ((GetWindowLong(handle, -20) & 8) == 0)
-                    SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
-                SetWindowPos(handle, previous == IntPtr.Zero ? new IntPtr(-1) : previous,
-                    0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+                if (!shellTopmost && (previous == IntPtr.Zero || IsTopmost(previous)))
+                    previous = IntPtr.Zero;
+                else if (previous == IntPtr.Zero)
+                    previous = Topmost;
+                SetWindowPos(handle, previous, 0, 0, 0, 0, OrderOnly);
                 break;
             }
+            return true;
         }
     }
 }

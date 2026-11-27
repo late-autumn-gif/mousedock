@@ -104,7 +104,7 @@ internal static class TaskbarEmbeddingChecks
             bool attached = (bool)type.GetMethod("Attach")!.Invoke(null, [strip, taskbar])!;
             Require(attached || Environment.OSVersion.Version.Build >= 22000, "Attachment failed on the classic taskbar.");
             type.GetMethod("Move")!.Invoke(null, [strip, target]);
-            type.GetMethod("EnsureOrder")!.Invoke(null, [strip, attached]);
+            type.GetMethod("EnsureOrder")!.Invoke(null, [strip, attached, false, target]);
             int ink = 0, clear = 0;
             long deadline = Environment.TickCount64 + 3000;
             do
@@ -127,6 +127,38 @@ internal static class TaskbarEmbeddingChecks
             Require(clear > 100, "The unpainted strip background obscured the native taskbar pixels.");
         }
         finally { strip.Close(); }
+    }
+
+    internal static void TopmostPreference()
+    {
+        using var fixture = new Fixture();
+        var window = fixture.Window;
+        var settings = MouseDock.App.Settings;
+        Require(!settings.AlwaysOnTop && !window.Topmost, "A new profile requested persistent topmost.");
+        window.Show();
+        var handle = new WindowInteropHelper(window).Handle;
+        settings.AlwaysOnTop = true;
+        window.ApplyTopmostPreference();
+        Require(window.Topmost && GetParent(handle) == IntPtr.Zero && (GetWindowLong(handle, -20) & 8) != 0,
+            "Enabling topmost did not promote the actual taskbar window.");
+        settings.AlwaysOnTop = false;
+        window.ApplyTopmostPreference();
+        Require(!window.Topmost, "Disabling topmost retained the WPF override.");
+
+        var overlay = new Window { Width = 180, Height = 100, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            overlay.Show();
+            var foreground = new WindowInteropHelper(overlay).Handle;
+            GetWindowRect(foreground, out var rect);
+            var inside = new Rect(rect.Left + 35, rect.Top + 35, 20, 20);
+            var outside = new Rect(rect.Right + 5, rect.Bottom + 5, 20, 20);
+            Require(TaskbarAnchor.ForegroundCoversPlacement(foreground, handle, IntPtr.Zero, inside) &&
+                !TaskbarAnchor.ForegroundCoversPlacement(foreground, handle, IntPtr.Zero, outside) &&
+                !TaskbarAnchor.ForegroundCoversPlacement(foreground, handle, foreground, inside),
+                "Foreground coverage did not distinguish the battery area from the shell.");
+        }
+        finally { overlay.Close(); }
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr window);
