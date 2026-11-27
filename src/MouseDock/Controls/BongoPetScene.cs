@@ -19,7 +19,7 @@ internal sealed class BongoPetScene : Canvas
     private readonly PetDeskLights _lights = new();
     private readonly PetFaceEffects _face = new();
     private PetArmLayers _neutral, _smiling;
-    private ImageSource _idleExpression;
+    private ImageSource _idleExpression, _animeDesk, _animeDeskBlink;
     private PetArmLayers.Rig _rig;
     private long _quietAfter;
     internal Point MouseTravel => _mouseEffect.MouseOffset;
@@ -74,7 +74,28 @@ internal sealed class BongoPetScene : Canvas
             _smiling = _neutral;
             _idleExpression = HeadExpression(atlas, width, height, _neutral.Base);
         }
+        _animeDesk = id == "shin-chan" ? AnimeDeskHead(_neutral.Base, closed: false) : null;
+        _animeDeskBlink = id == "shin-chan" ? AnimeDeskHead(_neutral.Base, closed: true) : null;
         ShowPose(false);
+    }
+
+    private static DrawingImage AnimeDeskHead(BitmapSource desk, bool closed)
+    {
+        const int cell = 320;
+        var atlas = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/FreePoses/shin-chan.png"));
+        var head = new CroppedBitmap(atlas, new Int32Rect((closed ? cell : 0) + 76, 19, 166, 157));
+        var drawing = new DrawingGroup();
+        using (var dc = drawing.Open())
+        {
+            // Keep the keyboard, mouse, arms and torso at their calibrated coordinates.
+            dc.PushClip(Geometry.Parse("M0,98 L34,98 L43,98 57,97 66,103 82,110 105,111 127,108 145,108 176,108 V176 H0 Z"));
+            dc.DrawImage(desk, new Rect(0, 0, SceneWidth, SceneHeight));
+            dc.Pop();
+            dc.DrawImage(head, new Rect(37, 1, 111, 108));
+        }
+        var image = new DrawingImage(drawing);
+        image.Freeze();
+        return image;
     }
 
     private static DrawingImage HeadExpression(BitmapSource atlas, int width, int height, BitmapSource neutral)
@@ -155,8 +176,12 @@ internal sealed class BongoPetScene : Canvas
         bool quiet = PoseIndex(false, now) == 0 && now >= _quietAfter;
         bool smiling = quiet && expression == PetExpression.Smile;
         _face.Show(quiet || expression == PetExpression.Dizzy ? expression : PetExpression.Neutral);
-        ImageSource face = smiling ? _idleExpression : _neutral.Base;
-        var arms = smiling ? _smiling : _neutral;
+        _face.Opacity = _animeDesk != null && expression != PetExpression.Dizzy ? 0 : 1;
+        ImageSource face = _animeDesk != null
+            ? quiet && expression is PetExpression.Blink or PetExpression.Rest or PetExpression.Wink or PetExpression.Smile
+                ? _animeDeskBlink : _animeDesk
+            : smiling ? _idleExpression : _neutral.Base;
+        var arms = smiling && _animeDesk == null ? _smiling : _neutral;
         _keyArm.Update(arms.Keys, contact);
         if (!ReferenceEquals(_artwork.Source, face))
         {

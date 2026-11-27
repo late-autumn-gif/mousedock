@@ -17,20 +17,19 @@ namespace MouseDock.Views
         private Point _start;
         private double _startX, _startY;
         private BitmapSource _image;
-        private ThemePreset _theme;
-        private string _themePath;
+        private readonly ThemePreset _theme;
 
         public BackgroundEditorWindow(AppSettings settings)
         {
             Draft = settings.Clone();
-            Title = "图片背景";
+            Title = "设置窗口背景图";
             Width = 376;
             SizeToContent = SizeToContent.Height;
             MaxHeight = Math.Max(320, SystemParameters.WorkArea.Height - 48);
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI");
-            var theme = Palette.ResolveTheme(Draft, out _);
+            var theme = _theme = Palette.ResolveTheme(Draft);
             Background = new SolidColorBrush(theme.BgTop);
             Foreground = new SolidColorBrush(theme.Text);
             var panel = new StackPanel { Margin = new Thickness(16) };
@@ -40,7 +39,7 @@ namespace MouseDock.Views
                 Name = "BackgroundPreview", Width = 320, Height = 240, CornerRadius = new CornerRadius(8),
                 ClipToBounds = true, Cursor = Cursors.SizeAll
             };
-            var main = App.Dock?.Content as FrameworkElement;
+            var main = App.SettingsView?.Content as FrameworkElement;
             if (main != null)
             {
                 if (main.ActualWidth <= 1 || main.ActualHeight <= 1)
@@ -142,7 +141,6 @@ namespace MouseDock.Views
             try
             {
                 Draft.CustomBackground = PictureBackground.Import(picker.FileName);
-                Draft.CustomAccent = "";
                 Draft.BackgroundPositionX = Draft.BackgroundPositionY = .5;
                 _zoom.Value = 1;
                 RefreshPreview();
@@ -152,14 +150,7 @@ namespace MouseDock.Views
 
         private void RefreshPreview()
         {
-            if (_theme == null || _themePath != Draft.CustomBackground)
-            {
-                _theme = Palette.ResolveTheme(Draft, out _);
-                _themePath = Draft.CustomBackground;
-            }
-            Background = new SolidColorBrush(_theme.BgTop);
-            Foreground = new SolidColorBrush(_theme.Text);
-            _image = PictureBackground.Apply(_preview, "", new SolidColorBrush(_theme.Surface), Draft, _theme);
+            _image = PictureBackground.Apply(_preview, "", new SolidColorBrush(_theme.Surface), Draft, _theme, useSettingsImage: true);
         }
     }
 }

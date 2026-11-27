@@ -30,7 +30,6 @@ namespace MouseDock
 
         public static AppSettings Settings { get; private set; } = new AppSettings();
         public static ThemePreset Theme { get; private set; } = ThemePreset.Presets[2];
-        public static Color? ExtractedAccent { get; private set; }
         public static BatteryService Battery { get; private set; }
 
         public static DockWindow Dock { get; private set; }
@@ -196,8 +195,7 @@ namespace MouseDock
             if (SettingsStore.RestoreStartupUpdates(Settings)) SettingsStore.Save(Settings);
             ResolveAssets();
 
-            Theme = Palette.ResolveTheme(Settings, out var extracted);
-            ExtractedAccent = extracted;
+            Theme = Palette.ResolveTheme(Settings);
 
             Battery = new BatteryService(Settings);
             WatchDpiDevices();
@@ -460,7 +458,9 @@ namespace MouseDock
             var through = new WinForms.ToolStripMenuItem("鼠标穿透");
             through.Click += (_, _) => { Settings.ClickThrough = !Settings.ClickThrough; ApplyWindowBehavior(); SaveSettings(); SettingsView?.Reload(); };
             menu.Items.Add(through);
-            menu.Items.Add("立即刷新", null, (_, _) => ScheduleDeviceRefresh());
+            menu.Items.Add("刷新设备", null, (_, _) => RescanDevices());
+            menu.Items.Add(CreateTrayAudioSubmenu(NAudio.CoreAudioApi.DataFlow.Capture));
+            menu.Items.Add(CreateTrayAudioSubmenu(NAudio.CoreAudioApi.DataFlow.Render));
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("管理设备…", null, (_, _) => { ShowSettings(Dock); SettingsView.SelectSection("devices"); });
             AddDpiMenu(menu, device);
@@ -568,7 +568,7 @@ namespace MouseDock
             int breathFrame = deviceTraysCharging && SystemParameters.ClientAreaAnimation
                 ? (int)(Environment.TickCount64 % 1800 / 120) : 0;
             _deviceTrays?.Sync(trayTargets,
-                $"{Theme.Name}/{Theme.Accent}/{Theme.Text}/{Theme.TextDim}/{Settings.LowBatteryWarn}/" +
+                $"{Theme.Name}/{Theme.Accent}/{Theme.Text}/{Theme.TextDim}/{Settings.LowBatteryWarn}/{AppearanceColors.LowBatteryOverride(Settings)}/" +
                 $"{_trayBlinkOn}/{breathFrame}/{string.Join(",", (Settings.TrayColors ?? new()).OrderBy(p => p.Key))}");
 
             var dev = Battery.VisibleDevices
@@ -882,17 +882,37 @@ namespace MouseDock
 
         internal static ContextMenu CreateQuickMenu(Window owner)
         {
-            var menu = new ContextMenu
+            var menu = CreateThemedMenu(owner, themeBackground: owner is MiniWindow);
+            AddSurfaceChoices(menu.Items);
+            menu.Items.Add(new Separator());
+            if (owner is DockWindow dock)
             {
-                PlacementTarget = owner,
-                Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
-            };
-            menu.Resources.MergedDictionaries.Add(new ResourceDictionary
+                menu.Items.Add(dock.CreateWallpaperMenu());
+                menu.Items.Add(dock.CreateCardSizeMenu());
+            }
+            if (owner is MiniWindow)
             {
-                Source = new Uri("/MouseDock;component/Views/DesktopPetMenu.xaml", UriKind.Relative)
-            });
-            ApplyCompactMenuTheme(menu);
+                menu.Items.Add(MenuAction("迷你窗配色…", () => EditMiniColors(owner)));
+                var follow = new MenuItem
+                {
+                    Header = "背景色跟随主题",
+                    IsCheckable = true,
+                    IsChecked = Settings.FollowsMiniThemeBackground
+                };
+                follow.Click += (_, _) => SetMiniFollowThemeBackground(follow.IsChecked);
+                menu.Items.Add(follow);
+            }
+            if (owner is TaskbarWindow or ScreenEdgeWindow)
+                menu.Items.Add(CreateCharacterEditorAction(owner, owner is TaskbarWindow ? "taskbar" : "edge"));
+            AddDeviceMenuActions(menu.Items, owner, includeRescan: owner is not DockWindow);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuAction("设置…", () => ShowSettings(owner)));
+            menu.Items.Add(MenuAction("退出", ExitApp));
+            return menu;
+        }
 
+        internal static void AddSurfaceChoices(ItemCollection items)
+        {
             foreach (var (mode, label) in new[]
             {
                 ("dock", "主面板"), ("mini", "迷你窗"), ("icon", "悬浮图标"),
@@ -906,29 +926,42 @@ namespace MouseDock
                     IsChecked = Settings.SurfaceMode == mode
                 };
                 item.Click += (_, _) => SetSurface(mode);
-                menu.Items.Add(item);
+                items.Add(item);
             }
-
-            menu.Items.Add(new Separator());
-            if (owner is DockWindow dock)
-            {
-                menu.Items.Add(dock.CreateWallpaperMenu());
-                menu.Items.Add(dock.CreateCardSizeMenu());
-            }
-            var settings = new MenuItem { Header = "设置…" };
-            settings.Click += (_, _) => ShowSettings(owner);
-            menu.Items.Add(settings);
-            var exit = new MenuItem { Header = "退出" };
-            exit.Click += (_, _) => ExitApp();
-            menu.Items.Add(exit);
-            return menu;
         }
 
-        internal static void ApplyCompactMenuTheme(ContextMenu menu)
+        internal static void EditMiniColors(Window owner)
+        {
+            var editor = new ColorEditorWindow(ColorEditorWindow.Surface.Mini, Settings.MiniColors, Theme) { Owner = owner };
+            if (editor.ShowDialog() != true) return;
+
+            string previousBackground = Settings.MiniColors?.GetValueOrDefault("background");
+            string background = editor.Draft.GetValueOrDefault("background");
+            Settings.MiniColors = editor.Draft;
+            if (background != previousBackground)
+                Settings.MiniFollowThemeBackground = background == null && string.IsNullOrWhiteSpace(Settings.MiniBackground);
+            UpdateMiniAppearance();
+        }
+
+        internal static void SetMiniFollowThemeBackground(bool follow)
+        {
+            Settings.MiniFollowThemeBackground = follow;
+            UpdateMiniAppearance();
+        }
+
+        private static void UpdateMiniAppearance()
+        {
+            Mini?.RefreshBackground();
+            SaveSettings();
+            SettingsView?.SyncMiniAppearance();
+        }
+
+        internal static void ApplyCompactMenuTheme(ContextMenu menu, bool useThemeBackground = false)
         {
             var theme = Theme;
             bool highContrast = SystemParameters.HighContrast;
-            var surface = highContrast ? SystemColors.MenuColor : Color.FromRgb(theme.Surface.R, theme.Surface.G, theme.Surface.B);
+            var background = useThemeBackground ? theme.BgTop : theme.Surface;
+            var surface = highContrast ? SystemColors.MenuColor : Color.FromRgb(background.R, background.G, background.B);
             var hover = highContrast ? SystemColors.HighlightColor : Palette.Mix(surface, theme.Text, 0.09);
             var resources = menu.Resources;
             resources["PetMenuSurface"] = new SolidColorBrush(surface);
@@ -960,8 +993,7 @@ namespace MouseDock
 
         public static void RefreshTheme()
         {
-            Theme = Palette.ResolveTheme(Settings, out var extracted);
-            ExtractedAccent = extracted;
+            Theme = Palette.ResolveTheme(Settings);
             ApplyTheme(true);
             Mini?.Rebuild();
             ApplyAllBackgrounds();
@@ -1073,7 +1105,10 @@ namespace MouseDock
                     break;
                 case "mini":
                     Settings.MiniBackground = path;
-                    Mini?.ApplyBackground(path);
+                    Settings.MiniFollowThemeBackground = string.IsNullOrWhiteSpace(path);
+                    Settings.MiniColors?.Remove("background");
+                    Mini?.RefreshBackground();
+                    SettingsView?.SyncMiniAppearance();
                     break;
                 case "icon":
                     Settings.IconBackground = path;
@@ -1090,7 +1125,7 @@ namespace MouseDock
         private static void ApplyAllBackgrounds()
         {
             Dock?.ApplyBackground(Settings.DockBackground);
-            Mini?.ApplyBackground(Settings.MiniBackground);
+            Mini?.RefreshBackground();
         }
 
         private static void ApplyAllStyles()
@@ -1474,16 +1509,18 @@ namespace MouseDock
             Pump(TimeSpan.FromMilliseconds(260));
             Capture(dock, Path.Combine(dir, "dock-light.png"));
 
-            // 自定义背景取主色自检
+            // 检查设置窗口独立背景。
             if (!string.IsNullOrEmpty(DefaultBackgroundAsset))
             {
-                Settings.CustomBackground = DefaultBackgroundAsset;
-                var custom = Palette.ResolveTheme(Settings, out var extracted);
-                dock.ApplyTheme(custom, false);
-                Pump(TimeSpan.FromMilliseconds(260));
-                Capture(dock, Path.Combine(dir, "dock-custom.png"));
-                File.WriteAllText(Path.Combine(dir, "extracted-accent.txt"),
-                    $"{custom.Name} accent={Palette.ToHex(extracted ?? custom.Accent)} light={custom.IsLight} bgTop={Palette.ToHex(custom.BgTop)}");
+                string previousImage = Settings.CustomBackground;
+                try
+                {
+                    Settings.CustomBackground = DefaultBackgroundAsset;
+                    settings.ApplyTheme(Theme, false);
+                    Pump(TimeSpan.FromMilliseconds(260));
+                    Capture(settings, Path.Combine(dir, "settings-background.png"));
+                }
+                finally { Settings.CustomBackground = previousImage; }
             }
 
             foreach (var w in new Window[] { dock, mini, iconChar, iconPhoto, settings }) w.Close();

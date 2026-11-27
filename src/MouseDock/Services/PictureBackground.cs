@@ -84,7 +84,7 @@ namespace MouseDock.Services
         }
 
         public static BitmapSource Apply(Border root, string overridePath, Brush fallback, AppSettings settings, ThemePreset theme,
-            int decodeWidth = 2048)
+            int decodeWidth = 2048, bool useSettingsImage = false)
         {
             if (!States.TryGetValue(root, out var state))
             {
@@ -96,7 +96,7 @@ namespace MouseDock.Services
             state.Fallback = fallback;
             state.Settings = settings;
             state.Theme = theme;
-            string path = !string.IsNullOrWhiteSpace(overridePath) ? overridePath : settings.CustomBackground;
+            string path = !string.IsNullOrWhiteSpace(overridePath) ? overridePath : useSettingsImage ? settings.CustomBackground : "";
             DateTime modified = DateTime.MinValue;
             try { modified = File.GetLastWriteTimeUtc(path ?? ""); } catch { }
             if (state.Path != path || state.Modified != modified || state.DecodeWidth != decodeWidth)

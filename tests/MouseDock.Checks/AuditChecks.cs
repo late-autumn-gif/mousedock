@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -42,15 +43,16 @@ internal static class AuditChecks
             bool blocked = false, bool autonomous = true, bool rest = true, bool blink = true) =>
             behavior.Update(time, pointer, moving, blocked, autonomous, rest, blink, 100, 100);
         Require(Read(0).State == DesktopPetBehavior.State.Idle, "Start neutral.");
-        bool sawBlink = false, sawGesture = false;
+        bool sawBlink = false, sawWink = false, sawGesture = false;
         for (long t = 33; t < 90000; t += 33)
         {
             var sample = Read(t);
             sawBlink |= sample.Blink;
+            sawWink |= sample.Wink;
             sawGesture |= sample.State == DesktopPetBehavior.State.RandomAction;
             Require(Math.Abs(sample.Tilt) <= 4 && Math.Abs(sample.Lift) <= 6, "Autonomous poses stay within render bounds.");
         }
-        Require(sawBlink && sawGesture, "Seeded schedule exercises both behavior layers.");
+        Require(sawBlink && sawWink && sawGesture, "Seeded schedule exercises blink, wink, and gestures.");
         Require(Read(90000, pointer: true).State == DesktopPetBehavior.State.Interaction, "Pointer interrupts idle activity.");
         Require(Read(90010, moving: true).State == DesktopPetBehavior.State.Moving, "Drag has priority.");
         behavior.Land(90020);
@@ -66,11 +68,386 @@ internal static class AuditChecks
                 "Disabling each category keeps the idle state.");
     }
 
+    internal static void DesktopPetRoaming()
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+        using var fixture = new AppearanceFixture();
+        fixture.Settings.DesktopPetDeskMode = false;
+        fixture.Settings.DesktopPetRandomActions = true;
+        fixture.Settings.DesktopPetX = .5;
+        var pet = new DesktopPetWindow(fixture.Battery, fixture.Settings, new Random(71));
+        try
+        {
+            pet.Show();
+            var type = typeof(DesktopPetWindow);
+            ((DispatcherTimer)type.GetField("_timer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!).Stop();
+            var portrait = (Border)type.GetField("_portrait", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            var card = (Border)type.GetField("_bubble", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            var lane = (Grid)portrait.Parent;
+            void VerifyCardGap()
+            {
+                pet.UpdateLayout();
+                double gap = card.PointToScreen(new Point()).X -
+                    lane.PointToScreen(new Point(lane.ActualWidth, 0)).X;
+                Require(Math.Abs(gap - 2) < .01, $"Expected a 2-pixel gap, got {gap}.");
+            }
+            VerifyCardGap();
+            var size = type.GetMethod("ChangeSize", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            size.Invoke(pet, [125]);
+            VerifyCardGap();
+            size.Invoke(pet, [100]);
+            VerifyCardGap();
+            var home = portrait.PointToScreen(new Point());
+            var cardHome = card.PointToScreen(new Point());
+            long start = Environment.TickCount64;
+            var strides = new HashSet<int>();
+            bool walked = false;
+            for (long t = start; t < start + 95000; t += 40)
+            {
+                pet.RenderPoseAt(t);
+                var position = portrait.PointToScreen(new Point());
+                Require(position.X >= lane.PointToScreen(new Point()).X - .5 &&
+                    portrait.PointToScreen(new Point(portrait.ActualWidth, 0)).X <= lane.PointToScreen(new Point(lane.ActualWidth, 0)).X + .5,
+                    "The character's translated portrait must remain in the clipped lane.");
+                Require(card.PointToScreen(new Point()) == cardHome, "Autoplay must leave the battery card fixed.");
+                walked |= Math.Abs(position.X - home.X) > 3;
+                if (pet.NativeSample.Mode is "walk" or "run") strides.Add(pet.NativeSample.Pose);
+            }
+            Require(walked && strides.Contains(6) && strides.Contains(7) && fixture.Settings.DesktopPetX == .5,
+                "Native locomotion alternates both strides and preserves the saved window anchor.");
+            fixture.Settings.DesktopPetLocked = true;
+            pet.RenderPoseAt(start + 95000);
+            var stopped = portrait.PointToScreen(new Point());
+            for (long t = start + 95040; t < start + 106000; t += 40) pet.RenderPoseAt(t);
+            Require(portrait.PointToScreen(new Point()) == stopped, "Lock position must stop horizontal movement.");
+            fixture.Settings.DesktopPetReduceMotion = true;
+            pet.RenderPoseAt(start + 106040);
+            Require(pet.NativeSample == null && portrait.PointToScreen(new Point()) == stopped,
+                "Reduced motion must stop the engine and preserve the character position.");
+            Require(fixture.Settings.Clone().DesktopPetRoamRadius == 96, "Cloning keeps the existing movement radius.");
+            fixture.Settings.DesktopPetLocked = false;
+            fixture.Settings.DesktopPetReduceMotion = false;
+            fixture.Settings.DesktopPetRandomActions = false;
+            pet.RenderPoseAt(start + 106080);
+            var motion = (CoopanionMotion)type.GetField("_nativeMotion", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            var scene = (FreePetScene)type.GetField("_free", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            var overlay = type.GetField("_carryOverlay", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            double x = pet.NativeSample!.X;
+            double floor = lane.ActualHeight - 1 - BongoPetScene.SceneHeight * (1 - FreePetScene.FootAnchor);
+            Require(motion.Pointer("down", x, floor - 108, 100), "The displayed pet accepts a drag near its head.");
+            motion.Pointer("move", x, floor - 550, 170);
+            pet.RenderPoseAt(start + 106130);
+            pet.RenderPoseAt(start + 106180);
+            Require(pet.NativeSample.Y < -300 && overlay.GetValue(pet) != null && scene.Opacity == 0,
+                "A high drag must display on the overlay outside the original activity lane.");
+            var overlaySource = (System.Windows.Interop.HwndSource)typeof(DesktopPetCarryOverlay)
+                .GetField("_source", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay.GetValue(pet))!;
+            var overlayCanvas = (Canvas)overlaySource.RootVisual;
+            var carriedScene = (FreePetScene)overlayCanvas.Children[0];
+            Require(carriedScene.UsesLayeredRig, "A mouse drag must activate the live layered rig.");
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            Require(overlayCanvas.ActualWidth >= carriedScene.Width && overlayCanvas.ActualHeight >= carriedScene.Height,
+                $"The HWND must retain a drawable viewport while carrying. Actual {overlayCanvas.ActualWidth} × {overlayCanvas.ActualHeight}; sizing {overlaySource.SizeToContent}.");
+            Point carriedFoot = carriedScene.PointToScreen(new Point(carriedScene.Width / 2,
+                carriedScene.Height * FreePetScene.FootAnchor));
+            Require(carriedFoot.Y < lane.PointToScreen(new Point()).Y - 100, "The live sprite is above the battery window.");
+            if (Environment.GetEnvironmentVariable("MOUSEDOCK_VERIFY_CARRY_PIXELS") == "1")
+                VerifyCarryPixels(overlaySource, carriedScene);
+            Require(card.PointToScreen(new Point()) == cardHome, "A high drag leaves the battery card in place.");
+            motion.Pointer("up", x, floor - 550, 175);
+            pet.RenderPoseAt(start + 106220);
+            Require(pet.NativeSample is { Carried: true, Y: < -300, Mode: "air" },
+                "Releasing from high up begins the fall at the carried height.");
+            bool sawSeatedDizzy = false, sawSeatedRecovery = false;
+            for (long t = start + 106260; t < start + 112000; t += 40)
+            {
+                pet.RenderPoseAt(t);
+                sawSeatedDizzy |= pet.NativeSample.Face == "dizzy" && scene.CurrentPose == FreePetScene.Pose.Sit;
+                sawSeatedRecovery |= pet.NativeSample is { Face: "squeeze", Mode: "dizzy" } &&
+                    scene.CurrentPose == FreePetScene.Pose.SeatedEyesClosed;
+            }
+            Require(sawSeatedDizzy && sawSeatedRecovery && scene.CurrentPose is FreePetScene.Pose.Stand or FreePetScene.Pose.Blink,
+                "A high drop renders the sitting and recovery artwork before the pet returns to standing.");
+            Require(overlay.GetValue(pet) == null && scene.Opacity == 1 && card.PointToScreen(new Point()) == cardHome,
+                "After landing the overlay closes and the same pet returns to the fixed battery card.");
+        }
+        finally { pet.Close(); }
+    }
+
+    private static void VerifyCarryPixels(System.Windows.Interop.HwndSource source, FreePetScene carriedScene)
+    {
+        Point center = carriedScene.PointToScreen(new Point(carriedScene.Width / 2, carriedScene.Height / 2));
+        const int side = 80;
+        var crop = new System.Drawing.Rectangle((int)center.X - side / 2, (int)center.Y - side / 2, side, side);
+        Require(System.Windows.Forms.Screen.FromRectangle(crop).Bounds.Contains(crop),
+            "The carried sprite sample must be on the display.");
+        void Capture(System.Drawing.Bitmap bitmap)
+        {
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            DwmFlush();
+            using var graphics = System.Drawing.Graphics.FromImage(bitmap);
+            IntPtr desktop = GetDC(IntPtr.Zero);
+            IntPtr target = graphics.GetHdc();
+            try
+            {
+                const uint sourceCopyWithLayeredWindows = 0x40CC0020;
+                Require(BitBlt(target, 0, 0, side, side, desktop, crop.X, crop.Y, sourceCopyWithLayeredWindows),
+                    "Could not capture the composited desktop crop.");
+            }
+            finally
+            {
+                graphics.ReleaseHdc(target);
+                ReleaseDC(IntPtr.Zero, desktop);
+            }
+        }
+
+        using var shown = new System.Drawing.Bitmap(side, side);
+        using var hidden = new System.Drawing.Bitmap(side, side);
+        Capture(shown);
+        ShowWindow(source.Handle, 0);
+        try { Capture(hidden); }
+        finally { ShowWindow(source.Handle, 8); }
+        int changed = 0;
+        for (int y = 0; y < side; y++)
+            for (int x = 0; x < side; x++)
+                if (shown.GetPixel(x, y) != hidden.GetPixel(x, y)) changed++;
+        Require(changed >= side * side / 10, $"The carried character must be composited on screen. Changed pixels: {changed}.");
+        Console.WriteLine($"Carry overlay changed {changed} pixels while the mouse remained held.");
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr handle, int command);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr window, IntPtr dc);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool BitBlt(IntPtr target, int x, int y, int width, int height,
+        IntPtr source, int sourceX, int sourceY, uint operation);
+
+    internal static void DesktopPetAutoplay()
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+        using var fixture = new AppearanceFixture();
+        fixture.Settings.DesktopPetDeskMode = false;
+        fixture.Settings.DesktopPetRandomActions = true;
+        foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka", "keqing" })
+        {
+            fixture.Settings.DesktopPetCharacter = character;
+            var pet = new DesktopPetWindow(fixture.Battery, fixture.Settings, new Random(107)) { IsHitTestVisible = false };
+            try
+            {
+                pet.Show();
+                long start = Environment.TickCount64;
+                var seen = new HashSet<string>();
+                if (character == "shin-chan")
+                {
+                    var frame = new DispatcherFrame();
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+                    timer.Tick += (_, _) =>
+                    {
+                        if (pet.NativeSample != null) seen.Add(pet.NativeSample.Mode);
+                        if (Environment.TickCount64 - start < 12500 && seen.All(mode => mode == "idle")) return;
+                        timer.Stop();
+                        frame.Continue = false;
+                    };
+                    timer.Start();
+                    Dispatcher.PushFrame(frame);
+                    Require(seen.Any(mode => mode != "idle"), "The real WPF timer drives native autoplay without input.");
+                    Require(Environment.TickCount64 - start >= 4500, "The desktop pet should wait before its first autonomous action.");
+                    start = Environment.TickCount64;
+                }
+                bool gesture = false;
+                for (long now = start; now < start + 180000; now += 50)
+                {
+                    pet.RenderPoseAt(now);
+                    seen.Add(pet.NativeSample.Mode);
+                    gesture |= pet.NativeSample.Gesture != null;
+                }
+                Require(seen.Contains("sit") && seen.Contains("sleep") && seen.Contains("air") &&
+                    (seen.Contains("walk") || seen.Contains("run")) && gesture,
+                    $"{character} should autonomously sit, sleep, jump, travel and gesture. Observed {string.Join(", ", seen)}.");
+            }
+            finally { pet.Close(); }
+        }
+    }
+
+    internal static void DesktopPetNativeActions()
+    {
+        const double scale = 176 / 256d;
+        var motion = new CoopanionMotion(new Random(413));
+        void Start() => motion.Reset(212, 215, 205, scale, 106, true);
+        CoopanionMotion.Sample Advance(double seconds = 1 / 60d) => motion.Advance(seconds, false, true, 1, true);
+        Start();
+        Require(motion.Pointer("down", 106, 112, 100), "The figure's head must accept the native pointer hit.");
+        motion.Pointer("up", 106, 112, 130);
+        Require(Advance().Pose != 0, "A poke must produce a native expression or hop preparation.");
+        Start();
+        Require(motion.Pointer("down", 106, 112, 200), "The figure accepts a grab.");
+        motion.Pointer("move", 118, 84, 230);
+        Require(Advance(.07).Mode == "drag", "Dragging picks the pet up by the scruff.");
+        motion.Pointer("move", 135, 65, 245);
+        motion.Pointer("up", 135, 65, 250);
+        Require(Advance().Mode == "air", "Releasing hands off to native throw physics.");
+        var landed = Advance();
+        for (int i = 0; i < 180 && landed.Carried; i++) landed = Advance();
+        Require(!landed.Carried && Math.Abs(landed.Y) < .001, "The released pet returns to the floor.");
+        void VerifyLanding(string release, double releaseY, string firstFace, int firstPose, double faceDuration)
+        {
+            Start();
+            Require(motion.Pointer("down", 106, 105, 100), "The figure accepts the pointer.");
+            motion.Pointer("move", 106, releaseY, 130);
+            CoopanionMotion.Sample Tick() => motion.Advance(1 / 60d, false, true, 1, true, .5);
+            CoopanionMotion.Sample frame = Tick();
+            for (int i = 0; i < 15; i++) frame = Tick();
+            Require(frame is { Mode: "drag", Face: "dragged", Pose: 3, Width: < 1, Height: > 1 },
+                "Coopanion supplies the held pose, scruff stretch and dragged expression.");
+            Require(frame.Sprites.Select(sprite => sprite.Name).SequenceEqual(["drag_eyeL", "drag_eyeR", "drag_mouth"]),
+                "The native whale face module supplies the held eyes and mouth.");
+            motion.Pointer("move", 106, releaseY, 500);
+            motion.Pointer("move", 106, releaseY, 510);
+            motion.Pointer(release, 106, releaseY, 520);
+            frame = Tick();
+            Require(frame is { Mode: "air", Carried: true, Face: "surprised", Pose: 10 },
+                "The release preserves native flight and the airborne expression.");
+            for (int i = 0; i < 180 && frame.Carried; i++) frame = Tick();
+            Require(frame.NativeReaction && frame.Face == firstFace && frame.Pose == firstPose &&
+                frame.Dust.Length > 0 && frame.Dust.All(particle => Math.Abs(particle.Y) < 45),
+                $"Expected the native {firstFace} pose and impact particles at the floor, got {frame.Mode}/{frame.Face}.");
+            double contact = frame.Time - frame.ModeTime;
+            if (firstFace != "dizzy")
+            {
+                while (frame.Mode == "land" && frame.ModeTime < .5) frame = Tick();
+                Require(frame is { Mode: "idle" } && frame.Face == firstFace,
+                    "Landing settles after roughly 0.4 seconds while the native expression continues.");
+            }
+            for (int i = 0; i < 210 && frame.Face == firstFace; i++) frame = Tick();
+            double elapsed = frame.Time - contact;
+            Require(Math.Abs(elapsed - faceDuration) < .07,
+                $"Expected the native {firstFace} duration of {faceDuration}s, got {elapsed:F3}s.");
+            if (firstFace == "dizzy")
+            {
+                Require(frame is { Face: "squeeze", Pose: 5, Mode: "dizzy" }, "Recovery starts seated with eyes closed.");
+                bool stoodUp = false, shook = false;
+                for (int i = 0; i < 50 && frame.Mode == "dizzy"; i++)
+                {
+                    frame = Tick();
+                    stoodUp |= frame is { Face: "squeeze", Pose: 1, Mode: "dizzy" };
+                    shook |= Math.Abs(frame.Angle) > 2;
+                    if (frame is { Pose: 1, Mode: "dizzy" })
+                        Require(frame.ModeTime >= 2.6, "The pet stays seated until the kit starts rising.");
+                }
+                Require(stoodUp && shook && frame.Pose == 0, "The pet shakes and rises before returning to its standing idle pose.");
+                Require(Math.Abs(frame.Time - contact - 3) < .07 && !frame.NativeReaction,
+                    "The hard landing recovery ends at the native three-second mark.");
+            }
+        }
+        VerifyLanding("up", 20, "surprised", 10, .9);
+        VerifyLanding("drop", 20, "happy", 2, 1.6);
+        VerifyLanding("up", -550, "dizzy", 4, 2.4);
+        Start();
+        motion.Act("dizzy");
+        var dizzy = Advance();
+        Require(dizzy.Sprites.Select(sprite => sprite.Name).SequenceEqual(["dizzy_eyeL", "dizzy_eyeR", "dizzy_mouth"]),
+            "The native whale face module supplies both spiral eyes and the dizzy mouth.");
+        Require(Advance(.05).Sprites[0].Angle != dizzy.Sprites[0].Angle, "The spiral orientation follows the native clock.");
+        var rigFrames = Enumerable.Range(0, 75).Select(_ => Advance().Rig).ToArray();
+        Require(rigFrames.All(rig => double.IsFinite(rig.Neck) && double.IsFinite(rig.ArmNear) &&
+            double.IsFinite(rig.ArmFar) && double.IsFinite(rig.Tail) && double.IsFinite(rig.Waist)),
+            "The original figure must execute its head, arms, tail and waist deformers.");
+        Require(rigFrames.Max(rig => rig.Neck) - rigFrames.Min(rig => rig.Neck) > 2 &&
+            rigFrames.Max(rig => rig.ArmNear) - rigFrames.Min(rig => rig.ArmNear) > 1,
+            "The original model advances both its neck and arm springs.");
+        foreach (string skin in new[] { "shin-chan", "keqing", "rikka", "xin-yue-hu" })
+        {
+            var scene = new FreePetScene();
+            scene.SetSkin(skin);
+            scene.Show(FreePetScene.Pose.Sit, 1, 0, false);
+            scene.Measure(new Size(scene.Width, scene.Height));
+            scene.Arrange(new Rect(0, 0, scene.Width, scene.Height));
+            byte[] FacePixels(CoopanionMotion.FaceSprite[]? sprites, CoopanionMotion.RigFrame? rig = null)
+            {
+                scene.SetReaction(dizzy.Face, dizzy.Time, sprites, rig);
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Render);
+                var bitmap = new RenderTargetBitmap((int)scene.Width, (int)scene.Height, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(scene);
+                var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+                bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+                return pixels;
+            }
+            Require(!FacePixels(null).SequenceEqual(FacePixels(dizzy.Sprites)),
+                $"The eyes and mouth for {skin} must visually change independently of the orbiting stars.");
+            var left = rigFrames.MinBy(rig => rig.Neck)!;
+            var right = rigFrames.MaxBy(rig => rig.Neck)!;
+            Require(!FacePixels(dizzy.Sprites, left).SequenceEqual(FacePixels(dizzy.Sprites, right)),
+                $"The original neck spring must move the rendered head for {skin}.");
+
+            var neutral = new CoopanionMotion.RigFrame(0, 0, 4, -2, 0, 0, 0, 0, 0);
+            byte[] RigPixels(CoopanionMotion.RigFrame rig, int variant, CoopanionMotion.FaceSprite[]? sprites = null)
+            {
+                scene.SetReaction(sprites == null ? null : "dragged", 0, sprites, rig, useLayers: true);
+                scene.Show(FreePetScene.Pose.Stand, 1, 0, false);
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Render);
+                var bitmap = new RenderTargetBitmap((int)scene.Width, (int)scene.Height, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(scene);
+                if (Environment.GetEnvironmentVariable("MOUSEDOCK_RIG_PREVIEW_DIR") is { Length: > 0 } directory)
+                {
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using var stream = File.Create(Path.Combine(directory, $"{skin}-{variant}.png"));
+                    encoder.Save(stream);
+                }
+                var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+                bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+                return pixels;
+            }
+            var baseline = RigPixels(neutral, 0);
+            if (skin == "shin-chan")
+            {
+                var held = RigPixels(neutral, 4, [new("drag_eyeL", 0, 1), new("drag_eyeR", 0, 1), new("drag_mouth", 0, 1)]);
+                bool IsGold(byte[] pixels, int x, int y)
+                {
+                    int index = ((int)(y * scene.Height / 220) * (int)scene.Width + (int)(x * scene.Width / 220)) * 4;
+                    return pixels[index + 2] > 200 && pixels[index + 1] > 145;
+                }
+                Require(!IsGold(baseline, 90, 85) && IsGold(held, 90, 85) &&
+                    !IsGold(baseline, 110, 83) && IsGold(held, 110, 83),
+                    "Shin-chan's original pupils must be covered on both sides while he is held.");
+            }
+            Require(baseline.Where((_, index) => index % 4 == 3).Count(alpha => alpha > 128) > 2000,
+                $"The assembled rig for {skin} must render the character silhouette.");
+            Require(!baseline.SequenceEqual(RigPixels(neutral with { ArmNear = 65 }, 1)) &&
+                !baseline.SequenceEqual(RigPixels(neutral with { LegBack = 18, LegFront = -18 }, 2)) &&
+                !baseline.SequenceEqual(RigPixels(neutral with { SkirtX = 7, SkirtY = -4 }, 3)),
+                $"Arm, leg and hem channels must independently move rendered layers for {skin}.");
+        }
+        foreach (var (word, expected) in new[] { ("nod", "nod"), ("shake", "shake"), ("wave", "wave"),
+            ("bow", "bow"), ("spin", "spin"), ("shiver", "shiver"), ("flap", "flap") })
+        {
+            Start();
+            motion.Act(word);
+            Require(Advance().Gesture == expected, $"The built-in {word} gesture must reach the sprite renderer.");
+        }
+        foreach (var (word, expected) in new[] { ("sit", "sit"), ("sleep", "sleep"), ("dance", "dance"), ("look", "look"),
+            ("dizzy", "dizzy"), ("jump", "crouch"), ("hop", "crouch") })
+        {
+            Start();
+            motion.Act(word);
+            Require(Advance().Mode == expected, $"The built-in {word} mode must reach the sprite renderer.");
+        }
+    }
+
     internal static void DesktopPetHeaderExpressions()
     {
         if (!SystemParameters.ClientAreaAnimation) return;
         using var fixture = new AppearanceFixture();
-        fixture.Settings.DesktopPetInputReaction = true;
+        fixture.Settings.DesktopPetDeskMode = true;
         foreach (string character in new[] { "shin-chan", "xin-yue-hu", "rikka", "keqing" })
         {
             fixture.Settings.DesktopPetCharacter = character;
@@ -139,7 +516,7 @@ internal static class AuditChecks
         try
         {
             pet.Show();
-            var transform = (ScaleTransform)((FrameworkElement)pet.Content).LayoutTransform;
+            var transform = (ScaleTransform)((FrameworkElement)((Panel)pet.Content).Children[0]).LayoutTransform;
             Require(transform.ScaleX == 1 && transform.ScaleY == 1, "The desktop pet must default to 100%.");
             void Scroll(int delta) => pet.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
             {
@@ -281,7 +658,8 @@ internal static class AuditChecks
         var sections = menu.Items.Cast<object>().Select(item => item is MenuItem command ? (string)command.Header : "|");
         Require(sections.SequenceEqual(new[] {
             "桌宠角色", "显示设备", "桌宠大小", "|",
-            "锁定位置", "减少动态效果", "键鼠动作联动", "满电提醒（全局）", "|", "设置…", "隐藏桌宠"
+            "锁定位置", "减少动态效果", "键鼠动作联动", "满电提醒（全局）", "|",
+            "刷新设备", "切换输入设备", "切换输出设备", "|", "设置…", "隐藏桌宠"
         }), $"{character} must expose only the condensed, grouped desktop-pet commands.");
         var characters = (MenuItem)menu.Items[0];
         Require(characters.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1,

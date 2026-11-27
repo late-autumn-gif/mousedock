@@ -15,6 +15,10 @@ namespace MouseDock.Controls
         public DeviceBatteryRing Ring { get; }
 
         public DeviceBatteryBadge(DeviceInfo device, Brush foreground, bool showNumber, bool vertical, int lowThreshold, bool compact = false)
+            : this(device, foreground, showNumber, vertical, lowThreshold, compact, continuousRing: false) { }
+
+        internal DeviceBatteryBadge(DeviceInfo device, Brush foreground, bool showNumber, bool vertical,
+            int lowThreshold, bool compact, bool continuousRing)
         {
             DataContext = device;
             Background = Brushes.Transparent;
@@ -28,7 +32,7 @@ namespace MouseDock.Controls
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(showNumber && !below ? 32 : 0) });
 
             Ring = new DeviceBatteryRing { GlyphBrush = foreground, LowBatteryThreshold = lowThreshold,
-                HorizontalAlignment=HorizontalAlignment.Center };
+                ContinuousRing = continuousRing, HorizontalAlignment = HorizontalAlignment.Center };
             Ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)) { Source = device });
             Ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)) { Source = device });
             // 只认「已连接且不是缓存值」的充电状态，断线时别让动画一直转。

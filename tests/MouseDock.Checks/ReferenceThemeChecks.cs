@@ -26,14 +26,14 @@ internal static class ReferenceThemeChecks
             Require(ThemePreset.Presets.Any(p => p.Id == id), $"Reference theme {id} is missing.");
             foreach (bool light in new[] { false, true })
             {
-                var settings = JsonSerializer.Deserialize<AppSettings>(
-                    $$"""{"ThemeId":"{{id}}","ThemeMode":"{{(light ? "light" : "dark")}}"}""")!;
-                var theme = Palette.ResolveTheme(settings, out _);
+                var theme = ReferenceThemes.Resolve(id, light ? "light" : "dark");
                 Require(theme.IsLight == light && theme.BgTop == ThemePreset.C(light ? lightBg : darkBg) &&
                     theme.Accent == ThemePreset.C(light ? lightAccent : darkAccent), $"{id} lost its reference palette.");
                 Require(theme.Text != theme.BgTop && theme.TextDim != theme.Surface, "Theme text became invisible.");
             }
         }
+        var legacy = JsonSerializer.Deserialize<AppSettings>("""{"ThemeId":"amber","ThemeMode":"light"}""")!;
+        Require(!Palette.ResolveTheme(legacy).IsLight, "Old brightness override changed the chosen preset.");
         Require(ThemePreset.ById("mint").Accent == ThemePreset.C("#7FE7C4"), "Legacy mint changed.");
         Require(ReferenceThemes.Resolve("amber", "light").TextDim == ThemePreset.C("#503F30"),
             "Amber secondary text differs from the original light palette.");
@@ -50,8 +50,8 @@ internal static class ReferenceThemeChecks
         foreach (var pair in new[] { ("BackgroundZoom", 2.25), ("BackgroundPositionX", .2), ("BackgroundPositionY", .8), ("BackgroundDepth", .65) })
             Require(clone.RootElement.TryGetProperty(pair.Item1, out var value) && value.GetDouble() == pair.Item2,
                 $"Clone or serialization lost {pair.Item1}.");
-        Require(clone.RootElement.GetProperty("ThemeMode").GetString() == "light" &&
-            settings.Clone().SelectedDeviceIds.SequenceEqual(new[] { "r98" }) && settings.Clone().DockBackground == "own.png",
+        Require(settings.Clone().SelectedDeviceIds.SequenceEqual(new[] { "r98" }) &&
+            settings.Clone().DockBackground == "own.png",
             "Appearance cloning altered existing preferences.");
     }
 
@@ -123,32 +123,49 @@ internal static class ReferenceThemeChecks
         {
             foreach (var property in properties) property.SetValue(null, null);
             properties[0].SetValue(null, settings);
-            properties[1].SetValue(null, Palette.ResolveTheme(settings, out _));
+            properties[1].SetValue(null, Palette.ResolveTheme(settings));
             properties[2].SetValue(null, battery);
             directory.SetValue(null, Path.GetFullPath("artifacts/reference-theme-checks/settings"));
             window = new MouseDock.Views.SettingsWindow();
             window.Reload();
             Require(window.FindName("EditBackgroundButton") is Button, "Settings have no picture editor action.");
-            Require(window.FindName("ThemeLight") is RadioButton, "Settings have no light/dark selection.");
-            ((RadioButton)window.FindName("ThemeLight")).IsChecked = true;
-            Require(settings.ThemeMode == "light" && MouseDock.App.Theme.Accent == ThemePreset.C("#247783"),
-                "Changing mode did not apply the reference light palette.");
+            Require(window.FindName("ThemeLight") == null, "Separate light/dark selection is still present.");
             ThemeWheel(window, settings);
             settings.CustomBackground = Directory.GetFiles(Path.GetFullPath("artifacts/reference-theme-checks"), "*.png").First();
+            var before = MouseDock.App.Theme;
+            MouseDock.App.RefreshTheme();
             window.Reload();
-            Require(((Border)window.FindName("Root")).Background is DrawingBrush, "Global picture did not reach settings.");
+            Require(((Border)window.FindName("Root")).Background is DrawingBrush, "Settings picture did not reach settings.");
+            Require(before.Accent == MouseDock.App.Theme.Accent && before.BgTop == MouseDock.App.Theme.BgTop,
+                "The settings picture changed the theme palette.");
+            var dock = new MouseDock.Views.DockWindow();
+            try
+            {
+                dock.ApplyBackground("");
+                Require(((Border)dock.FindName("Root")).Background is LinearGradientBrush, "Settings picture leaked to the main card.");
+            }
+            finally { dock.Close(); }
             mini = new MouseDock.Views.MiniWindow();
             mini.ApplyBackground("");
             var root = (Border)mini.FindName("Root");
-            Require(root.Background is DrawingBrush, "Global picture did not reach the mini view.");
+            Require(root.Background is LinearGradientBrush, "Settings picture leaked to the mini view.");
             mini.ApplyBackground(settings.CustomBackground);
             root.Measure(new Size(200, 200));
             root.Arrange(new Rect(0, 0, 200, 200));
             root.UpdateLayout();
             Require(root.Background is ImageBrush, "Resizing overwrote the mini view's own picture.");
-            settings.CustomBackground = "missing-image.png";
+            var themeList = (ListBox)window.FindName("ThemeList");
+            string selectedPicture = settings.CustomBackground;
+            themeList.SelectedItem = themeList.Items.Cast<MouseDock.Views.SettingsWindow.ThemeRow>().Single(row => row.Id == "amber");
+            Require(settings.CustomBackground == selectedPicture && ((Border)window.FindName("Root")).Background is DrawingBrush,
+                "Changing a theme cleared the settings picture.");
+            settings.DockBackground = "independent.png";
+            var clear = typeof(MouseDock.Views.SettingsWindow).GetMethod("OnClearBackground", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            clear.Invoke(window, [window, new RoutedEventArgs()]);
+            Require(settings.DockBackground == "independent.png" && ((Border)window.FindName("Root")).Background is LinearGradientBrush,
+                "Clearing the settings picture modified the main panel's own picture.");
             mini.ApplyBackground("");
-            Require(root.Background is LinearGradientBrush, "Missing global picture did not restore the theme.");
+            Require(root.Background is LinearGradientBrush, "Clearing the independent mini picture did not restore the theme.");
         }
         finally
         {

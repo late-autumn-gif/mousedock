@@ -11,7 +11,7 @@ internal static class AppearanceColorChecks
             {"ThemeId":"ocean","ThemeColors":{"accent":"#DD3377","text":"#FFEEDD"},
              "IconColors":{"accent":"#33AAEE"},"TrayColors":{"accent":"#CCAA22"}}
             """)!;
-        var theme = Palette.ResolveTheme(settings, out _);
+        var theme = Palette.ResolveTheme(settings);
         Require(theme.Accent == ThemePreset.C("#DD3377") && theme.Text == ThemePreset.C("#FFEEDD"),
             "Ordinary theme ignores its custom colors.");
         Require(ThemePreset.ById("ocean").Accent == ThemePreset.C("#7BC9D3"),
@@ -28,8 +28,8 @@ internal static class AppearanceColorChecks
             "Cloning lost the floating palette.");
         var dict = (Dictionary<string, string>)typeof(AppSettings).GetProperty("ThemeColors")!.GetValue(clone)!;
         dict.Clear();
-        Require(Palette.ResolveTheme(clone, out _).Accent == ThemePreset.C("#7BC9D3") &&
-            Palette.ResolveTheme(settings, out _).Accent == ThemePreset.C("#DD3377"),
+        Require(Palette.ResolveTheme(clone).Accent == ThemePreset.C("#7BC9D3") &&
+            Palette.ResolveTheme(settings).Accent == ThemePreset.C("#DD3377"),
             "Resetting a draft modified the original settings or failed to restore the theme.");
     }
 
@@ -48,17 +48,17 @@ internal static class AppearanceColorChecks
         {
             var settings = new AppSettings { ThemeColors = new()
                 { ["background"] = hex, ["surface"] = hex, ["text"] = hex, ["muted"] = hex, ["accent"] = hex } };
-            var theme = Palette.ResolveTheme(settings, out _);
+            var theme = Palette.ResolveTheme(settings);
             Require(Ratio(theme.Text, theme.Surface) >= 4.5 && Ratio(theme.TextDim, theme.Surface) >= 3 &&
                 Ratio(theme.Accent, theme.Surface) >= 3, "Custom colors remain unreadable against their surface.");
             var saved = JsonSerializer.Serialize(settings.ThemeColors);
             Require(saved.Contains(hex), "Contrast correction overwrote the user's input.");
         }
         var readable = JsonSerializer.Deserialize<AppSettings>("""{"ThemeColors":{"background":"#000000","surface":"#000000","text":"#FFFFFF"}}""")!;
-        Require(Palette.ResolveTheme(readable, out _).Text == Colors.White, "Already readable text changed.");
+        Require(Palette.ResolveTheme(readable).Text == Colors.White, "Already readable text changed.");
         var mixed = new AppSettings { ThemeColors = new()
             { ["background"] = "#000000", ["surface"] = "#FFFFFF", ["text"] = "#000000" } };
-        var mixedTheme = Palette.ResolveTheme(mixed, out _);
+        var mixedTheme = Palette.ResolveTheme(mixed);
         Require(Ratio(mixedTheme.Text, mixedTheme.BgTop) >= 4.5 && Ratio(mixedTheme.Text, mixedTheme.Surface) >= 4.5,
             "Opposite light and dark surfaces incorrectly force white or black text.");
     }

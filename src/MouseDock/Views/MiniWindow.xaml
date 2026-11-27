@@ -43,7 +43,7 @@
                                             <MultiBinding.Converter><v:PercentageWarningConverter /></MultiBinding.Converter>
                                             <Binding Path="Level" />
                                             <Binding Path="LowBatteryThreshold" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                            <Binding Path="Foreground" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                            <Binding Path="BatteryBrush" RelativeSource="{RelativeSource AncestorType=Window}" />
                                             <Binding Path="IsChargingActive" />
                                             <Binding Path="IsFullActive" />
                                         </MultiBinding>

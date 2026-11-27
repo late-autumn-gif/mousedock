@@ -23,19 +23,21 @@ internal static class LightUiChecks
             window.Width = width; window.UpdateLayout();
             Require(Descendants<System.Windows.Controls.Primitives.UniformGrid>(list).Any(grid => grid.Columns == 2), "Theme choices must use a two-column grid.");
             Require(list.Items.Count == ThemePreset.Presets.Length, "Appearance layout lost existing theme choices.");
-            var label = (RadioButton)window.FindName("ThemeDark");
-            Require(label.Foreground is System.Windows.Media.SolidColorBrush brush && brush.Color == ((System.Windows.Media.SolidColorBrush)window.Resources["TextBrush"]).Color, "Mode labels lost readable theme foreground.");
+            var row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(list.SelectedItem);
+            Require(row.Foreground is System.Windows.Media.SolidColorBrush brush &&
+                brush.Color == ((System.Windows.Media.SolidColorBrush)window.Resources["TextBrush"]).Color,
+                "Theme labels lost readable theme foreground.");
         }
-        ((RadioButton)window.FindName("ThemeDark")).IsChecked = true;
-        Require(fixture.Settings.ThemeMode == "dark", "Dark mode no longer reaches real preferences.");
-        ((RadioButton)window.FindName("ThemeLight")).IsChecked = true;
-        Require(fixture.Settings.ThemeMode == "light", "Light mode no longer reaches real preferences.");
+        Require(window.FindName("ThemeDark") == null && window.FindName("ThemeLight") == null,
+            "The appearance page still contains separate brightness modes.");
         list.SelectedItem = list.Items.Cast<SettingsWindow.ThemeRow>().Single(row => row.Id == "rose");
         Require(fixture.Settings.ThemeId == "rose" && ((TextBlock)window.FindName("CurrentThemeText")).Text.Contains("雾樱粉"), "Theme selection and its saved caption disagree.");
         Require(File.Exists(SettingsStore.FilePath) && window.FindName("EditBackgroundButton") is Button, "Appearance persistence or picture editing action was removed.");
+        Require(MouseDock.App.Theme.IsLight, "Choosing a light preset did not apply its own brightness.");
         foreach (string mode in new[] { "light", "dark" })
         {
-            ((RadioButton)window.FindName(mode == "light" ? "ThemeLight" : "ThemeDark")).IsChecked = true;
+            string themeId = mode == "light" ? "rose" : "amber";
+            list.SelectedItem = list.Items.Cast<SettingsWindow.ThemeRow>().Single(row => row.Id == themeId);
             window.Width = 760; window.UpdateLayout();
             window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
             var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth), (int)Math.Ceiling(root.ActualHeight), 96, 96, System.Windows.Media.PixelFormats.Pbgra32);

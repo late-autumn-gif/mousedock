@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using MouseDock.Models;
 using MouseDock.Services;
 
@@ -50,11 +49,7 @@ namespace MouseDock.Controls
         }
         internal static ContextMenu CreateMenu(DeviceInfo device, BatteryService battery)
         {
-            var menu = new ContextMenu
-            {
-                Background = new SolidColorBrush(App.Theme.BgTop),
-                Foreground = new SolidColorBrush(App.Theme.Text)
-            };
+            var menu = App.CreateThemedMenu(null);
             menu.Items.Add(new MenuItem { Header = device.Name, IsEnabled = false });
             menu.Items.Add(new Separator());
             if (App.SupportsDpi(device))
@@ -77,6 +72,8 @@ namespace MouseDock.Controls
             var retry = new MenuItem { Header = "重新识别", ToolTip = "重新查询并恢复显示；等待期间保留旧电量并标记待刷新" };
             retry.Click += (_, __) => battery.Reidentify(device);
             menu.Items.Add(cancel); menu.Items.Add(hide); menu.Items.Add(retry);
+            menu.Items.Add(new Separator());
+            App.AddDeviceMenuActions(menu.Items, null);
             return menu;
         }
     }

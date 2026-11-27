@@ -5,15 +5,17 @@ namespace MouseDock.Services;
 internal sealed class DesktopPetBehavior(Random random)
 {
     internal enum State { Idle, MicroAction, RandomAction, Interaction, Moving, Sleep, WakeUp, Transition }
-    internal enum Gesture { Lean, Hop, Dizzy }
-    internal readonly record struct Sample(State State, double Tilt = 0, double Lift = 0, bool Dizzy = false, bool Blink = false);
+    internal enum Gesture { Lean, Hop, Dizzy, Wave, Look }
+    internal readonly record struct Sample(State State, double Tilt = 0, double Lift = 0, bool Dizzy = false, bool Blink = false, bool Wink = false, Gesture? Animation = null);
     internal const int DizzyDuration = 1600;
     private sealed record Action(Gesture Kind, int Weight, int Duration, int Cooldown);
     private static readonly Action[] Actions =
     [
         new(Gesture.Lean, 6, 1450, 18000),
         new(Gesture.Hop, 2, 780, 30000),
-        new(Gesture.Dizzy, 2, DizzyDuration, 90000)
+        new(Gesture.Dizzy, 2, DizzyDuration, 90000),
+        new(Gesture.Wave, 3, 1400, 23000),
+        new(Gesture.Look, 4, 1550, 18000)
     ];
 
     private readonly long[] _readyAt = new long[Actions.Length];
@@ -21,6 +23,7 @@ internal sealed class DesktopPetBehavior(Random random)
     private long _nextAction;
     private long _nextBlink;
     private long _extraBlink;
+    private bool _wink;
     private long _flightEnded = -1;
     private long _wakeAt = -1;
     private long _started;
@@ -38,7 +41,7 @@ internal sealed class DesktopPetBehavior(Random random)
     internal void Land(long now) => _flightEnded = now;
 
     internal Sample Update(long now, bool pointer, bool moving, bool blocked, bool autonomous,
-        bool rest, bool blink, int speedPercent, int frequencyPercent)
+        bool rest, bool blink, int speedPercent, int frequencyPercent, int restAfter = 240000, int restLength = int.MaxValue)
     {
         double speed = Math.Clamp(speedPercent, 50, 150) / 100d;
         double frequency = Math.Clamp(frequencyPercent, 50, 150) / 100d;
@@ -54,7 +57,7 @@ internal sealed class DesktopPetBehavior(Random random)
         }
         if (pointer)
         {
-            if (_idleAt >= 0 && rest && now - _idleAt >= 240000) _wakeAt = now;
+            if (_idleAt >= 0 && rest && now - _idleAt >= restAfter) _wakeAt = now;
             _idleAt = -1;
             _active = -1;
             _extraBlink = _blinkUntil = 0;
@@ -74,10 +77,13 @@ internal sealed class DesktopPetBehavior(Random random)
             _nextAction = now + Delay(frequency);
             _nextBlink = now + random.Next(2900, 6600);
         }
-        if (rest && now - _idleAt >= 240000)
+        if (rest && now - _idleAt >= restAfter)
         {
             _active = -1;
-            return new(State.Sleep);
+            if (now - _idleAt - restAfter < restLength) return new(State.Sleep);
+            _idleAt = -1;
+            _wakeAt = now;
+            return new(State.WakeUp, Lift: -2);
         }
 
         if (!autonomous) _active = -1;
@@ -91,7 +97,9 @@ internal sealed class DesktopPetBehavior(Random random)
                 return action.Kind switch
                 {
                     Gesture.Lean => new(State.RandomAction, _direction * 4 * easing),
-                    Gesture.Hop => new(State.RandomAction, Lift: -6 * easing),
+                    Gesture.Hop => new(State.RandomAction, Lift: -6 * easing, Animation: Gesture.Hop),
+                    Gesture.Wave => new(State.RandomAction, 4 * Math.Sin(t * Math.Tau * 2) * easing, Animation: Gesture.Wave),
+                    Gesture.Look => new(State.RandomAction, 4 * Math.Sin(t * Math.Tau) * easing, Animation: Gesture.Look),
                     _ => new(State.RandomAction, DizzyTilt(t) * _direction, Dizzy: true)
                 };
             }
@@ -122,12 +130,14 @@ internal sealed class DesktopPetBehavior(Random random)
         if (blink && now >= _nextBlink)
         {
             _blinkUntil = now + 140;
-            _extraBlink = random.Next(6) == 0 ? now + 235 : 0;
+            int pattern = random.Next(12);
+            _wink = pattern == 2;
+            _extraBlink = pattern < 2 ? now + 235 : 0;
             _nextBlink = now + random.Next(3100, 7900);
         }
         bool blinking = blink && (now < _blinkUntil ||
             (_extraBlink > 0 && now >= _extraBlink && now < _extraBlink + 140));
-        return new(blinking ? State.MicroAction : State.Idle, Blink: blinking);
+        return new(blinking ? State.MicroAction : State.Idle, Blink: blinking && !_wink, Wink: blinking && _wink);
     }
 
     private long _blinkUntil;

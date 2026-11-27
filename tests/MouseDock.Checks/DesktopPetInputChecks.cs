@@ -17,6 +17,7 @@ internal static class DesktopPetInputChecks
     internal static void RunLive()
     {
         using var fixture = new AppearanceFixture();
+        fixture.Settings.DesktopPetDeskMode = true;
         fixture.Settings.DesktopPetBlink = fixture.Settings.DesktopPetRest = fixture.Settings.DesktopPetRandomActions = false;
         var pet = new DesktopPetWindow(fixture.Battery, fixture.Settings);
         var target = new Window { Title = "MouseDock input check", Width = 180, Height = 140,
@@ -135,13 +136,16 @@ internal static class DesktopPetInputChecks
             const string linkage = "键鼠动作联动";
             const string motion = "减少动态效果";
 
-            Require(Toggle(linkage).IsChecked, "New settings must enable linkage on first show.");
+            var free = (FreePetScene)type.GetField("_free", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            var scene = (BongoPetScene)type.GetField("_bongo", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+            Require(!Toggle(linkage).IsChecked && free.IsVisible && !scene.IsVisible && Usages(window).Length == 0,
+                "New settings must show a free pet and leave background input disabled.");
             Click(linkage);
-            Require(!SettingsStore.Load().DesktopPetInputReaction && Usages(window).Length == 0, "Opt-out must persist and release input.");
-            Click(linkage);
-            Require(Toggle(linkage).IsChecked, "Pet menu must reflect re-enabled linkage.");
+            pet.UpdateLayout();
+            Require(Toggle(linkage).IsChecked && !free.IsVisible && scene.IsVisible,
+                "Enabling linkage must switch to the desk pose.");
 
-            Require(SettingsStore.Load().DesktopPetInputReaction && fixture.Settings.Clone().DesktopPetInputReaction,
+            Require(SettingsStore.Load().DesktopPetDeskMode && fixture.Settings.Clone().DesktopPetDeskMode,
                 "The preference must survive save and cloning.");
 
             Require(DesktopPetRawInput.Classify(1, 0) == DesktopPetInputActivity.Keyboard &&
@@ -160,7 +164,6 @@ internal static class DesktopPetInputChecks
 
             Require(Usages(window).SequenceEqual(new ushort[] { 2, 6 }), "The shown pet must receive background keyboard and mouse input.");
 
-            var scene = (BongoPetScene)type.GetField("_bongo", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
             Require(scene.ActualWidth == 176 && scene.ActualHeight == 176,
                 "The default pet should fit a compact square beside the battery card.");
             scene.SetButtons(true, false);
@@ -199,7 +202,8 @@ internal static class DesktopPetInputChecks
             Require(Usages(window).Length == 0 && scene.PoseIndex(false, start + 360) == 0, "Reduced motion must clear registration and block input responses.");
             Click(motion);
             Click(linkage);
-            Require(Usages(window).Length == 0 && !Toggle(linkage).IsChecked, "Turning linkage off must unregister input.");
+            Require(Usages(window).Length == 0 && !Toggle(linkage).IsChecked && free.IsVisible && !scene.IsVisible &&
+                !SettingsStore.Load().DesktopPetDeskMode, "Turning linkage off must restore the free pet and unregister input.");
             Click(linkage);
             Require(Usages(window).Length == 2, "Re-enabling linkage must register input again.");
         }

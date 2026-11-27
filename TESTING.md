@@ -71,10 +71,17 @@ $env:DOTNET_ROOT='C:\Program Files\dotnet\dotnet-sdk'
 ### 桌宠回归
 
 ```powershell
-& "$env:DOTNET_ROOT\dotnet.exe" run --project tests\MouseDock.Checks -c Release -- --filter "Desktop pet"
+dotnet run --project tests\MouseDock.Checks -c Release -- --pet-menu
+dotnet run --project tests\MouseDock.Checks -c Release -- --pet-autoplay
+dotnet run --project tests\MouseDock.Checks -c Release -- --pet-actions
+dotnet run --project tests\MouseDock.Checks -c Release -- --pet-roam
 ```
 
-检查原有三个角色和刻晴的图集、电量跟随和满电状态。刻晴用菜单触发战技和爆发，验证首尾帧、结束后恢复充电姿势及减少动态效果。测试使用模拟电量设备。
+检查四个角色的图集和自主动作、原版动作引擎的点击与拖放、拎出活动区域后的落地、2 像素间距、固定电量框及简化后的菜单。完整回归还验证键鼠联动与电量展示。测试使用模拟电量设备。
+
+在交互式 Windows 桌面上运行时，可设置 `MOUSEDOCK_VERIFY_CARRY_PIXELS=1` 再执行 `--pet-roam`。检查会比较拖起角色时桌面的合成像素，捕获的局部画面仅在内存中比较。
+
+`--pet-actions` 在自主动画速度为 50% 时检查原版交互时钟和帧映射，包括被拎起与飞行表情、普通松手的惊讶、取消拖动轻放的开心、重摔的眩晕与闭眼回神，以及落地尘圈的位置。
 
 ## 真机诊断
 

@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -21,9 +20,13 @@ namespace MouseDock.Views
 
         public Brush GlyphBrush { get => (Brush)GetValue(GlyphBrushProperty); set => SetValue(GlyphBrushProperty, value); }
 
+        public static readonly DependencyProperty BatteryBrushProperty = DependencyProperty.Register(
+            nameof(BatteryBrush), typeof(Brush), typeof(MiniWindow), new PropertyMetadata(Brushes.White));
+
+        public Brush BatteryBrush { get => (Brush)GetValue(BatteryBrushProperty); private set => SetValue(BatteryBrushProperty, value); }
+
         private readonly List<DeviceInfo> _visible = new List<DeviceInfo>();
         private readonly Brush _themeBackground;
-        private string _backgroundPath = "";
 
         public MiniWindow()
         {
@@ -72,22 +75,21 @@ namespace MouseDock.Views
         }
 
         /// <summary>设置窗口背景图；空路径回到预设外观。</summary>
-        public void ApplyBackground(string path)
+        public void ApplyBackground(string path) => PaintBackground(path);
+
+        internal void RefreshBackground()
         {
-            _backgroundPath = path;
+            var settings = App.Settings;
+            bool follow = settings.FollowsMiniThemeBackground;
+            bool solid = TryMiniColor("background", out _);
+            PaintBackground(follow || solid ? "" : settings.MiniBackground);
+        }
+
+        private void PaintBackground(string path)
+        {
             ApplyTheme(App.Theme, false);
             var bmp = PictureBackground.Apply(Root, path, _themeBackground, App.Settings, App.Theme, DecodeWidthForWindow());
-            if (bmp != null && !string.IsNullOrWhiteSpace(path))
-            {
-                ApplyContrastFor(AverageBrightness(bmp));
-                return;
-            }
-            if (Palette.TryExtractAccent(App.Settings.CustomBackground, out _, out double luma))
-            {
-                double depth = PictureBackground.Clamp(App.Settings.BackgroundDepth, 0, .8, .35);
-                double themeLuma = (.2126 * App.Theme.BgTop.R + .7152 * App.Theme.BgTop.G + .0722 * App.Theme.BgTop.B) / 255;
-                ApplyContrastFor(luma * (1 - depth) + themeLuma * depth);
-            }
+            if (bmp != null) ApplyContrastFor(AverageBrightness(bmp));
         }
 
         /// <summary>按窗口实际像素宽解码，避免原图在解码阶段就被压掉细节。</summary>
@@ -127,13 +129,26 @@ namespace MouseDock.Views
         private void ApplyContrastFor(double brightness)
         {
             bool light = brightness > 0.55;
-            var text = light ? new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x22))
-                             : new SolidColorBrush(Color.FromRgb(0xF5, 0xF7, 0xFA));
-            TextElement.SetForeground(Root, text);
-            GlyphBrush = light ? new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x46))
-                               : new SolidColorBrush(Color.FromRgb(0xE6, 0xEA, 0xF2));
+            var text = light ? Color.FromRgb(0x1A, 0x1A, 0x22) : Color.FromRgb(0xF5, 0xF7, 0xFA);
+            ApplyForeground(text, text, light);
+        }
+
+        private static bool TryMiniColor(string key, out Color color)
+        {
+            color = default;
+            return App.Settings.MiniColors?.TryGetValue(key, out string value) == true &&
+                AppearanceColors.TryColor(value, out color);
+        }
+
+        private void ApplyForeground(Color text, Color glyph, bool light)
+        {
+            if (TryMiniColor("text", out var customText)) text = glyph = customText;
+            Foreground = new SolidColorBrush(text);
+            GlyphBrush = new SolidColorBrush(glyph);
+            BatteryBrush = TryMiniColor("accent", out var accent) ? new SolidColorBrush(accent) : Foreground;
             RootShadow.Color = light ? Color.FromRgb(0x8B, 0x93, 0xA6) : Colors.Black;
-            RootShadow.Opacity = light ? 0.16 : 0.42;
+            string style = App.Settings.MiniStyle?.ToLowerInvariant();
+            RootShadow.Opacity = style == "bare" ? 0 : light ? 0.16 : style == "compact" ? 0.32 : 0.42;
         }
 
         /// <summary>迷你窗样式：standard 标准 / compact 紧凑 / bare 极简。</summary>
@@ -151,37 +166,42 @@ namespace MouseDock.Views
                     Root.Padding = new Thickness(9, 7, 9, 7);
                     Root.CornerRadius = new CornerRadius(0);
                     RootShadow.Opacity = 0;
-                    Root.Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x10, 0x0D, 0x1C));
-                    return;
+                    break;
                 default:
                     Root.Padding = new Thickness(12, 10, 12, 10);
                     Root.CornerRadius = new CornerRadius(18);
                     RootShadow.Opacity = 0.42;
                     break;
             }
-            ApplyBackground(App.Settings.MiniBackground);
+            RefreshBackground();
         }
 
         public void ApplyTheme(ThemePreset theme, bool animate)
         {
-            var text = new SolidColorBrush(theme.Text);
-            TextElement.SetForeground(Root, text);
-            GlyphBrush = new SolidColorBrush(Palette.Mix(theme.Text, theme.Accent, 0.35));
-            RootShadow.Color = theme.IsLight ? Color.FromRgb(0x8B, 0x93, 0xA6) : Colors.Black;
-            RootShadow.Opacity = theme.IsLight ? 0.16 : 0.42;
+            var top = theme.BgTop;
+            var bottom = theme.BgBottom;
+            bool light = theme.IsLight;
+            var text = theme.Text;
+            if (!App.Settings.FollowsMiniThemeBackground && TryMiniColor("background", out var background))
+            {
+                top = bottom = background;
+                light = ColorContrast.Ratio(Colors.Black, background) > ColorContrast.Ratio(Colors.White, background);
+                text = ColorContrast.Legible(text, [background]);
+            }
+            ApplyForeground(text, Palette.Mix(text, theme.Accent, 0.35), light);
 
             if (animate)
             {
                 var dur = TimeSpan.FromMilliseconds(240);
-                BgTopStop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(theme.BgTop, dur));
-                BgBottomStop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(theme.BgBottom, dur));
+                BgTopStop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(top, dur));
+                BgBottomStop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(bottom, dur));
             }
             else
             {
                 BgTopStop.BeginAnimation(GradientStop.ColorProperty, null);
                 BgBottomStop.BeginAnimation(GradientStop.ColorProperty, null);
-                BgTopStop.Color = theme.BgTop;
-                BgBottomStop.Color = theme.BgBottom;
+                BgTopStop.Color = top;
+                BgBottomStop.Color = bottom;
             }
         }
 

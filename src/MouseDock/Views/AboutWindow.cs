@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -186,8 +187,44 @@ namespace MouseDock.Views
 
             root.Children.Add(buttons);
 
+            var licenses = MakeButton("开源许可");
+            licenses.Margin = new Thickness(0, 12, 0, 0);
+            licenses.HorizontalAlignment = HorizontalAlignment.Right;
+            licenses.Click += (_, __) => ShowLicenses(win);
+            root.Children.Add(licenses);
+
             win.Content = root;
             win.ShowDialog();
+        }
+
+        private static void ShowLicenses(Window owner)
+        {
+            string[] resources =
+            [
+                "MouseDock.LICENSE",
+                "MouseDock.ThirdPartyNotices.md",
+                "MouseDock.Coopanion.LICENSE",
+                "MouseDock.Coopanion.Jint-LICENSE.txt",
+                "MouseDock.Coopanion.Acornima-LICENSE.txt"
+            ];
+            var text = new System.Text.StringBuilder();
+            foreach (string resource in resources)
+            {
+                using var stream = typeof(AboutWindow).Assembly.GetManifestResourceStream(resource);
+                if (stream == null) continue;
+                using var reader = new StreamReader(stream);
+                text.AppendLine(reader.ReadToEnd()).AppendLine();
+            }
+            new Window
+            {
+                Owner = owner, Title = "开源许可", Width = 680, Height = 540,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
+                Content = new TextBox
+                {
+                    Text = text.ToString(), IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(12)
+                }
+            }.ShowDialog();
         }
 
         private static TextBlock SectionLabel(string text) => new TextBlock

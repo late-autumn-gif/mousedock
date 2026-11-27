@@ -11,7 +11,7 @@ internal static class QuickMenuChecks
     {
         using var fixture = new AppearanceFixture();
         string[] modes = ["dock", "mini", "icon", "taskbar", "edge", "pet"];
-        string[] labels = ["主面板", "迷你窗", "悬浮图标", "任务栏电量", "屏幕右侧电量", "桌宠", "设置…", "退出"];
+        string[] labels = ["主面板", "迷你窗", "悬浮图标", "任务栏电量", "屏幕右侧电量", "桌宠", "刷新设备", "切换输入设备", "切换输出设备", "设置…", "退出"];
         var owner = new Window { Width = 200, Height = 100, ShowInTaskbar = false, ShowActivated = false };
         owner.Show();
         try
@@ -25,7 +25,7 @@ internal static class QuickMenuChecks
                     var menu = MouseDock.App.CreateQuickMenu(owner);
                     var items = menu.Items.OfType<MenuItem>().ToArray();
                     if (!labels.SequenceEqual(items.Select(item => (string)item.Header)) ||
-                        menu.Items.Count != labels.Length + 1 || menu.Items[6] is not Separator ||
+                        menu.Items.Count != labels.Length + 2 || menu.Items[6] is not Separator ||
                         !items.Take(modes.Length).All(item => item.IsCheckable) ||
                         !items.Where(item => item.IsChecked).SequenceEqual([items[index]]))
                         throw new InvalidOperationException("Quick menu entries or active mode are incorrect.");
@@ -39,7 +39,7 @@ internal static class QuickMenuChecks
                         var markedRow = items[index];
                         if (PresentationSource.FromVisual(markedRow) == null ||
                             markedRow.Template.FindName("Check", markedRow) is not FrameworkElement { IsVisible: true } ||
-                            menu.ActualHeight <= 0 || menu.ActualHeight > 320)
+                            menu.ActualHeight <= 0 || menu.ActualHeight > 440)
                             throw new InvalidOperationException("Quick menu did not open with the compact template and visible checkmark.");
                         markedRow.Focus();
                         TaskbarEmbeddingChecks.Pump(60);

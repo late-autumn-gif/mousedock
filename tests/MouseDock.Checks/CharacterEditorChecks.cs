@@ -62,9 +62,9 @@ internal static class CharacterEditorChecks
         var editor = new CharacterEditorWindow(fixture.Settings, "portrait");
         try
         {
-            var apply = typeof(SettingsWindow).GetMethod("ApplyCharacterEdit", BindingFlags.Instance | BindingFlags.NonPublic);
-            Require(apply != null, "The editor has no integrated completion action.");
-            apply!.Invoke(settings, [editor]);
+            Require(icon.CreateIconMenu().Items.OfType<MenuItem>().Any(item => Equals(item.Header, "编辑角色与照片…")),
+                "Floating icon menu has no character editor entry.");
+            MouseDock.App.ApplyCharacterEdit(editor);
             Require((string)typeof(IconWindow).GetField("_activeStyle", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(icon)! == "portrait" &&
                 fixture.Settings.SurfaceMode == "icon", "Completing the editor leaves the visible floating style unchanged.");
         }
@@ -130,8 +130,7 @@ internal static class CharacterEditorChecks
                             .RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
                     Require(editor.ShowDialog() == true, "The editor's apply-and-show action did not complete.");
                 }
-                typeof(SettingsWindow).GetMethod("ApplyCharacterEdit", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(settings, [editor]);
+                MouseDock.App.ApplyCharacterEdit(editor);
                 Require(fixture.Settings.SurfaceMode == surface, $"Completing {surface} editing switches to a different surface.");
                 Require(fixture.Settings.IconStyle == "ring", $"Completing {surface} editing changes the floating style.");
                 Require(fixture.Settings.TaskbarStyle == (surface == "taskbar" ? "portrait" : "character") &&

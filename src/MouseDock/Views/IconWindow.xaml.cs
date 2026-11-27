@@ -21,6 +21,12 @@ namespace MouseDock.Views
         private readonly TransformGroup _photoTransform = new TransformGroup();
         private ThemePreset _theme = App.Theme;
 
+        internal static readonly (string Id, string Name)[] StyleChoices =
+        [
+            ("ring", "电量环"), ("tile", "柔角方块"), ("pill", "横向胶囊"), ("battery", "经典电池"),
+            ("plain", "轻量数字"), ("multi", "多电量迷你"), ("character", "角色电量"), ("portrait", "我的照片")
+        ];
+
         private string _activeStyle = "photo";
         private bool _dragging;
         private Point _dragStart;
@@ -34,6 +40,7 @@ namespace MouseDock.Views
         public IconWindow()
         {
             InitializeComponent();
+            PreviewKeyDown += OnMenuKey;
             PreviewMouseLeftButtonDown += (_, e) =>
             {
                 if (e.ClickCount != 2 || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
@@ -700,17 +707,63 @@ namespace MouseDock.Views
         private void OnContextMenu(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
-            var menu=new ContextMenu();
-            foreach(var entry in new[] {("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你"),("character","角色电量"),("portrait","我的照片")}) {
-                var item=new MenuItem {Header=entry.Item2,IsCheckable=true,IsChecked=App.Settings.IconStyle==entry.Item1};
-                item.Click+=(_,__)=>{ApplyStyle(entry.Item1,true);App.SaveSettings();};menu.Items.Add(item);
+            CreateIconMenu().IsOpen = true;
+        }
+
+        private void OnMenuKey(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Apps && !(e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift)) return;
+            var menu = CreateIconMenu();
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+            e.Handled = true;
+        }
+
+        internal ContextMenu CreateIconMenu()
+        {
+            var menu = App.CreateThemedMenu(this);
+            var styles = new MenuItem { Header = "悬浮图标样式" };
+            foreach (var (id, name) in StyleChoices)
+            {
+                var item = App.MenuAction(name, () =>
+                {
+                    ApplyStyle(id, true);
+                    App.SaveSettings();
+                    App.SettingsView?.Reload();
+                });
+                item.IsChecked = _activeStyle == id;
+                styles.Items.Add(item);
             }
-            var follow=new MenuItem {Header="跟随界面主题色",IsCheckable=true,IsChecked=App.Settings.IconFollowTheme};
-            follow.Click+=(_,__)=>{App.Settings.IconFollowTheme=follow.IsChecked;App.SaveSettings();UpdateValue();};menu.Items.Add(follow);
-            var hide=new MenuItem {Header="隐藏图标底色",IsCheckable=true,IsChecked=App.Settings.IconHideBackground};
-            hide.Click+=(_,__)=>{App.Settings.IconHideBackground=hide.IsChecked;App.SaveSettings();UpdateValue();};menu.Items.Add(hide);
-            var settings=new MenuItem {Header="更多设置"};settings.Click+=(_,__)=>App.ShowQuickMenu(this);menu.Items.Add(settings);
-            menu.PlacementTarget=this;menu.IsOpen=true;
+            menu.Items.Add(styles);
+            menu.Items.Add(App.CreateCharacterEditorAction(this, "icon"));
+
+            var follow = new MenuItem { Header = "跟随界面主题色", IsCheckable = true, IsChecked = App.Settings.IconFollowTheme };
+            follow.Click += (_, _) =>
+            {
+                App.Settings.IconFollowTheme = follow.IsChecked;
+                UpdateValue();
+                App.SaveSettings();
+                App.SettingsView?.Reload();
+            };
+            menu.Items.Add(follow);
+            var hide = new MenuItem { Header = "隐藏图标底色", IsCheckable = true, IsChecked = App.Settings.IconHideBackground };
+            hide.Click += (_, _) =>
+            {
+                App.Settings.IconHideBackground = hide.IsChecked;
+                UpdateValue();
+                App.SaveSettings();
+                App.SettingsView?.Reload();
+            };
+            menu.Items.Add(hide);
+            menu.Items.Add(new Separator());
+            App.AddDeviceMenuActions(menu.Items, this);
+            menu.Items.Add(new Separator());
+            var surfaces = new MenuItem { Header = "切换显示方式" };
+            App.AddSurfaceChoices(surfaces.Items);
+            menu.Items.Add(surfaces);
+            menu.Items.Add(App.MenuAction("设置…", () => App.ShowSettings(this)));
+            menu.Items.Add(App.MenuAction("退出", App.ExitApp));
+            return menu;
         }
     }
 }

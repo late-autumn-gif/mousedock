@@ -91,7 +91,7 @@ namespace MouseDock.Views
         public static DeviceBatteryBadge CreateRingBadge(DeviceInfo device, AppSettings settings, ThemePreset theme)
         {
             var badge = new DeviceBatteryBadge(device, new SolidColorBrush(ResolveForeground(settings, theme)),
-                true, true, settings.LowBatteryWarn);
+                true, true, settings.LowBatteryWarn, compact: false, continuousRing: settings.ContinuousBatteryRing);
             var battery = ResolveBatteryBrush(settings, theme);
             badge.Ring.BatteryBrush = battery;
             return badge;

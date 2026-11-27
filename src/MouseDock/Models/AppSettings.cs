@@ -8,13 +8,12 @@ namespace MouseDock.Models
         public int Version { get; set; } = 6;
 
         public string ThemeId { get; set; } = "resident";
-        public string ThemeMode { get; set; } = "";
 
         // 自定义背景（取主色）与手动覆盖
-        public string CustomBackground { get; set; } = "";
-        public string CustomAccent { get; set; } = "";
+        public string CustomBackground { get; set; } = ""; // 设置窗口的背景图
         public string CustomSurface { get; set; } = "";
         public Dictionary<string, string> ThemeColors { get; set; } = new();
+        public Dictionary<string, string> MiniColors { get; set; } = new();
         public Dictionary<string, string> IconColors { get; set; } = new();
         public Dictionary<string, string> TrayColors { get; set; } = new();
         public double BackgroundZoom { get; set; } = 1;
@@ -74,6 +73,7 @@ namespace MouseDock.Models
         public int RefreshSeconds { get; set; } = 30;
 
         /// <summary>低电量提醒阈值（百分比）。档位 0/10/20/30/40，0 关闭提醒，默认 20。</summary>
+        public string LowBatteryColor { get; set; }
         public int LowBatteryWarn { get; set; } = 20;
 
         /// <summary>启动时自动检查更新。默认开；断网时静默跳过。</summary>
@@ -93,6 +93,7 @@ namespace MouseDock.Models
         /// <summary>图标组外的逻辑像素间距；负数在前，非负数在后，0 紧贴右边缘。</summary>
         public double TaskbarIconOffset { get; set; }
         /// <summary>ring = 圆环；panel = 胶囊条；card = 迷你卡片。</summary>
+        public bool ContinuousBatteryRing { get; set; }
         public string TaskbarStyle { get; set; } = "ring";
         public double TaskbarSizePercent { get; set; } = 100;
         public string TaskbarTextColor { get; set; } = "";
@@ -105,13 +106,15 @@ namespace MouseDock.Models
         public string DesktopPetCharacter { get; set; } = "shin-chan";
         public string DesktopPetDevice { get; set; } = "";
         public bool DesktopPetReduceMotion { get; set; }
-        public bool DesktopPetInputReaction { get; set; } = true;
+        public bool DesktopPetDeskMode { get; set; }
+        public string DesktopPetCoopanionPath { get; set; } = "";
         public bool DesktopPetRandomActions { get; set; } = true;
         public bool DesktopPetBlink { get; set; } = true;
         public bool DesktopPetRest { get; set; } = true;
         public int DesktopPetMotionSpeed { get; set; } = 100;
         public int DesktopPetActionFrequency { get; set; } = 100;
         public bool DesktopPetLocked { get; set; }
+        public int DesktopPetRoamRadius { get; set; } = 96;
         public int DesktopPetSize { get; set; } = 100;
         public string DesktopPetMonitor { get; set; } = "";
         public double DesktopPetX { get; set; } = 1;
@@ -137,6 +140,9 @@ namespace MouseDock.Models
         public bool DockWallpaperLiveScene { get; set; }
         public string DockWallpaperEngineSelection { get; set; } = "";
         public string MiniBackground { get; set; } = "";
+        public bool? MiniFollowThemeBackground { get; set; }
+
+        internal bool FollowsMiniThemeBackground => MiniFollowThemeBackground ?? string.IsNullOrWhiteSpace(MiniBackground);
         public string IconBackground { get; set; } = "";
 
         /// <summary>窗口置顶。</summary>
@@ -163,11 +169,10 @@ namespace MouseDock.Models
             return new AppSettings
             {
                 ThemeId = ThemeId,
-                ThemeMode = ThemeMode,
                 CustomBackground = CustomBackground,
-                CustomAccent = CustomAccent,
                 CustomSurface = CustomSurface,
                 ThemeColors = new(ThemeColors ?? new()),
+                MiniColors = new(MiniColors ?? new()),
                 IconColors = new(IconColors ?? new()),
                 TrayColors = new(TrayColors ?? new()),
                 BackgroundZoom = BackgroundZoom,
@@ -207,6 +212,7 @@ namespace MouseDock.Models
                 Provider = Provider,
                 JsonPath = JsonPath,
                 RefreshSeconds = RefreshSeconds,
+                LowBatteryColor = LowBatteryColor,
                 LowBatteryWarn = LowBatteryWarn,
                 SurfaceMode = SurfaceMode,
                 SurfaceHidden = SurfaceHidden,
@@ -214,6 +220,7 @@ namespace MouseDock.Models
                 TaskbarFollowIcons = TaskbarFollowIcons,
                 TaskbarPinToTray = TaskbarPinToTray,
                 TaskbarIconOffset = TaskbarIconOffset,
+            ContinuousBatteryRing = ContinuousBatteryRing,
             TaskbarStyle = TaskbarStyle,
                 TaskbarSizePercent = TaskbarSizePercent,
             TaskbarTextColor = TaskbarTextColor,
@@ -226,13 +233,15 @@ namespace MouseDock.Models
                 DesktopPetCharacter = DesktopPetCharacter,
                 DesktopPetDevice = DesktopPetDevice,
                 DesktopPetReduceMotion = DesktopPetReduceMotion,
-                DesktopPetInputReaction = DesktopPetInputReaction,
+                DesktopPetDeskMode = DesktopPetDeskMode,
+                DesktopPetCoopanionPath = DesktopPetCoopanionPath,
                 DesktopPetRandomActions = DesktopPetRandomActions,
                 DesktopPetBlink = DesktopPetBlink,
                 DesktopPetRest = DesktopPetRest,
                 DesktopPetMotionSpeed = DesktopPetMotionSpeed,
                 DesktopPetActionFrequency = DesktopPetActionFrequency,
                 DesktopPetLocked = DesktopPetLocked,
+                DesktopPetRoamRadius = DesktopPetRoamRadius,
                 DesktopPetSize = DesktopPetSize,
                 DesktopPetMonitor = DesktopPetMonitor,
                 DesktopPetX = DesktopPetX,
@@ -250,6 +259,7 @@ namespace MouseDock.Models
                 DockWallpaperEngineSelection = DockWallpaperEngineSelection,
                 DockWallpaperLiveScene = DockWallpaperLiveScene,
                 MiniBackground = MiniBackground,
+                MiniFollowThemeBackground = MiniFollowThemeBackground,
                 IconBackground = IconBackground,
                 AlwaysOnTop = AlwaysOnTop,
                 ClickThrough = ClickThrough,

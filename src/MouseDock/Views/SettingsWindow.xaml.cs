@@ -24,7 +24,6 @@ namespace MouseDock.Views
             public string Id { get; set; }
             public string Name { get; set; }
             public Brush Swatch { get; set; }
-            public Brush AccentBrush { get; set; }
 
             public bool IsSelected
             {
@@ -87,25 +86,15 @@ namespace MouseDock.Views
                 var s = App.Settings;
 
                 var rows = ThemePreset.Presets
-                    .Select(p => ReferenceThemes.Resolve(p.Id, s.ThemeMode) ?? p)
-                    .Select(p => MakeRow(p.Id, p.Name, p.Accent, p.BgTop, p.BgBottom))
+                    .Select(p => MakeRow(ReferenceThemes.Resolve(p.Id, "") ?? p))
                     .ToList();
 
-                bool hasBg = !string.IsNullOrWhiteSpace(s.CustomBackground) && File.Exists(s.CustomBackground);
-                if (hasBg)
-                {
-                    var custom = App.Theme;
-                    rows.Add(MakeRow("custom", "自定义 · 跟随背景图", custom.Accent, custom.BgTop, custom.BgBottom));
-                }
-
                 ThemeList.ItemsSource = rows;
-                var current = rows.FirstOrDefault(r => r.Id == (hasBg ? "custom" : s.ThemeId)) ?? rows[2];
+                var current = rows.FirstOrDefault(r => r.Id == s.ThemeId) ?? rows[2];
                 ThemeList.SelectedItem = current;
                 CurrentThemeText.Text = "当前 · " + current.Name;
                 foreach (var r in rows) r.IsSelected = r == current;
-                ThemeDefault.IsChecked = s.ThemeMode != "dark" && s.ThemeMode != "light";
-                ThemeDark.IsChecked = s.ThemeMode == "dark";
-                ThemeLight.IsChecked = s.ThemeMode == "light";
+                UpdateLowBatterySwatch();
 
                 var theme = App.Theme;
 
@@ -130,10 +119,13 @@ namespace MouseDock.Views
                 AutoUpdateBox.ToolTip = App.IsTestProfile ? "隔离测试版不访问更新源" : null;
                 ApplySurfaceButtons(s.SurfaceMode);
                 DockWallpaperEngineBox.IsChecked = s.DockFollowWallpaperEngine && string.IsNullOrEmpty(s.DockWallpaperEngineSelection);
+                SyncMiniAppearance();
                 IconFollowThemeBox.IsChecked=s.IconFollowTheme;
                 IconHideBackgroundBox.IsChecked=s.IconHideBackground;
                 ReferenceCharacterChoices.SelectedItem = ReferenceCharacterChoices.Items.OfType<ComboBoxItem>()
                     .FirstOrDefault(item => (string)item.Tag == s.ReferenceCharacter) ?? ReferenceCharacterChoices.Items[0];
+                RingContinuous.IsChecked = s.ContinuousBatteryRing;
+                RingSegmented.IsChecked = !s.ContinuousBatteryRing;
                 SyncIconScale();
                 RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
@@ -188,13 +180,14 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
         private void OnCheckUpdateClick(object sender, RoutedEventArgs e) => App.CheckUpdatesFromSettings();
-        private static ThemeRow MakeRow(string id, string name, Color accent, Color bgTop, Color bgBottom)
+        private static ThemeRow MakeRow(ThemePreset theme)
         {
-            var swatch = new LinearGradientBrush(bgTop, bgBottom, new Point(0, 0), new Point(1, 1));
+            var swatch = new LinearGradientBrush { StartPoint = new Point(0, 1), EndPoint = new Point(1, 0) };
+            swatch.GradientStops.Add(new GradientStop(theme.BgTop, 0));
+            swatch.GradientStops.Add(new GradientStop(Palette.Mix(theme.Surface, theme.Accent, .30), .58));
+            swatch.GradientStops.Add(new GradientStop(Palette.Mix(theme.Surface, theme.Accent, .74), 1));
             swatch.Freeze();
-            var accentBrush = new SolidColorBrush(accent);
-            accentBrush.Freeze();
-            return new ThemeRow { Id = id, Name = name, Swatch = swatch, AccentBrush = accentBrush };
+            return new ThemeRow { Id = theme.Id, Name = theme.Name, Swatch = swatch };
         }
 
         private void UpdateDeviceHint()
@@ -278,21 +271,45 @@ namespace MouseDock.Views
             RebuildTaskbarStyles(theme);
             RebuildEdgeStyles();
             EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, theme));
-            PictureBackground.Apply(Root, "", _themeBackground, App.Settings, theme);
+            ApplySettingsBackground(theme);
         }
 
+        private void ApplySettingsBackground(ThemePreset theme = null) =>
+            PictureBackground.Apply(Root, "", _themeBackground, App.Settings, theme ?? App.Theme, useSettingsImage: true);
+
         // ── 交互 ───────────────────────────────────────────────────────────
+
+        internal void SyncMiniAppearance() =>
+            MiniFollowThemeBackgroundBox.IsChecked = App.Settings.FollowsMiniThemeBackground;
+
+        private void OnMiniFollowThemeBackground(object sender, RoutedEventArgs e)
+        {
+            if (!_loading) App.SetMiniFollowThemeBackground(MiniFollowThemeBackgroundBox.IsChecked == true);
+        }
 
         private void OnEditColors(object sender, RoutedEventArgs e)
         {
             if (sender is not Button { Tag: string target }) return;
+            if (target == "mini")
+            {
+                App.EditMiniColors(this);
+                return;
+            }
             var settings = App.Settings;
             var values = target == "theme" ? settings.ThemeColors : target == "icon" ? settings.IconColors : settings.TrayColors;
-            var palette = target == "theme" ? App.Theme : target == "icon"
-                ? AppearanceColors.IconPalette(settings, App.Theme, settings.IconFollowTheme)
-                : AppearanceColors.TrayPalette(settings, App.Theme);
-            var editor = new ColorEditorWindow(target == "theme" ? "主题配色" : target == "icon" ? "悬浮配色" : "托盘配色",
-                values, palette, target == "theme") { Owner = this };
+            var defaults = settings.Clone();
+            defaults.ThemeColors.Clear();
+            defaults.IconColors.Clear();
+            defaults.TrayColors.Clear();
+            var surface = target == "theme" ? ColorEditorWindow.Surface.Interface : target == "icon"
+                ? ColorEditorWindow.Surface.Floating : ColorEditorWindow.Surface.Tray;
+            var palette = surface switch
+            {
+                ColorEditorWindow.Surface.Interface => Palette.ResolveTheme(defaults),
+                ColorEditorWindow.Surface.Floating => AppearanceColors.IconPalette(defaults, App.Theme, settings.IconFollowTheme),
+                _ => AppearanceColors.TrayPalette(defaults, App.Theme)
+            };
+            var editor = new ColorEditorWindow(surface, values, palette) { Owner = this };
             if (editor.ShowDialog() != true) return;
             if (target == "theme") settings.ThemeColors = editor.Draft;
             else if (target == "icon") settings.IconColors = editor.Draft;
@@ -311,16 +328,7 @@ namespace MouseDock.Views
             foreach (var r in (ThemeList.ItemsSource as IEnumerable<ThemeRow>) ?? Enumerable.Empty<ThemeRow>())
                 r.IsSelected = r == row;
 
-            if (row.Id == "custom")
-            {
-                // 自定义项本身就是「跟随背景图」，不需要额外动作
-            }
-            else
-            {
-                App.Settings.ThemeId = row.Id;
-                App.Settings.CustomBackground = "";
-                App.Settings.CustomAccent = "";
-            }
+            App.Settings.ThemeId = row.Id;
 
             App.RefreshTheme();
             App.SaveSettings();
@@ -342,41 +350,20 @@ namespace MouseDock.Views
             var editor = new BackgroundEditorWindow(App.Settings) { Owner = this };
             if (editor.ShowDialog() != true) return;
             var draft = editor.Draft;
-            if (!string.Equals(App.Settings.CustomBackground, draft.CustomBackground, StringComparison.OrdinalIgnoreCase))
-            {
-                App.Settings.DockBackground = "";
-                App.Settings.DockWallpaperEngineSelection = "";
-                App.Settings.DockWallpaperLiveScene = false;
-                App.Settings.DockFollowWallpaperEngine = false;
-            }
             App.Settings.CustomBackground = draft.CustomBackground;
-            App.Settings.CustomAccent = draft.CustomAccent;
             App.Settings.BackgroundZoom = draft.BackgroundZoom;
             App.Settings.BackgroundPositionX = draft.BackgroundPositionX;
             App.Settings.BackgroundPositionY = draft.BackgroundPositionY;
             App.Settings.BackgroundDepth = draft.BackgroundDepth;
-            App.RefreshTheme();
+            ApplySettingsBackground();
             App.SaveSettings();
-            Reload();
-        }
-
-        private void OnThemeModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (_loading || sender is not RadioButton { IsChecked: true } button) return;
-            App.Settings.ThemeMode = (string)button.Tag;
-            App.RefreshTheme();
-            App.SaveSettings();
-            Reload();
         }
 
         private void OnClearBackground(object sender, RoutedEventArgs e)
         {
-            App.Settings.DockBackground = "";
             App.Settings.CustomBackground = "";
-            App.Settings.CustomAccent = "";
-            App.RefreshTheme();
+            ApplySettingsBackground();
             App.SaveSettings();
-            Reload();
         }
 
         private void OnDeviceChecked(object sender, RoutedEventArgs e)
@@ -629,6 +616,27 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
+        private void OnPickLowBatteryColor(object sender, RoutedEventArgs e)
+        {
+            var settings = App.Settings;
+            var editor = new ColorEditorWindow("低电量颜色", "适用于电量窗、悬浮图标、任务栏与托盘中的低电量显示。",
+                AppearanceColors.LowBatteryOverride(settings),
+                ((SolidColorBrush)AppearanceColors.LowBatteryBrush(null, text: true)).Color, App.Theme) { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            settings.LowBatteryColor = editor.SelectedHex ?? "";
+            App.RefreshTheme();
+            UpdateLowBatterySwatch();
+            App.SaveSettings();
+        }
+
+        private void UpdateLowBatterySwatch()
+        {
+            var settings = App.Settings;
+            LowBatteryColorSwatch.Fill = AppearanceColors.LowBatteryBrush(settings, text: true);
+            LowBatteryColorLabel.Text = AppearanceColors.TryColor(AppearanceColors.LowBatteryOverride(settings), out var color)
+                ? Palette.ToHex(color) : "默认颜色";
+        }
+
         /// <summary>高亮选中的提醒档位，包括 0%（不提醒）。</summary>
         private void ApplyWarnButtons(int selected)
         {
@@ -659,10 +667,19 @@ namespace MouseDock.Views
         }
         private void OnResetIconScale(object sender,RoutedEventArgs e)=>IconScaleSlider.Value=1;
 
+        private void OnBatteryRingStyleChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            App.SetBatteryRingStyle(ReferenceEquals(sender, RingContinuous));
+            RebuildIconStyles();
+            RebuildTaskbarStyles();
+            RebuildEdgeStyles();
+        }
+
         private void RebuildIconStyles()
         {
             IconStyleChoices.Children.Clear();
-            foreach(var entry in new[]{("ring","环形刻度"),("tile","柔角方块"),("pill","横向胶囊"),("battery","经典电池"),("plain","轻量数字"),("multi","多电量迷你"),("character","角色电量"),("portrait","我的照片")})
+            foreach (var entry in IconWindow.StyleChoices)
             {
                 FrameworkElement preview;
                 if (entry.Item1 is "character" or "portrait")
@@ -722,40 +739,6 @@ namespace MouseDock.Views
         {
             if (_loading || ReferenceCharacterChoices.SelectedItem is not ComboBoxItem { Tag: string kind }) return;
             App.Settings.ReferenceCharacter = kind;
-            App.RefreshDeviceViews();
-            App.SaveSettings();
-            RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();
-        }
-
-        private void OnPickReferencePhoto(object sender, RoutedEventArgs e)
-        {
-            EditCharacter("portrait");
-        }
-
-        private void OnEditCharacter(object sender, RoutedEventArgs e) => EditCharacter(null);
-
-        private void EditCharacter(string mode)
-        {
-            var editor = new CharacterEditorWindow(App.Settings, mode) { Owner = this };
-            if (editor.ShowDialog() != true) return;
-            ApplyCharacterEdit(editor);
-        }
-
-        private void ApplyCharacterEdit(CharacterEditorWindow editor)
-        {
-            editor.ApplyTo(App.Settings);
-            if (editor.SurfaceMode == "icon") App.Icon?.ApplyStyle(App.Settings.IconStyle, false);
-            if (editor.ShowAfterApply) App.SetSurface(editor.SurfaceMode);
-            App.RefreshDeviceViews();
-            App.SaveSettings();
-            Reload();
-        }
-
-        private void OnClearReferencePhoto(object sender, RoutedEventArgs e)
-        {
-            App.Settings.PhotoAsset = "";
-            App.Settings.IconBackground = "";
-            App.Settings.DevicePhotos?.Clear();
             App.RefreshDeviceViews();
             App.SaveSettings();
             RebuildIconStyles(); RebuildTaskbarStyles(); RebuildEdgeStyles();
@@ -894,25 +877,15 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        private sealed class DialogOwner : System.Windows.Forms.IWin32Window
-        {
-            public IntPtr Handle { get; }
-            public DialogOwner(Window window) { Handle = new System.Windows.Interop.WindowInteropHelper(window).Handle; }
-        }
-
         private void OnPickTaskbarColor(object sender, RoutedEventArgs e)
         {
             bool text = (sender as FrameworkElement)?.Tag as string == "text";
             string current = text ? App.Settings.TaskbarTextColor : App.Settings.TaskbarBatteryColor;
             var fallback = text ? App.Theme.Text : App.Theme.Accent;
-            var brush = TaskbarBatteryStrip.ResolveBrush(current, new SolidColorBrush(fallback)) as SolidColorBrush;
-            var baseColor = brush?.Color ?? fallback;
-            using var dialog = new System.Windows.Forms.ColorDialog
-            {
-                FullOpen = true, Color = System.Drawing.Color.FromArgb(baseColor.R, baseColor.G, baseColor.B)
-            };
-            if (dialog.ShowDialog(new DialogOwner(this)) != System.Windows.Forms.DialogResult.OK) return;
-            ApplyTaskbarColor(text, $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
+            var editor = new ColorEditorWindow(text ? "任务栏文字颜色" : "任务栏电量颜色",
+                text ? "适用于任务栏电量组件的设备图标和文字。" : "适用于任务栏电量组件的正常电量填充。",
+                current, fallback, App.Theme) { Owner = this };
+            if (editor.ShowDialog() == true) ApplyTaskbarColor(text, editor.SelectedHex ?? "");
         }
 
         private void ApplyTaskbarColor(bool text, string color)
@@ -982,7 +955,8 @@ namespace MouseDock.Views
                 FrameworkElement preview;
                 if (style == "ring")
                 {
-                    var badge = new DeviceBatteryBadge(device, foreground, true, true, settings.LowBatteryWarn);
+                    var badge = new DeviceBatteryBadge(device, foreground, true, true, settings.LowBatteryWarn,
+                        compact: false, continuousRing: settings.ContinuousBatteryRing);
                     badge.Ring.BatteryBrush = battery;
                     preview = badge;
                 }
@@ -1021,13 +995,15 @@ namespace MouseDock.Views
         }
         private void OnPickEdgeColor(object sender, RoutedEventArgs e)
         {
-            var color = ScreenEdgeWindow.ResolveForeground(App.Settings, App.Theme);
-            using var dialog = new System.Windows.Forms.ColorDialog
-            {
-                FullOpen = true, Color = System.Drawing.Color.FromArgb(color.R, color.G, color.B)
-            };
-            if (dialog.ShowDialog(new DialogOwner(this)) != System.Windows.Forms.DialogResult.OK) return;
-            ApplyEdgeColor($"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
+            var settings = App.Settings;
+            var defaults = settings.Clone();
+            defaults.EdgeGlyphColorCustomized = false;
+            var editor = new ColorEditorWindow("屏幕右侧图标颜色", "适用于屏幕右侧电量组件的设备图标与文字。",
+                settings.EdgeGlyphColorCustomized ? settings.EdgeGlyphColor : null,
+                ScreenEdgeWindow.ResolveForeground(defaults, App.Theme), App.Theme) { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            if (editor.SelectedHex is string color) ApplyEdgeColor(color);
+            else OnResetEdgeColor(sender, e);
         }
 
         private void OnResetEdgeColor(object sender, RoutedEventArgs e)

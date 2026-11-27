@@ -14,6 +14,14 @@
 
 麦克风禁用采用 Windows 音频端点的静音开关，属于可恢复的系统静音。它不修改驱动、系统设备启用状态或隐私权限。关闭 MouseDock 不会自动恢复用户设置的系统静音。
 
+## 从右键菜单切换默认设备
+
+在电量窗、桌宠或托盘的右键菜单中打开「切换输入设备」或「切换输出设备」。菜单每次展开都重新枚举 Windows 处于启用且可用状态的音频端点，包含有线、2.4G 和蓝牙耳机，以及扬声器与麦克风。「当前默认」按设备完整端点 ID 标记。
+
+选中设备后，MouseDock 会复查端点方向和连接状态，并切换 Windows 的 Console 和 Multimedia 默认角色。Communications 角色及应用单独指定的设备沿用各自的 Windows 设置。若 Windows 无法确认切换，菜单会提示结果，并提供进入 Windows 声音设置的入口。
+
+默认设备通过 Core Audio 读取。切换使用 Windows 桌面兼容接口 IPolicyConfig，完成后用公开接口回读两个角色，发生部分失败时按此次操作的变更尝试恢复。 [Microsoft 默认端点文档](https://learn.microsoft.com/en-us/windows/desktop/api/Mmdeviceapi/nf-mmdeviceapi-immdeviceenumerator-getdefaultaudioendpoint) · [桌面兼容接口定义](https://github.com/frgnca/AudioDeviceCmdlets/blob/master/SOURCE/IPolicyConfig.cs)
+
 ## 设备与状态处理
 
 - 只读取音频端点的名称、设备属性、音量和静音状态，不打开录音流，不读取或上传声音。

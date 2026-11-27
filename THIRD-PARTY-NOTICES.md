@@ -1,5 +1,22 @@
 # Third-party notices
 
+## Coopanion motion and JavaScript runtime
+
+- Coopanion v0.2.23, Copyright Pal-AI-Lab and contributors. The original
+  [body.js and rig.js](https://github.com/Pal-AI-Lab/Coopanion/tree/v0.2.23/packages/cortico-world-desktop-pet/web/kit)
+  are licensed under AGPL-3.0-or-later. The MouseDock bridge is in the same
+  source directory as the vendored scripts and their [license](src/MouseDock/Assets/Coopanion/Motion/LICENSE).
+- The sweat drop and orbiting star outlines in the character renderer follow
+  [Coopanion v0.2.23's whale figure](https://github.com/Pal-AI-Lab/Coopanion/blob/v0.2.23/packages/cortico-world-desktop-pet/web/whale/figure.js).
+  The original figure and its model are embedded as `whale-figure.js` and
+  `whale-model.json`. The same figure supplies the six drag/dizzy facial
+  textures in `WhaleFace/`. The original figure
+  credits 上善无形 for 溟月 and ZipZipPipe for the DeepSeek maid adaptation.
+- [Jint 4.16.3](https://github.com/sebastienros/jint/tree/v4.16.3) is covered by
+  its [BSD-2-Clause notice](src/MouseDock/Assets/Coopanion/Motion/Jint-LICENSE.txt).
+- [Acornima 1.7.0](https://github.com/adams85/acornima/tree/401bd62d8aeb9f7cbe7b6147937a87e0c71747a8)
+  is covered by its [BSD-3-Clause notice](src/MouseDock/Assets/Coopanion/Motion/Acornima-LICENSE.txt).
+
 ## MouseDock 1.0.2 reference (a different author's program)
 
 The six receiver profiles and portions of their request/response rules

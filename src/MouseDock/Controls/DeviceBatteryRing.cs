@@ -46,6 +46,7 @@ namespace MouseDock.Controls
         private readonly ChargeSweep _sweep;
         internal bool IsChargeSweepRunning => _sweep.IsRunning;
         public bool AnimateCharge { get; set; } = true;
+        public bool ContinuousRing { get; init; }
         public DeviceBatteryRing()
         {
             _sweep = new ChargeSweep(this);
@@ -85,7 +86,7 @@ namespace MouseDock.Controls
             double drawnLevel = _sweep.Follow(0, Full ? 100 : Level, phase >= 0, 1050);
             var fill = AppearanceColors.BatteryState(
                 BatteryBrush ?? DefaultFill, Level, LowBatteryThreshold, Charging, Full);
-            BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill);
+            BatteryRingDrawing.Draw(dc, center, radius, drawnLevel, trackBrush, fill, ContinuousRing);
             ChargeSweep.Absorb(dc, center, radius, phase, fill);
         }
     }

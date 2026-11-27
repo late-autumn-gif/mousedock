@@ -52,17 +52,17 @@ internal static class ImageImportChecks
     internal static void BackgroundPreview()
     {
         using var fixture = new AppearanceFixture();
-        var dock = new DockWindow();
-        fixture.Set("Dock", dock);
-        var root = (FrameworkElement)dock.Content;
-        root.Measure(new Size(268, 420)); root.Arrange(new Rect(0, 0, 268, 420));
+        var settings = new SettingsWindow();
+        fixture.Set("SettingsView", settings);
+        var root = (FrameworkElement)settings.Content;
+        root.Measure(new Size(760, 620)); root.Arrange(new Rect(0, 0, 760, 620));
         fixture.Settings.BackgroundZoom = 2; fixture.Settings.BackgroundPositionX = .8; fixture.Settings.BackgroundDepth = .7;
         var editor = new BackgroundEditorWindow(fixture.Settings);
         try
         {
             var preview = editor.FindName("BackgroundPreview") as FrameworkElement;
             Require(preview != null && Math.Abs(preview.Width / preview.Height - root.ActualWidth / root.ActualHeight) < .001,
-                "Background preview does not match the main window aspect.");
+                "Background preview does not match the settings window aspect.");
             var reset = typeof(BackgroundEditorWindow).GetMethod("ResetComposition");
             Require(reset != null, "Background editor cannot reset composition.");
             reset!.Invoke(editor, null);

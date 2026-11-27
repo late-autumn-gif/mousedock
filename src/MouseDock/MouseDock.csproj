@@ -9,9 +9,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>MouseDock</AssemblyName>
     <RootNamespace>MouseDock</RootNamespace>
-    <Version>1.2.4</Version>
-    <FileVersion>1.2.4.0</FileVersion>
-    <AssemblyVersion>1.2.4.0</AssemblyVersion>
+    <Version>1.2.5</Version>
+    <FileVersion>1.2.5.0</FileVersion>
+    <AssemblyVersion>1.2.5.0</AssemblyVersion>
     <Company>MouseDock</Company>
     <Product>MouseDock</Product>
     <Description>Windows 桌面外设电量面板：2.4G / 蓝牙 / 有线自动识别与实时电量</Description>
@@ -34,6 +34,14 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="Jint" Version="4.16.3" />
+    <EmbeddedResource Include="Assets/Coopanion/Motion/*.js" LogicalName="MouseDock.Coopanion.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets/Coopanion/Motion/whale-model.json" LogicalName="MouseDock.Coopanion.whale-model.json" />
+    <Resource Include="Assets/Coopanion/Motion/WhaleFace/*.png" />
+    <EmbeddedResource Include="Assets/Coopanion/figure.js" LogicalName="MouseDock.Coopanion.figure.js" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="MouseDock.LICENSE" />
+    <EmbeddedResource Include="Assets/Coopanion/Motion/LICENSE" LogicalName="MouseDock.Coopanion.LICENSE" />
+    <EmbeddedResource Include="Assets/Coopanion/Motion/Jint-LICENSE.txt;Assets/Coopanion/Motion/Acornima-LICENSE.txt" LogicalName="MouseDock.Coopanion.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../THIRD-PARTY-NOTICES.md" LogicalName="MouseDock.ThirdPartyNotices.md" />
     <Content Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md"
       CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
@@ -43,8 +51,9 @@
     <Resource Include="Assets\Characters\shin-chan-pet.png;Assets\Characters\xin-yue-hu-pet.png;Assets\Characters\rikka-takanashi-pet.png;Assets\Characters\desktop-pet-interactions.png;Assets\Characters\desktop-pet-headers.png" />
     <Resource Include="Assets\Characters\keqing-pet-*.png" />
     <Resource Include="Assets\Characters\shin-chan-pet-typing.png;Assets\Characters\xin-yue-hu-pet-typing.png;Assets\Characters\rikka-pet-typing.png" />
-    <Resource Include="Assets\Characters\DeskPoses\*.png" />
-    <Resource Include="Controls\PetHandEffect.ps" />
+    <Resource Include="Assets\Characters\DeskPoses\*.png;Assets\Characters\FreePoses\*.png" />
+    <Resource Include="Assets\Characters\RigParts\*.png" />
+    <Resource Include="Controls\PetHandEffect.ps;Assets\Coopanion\figure.js" />
     <Resource Include="Assets\donate.png;Assets\qq-group.png" />
     <InternalsVisibleTo Include="MouseDock.ProtocolTests" />
     <InternalsVisibleTo Include="MouseDock.Checks" />

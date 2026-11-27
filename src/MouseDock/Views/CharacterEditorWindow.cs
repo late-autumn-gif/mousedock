@@ -31,9 +31,12 @@ public sealed class CharacterEditorWindow : Window
 
     public CharacterEditorWindow(AppSettings settings) : this(settings, null) { }
 
-    public CharacterEditorWindow(AppSettings settings, string mode)
+    public CharacterEditorWindow(AppSettings settings, string mode) : this(settings, mode, null) { }
+
+    internal CharacterEditorWindow(AppSettings settings, string mode, string surfaceMode)
     {
-        SurfaceMode = settings.SurfaceMode is "taskbar" or "edge" ? settings.SurfaceMode : "icon";
+        string surface = surfaceMode ?? settings.SurfaceMode;
+        SurfaceMode = surface is "taskbar" or "edge" ? surface : "icon";
         Draft = settings.Clone();
         string style = SurfaceMode switch
         {
@@ -106,14 +109,13 @@ public sealed class CharacterEditorWindow : Window
         transparent.Unchecked += (_, __) => { Draft.CharacterTransparentBackground = false; Refresh(); };
         tools.Children.Add(transparent);
         var choose = Tool("\uE91B", "选择照片"); choose.Click += (_, __) => ChoosePhoto(); DockPanel.SetDock(choose, Dock.Right); tools.Children.Add(choose);
-        var color = Tool("\uE790", "背景颜色"); DockPanel.SetDock(color, Dock.Right); tools.Children.Add(color);
+        var color = Tool("\uE790", "角色与照片图标的背景颜色"); DockPanel.SetDock(color, Dock.Right); tools.Children.Add(color);
         color.Click += (_, __) =>
         {
-            using var dialog = new System.Windows.Forms.ColorDialog { FullOpen = true };
-            if (AppearanceColors.TryColor(Draft.CharacterBackgroundColor, out var current))
-                dialog.Color = System.Drawing.Color.FromArgb(current.R, current.G, current.B);
-            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
-            Draft.CharacterBackgroundColor = $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}";
+            var editor = new ColorEditorWindow("角色与照片背景颜色", "适用于使用当前角色或照片图标的电量组件。",
+                Draft.CharacterBackgroundColor, App.Theme.Surface, App.Theme) { Owner = this };
+            if (editor.ShowDialog() != true) return;
+            Draft.CharacterBackgroundColor = editor.SelectedHex ?? "";
             transparent.IsChecked = false;
             Refresh();
         };

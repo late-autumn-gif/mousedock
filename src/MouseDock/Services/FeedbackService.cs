@@ -330,15 +330,19 @@ namespace MouseDock.Services
                         SupportStatus = snapshot.Select(item => new
                         {
                             item.Name,
-                            Status = item.DpiStatus == "captured" ? "protocol-read" : "identified-only",
-                            Battery = item.Percent.HasValue ? "protocol-read" : "unknown",
-                            Dpi = item.Dpi.HasValue ? "protocol-read" : "unavailable"
+                            Status = item.DpiStatus == "captured" ? "dpi-snapshot" : "identified-only",
+                            Battery = item.Freshness == "display-snapshot" && item.IsBatteryEstimated ? "estimated" : item.Freshness,
+                            Dpi = item.DpiStatus ?? "unavailable"
                         }),
+                        ModelCandidates = Detection.BatteryReplay.Profiles.Where(profile =>
+                            (phases ?? Array.Empty<AdaptationPhase>()).Any(phase =>
+                                string.Concat((phase.User.Model ?? "").Where(char.IsLetterOrDigit))
+                                    .Contains(profile.Model, StringComparison.OrdinalIgnoreCase))),
                         Series = series,
                         Rounds = rounds.Select((r, i) => new
                         {
                             Entry = ReplayEntry(i), r.StartedAt, r.FinishedAt, DurationMs = (r.FinishedAt - r.StartedAt).TotalMilliseconds, r.ScanError,
-                            Dpi = r.DpiObservations
+                            Dpi = r.DpiObservations, Devices = Detection.BatteryReplay.DescribeCapture(r)
                         })
                     }, new JsonSerializerOptions { WriteIndented = true }));
                     for (int i = 0; i < rounds.Length; i++)

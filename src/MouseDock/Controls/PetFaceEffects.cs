@@ -4,7 +4,7 @@ using System.Windows.Media;
 
 namespace MouseDock.Controls;
 
-internal enum PetExpression { Neutral, Smile, Blink, Rest, Dizzy }
+internal enum PetExpression { Neutral, Smile, Blink, Wink, Rest, Dizzy }
 
 internal sealed class PetFaceEffects : FrameworkElement
 {
@@ -51,6 +51,11 @@ internal sealed class PetFaceEffects : FrameworkElement
 
     protected override void OnRender(DrawingContext drawing)
     {
+        if (Expression == PetExpression.Wink)
+        {
+            DrawEye(drawing, _eyes.Right);
+            return;
+        }
         if (Expression is not (PetExpression.Blink or PetExpression.Rest or PetExpression.Dizzy)) return;
         DrawEye(drawing, _eyes.Left);
         DrawEye(drawing, _eyes.Right);

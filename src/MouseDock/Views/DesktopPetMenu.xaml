@@ -11,7 +11,9 @@
                 <ControlTemplate TargetType="ContextMenu">
                     <Border Background="{DynamicResource PetMenuSurface}" BorderBrush="{DynamicResource PetMenuBorder}"
                             BorderThickness="1" CornerRadius="8" Padding="5" MinWidth="176">
-                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        <ScrollViewer MaxHeight="420" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>
@@ -65,7 +67,9 @@
                                 <Border Background="{DynamicResource PetMenuSurface}" BorderBrush="{DynamicResource PetMenuBorder}"
                                         BorderThickness="1" CornerRadius="8" Padding="5" MinWidth="142" MaxHeight="360">
                                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                        <ScrollViewer MaxHeight="420" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
                                     </ScrollViewer>
                                 </Border>
                             </Popup>

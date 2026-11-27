@@ -10,17 +10,25 @@
         TextOptions.TextFormattingMode="Ideal">
 
     <Window.Resources>
-        <Style x:Key="AppearanceModeChoice" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
-                <Border x:Name="ModeSurface" Background="{DynamicResource ControlFillBrush}" BorderBrush="{DynamicResource ControlOutlineBrush}" BorderThickness="1" CornerRadius="9" Padding="12,9"><ContentPresenter HorizontalAlignment="Center" RecognizesAccessKey="True"/></Border>
-                <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ModeSurface" Property="Background" Value="{DynamicResource ButtonHoverBrush}"/></Trigger>
-                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="ModeSurface" Property="Background" Value="{DynamicResource ThemeChoiceBrush}"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ModeSurface" Property="BorderBrush" Value="{DynamicResource ControlAccentBrush}"/></Trigger>
-                </ControlTemplate.Triggers>
-            </ControlTemplate></Setter.Value></Setter>
+        <Style x:Key="ColorSwatchButton" TargetType="Button">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <Ellipse x:Name="SwatchOutline" Margin="2" Stroke="{DynamicResource ControlOutlineBrush}" StrokeThickness="1"/>
+                            <Ellipse Margin="5" Fill="{TemplateBinding Background}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="SwatchOutline" Property="Stroke" Value="{DynamicResource ControlAccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <SolidColorBrush x:Key="ThemeChoiceBrush" Color="#293A35"/>
 
@@ -307,6 +315,22 @@
                                 <Button x:Name="SurfaceEdge" Content="屏幕右侧" Tag="edge"/>
                                 <Button x:Name="SurfacePet" Content="桌宠" Tag="pet"/>
                             </UniformGrid>
+                            <TextBlock Text="电量环样式" FontWeight="SemiBold" Margin="0,14,0,5"/>
+                            <UniformGrid Columns="2" Margin="0,0,-8,0">
+                                <RadioButton x:Name="RingContinuous" GroupName="BatteryRing" Style="{StaticResource EdgeStyleChoice}" Checked="OnBatteryRingStyleChanged">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="15" Height="15" Margin="0,0,8,0" Stroke="{DynamicResource ControlAccentBrush}" StrokeThickness="1.7"/>
+                                        <TextBlock Text="连续圆环"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton x:Name="RingSegmented" GroupName="BatteryRing" Style="{StaticResource EdgeStyleChoice}" Checked="OnBatteryRingStyleChanged">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Width="15" Height="15" Margin="0,0,8,0" Stretch="Uniform" Stroke="{DynamicResource ControlAccentBrush}" StrokeThickness="1.7"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 9,1 A 6,6 0 0 1 14,9 M 12,12 A 6,6 0 0 1 4,12 M 2,9 A 6,6 0 0 1 6,1"/>
+                                        <TextBlock Text="三段电量弧"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </UniformGrid>
                             <StackPanel x:Name="IconOptionsPanel">
                             <TextBlock Text="悬浮图标样式" FontWeight="SemiBold" Margin="0,14,0,5"/>
                             <UniformGrid x:Name="IconStyleChoices" Columns="3" Margin="-3,5,-3,0"/>
@@ -322,7 +346,6 @@
                             <StackPanel x:Name="ReferenceAppearanceOptions" Margin="0,10,0,0">
                                 <CheckBox x:Name="IconFollowThemeBox" Content="跟随界面主题色" Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged"/>
                                 <CheckBox x:Name="IconHideBackgroundBox" Content="隐藏图标底色" Checked="OnIconOptionsChanged" Unchecked="OnIconOptionsChanged"/>
-                                <Button Content="角色与照片…" Style="{StaticResource GhostButton}" Click="OnEditCharacter" HorizontalAlignment="Right" Margin="0,8,0,0"/>
                                 <Grid Margin="0,8,0,0">
                                     <TextBlock Text="默认角色" Style="{StaticResource RowText}"/>
                                     <ComboBox x:Name="ReferenceCharacterChoices" Width="160" HorizontalAlignment="Right" SelectionChanged="OnReferenceCharacterChanged">
@@ -330,17 +353,6 @@
                                         <ComboBoxItem Content="橘焰" Tag="asuka"/>
                                         <ComboBoxItem Content="薄荷芽" Tag="peek"/>
                                     </ComboBox>
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <TextBlock Text="照片" Style="{StaticResource RowText}"/>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                        <Button Style="{StaticResource GhostButton}" ToolTip="编辑照片" Click="OnPickReferencePhoto" Padding="9,6">
-                                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets"/>
-                                        </Button>
-                                        <Button Style="{StaticResource GhostButton}" ToolTip="清除照片" Click="OnClearReferencePhoto" Padding="9,6" Margin="7,0,0,0">
-                                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets"/>
-                                        </Button>
-                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                             <StackPanel x:Name="TaskbarPositionChoiceRow" Orientation="Horizontal" Margin="0,14,0,0">
@@ -407,7 +419,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="文字颜色" Style="{StaticResource RowText}"/>
-                                    <Button x:Name="TaskbarTextColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0" Tag="text" Click="OnPickTaskbarColor" BorderThickness="1"/>
+                                    <Button x:Name="TaskbarTextColorSwatch" Grid.Column="1" Style="{StaticResource ColorSwatchButton}" Margin="14,0,8,0" Tag="text" Click="OnPickTaskbarColor" AutomationProperties.Name="任务栏文字颜色"/>
                                     <TextBlock x:Name="TaskbarTextColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65"/>
                                 </Grid>
                                 <Grid Margin="0,8,0,0">
@@ -417,7 +429,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="电量颜色" Style="{StaticResource RowText}"/>
-                                    <Button x:Name="TaskbarBatteryColorSwatch" Grid.Column="1" Width="44" Height="22" Margin="14,0,8,0" Tag="battery" Click="OnPickTaskbarColor" BorderThickness="1"/>
+                                    <Button x:Name="TaskbarBatteryColorSwatch" Grid.Column="1" Style="{StaticResource ColorSwatchButton}" Margin="14,0,8,0" Tag="battery" Click="OnPickTaskbarColor" AutomationProperties.Name="任务栏电量颜色"/>
                                     <TextBlock x:Name="TaskbarBatteryColorLabel" Grid.Column="2" Style="{StaticResource RowText}" Opacity="0.65"/>
                                 </Grid>
                             </StackPanel>
@@ -437,10 +449,10 @@
                                     </Button>
                                 </Grid>
                                 <Grid Margin="0,0,0,12">
-                                    <TextBlock Text="图标颜色" Style="{StaticResource RowText}"/>
+                                    <TextBlock Text="屏幕右侧图标颜色" Style="{StaticResource RowText}"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <Button x:Name="EdgeColorButton" Style="{StaticResource GhostButton}" Padding="7,5" ToolTip="选择图标颜色" Click="OnPickEdgeColor">
-                                            <Border x:Name="EdgeColorSwatch" Width="28" Height="16" CornerRadius="3" Background="WhiteSmoke" BorderBrush="#808080" BorderThickness="1"/>
+                                            <Border x:Name="EdgeColorSwatch" Width="19" Height="19" CornerRadius="10" Background="WhiteSmoke" BorderBrush="#808080" BorderThickness="1"/>
                                         </Button>
                                         <Button Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="7,5" ToolTip="恢复默认颜色" Click="OnResetEdgeColor">
                                             <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="12"/>
@@ -494,13 +506,7 @@
                             <StackPanel x:Name="TrayDeviceRows" Margin="24,3,0,0"/>
                             <CheckBox x:Name="TrayHoverCheck" Content="托盘悬停预览" Checked="OnTrayHoverChanged" Unchecked="OnTrayHoverChanged"/>
                         </StackPanel>
-                    </Border></StackPanel><StackPanel x:Name="PageAppearance" Visibility="Collapsed"><TextBlock Text="外观" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="挑选喜欢的主题，分别调整界面与悬浮外观。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><TextBlock Text="明暗模式" Style="{StaticResource Section}"/>
-<UniformGrid Columns="3" Margin="2,0,2,10">
-                        <RadioButton x:Name="ThemeDefault" Style="{StaticResource AppearanceModeChoice}" Content="跟随预设" Tag="" GroupName="ThemeMode" Checked="OnThemeModeChanged"/>
-                        <RadioButton x:Name="ThemeDark" Style="{StaticResource AppearanceModeChoice}" Content="深色" Tag="dark" GroupName="ThemeMode" Checked="OnThemeModeChanged"/>
-                        <RadioButton x:Name="ThemeLight" Style="{StaticResource AppearanceModeChoice}" Content="浅色" Tag="light" GroupName="ThemeMode" Checked="OnThemeModeChanged"/>
-                    </UniformGrid>
-<Grid Margin="0,14,0,10"><TextBlock Text="主题配色" FontSize="13" FontWeight="SemiBold"/><TextBlock x:Name="CurrentThemeText" HorizontalAlignment="Right" FontSize="11" Foreground="{DynamicResource TextBrush}" Opacity="0.75"/></Grid>
+                    </Border></StackPanel><StackPanel x:Name="PageAppearance" Visibility="Collapsed"><TextBlock Text="外观" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="选择主题，再按窗口或组件调整配色。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><Grid Margin="0,14,0,10"><TextBlock Text="主题配色" FontSize="13" FontWeight="SemiBold"/><TextBlock x:Name="CurrentThemeText" HorizontalAlignment="Right" FontSize="11" Foreground="{DynamicResource TextBrush}" Opacity="0.75"/></Grid>
 <ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnThemeSelected">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ListBox.ItemsPanel>
 <ListBox.Template>
@@ -524,25 +530,56 @@
                             </Style>
                         </ListBox.ItemContainerStyle>
 <ListBox.ItemTemplate><DataTemplate>
-    <Border x:Name="Box" CornerRadius="10" Padding="10,5" Margin="0,0,8,8" Background="{DynamicResource CardBrush}" BorderThickness="1" BorderBrush="{DynamicResource ControlOutlineBrush}">
-        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/></Grid.ColumnDefinitions>
-            <Border Width="24" Height="24" CornerRadius="7" Background="{Binding Swatch}" HorizontalAlignment="Left"><Ellipse Width="7" Height="7" Fill="{Binding AccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,4"/></Border>
+    <Border x:Name="Box" CornerRadius="10" Padding="9,7" Margin="0,0,8,8" Background="{DynamicResource CardBrush}" BorderThickness="1" BorderBrush="Transparent">
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="43"/><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/></Grid.ColumnDefinitions>
+            <Border Width="34" Height="23" CornerRadius="6" Background="{Binding Swatch}" HorizontalAlignment="Left"/>
             <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
             <Path x:Name="Tick" Grid.Column="2" Width="10" Height="8" Data="M 0,4 L 3,7 L 10,0" Stroke="{DynamicResource ControlAccentBrush}" StrokeThickness="1.5" VerticalAlignment="Center" Opacity="0"/>
         </Grid>
     </Border>
     <DataTemplate.Triggers>
-        <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource ThemeChoiceBrush}"/><Setter TargetName="Tick" Property="Opacity" Value="1"/></DataTrigger>
+        <Trigger SourceName="Box" Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource ButtonHoverBrush}"/></Trigger>
+        <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource ThemeChoiceBrush}"/><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource ControlOutlineBrush}"/><Setter TargetName="Tick" Property="Opacity" Value="1"/></DataTrigger>
         <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource ControlAccentBrush}"/></DataTrigger>
     </DataTemplate.Triggers>
 </DataTemplate></ListBox.ItemTemplate>
-                    </ListBox><TextBlock Text="独立配色" Style="{StaticResource Section}"/><TextBlock Text="分别调整界面、悬浮图标与系统托盘。" FontSize="12" Opacity="0.7" Margin="3,0,0,6"/><WrapPanel Margin="0,8,0,6">
-                        <Button Content="界面配色" Tag="theme" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0"/>
-                        <Button Content="悬浮图标配色" Tag="icon" Style="{StaticResource GhostButton}" Click="OnEditColors" Margin="0,0,6,0"/>
-                        <Button Content="系统托盘配色" Tag="tray" Style="{StaticResource GhostButton}" Click="OnEditColors"/>
-                    </WrapPanel>
-<Grid Margin="0,3,0,8">
-                        <TextBlock Text="图片背景" Style="{StaticResource RowText}"/>
+                    </ListBox>
+                    <TextBlock Text="按界面自定义" Style="{StaticResource Section}"/>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <DockPanel Margin="0,0,0,9">
+                                <Button DockPanel.Dock="Right" Content="编辑配色…" Tag="theme" Style="{StaticResource GhostButton}" Click="OnEditColors" AutomationProperties.Name="编辑界面主题配色"/>
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="界面主题" FontWeight="SemiBold"/>
+                                    <TextBlock Text="窗口底色、卡片、菜单、文字与强调色" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <DockPanel Margin="0,0,0,5">
+                                <Button DockPanel.Dock="Right" Content="编辑配色…" Tag="mini" Style="{StaticResource GhostButton}" Click="OnEditColors" AutomationProperties.Name="编辑迷你窗配色"/>
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="迷你窗" FontWeight="SemiBold"/>
+                                    <TextBlock Text="外框、设备名称、图标与电量数字" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <CheckBox x:Name="MiniFollowThemeBackgroundBox" Content="迷你窗背景色跟随主题" Click="OnMiniFollowThemeBackground" Margin="0,0,0,10"/>
+                            <DockPanel Margin="0,0,0,9">
+                                <Button DockPanel.Dock="Right" Content="编辑配色…" Tag="icon" Style="{StaticResource GhostButton}" Click="OnEditColors" AutomationProperties.Name="编辑悬浮图标配色"/>
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="悬浮图标" FontWeight="SemiBold"/>
+                                    <TextBlock Text="组件底色、图标、文字与电量环" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="编辑配色…" Tag="tray" Style="{StaticResource GhostButton}" Click="OnEditColors" AutomationProperties.Name="编辑系统托盘配色"/>
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="系统托盘" FontWeight="SemiBold"/>
+                                    <TextBlock Text="通知区域的电量图标与文字" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+                    <Grid Margin="0,3,0,8">
+                        <TextBlock Text="设置窗口背景图" Style="{StaticResource RowText}"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button x:Name="EditBackgroundButton" Style="{StaticResource GhostButton}" Click="OnPickBackground" ToolTip="编辑图片背景" Padding="9,6"><TextBlock Text="选择图片…"/></Button>
                             <Button Style="{StaticResource GhostButton}" Click="OnClearBackground" ToolTip="清除图片背景" Padding="9,6" Margin="7,0,0,0"><TextBlock Text="清除"/></Button>
@@ -598,7 +635,20 @@
                                     <Button x:Name="Warn40" Content="40%" Tag="40" Style="{StaticResource GhostButton}" Padding="8,3" FontSize="10.5" Margin="6,0,0,0" Click="OnWarnClick"/>
                                 </StackPanel>
                             </Grid>
-
+                            <DockPanel Margin="0,12,0,0">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Click="OnPickLowBatteryColor"
+                                        AutomationProperties.Name="编辑低电量颜色">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse x:Name="LowBatteryColorSwatch" Width="14" Height="14" Margin="0,0,7,0"
+                                                 Stroke="{DynamicResource ControlOutlineBrush}" StrokeThickness="1"/>
+                                        <TextBlock x:Name="LowBatteryColorLabel" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                    <TextBlock Text="低电量颜色" FontWeight="SemiBold"/>
+                                    <TextBlock Text="用于各电量组件的低电量状态" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
                         </StackPanel>
                     </Border></StackPanel><StackPanel x:Name="PageHelp" Visibility="Collapsed"><TextBlock Text="帮助与高级" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="诊断、更新与维护。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><Grid Margin="0,10,0,0">
                                 <TextBlock Text="自动检查更新" Style="{StaticResource RowText}"/>

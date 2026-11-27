@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+src/MouseDock/Assets/Coopanion/Motion/body.js text eol=lf
+src/MouseDock/Assets/Coopanion/Motion/rig.js text eol=lf
+src/MouseDock/Assets/Coopanion/Motion/whale-figure.js text eol=lf
+src/MouseDock/Assets/Coopanion/Motion/whale-model.json text eol=lf
+src/MouseDock/Assets/Coopanion/Motion/LICENSE text eol=lf whitespace=-blank-at-eof

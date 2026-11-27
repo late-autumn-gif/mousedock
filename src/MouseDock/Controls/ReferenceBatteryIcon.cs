@@ -13,6 +13,7 @@ namespace MouseDock.Controls;
 public sealed class ReferenceBatteryIcon : FrameworkElement
 {
     public string StyleName = "ring";
+    private bool _continuousRing;
     public List<(DeviceKind Kind, int Level, bool Stale, bool Charging)> Devices = new();
     public Brush Accent = Brush("#A6F5BF");
     public Brush Ink = Brush("#EDF3EF");
@@ -87,6 +88,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     public void ApplyPalette(ThemePreset theme, AppSettings settings)
     {
         LowBatteryThreshold = settings.LowBatteryWarn;
+        _continuousRing = settings.ContinuousBatteryRing;
         var palette = AppearanceColors.IconPalette(settings, theme, settings.IconFollowTheme);
         ApplyPalette(palette, true);
     }
@@ -282,7 +284,7 @@ public sealed class ReferenceBatteryIcon : FrameworkElement
     private void DrawRing(DrawingContext dc, Point center, double radius, double level, bool charging)
     {
         var fill = StatusBrush((int)Math.Round(level), charging: charging);
-        BatteryRingDrawing.Draw(dc, center, radius, level, Outline, fill);
+        BatteryRingDrawing.Draw(dc, center, radius, level, Outline, fill, _continuousRing);
         ChargeSweep.Absorb(dc, center, radius, charging && level >= 0 ? _phase : -1, fill);
     }
 

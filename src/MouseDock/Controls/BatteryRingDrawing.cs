@@ -11,7 +11,7 @@ internal static class BatteryRingDrawing
     internal const double HeadsetGlyphRadiusRatio = 1.3;
 
     internal static void Draw(DrawingContext dc, Point center, double radius, double level,
-        Brush track, Brush fill)
+        Brush track, Brush fill, bool continuous = false)
     {
         if (radius <= 0) return;
         if (level < 0)
@@ -21,6 +21,14 @@ internal static class BatteryRingDrawing
         }
         var trackPen = RoundedPen(track, radius * .18);
         var fillPen = RoundedPen(fill, trackPen.Thickness);
+        if (continuous)
+        {
+            dc.DrawEllipse(null, trackPen, center, radius, radius);
+            if (level >= 100) dc.DrawEllipse(null, fillPen, center, radius, radius);
+            else if (level > 0) DrawArc(dc, center, radius, 0, level * 3.6, fillPen);
+            return;
+        }
+
         double progress = Math.Clamp(level, 0, 100) * 2.44;
         DrawSegment(28, 92);
         DrawSegment(150, 60);
@@ -53,7 +61,7 @@ internal static class BatteryRingDrawing
         using (var context = geometry.Open())
         {
             context.BeginFigure(PointAt(start), false, false);
-            context.ArcTo(PointAt(start + sweep), new Size(radius, radius), 0, false,
+            context.ArcTo(PointAt(start + sweep), new Size(radius, radius), 0, sweep > 180,
                 SweepDirection.Clockwise, true, false);
         }
         dc.DrawGeometry(null, pen, geometry);

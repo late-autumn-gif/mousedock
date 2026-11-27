@@ -28,7 +28,7 @@ public sealed class TaskbarBatteryStrip : Border
     public static string AppearanceKey(AppSettings settings, ThemePreset theme) =>
         $"{settings.ReferenceCharacter}|{settings.IconBackground}|{settings.PhotoAsset}|{settings.PhotoZoom}|" +
         $"{settings.PhotoOffsetX}|{settings.PhotoOffsetY}|{settings.IconHideBackground}|{settings.IconFollowTheme}|" +
-        $"{settings.CharacterTransparentBackground}|{settings.CharacterBackgroundColor}|" +
+        $"{settings.CharacterTransparentBackground}|{settings.CharacterBackgroundColor}|{settings.ContinuousBatteryRing}|" +
         $"{CharacterAssignments.CacheKey(settings)}|" +
         $"{PhotoAssignments.CacheKey(settings)}|" +
         $"{theme.Surface}|{theme.Text}|{theme.Accent}|{theme.Low}|{theme.TextDim}";
@@ -263,7 +263,7 @@ public sealed class TaskbarBatteryStrip : Border
             ring = new DeviceBatteryRing
             {
                 GlyphBrush = textBrush, BatteryBrush = batteryBrush, LowBatteryThreshold = lowThreshold,
-                ShowGlyph = false, AnimateCharge = true
+                ShowGlyph = false, AnimateCharge = true, ContinuousRing = appearance.ContinuousBatteryRing
             };
             ring.SetBinding(DeviceBatteryRing.KindProperty, new Binding(nameof(DeviceInfo.Kind)));
             ring.SetBinding(DeviceBatteryRing.LevelProperty, new Binding(nameof(DeviceInfo.Level)));

@@ -315,6 +315,12 @@ namespace MouseDock.Views
             PinButton.ToolTip = App.Settings.AlwaysOnTop ? "取消始终置顶" : "始终置顶";
             PinButton.Background = App.Settings.AlwaysOnTop ? TrackBrush : Brushes.Transparent;
         }
+        private void OnRefreshDevicesClick(object sender, RoutedEventArgs e)
+        {
+            FooterText.Text = "正在扫描已连接的设备…";
+            App.RescanDevices();
+        }
+
         private void OnSettingsClick(object sender, RoutedEventArgs e) => App.ShowSettings(this);
         private void OnHideClick(object sender, RoutedEventArgs e) => Hide();
         private void OnCloseDetailClick(object sender, RoutedEventArgs e) => DetailPanel.Visibility = Visibility.Collapsed;

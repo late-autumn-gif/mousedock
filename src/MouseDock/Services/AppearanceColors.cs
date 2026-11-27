@@ -7,7 +7,8 @@ namespace MouseDock.Services;
 
 public static class AppearanceColors
 {
-    internal static readonly SolidColorBrush LowBatteryFill = CreateLowBatteryFill();
+    internal static readonly SolidColorBrush LowBatteryFill = (SolidColorBrush)Solid(ThemePreset.C("#B42332"));
+    private static (string Value, Brush Brush) _customLow;
 
     private static readonly Brush ChargingFill = Solid(Color.FromRgb(53, 168, 231));
     private static readonly Brush AlternateChargingFill = Solid(Color.FromRgb(160, 107, 229));
@@ -23,7 +24,7 @@ public static class AppearanceColors
                 Math.Abs(color.R - solid.Color.R) + Math.Abs(color.G - solid.Color.G) + Math.Abs(color.B - solid.Color.B) < 95
                 ? AlternateChargingFill : ChargingFill;
         }
-        return IsLowBattery(level, threshold) ? (text ? LowBatteryText : LowBatteryFill) : normal;
+        return IsLowBattery(level, threshold) ? LowBatteryBrush(App.Settings, text) : normal;
     }
 
     private static Brush Solid(Color color)
@@ -35,11 +36,15 @@ public static class AppearanceColors
 
     internal static bool IsLowBattery(int level, int threshold) => level >= 0 && level <= threshold;
 
-    private static SolidColorBrush CreateLowBatteryFill()
+    internal static string LowBatteryOverride(AppSettings settings) =>
+        settings?.LowBatteryColor ?? settings?.ThemeColors?.GetValueOrDefault("low");
+
+    internal static Brush LowBatteryBrush(AppSettings settings, bool text = false)
     {
-        var brush = new SolidColorBrush(Color.FromRgb(180, 35, 50));
-        brush.Freeze();
-        return brush;
+        string value = LowBatteryOverride(settings);
+        if (_customLow.Value != value)
+            _customLow = (value, TryColor(value, out var color) ? Solid(color) : null);
+        return _customLow.Brush ?? (text ? LowBatteryText : LowBatteryFill);
     }
 
     public static T Battery<T>(int level, T normal, T low, T unknown) =>
@@ -65,7 +70,7 @@ public static class AppearanceColors
         result.TextDim = Read(values, "muted", result.TextDim);
         result.Accent = Read(values, "accent", result.Accent);
         if (Has(values, "accent")) result.Accent2 = result.Accent;
-        result.Low = Read(values, "low", result.Low.A == 0 ? ThemePreset.C("#FF687D") : result.Low);
+        if (result.Low.A == 0) result.Low = ThemePreset.C("#FF687D");
         return values?.Count > 0 ? ColorContrast.Readable(result) : result;
     }
 

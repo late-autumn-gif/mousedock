@@ -14,6 +14,7 @@ internal static class BongoSceneChecks
     {
         using var fixture = new AppearanceFixture();
         Directory.CreateDirectory(output);
+        fixture.Settings.DesktopPetDeskMode = true;
         fixture.Battery.VisibleDevices[0].Name = "MCHOSE A7 V3 Pro";
         fixture.Battery.VisibleDevices.Add(new MouseDock.Models.DeviceInfo { Id = "key", Name = "VGN Neon75 Air", Kind = MouseDock.Models.DeviceKind.Keyboard, Level = 79, IsStale = true });
         fixture.Battery.VisibleDevices.Add(new MouseDock.Models.DeviceInfo { Id = "unknown", Name = "ZhuAudio ZG2", Kind = MouseDock.Models.DeviceKind.Headset, Level = -1 });
@@ -107,7 +108,7 @@ internal static class BongoSceneChecks
                 }
                 CheckLights(scene, output, id);
                 scene.Clear();
-                foreach (var expression in new[] { PetExpression.Blink, PetExpression.Dizzy })
+                foreach (var expression in new[] { PetExpression.Blink, PetExpression.Wink, PetExpression.Dizzy })
                 {
                     scene.ShowPose(expression, 1000);
                     scene.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
@@ -147,19 +148,12 @@ internal static class BongoSceneChecks
 
     private static void CheckSmile(BongoPetScene scene)
     {
-        var atlas = new BitmapImage(new Uri("pack://application:,,,/MouseDock;component/Assets/Characters/DeskPoses/shin-chan.png"));
-        int w = atlas.PixelWidth / 2, h = atlas.PixelHeight / 2;
-        var smile = new CroppedBitmap(atlas, new Int32Rect(w, h, w, h));
-        var actual = (BitmapSource)((Image)scene.Children[0]).Source;
-        var scaled = new TransformedBitmap(smile, new ScaleTransform((double)actual.PixelWidth / w, (double)actual.PixelHeight / h));
-        var reference = new FormatConvertedBitmap(scaled, PixelFormats.Pbgra32, null, 0);
-        // The chin finishes at y=256 in the 400-unit cell, just above the shoulders.
-        var head = new Int32Rect(0, 0, actual.PixelWidth, actual.PixelHeight * 257 / 400);
-        int stride = head.Width * 4;
-        byte[] expected = new byte[stride * head.Height], displayed = new byte[expected.Length];
-        reference.CopyPixels(head, expected, stride, 0);
-        actual.CopyPixels(head, displayed, stride, 0);
-        Require(displayed.SequenceEqual(expected), "The smile from helmet to chin must come from one expression frame.");
+        var art = (Image)scene.Children[0];
+        var smile = art.Source;
+        scene.ShowPose(false, 1000);
+        Require(smile is DrawingImage && art.Source is DrawingImage && !ReferenceEquals(smile, art.Source),
+            "The anime portrait must use a distinct head for a desk-mode expression.");
+        scene.ShowPose(true, 1000);
     }
 
     private static void CheckLights(BongoPetScene scene, string output, string id)

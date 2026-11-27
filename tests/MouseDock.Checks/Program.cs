@@ -55,6 +55,14 @@ internal static class Program
             return R98KeyboardChecks.RunLive();
         if (args.Length == 2 && args[0] == "--bongo") { BongoSceneChecks.Run(args[1]); return 0; }
         if (args.Contains("--pet-input-live")) { DesktopPetInputChecks.RunLive(); Console.WriteLine("PASS background input"); return 0; }
+        if (args is ["--coopanion-figures", var file])
+        {
+            MouseDock.Views.DesktopPetWindow.WriteCoopanionFigures(file);
+            return 0;
+        }
+        if (args.Contains("--pet-autoplay")) { AuditChecks.DesktopPetAutoplay(); Console.WriteLine("PASS desktop pet autoplay"); return 0; }
+        if (args.Contains("--pet-actions")) { AuditChecks.DesktopPetNativeActions(); Console.WriteLine("PASS native desktop pet actions"); return 0; }
+        if (args.Contains("--pet-roam")) { AuditChecks.DesktopPetRoaming(); Console.WriteLine("PASS desktop pet roaming"); return 0; }
         if (args.Contains("--pet-menu")) { AuditChecks.DesktopPet(); Console.WriteLine("PASS desktop pet menu and device list"); return 0; }
         if (args.Contains("--pet-input"))
         {
@@ -66,6 +74,9 @@ internal static class Program
         var checks = new (string Name, Action Check)[]
         {
             ("Device quick menu uses compact themed rows and one active mode", QuickMenuChecks.Run),
+            ("Device quick actions rescan discovery without overriding preferences", DeviceQuickActionsChecks.Discovery),
+            ("Device quick actions choose and draw both battery ring variants", DeviceQuickActionsChecks.Rings),
+            ("Device quick actions list audio endpoints and verify default routing", DeviceQuickActionsChecks.Audio),
             ("Xbox system battery bands reach cards without cached percentages", () => XboxWirelessUiChecks.Run()),
             ("Scyrox receiver protocol reaches the normal visible battery card", () => ScyroxLegacyUiChecks.Run()),
             ("MCHOSE reported keyboard battery remains visible in the normal card", () => MchoseFeedbackUiChecks.Run()),
@@ -111,8 +122,11 @@ internal static class Program
             ("Only one of the six display modes is visible", UiRegressionChecks.ExclusiveSurfaces),
             ("Desktop pet behavior schedules idle interaction rest and landing", AuditChecks.DesktopPetBehaviorSchedule),
             ("Desktop pet follows battery state without replaying completion", AuditChecks.DesktopPet),
+            ("Desktop pet roams within its anchor and obeys motion controls", AuditChecks.DesktopPetRoaming),
+            ("Coopanion engine handles click, drag, release and native gestures", AuditChecks.DesktopPetNativeActions),
+            ("Four desktop pet characters autonomously use the Coopanion engine", AuditChecks.DesktopPetAutoplay),
             ("Desktop pet card portraits remain stable through expression changes", AuditChecks.DesktopPetHeaderExpressions),
-            ("Desktop pet input defaults on and reacts only while visible with motion enabled", DesktopPetInputChecks.Run),
+            ("Desktop pet input activates only in desk mode while visible with motion enabled", DesktopPetInputChecks.Run),
             ("Character editor cancels drafts and applies only appearance settings", CharacterEditorChecks.Draft),
             ("Photo overlays display live device names and status", CharacterEditorChecks.PhotoDetails),
             ("Character editor completion applies the visible floating style", CharacterEditorChecks.Application),
@@ -122,7 +136,7 @@ internal static class Program
             ("Photo overlays correct dark text against the photo backing", CharacterEditorChecks.PhotoContrast),
             ("Floating and mini surfaces expand exclusively into the full panel", FloatingExpansionChecks.Expansion),
             ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
-            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
+            ("Background editor matches the settings aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Multi-device icons remain square and preserve identity colors", IconCompositionChecks.Layout),
             ("Independent theme floating and tray color overrides survive reset", AppearanceColorChecks.IndependentColors),
@@ -144,7 +158,7 @@ internal static class Program
             ("Wallpaper Engine stops polling and discards results when the card hides or reconfigures", WallpaperEngineChecks.Card),
             ("Floating edges resize with anchored geometry and independent sizes", FloatingInteractionChecks.Geometry),
             ("Imported images normalize EXIF and transparent bounds", ImageImportChecks.Normalization),
-            ("Background editor matches the main aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
+            ("Background editor matches the settings aspect and resets only its draft", ImageImportChecks.BackgroundPreview),
             ("Reference styles share aliases and portrait choices across surfaces", ReferenceStyleChecks.Choices),
             ("Reference styles cancel photo edits without changing saved cropping", ReferenceStyleChecks.PhotoDraft),
             ("Reference styles keep default text readable on their own backgrounds", ReferenceStyleChecks.DefaultContrast),
@@ -218,6 +232,7 @@ internal static class Program
             ("Error report failure names the step that broke", CheckReportFailureClassification),
             ("Failed export leaves a diagnostic log", CheckReportFailureLog),
             ("Mini battery text updates without rebuilding devices", AuditChecks.MiniLiveReading),
+            ("Mini appearance shares menu, settings, and saved palette", MiniAppearanceChecks.Run),
             ("Settings can reopen after a system close", AuditChecks.ClosedSettings),
             ("Merged channels preserve charging status", AuditChecks.ChargingMerge),
             ("Failed polls preserve the last reading and recover", AuditChecks.CachedReading),

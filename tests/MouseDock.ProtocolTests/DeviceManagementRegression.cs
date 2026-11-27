@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -125,7 +125,9 @@ internal static class DeviceManagementRegression
                 Capture(manager,Path.Combine(directory,"设备管理-设置模拟预览.png"));
                 var menu=DeviceActions.CreateMenu(headset,battery);
                 var actions=menu.Items.OfType<MenuItem>().Where(m=>m.IsEnabled).ToList();
-                Check(actions.Select(a=>a.Header.ToString()).SequenceEqual(new[]{"取消识别","隐藏设备","重新识别"}),"The requested three device actions appear in order");
+                Check(actions.Select(a=>a.Header.ToString()).SequenceEqual(new[]{
+                    "取消识别","隐藏设备","重新识别","刷新设备","切换输入设备","切换输出设备"
+                }),"Device-specific actions and common quick actions appear in order");
                 var deviceRow=Find<Border>(deviceChecks,b=>ReferenceEquals(b.DataContext,headset) && DeviceActions.GetEnabled(b));
                 Check(DeviceActions.GetEnabled(deviceRow),"The actual settings row enables the device context menu");
                 var rightClick=new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Right)

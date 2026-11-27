@@ -38,11 +38,13 @@ namespace MouseDock.Services
                 if (!string.Equals(id, item.Id, StringComparison.OrdinalIgnoreCase)) continue;
                 bool light = mode == "light" || (mode != "dark" && item.Light);
                 var c = (light ? item.Bright : item.Dark).Split(' ');
+                var background = ThemePreset.C("#" + c[0]);
+                var surface = ThemePreset.C("#" + c[1]);
                 return new ThemePreset
                 {
                     Id = item.Id, Name = item.Name, IsLight = light,
-                    BgTop = ThemePreset.C("#" + c[0]), BgBottom = ThemePreset.C("#" + c[0]),
-                    Surface = ThemePreset.C("#" + c[1]), Text = ThemePreset.C("#" + c[2]),
+                    BgTop = background, BgBottom = Palette.Mix(background, surface, light ? .38 : .28),
+                    Surface = surface, Text = ThemePreset.C("#" + c[2]),
                     TextDim = ThemePreset.C("#" + c[3]), Accent = ThemePreset.C("#" + c[4]),
                     Accent2 = ThemePreset.C("#" + c[5]), Hover = ThemePreset.C("#" + c[6]),
                     Border = ThemePreset.C("#" + c[7]), Low = ThemePreset.C("#" + c[8])
