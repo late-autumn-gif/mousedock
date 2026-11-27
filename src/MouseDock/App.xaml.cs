@@ -464,7 +464,6 @@ namespace MouseDock
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("管理设备…", null, (_, _) => { ShowSettings(Dock); SettingsView.SelectSection("devices"); });
             AddDpiMenu(menu, device);
-            menu.Items.Add("耳机控制…", null, (_, _) => ShowHeadsets());
             menu.Items.Add("检查更新…", null, (_, _) => CheckUpdatesFromSettings());
             menu.Items.Add("设置…", null, (_, _) => ShowSettings(Dock));
             menu.Items.Add(new WinForms.ToolStripSeparator());
