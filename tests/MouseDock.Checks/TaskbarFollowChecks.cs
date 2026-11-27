@@ -201,12 +201,11 @@ internal static class TaskbarFollowChecks
         try
         {
             window.Reload();
-            var selector = window.FindName("TaskbarPositionChoice") as ComboBox;
-            Require(selector != null, "There is no control for choosing fixed placement.");
+            var fixedChoice = PositionChoice(window, "tray");
             var offsetRow = (FrameworkElement)window.FindName("TaskbarIconOffsetRow");
             var manualRow = (FrameworkElement)window.FindName("TaskbarPositionRow");
             fixture.Settings.TaskbarIconOffset = -24;
-            selector!.SelectedValue = "tray";
+            fixedChoice.IsChecked = true;
             Require(offsetRow.Visibility == Visibility.Collapsed && manualRow.Visibility == Visibility.Collapsed,
                 "Fixed placement must hide both offset controls.");
             var options = new JsonSerializerOptions {
@@ -217,12 +216,12 @@ internal static class TaskbarFollowChecks
             Require(pin?.GetValue(restored) is true && restored.TaskbarOffset == 17 && restored.TaskbarIconOffset == -24,
                 "Restarting must preserve the fixed mode and both saved offsets.");
             window.Reload();
-            Require(selector.SelectedValue is "tray", "Reload must show the saved placement mode.");
-            selector.SelectedValue = "manual";
+            Require(fixedChoice.IsChecked == true, "Reload must show the saved placement mode.");
+            PositionChoice(window, "manual").IsChecked = true;
             Require(pin!.GetValue(fixture.Settings) is false && !fixture.Settings.TaskbarFollowIcons &&
                 manualRow.Visibility == Visibility.Visible && offsetRow.Visibility == Visibility.Collapsed,
                 "Choosing manual must resume the old percentage placement.");
-            selector.SelectedValue = "follow";
+            PositionChoice(window, "follow").IsChecked = true;
             Require(pin.GetValue(fixture.Settings) is false && fixture.Settings.TaskbarFollowIcons &&
                 manualRow.Visibility == Visibility.Collapsed && offsetRow.Visibility == Visibility.Visible,
                 "Choosing follow must resume the old signed-offset placement.");
@@ -381,14 +380,14 @@ internal static class TaskbarFollowChecks
         try
         {
             window.Reload();
-            var selector = (ComboBox)window.FindName("TaskbarPositionChoice");
+            var follow = PositionChoice(window, "follow");
             var row = (Grid)window.FindName("TaskbarPositionRow");
             var offsetRow = (FrameworkElement)window.FindName("TaskbarIconOffsetRow");
             var slider = window.FindName("TaskbarIconOffsetSlider") as Slider;
             var input = window.FindName("TaskbarIconOffsetInput") as TextBox;
             Require(slider != null && input != null,
                 "The signed offset controls are missing.");
-            Require(selector.SelectedValue is "follow" && offsetRow.IsEnabled &&
+            Require(follow.IsChecked == true && offsetRow.IsEnabled &&
                 offsetRow.Visibility == Visibility.Visible && row.Visibility == Visibility.Collapsed,
                 "Following must expose its editable offset and hide the manual percentage.");
             slider!.Value = -24;
@@ -407,11 +406,11 @@ internal static class TaskbarFollowChecks
             input.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
             Require(input.Text == "-300" && slider.Value == -300,
                 "Typed values outside the range must clamp consistently.");
-            selector.SelectedValue = "manual";
+            PositionChoice(window, "manual").IsChecked = true;
             Require(!fixture.Settings.TaskbarFollowIcons && row.Visibility == Visibility.Visible &&
                 offsetRow.Visibility == Visibility.Collapsed && fixture.Settings.TaskbarOffset == 17,
                 "Turning off automatic placement must restore the saved manual offset.");
-            selector.SelectedValue = "follow";
+            follow.IsChecked = true;
             Require(fixture.Settings.TaskbarFollowIcons && offsetRow.Visibility == Visibility.Visible &&
                 row.Visibility == Visibility.Collapsed && slider.Value == -300,
                 "Re-enabling following must preserve the independent signed gap.");
@@ -450,6 +449,9 @@ internal static class TaskbarFollowChecks
         }
         finally { window.Hide(); }
     }
+
+    private static RadioButton PositionChoice(SettingsWindow window, string mode) =>
+        ((Panel)window.FindName("TaskbarPositionChoices")).Children.OfType<RadioButton>().Single(choice => Equals(choice.Tag, mode));
 
     internal static void LiveLayout()
     {

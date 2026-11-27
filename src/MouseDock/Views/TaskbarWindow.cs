@@ -123,21 +123,30 @@ namespace MouseDock.Views
             }
         }
 
-        public void UpdateDevices()
+        internal static bool IsVerticalTaskbar()
         {
             TaskbarAnchor.TryGet(out _, out uint edge, out _);
-            _vertical = edge == 0 || edge == 2;
-            bool light = false;
+            return edge is 0 or 2;
+        }
+
+        internal static Color SystemForeground()
+        {
             try
             {
                 using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-                light = key?.GetValue("SystemUsesLightTheme") is int value && value == 1;
+                if (key?.GetValue("SystemUsesLightTheme") is 1) return Colors.Black;
             }
             catch { }
+            return Colors.WhiteSmoke;
+        }
+
+        public void UpdateDevices()
+        {
+            _vertical = IsVerticalTaskbar();
             var devices = App.Battery.VisibleDevices.ToArray();
             if (App.Settings.TaskbarStyle == "character" && CharacterAssignments.Ensure(App.Settings, devices))
                 App.SaveSettings();
-            var foreground = light ? Colors.Black : Colors.WhiteSmoke;
+            var foreground = SystemForeground();
             var presentation = (App.Settings.TaskbarStyle, _vertical,
                 foreground, App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor,
                 App.Settings.TaskbarBatteryColor, App.Settings.IconFollowTheme, App.Theme.Accent,

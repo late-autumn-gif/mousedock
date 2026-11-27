@@ -189,6 +189,7 @@ internal static class Program
             ("Shared display styles preserve independent preferences", SharedDisplayStyleChecks.Preferences),
             ("Shared display styles render upright and fit every orientation", SharedDisplayStyleChecks.Rendering),
             ("Shared display styles are selectable in settings", SharedDisplayStyleChecks.Settings),
+            ("Shared display styles use live devices and current custom colors", SharedDisplayStyleChecks.PreviewColors),
             ("Shared display styles update live on the right edge", SharedDisplayStyleChecks.Edge),
             ("Taskbar card geometry and content stay compact", TaskbarRegressionChecks.Run),
             ("248A:5B2F identity probe keeps its channel and frame", ReceiverIdentityRegression.Run),

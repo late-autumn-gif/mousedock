@@ -103,12 +103,17 @@ internal static class SharedDisplayStyleChecks
     {
         using var fixture = new Fixture();
         var window = new SettingsWindow();
+        typeof(App).GetProperty("SettingsView")!.SetValue(null, window);
         try
         {
             window.Reload();
             var taskbarChoices = (Panel)window.FindName("TaskbarStyleChoices");
             var edgeChoices = window.FindName("EdgeStyleChoices") as Panel;
             Require(edgeChoices != null, "Right-edge settings have no style selector.");
+            Require(taskbarChoices is System.Windows.Controls.Primitives.UniformGrid { Columns: 2 },
+                "Taskbar style choices do not use the two-column layout.");
+            fixture.Battery.VisibleDevices[1].Level = 95;
+            fixture.Battery.VisibleDevices[1].IsBatteryEstimated = true;
             foreach (string style in Styles.Concat(new[] { "panel", "card" }))
             {
                 var taskbar = taskbarChoices.Children.OfType<RadioButton>().SingleOrDefault(b => (string)b.Tag == style);
@@ -118,7 +123,8 @@ internal static class SharedDisplayStyleChecks
                 taskbar!.IsChecked = true;
                 Require(fixture.Settings.TaskbarStyle == style && fixture.Settings.SurfaceMode == "taskbar" &&
                     fixture.Settings.IconStyle == "tile", "Taskbar style selection switched or changed the floating surface.");
-                // Reload replaces choice controls, as in the running settings window.
+                Require(taskbarChoices.Children.Contains(taskbar) && taskbar.IsChecked == true,
+                    "Selecting a taskbar style replaced the focused choice.");
                 fixture.Settings.SurfaceMode = "edge";
                 edge = ((Panel)window.FindName("EdgeStyleChoices")).Children.OfType<RadioButton>().Single(b => (string)b.Tag == style);
                 edge.IsChecked = true;
@@ -147,10 +153,87 @@ internal static class SharedDisplayStyleChecks
                 foreach (var label in Children<TextBlock>(choices).Where(t => t.Visibility == Visibility.Visible))
                     Require(label.ActualWidth + label.Margin.Left + label.Margin.Right >= label.DesiredSize.Width,
                         $"{mode} clips its style label or battery preview: {label.Text}.");
+                var cardStrip = Children<TaskbarBatteryStrip>(choices).Single(strip => strip.StyleName == "card");
+                foreach (var card in Children<Border>(cardStrip).Where(item => item.Name == "TaskbarDevice"))
+                {
+                    var number = Children<TextBlock>(card).Single(text => text.Name == "BatteryNumber");
+                    Require(new Rect(card.RenderSize).Contains(number.TransformToAncestor(card).TransformBounds(new Rect(number.RenderSize))),
+                        $"The mini-card clips the live battery reading {number.Text}.");
+                }
                 Save(root, $"artifacts/shared-display-styles/settings-{mode}-{theme.Id}.png");
             }
         }
         finally { window.Close(); }
+    }
+
+    internal static void PreviewColors()
+    {
+        using var fixture = new AppearanceFixture();
+        var window = new SettingsWindow { ShowActivated = false, ShowInTaskbar = false };
+        fixture.Set("SettingsView", window);
+        window.Show();
+        var device = fixture.Battery.VisibleDevices[0];
+        var settings = fixture.Settings;
+        settings.IconFollowTheme = true;
+        settings.TaskbarTextColor = "#D0B3FF";
+        settings.TaskbarBatteryColor = "#3FD7A8";
+        settings.EdgeGlyphColor = "#FFDA8A";
+        settings.EdgeGlyphColorCustomized = true;
+        settings.IconColors = new() { ["accent"] = "#9DE9FF", ["text"] = "#F5FAFF" };
+        settings.ChargingColor = "#FF9D5C";
+
+        Panel ShowChoices(string mode, string name)
+        {
+            settings.SurfaceMode = mode;
+            window.Reload();
+            var panel = (Panel)window.FindName(name);
+            panel.BringIntoView();
+            window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            return panel;
+        }
+
+        var taskbar = ShowChoices("taskbar", "TaskbarStyleChoices");
+        var taskbarRing = Children<DeviceBatteryRing>(taskbar).First();
+        var taskbarNumber = Children<TextBlock>(taskbar).First(text => text.Name == "BatteryNumber");
+        Require(ReferenceEquals(taskbarNumber.DataContext, device) &&
+            ((SolidColorBrush)taskbarNumber.Foreground).Color == ThemePreset.C(settings.TaskbarTextColor) &&
+            ((SolidColorBrush)taskbarRing.BatteryBrush).Color == ThemePreset.C(settings.TaskbarBatteryColor),
+            "Taskbar settings ignored the live device or custom colors.");
+        device.Level = 68;
+        device.Charging = true;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Require(taskbarNumber.Text == "68" && ((SolidColorBrush)taskbarNumber.Foreground).Color == ThemePreset.C(settings.ChargingColor),
+            "The existing taskbar preview did not follow a live charging update.");
+
+        device.Charging = false;
+        var edge = ShowChoices("edge", "EdgeStyleChoices");
+        var edgeTile = Children<TaskbarBatteryStrip>(edge).Single(strip => strip.StyleName == "tile");
+        var edgeNumber = Children<TextBlock>(edgeTile).Single(text => text.Name == "BatteryNumber");
+        Require(edgeNumber.Text == "68" && ((SolidColorBrush)edgeNumber.Foreground).Color == ThemePreset.C(settings.EdgeGlyphColor),
+            "The edge tile ignored the custom color while following the theme.");
+
+        var floating = ShowChoices("icon", "IconStyleChoices");
+        var floatingRing = Children<ReferenceBatteryIcon>(floating).First(icon => icon.StyleName == "ring");
+        var portrait = Children<CharacterBatteryIcon>(floating).Last();
+        var palette = AppearanceColors.IconPalette(settings, App.Theme, true);
+        Require(ReferenceEquals(floatingRing.DeviceModels[0], device) &&
+            ((SolidColorBrush)floatingRing.Accent).Color == palette.Accent &&
+            ((SolidColorBrush)portrait.Accent).Color == palette.Accent,
+            "The floating gallery ignored the live device or custom palette for the portrait.");
+        settings.IconColors["accent"] = "#F1B3FF";
+        window.ApplyTheme(App.Theme, false);
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var recolored = Children<CharacterBatteryIcon>(floating).Last();
+        Require(((SolidColorBrush)recolored.Accent).Color == AppearanceColors.IconPalette(settings, App.Theme, true).Accent &&
+            ((SolidColorBrush)recolored.Accent).Color != ((SolidColorBrush)portrait.Accent).Color,
+            "A palette edit did not refresh a visible floating style.");
+        Save((FrameworkElement)window.Content, "artifacts/shared-display-styles/settings-floating-live-colors.png");
+
+        fixture.Battery.VisibleDevices.Clear();
+        window.ApplyTheme(App.Theme, false);
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Require(Children<ReferenceBatteryIcon>(floating).First().DeviceModels.Single().Level == -1,
+            "The preview invented a battery level with no visible devices.");
     }
 
     internal static void Edge()

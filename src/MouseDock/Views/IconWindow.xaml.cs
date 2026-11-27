@@ -418,6 +418,27 @@ namespace MouseDock.Views
             FitSize(longest, devices.Count);
         }
 
+        internal static CharacterDeviceBadge CreateCharacterBadge(string style, DeviceInfo device,
+            AppSettings settings, ThemePreset palette)
+        {
+            var photo = PhotoAssignments.Resolve(settings, device);
+            var ink = new SolidColorBrush(palette.Text);
+            var artwork = new CharacterBatteryIcon
+            {
+                Character = style == "portrait" ? "photo" : CharacterAssignments.Resolve(settings, device),
+                PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
+                CompactPhotoBar = style == "portrait",
+                Accent = new SolidColorBrush(palette.Accent),
+                Ink = ink,
+                Surface = new SolidColorBrush(AppearanceColors.TryColor(settings.CharacterBackgroundColor, out var background)
+                    ? background : palette.Surface),
+                TransparentBackground = settings.CharacterTransparentBackground,
+                Low = new SolidColorBrush(palette.Low),
+                Muted = new SolidColorBrush(palette.TextDim)
+            };
+            return new CharacterDeviceBadge(device ?? new DeviceInfo { Name = "设备" }, artwork, ink);
+        }
+
         private void UpdateReferenceIcons(System.Collections.Generic.List<DeviceInfo> devices)
         {
             ReferenceIcons.Children.Clear();
@@ -432,24 +453,7 @@ namespace MouseDock.Views
                 for (int i = 0; i < count; i++)
                 {
                     var item = i < shown.Count ? shown[i] : null;
-                    var photo = PhotoAssignments.Resolve(App.Settings, item);
-                    var portrait = new CharacterBatteryIcon
-                    {
-                        Width = 120, Height = 120,
-                        Character = _activeStyle == "portrait" ? "photo" : CharacterAssignments.Resolve(App.Settings, item),
-                        PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
-                        CompactPhotoBar = _activeStyle == "portrait",
-                        Accent = new SolidColorBrush(palette.Accent),
-                        Ink = new SolidColorBrush(palette.Text),
-                        Surface = new SolidColorBrush(AppearanceColors.TryColor(App.Settings.CharacterBackgroundColor, out var background)
-                            ? background : palette.Surface),
-                        TransparentBackground = App.Settings.CharacterTransparentBackground,
-                        Low = new SolidColorBrush(palette.Low),
-                        Muted = new SolidColorBrush(palette.TextDim),
-                        DataContext = item
-                    };
-                    Attach(new CharacterDeviceBadge(item ?? new DeviceInfo { Name = "设备" }, portrait,
-                        new SolidColorBrush(palette.Text)), item);
+                    Attach(CreateCharacterBadge(_activeStyle, item, App.Settings, palette), item);
                 }
                 RootGrid.Width = ReferenceIcons.Columns * 120;
                 RootGrid.Height = Math.Ceiling(count / (double)ReferenceIcons.Columns) * 158;

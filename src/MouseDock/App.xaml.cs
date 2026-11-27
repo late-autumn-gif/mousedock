@@ -843,7 +843,7 @@ namespace MouseDock
             Settings.TaskbarStyle = Controls.TaskbarBatteryStrip.NormalizeStyle(style);
             Taskbar?.UpdateDevices();
             SaveSettings();
-            SettingsView?.Reload();
+            SettingsView?.SyncSharedStyleSelection();
         }
 
         public static void ShowIconIfNeeded()
@@ -976,7 +976,7 @@ namespace MouseDock
             Settings.EdgeStyle = TaskbarBatteryStrip.NormalizeStyle(style);
             Edge?.UpdateDevices();
             SaveSettings();
-            SettingsView?.Reload();
+            SettingsView?.SyncSharedStyleSelection();
         }
 
         /// <summary>切换当前显示方式，并恢复其可见状态。</summary>

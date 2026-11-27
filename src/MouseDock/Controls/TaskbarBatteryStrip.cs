@@ -72,9 +72,10 @@ public sealed class TaskbarBatteryStrip : Border
         bool card = StyleName == "card";
         bool multi = StyleName == "multi";
         appearance ??= new AppSettings();
-        if (!appearance.IconHideBackground && theme != null && StyleName is "tile" or "pill" or "battery" or "multi")
+        bool useEdgeColor = screenEdge && ScreenEdgeWindow.HasCustomColor(appearance);
+        if (!useEdgeColor && !appearance.IconHideBackground && theme != null && StyleName is "tile" or "pill" or "battery" or "multi")
             foreground = new SolidColorBrush(theme.Text);
-        var textBrush = ResolveBrush(textColor, appearance.IconFollowTheme && theme != null
+        var textBrush = ResolveBrush(textColor, !useEdgeColor && appearance.IconFollowTheme && theme != null
             ? new SolidColorBrush(theme.Text) : foreground);
         var batteryBrush = ResolveBrush(batteryColor, themeAccent);
         var items = devices.ToArray();
@@ -146,6 +147,7 @@ public sealed class TaskbarBatteryStrip : Border
     private static Border CreateCard(DeviceInfo device, bool showNumber, bool vertical, Brush textBrush, int lowThreshold)
     {
         var size = CardSize(vertical);
+        const double border = 1;
         var card = new Border
         {
             Name = "TaskbarDevice", DataContext = device,
@@ -153,7 +155,7 @@ public sealed class TaskbarBatteryStrip : Border
             CornerRadius = new CornerRadius(7),
             Background = new SolidColorBrush(Color.FromArgb(0x59, 0x10, 0x10, 0x12)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(border),
             ClipToBounds = true,
             // 相邻卡片之间留 15px：两边各 7.5，合起来就是用户要的间隔。
             Margin = vertical ? new Thickness(0, 7.5, 0, 7.5) : new Thickness(7.5, 0, 7.5, 0)
@@ -162,31 +164,32 @@ public sealed class TaskbarBatteryStrip : Border
 
         // 只有图标和数字。型号名去掉了：任务栏本来就窄，多一行小字既挤又糊，
         // 具体型号放进 ToolTip 和 AutomationProperties 里，悬停或读屏照样能看到。
-        // 图标和数字紧挨着排，中间固定 5px，整组在卡片里居中。
-        // 之前贴左右边对齐，中间被拉开十几像素，看着像两块不相干的东西。
+        double horizontalMargin = vertical ? 3 : 2;
+        double glyphSize = vertical ? 22 : 17;
+        double gap = vertical ? 5 : 4;
         var grid = new Grid
         {
-            Margin = new Thickness(4, 4, 4, 4),
+            Margin = new Thickness(horizontalMargin, 4, horizontalMargin, 4),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
         if (vertical)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(gap) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
         else
         {
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(gap) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         }
         card.Child = grid;
 
         var glyph = new DeviceGlyph
         {
-            Width = vertical ? 22 : 20, Height = vertical ? 22 : 20, Thickness = 2.1,
+            Width = glyphSize, Height = glyphSize, Thickness = 2.1,
             GlyphBrush = textBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -206,9 +209,15 @@ public sealed class TaskbarBatteryStrip : Border
             Visibility = showNumber ? Visibility.Visible : Visibility.Collapsed,
             IsHitTestVisible = false
         };
+        double readingWidth = size.Width - 2 * (horizontalMargin + border) - (vertical ? 0 : glyphSize + gap);
+        var reading = new Viewbox
+        {
+            MaxWidth = readingWidth, StretchDirection = StretchDirection.DownOnly, Child = number,
+            Visibility = number.Visibility
+        };
         number.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceInfo.LevelText)) { Converter = new NumberConverter() });
-        if (vertical) Grid.SetRow(number, 2); else Grid.SetColumn(number, 2);
-        grid.Children.Add(number);
+        if (vertical) Grid.SetRow(reading, 2); else Grid.SetColumn(reading, 2);
+        grid.Children.Add(reading);
         PercentageWarningConverter.Bind(number, textBrush, lowThreshold);
         number.SetBinding(ChargeBreath.ActiveProperty, new Binding(nameof(DeviceInfo.IsChargingNumber)));
 

@@ -36,6 +36,8 @@ namespace MouseDock.Views
 
         private bool _loading;
         private readonly Brush _themeBackground;
+        private static readonly DeviceInfo EmptyStyleDevice = new() { Name = "设备", Level = -1 };
+        private DeviceInfo[] _styleDevices = [];
 
         public static readonly DependencyProperty AccentBrushProperty = DependencyProperty.Register(
             nameof(AccentBrush), typeof(Brush), typeof(SettingsWindow),
@@ -56,6 +58,8 @@ namespace MouseDock.Views
                 {
                     UpdateDeviceHint();
                     ReloadTraySettings();
+                    var devices = App.Battery.VisibleDevices.Take(2).ToArray();
+                    if (!_styleDevices.SequenceEqual(devices)) RefreshStylePreviews(App.Theme, devices);
                 }
             };
             Loaded += (_, __) =>
@@ -128,14 +132,13 @@ namespace MouseDock.Views
                 RingContinuous.IsChecked = s.ContinuousBatteryRing;
                 RingSegmented.IsChecked = !s.ContinuousBatteryRing;
                 SyncIconScale();
-                RebuildIconStyles();
                 TaskbarOffsetSlider.Value = double.IsFinite(s.TaskbarOffset) ? Math.Clamp(s.TaskbarOffset, 0, 100) : 8;
                 TaskbarOffsetValue.Text = $"{TaskbarOffsetSlider.Value:0}%";
-                TaskbarPositionChoice.SelectedValue = s.TaskbarPinToTray ? "tray" : s.TaskbarFollowIcons ? "follow" : "manual";
+                string position = s.TaskbarPinToTray ? "tray" : s.TaskbarFollowIcons ? "follow" : "manual";
+                foreach (var choice in TaskbarPositionChoices.Children.OfType<RadioButton>())
+                    choice.IsChecked = Equals(choice.Tag, position);
                 TaskbarIconOffsetSlider.Value = TaskbarPlacement.NormalizeIconOffset(s.TaskbarIconOffset);
                 TaskbarIconOffsetInput.Text = TaskbarIconOffsetSlider.Value.ToString("+0;-0;0", CultureInfo.InvariantCulture);
-                RebuildTaskbarStyles();
-                RebuildEdgeStyles();
                 EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(s, App.Theme));
                 EdgePositionSlider.Value = double.IsFinite(s.EdgeVerticalPosition) ? Math.Clamp(s.EdgeVerticalPosition * 100, 0, 100) : 50;
                 EdgePositionValue.Text = $"{EdgePositionSlider.Value:0}";
@@ -269,8 +272,7 @@ namespace MouseDock.Views
                 BgTopStop.Color = theme.BgTop;
                 BgBottomStop.Color = theme.BgBottom;
             }
-            RebuildTaskbarStyles(theme);
-            RebuildEdgeStyles();
+            RefreshStylePreviews(theme, App.Battery.VisibleDevices.Take(2).ToArray());
             EdgeColorSwatch.Background = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(App.Settings, theme));
             ApplySettingsBackground(theme);
         }
@@ -317,7 +319,6 @@ namespace MouseDock.Views
             else settings.TrayColors = editor.Draft;
             App.RefreshTheme();
             App.SaveSettings();
-            Reload();
         }
 
         private void OnThemeSelected(object sender, SelectionChangedEventArgs e)
@@ -696,30 +697,37 @@ namespace MouseDock.Views
             RebuildEdgeStyles();
         }
 
-        private void RebuildIconStyles()
+        private void RefreshStylePreviews(ThemePreset theme, DeviceInfo[] devices)
         {
+            _styleDevices = devices;
+            RebuildIconStyles(theme);
+            RebuildTaskbarStyles(theme);
+            RebuildEdgeStyles(theme);
+        }
+
+        private void RebuildIconStyles(ThemePreset theme = null)
+        {
+            theme ??= App.Theme;
+            var settings = App.Settings;
+            var palette = AppearanceColors.IconPalette(settings, theme, settings.IconFollowTheme);
+            DeviceInfo[] devices = _styleDevices.Length == 0 ? [EmptyStyleDevice] : _styleDevices;
             IconStyleChoices.Children.Clear();
             foreach (var entry in IconWindow.StyleChoices)
             {
                 FrameworkElement preview;
                 if (entry.Item1 is "character" or "portrait")
                 {
-                    var photo = PhotoAssignments.Resolve(App.Settings, App.Battery.VisibleDevices.FirstOrDefault());
-                    preview = new CharacterBatteryIcon
-                    {
-                        Width = 120, Height = 120, Level = 76,
-                        Character = entry.Item1 == "portrait" ? "photo" : App.Settings.ReferenceCharacter,
-                        PhotoPath = photo.Path, PhotoZoom = photo.Zoom, PhotoOffsetX = photo.OffsetX, PhotoOffsetY = photo.OffsetY,
-                        Accent = new SolidColorBrush(App.Settings.IconFollowTheme ? App.Theme.Accent : ThemePreset.C("#A6F5BF"))
-                    };
+                    preview = IconWindow.CreateCharacterBadge(entry.Item1, devices[0], settings, palette);
                 }
                 else
                 {
-                    var reference = new ReferenceBatteryIcon { StyleName=entry.Item1, Width=144,
-                        Height=entry.Item1=="multi"?76:144,
-                        Devices=new(){(DeviceKind.Mouse,76,false,false),(DeviceKind.Headset,-1,false,false)},
-                        HideBackground=App.Settings.IconHideBackground };
-                    reference.ApplyPalette(App.Theme, App.Settings);
+                    var size = IconComposition.Measure(entry.Item1, devices.Length);
+                    var reference = new ReferenceBatteryIcon
+                    {
+                        StyleName = entry.Item1, Width = size.Width, Height = size.Height,
+                        DeviceModels = devices, HideBackground = settings.IconHideBackground
+                    };
+                    reference.ApplyPalette(theme, settings);
                     preview = reference;
                 }
                 var content=new StackPanel();
@@ -728,8 +736,9 @@ namespace MouseDock.Views
                 bool selected=App.Settings.IconStyle==entry.Item1;
                 var button=new Button { Tag=entry.Item1,Content=content,Margin=new Thickness(3),Padding=new Thickness(3,6,3,6),
                     Style=(Style)FindResource("GhostButton"),ToolTip="切换到"+entry.Item2,
-                    BorderBrush=new SolidColorBrush(App.Theme.Accent),BorderThickness=new Thickness(selected?2:0),
+                    BorderBrush=selected?new SolidColorBrush(theme.Accent):Brushes.Transparent,BorderThickness=new Thickness(1),
                     FontWeight=selected?FontWeights.Bold:FontWeights.Normal };
+                button.SetResourceReference(BackgroundProperty, selected ? "ThemeChoiceBrush" : "ControlFillBrush");
                 button.Click+=OnIconStyleClick;IconStyleChoices.Children.Add(button);
             }
         }
@@ -780,9 +789,9 @@ namespace MouseDock.Views
             App.SaveSettings();
         }
 
-        private void OnTaskbarPositionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnTaskbarPositionChanged(object sender, RoutedEventArgs e)
         {
-            if (_loading || TaskbarPositionChoice?.SelectedValue is not string mode) return;
+            if (_loading || sender is not RadioButton { Tag: string mode }) return;
             App.Settings.TaskbarPinToTray = mode == "tray";
             if (!App.Settings.TaskbarPinToTray)
                 App.Settings.TaskbarFollowIcons = mode == "follow";
@@ -921,97 +930,97 @@ namespace MouseDock.Views
         {
             if (TaskbarTextColorSwatch == null || TaskbarStyleChoices == null) return;
             theme ??= App.Theme;
-            TaskbarTextColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarTextColor,
-                new SolidColorBrush(theme.Text));
-            TaskbarBatteryColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(App.Settings.TaskbarBatteryColor,
+            var settings = App.Settings;
+            var systemInk = TaskbarWindow.SystemForeground();
+            var foreground = new SolidColorBrush(systemInk);
+            var accent = settings.IconFollowTheme ? new SolidColorBrush(theme.Accent) : null;
+            TaskbarTextColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(settings.TaskbarTextColor,
+                settings.IconFollowTheme ? new SolidColorBrush(theme.Text) : foreground);
+            TaskbarBatteryColorSwatch.Background = TaskbarBatteryStrip.ResolveBrush(settings.TaskbarBatteryColor,
                 new SolidColorBrush(theme.Accent));
-            TaskbarTextColorLabel.Text = string.IsNullOrWhiteSpace(App.Settings.TaskbarTextColor)
-                ? "跟随主题" : App.Settings.TaskbarTextColor;
-            TaskbarBatteryColorLabel.Text = string.IsNullOrWhiteSpace(App.Settings.TaskbarBatteryColor)
-                ? "跟随主题" : App.Settings.TaskbarBatteryColor;
+            TaskbarTextColorLabel.Text = string.IsNullOrWhiteSpace(settings.TaskbarTextColor)
+                ? "默认颜色" : settings.TaskbarTextColor;
+            TaskbarBatteryColorLabel.Text = string.IsNullOrWhiteSpace(settings.TaskbarBatteryColor)
+                ? "默认颜色" : settings.TaskbarBatteryColor;
+            bool vertical = TaskbarWindow.IsVerticalTaskbar();
+            DeviceInfo[] devices = _styleDevices.Length == 0 ? [EmptyStyleDevice] : _styleDevices;
+            if (vertical && devices.Length > 1) devices = [devices[0]];
+            var backdrop = new SolidColorBrush(systemInk == Colors.Black ? ThemePreset.C("#EBEDF0") : ThemePreset.C("#22262C"));
+            var current = TaskbarBatteryStrip.NormalizeStyle(settings.TaskbarStyle);
             TaskbarStyleChoices.Children.Clear();
-            foreach (var (style, label) in TaskbarBatteryStrip.Styles(false))
+            foreach (var (style, label) in TaskbarBatteryStrip.Styles(vertical))
             {
-                var preview = new TaskbarBatteryStrip(new[]
+                var preview = new TaskbarBatteryStrip(devices, style, true, vertical, foreground,
+                    settings.LowBatteryWarn, settings.TaskbarTextColor, settings.TaskbarBatteryColor, accent, settings, theme);
+                var choice = CreateSharedStyleChoice("TaskbarStyle", style, label, current, preview, backdrop,
+                    new Size(100, 42), previewOnRight: true);
+                choice.Checked += (_, __) =>
                 {
-                    new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Keyboard, Level = 28 },
-                    new MouseDock.Models.DeviceInfo { Kind = MouseDock.Models.DeviceKind.Mouse, Level = 90 }
-                }, style, true, false, new SolidColorBrush(theme.Text),
-                    App.Settings.LowBatteryWarn, App.Settings.TaskbarTextColor, App.Settings.TaskbarBatteryColor,
-                    new SolidColorBrush(theme.Accent), App.Settings, theme);
-                var content = new StackPanel();
-                content.Children.Add(new Viewbox { Width = 72, Height = 36, Child = preview, IsHitTestVisible = false });
-                content.Children.Add(new TextBlock
-                {
-                    Text = label, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 5, 0, 0)
-                });
-                var choice = new RadioButton
-                {
-                    Tag = style, GroupName = "TaskbarStyle", Content = content,
-                    Margin = new Thickness(3), Padding = new Thickness(4),
-                    IsChecked = TaskbarBatteryStrip.NormalizeStyle(App.Settings.TaskbarStyle) == style
+                    if (!_loading && App.Settings.TaskbarStyle != style) App.SetTaskbarStyle(style);
                 };
-                choice.SetResourceReference(Control.ForegroundProperty, "TextBrush");
-                choice.Checked += (_, __) => { if (!_loading) App.SetTaskbarStyle(style); };
                 TaskbarStyleChoices.Children.Add(choice);
             }
         }
 
-        private void RebuildEdgeStyles()
+        private void RebuildEdgeStyles(ThemePreset theme = null)
         {
             EdgeStyleChoices.Children.Clear();
-            var theme = App.Theme;
+            theme ??= App.Theme;
             var settings = App.Settings;
-            var backdrop = Palette.Mix(theme.Surface, theme.Text, .035);
-            var ink = ScreenEdgeWindow.ResolveForeground(settings, theme);
-            var foreground = new SolidColorBrush(ColorContrast.Legible(ink, new[] { backdrop }, 4.5));
-            var accent = ScreenEdgeWindow.ResolveBatteryBrush(settings, theme) as SolidColorBrush;
-            var battery = new SolidColorBrush(ColorContrast.Legible(accent?.Color ?? ink, new[] { backdrop }, 3));
-            var previewBackground = new SolidColorBrush(backdrop);
+            var foreground = new SolidColorBrush(ScreenEdgeWindow.ResolveForeground(settings, theme));
+            var battery = ScreenEdgeWindow.ResolveBatteryBrush(settings, theme);
+            var previewBackground = new SolidColorBrush(Palette.Mix(theme.Surface, theme.Text, .035));
+            var device = _styleDevices.FirstOrDefault() ?? EmptyStyleDevice;
+            var current = TaskbarBatteryStrip.NormalizeStyle(settings.EdgeStyle);
             foreach (var (style, label) in TaskbarBatteryStrip.Styles(true))
             {
-                var device = new DeviceInfo { Kind = DeviceKind.Keyboard, Level = 80 };
-                FrameworkElement preview;
-                if (style == "ring")
-                {
-                    var badge = new DeviceBatteryBadge(device, foreground, true, true, settings.LowBatteryWarn,
-                        compact: false, continuousRing: settings.ContinuousBatteryRing);
-                    badge.Ring.BatteryBrush = battery;
-                    preview = badge;
-                }
-                else
-                {
-                    preview = new TaskbarBatteryStrip(new[] { device }, style, true, true,
-                        foreground, settings.LowBatteryWarn, "", "", battery, settings, theme, screenEdge: true);
-                }
-
+                FrameworkElement preview = style == "ring" ? ScreenEdgeWindow.CreateRingBadge(device, settings, theme) :
+                    new TaskbarBatteryStrip([device], style, true, true, foreground, settings.LowBatteryWarn,
+                        "", "", battery, settings, theme, screenEdge: true);
                 var name = style == "ring" ? "电量圆环" : label;
-                var content = new DockPanel { IsHitTestVisible = false };
-                content.Children.Add(new Border
-                {
-                    Width = 46, Height = 48, CornerRadius = new CornerRadius(7),
-                    Background = previewBackground,
-                    Child = new Viewbox { Margin = new Thickness(3), Child = preview }
-                });
-                content.Children.Add(new TextBlock
-                {
-                    Text = name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(7, 0, 9, 0), TextWrapping = TextWrapping.Wrap
-                });
-                var choice = new RadioButton
-                {
-                    Tag = style, GroupName = "EdgeStyle", Content = content,
-                    Style = (Style)FindResource("EdgeStyleChoice"),
-                    IsChecked = TaskbarBatteryStrip.NormalizeStyle(settings.EdgeStyle) == style
-                };
-                System.Windows.Automation.AutomationProperties.SetName(choice, name);
+                var choice = CreateSharedStyleChoice("EdgeStyle", style, name, current, preview, previewBackground, new Size(46, 48));
                 choice.Checked += (_, __) =>
                 {
-                    if (!_loading) App.SetEdgeStyle(style);
+                    if (!_loading && App.Settings.EdgeStyle != style) App.SetEdgeStyle(style);
                 };
                 EdgeStyleChoices.Children.Add(choice);
             }
+        }
+
+        private RadioButton CreateSharedStyleChoice(string group, string style, string label, string current,
+            FrameworkElement preview, Brush backdrop, Size previewSize, bool previewOnRight = false)
+        {
+            var content = new DockPanel { IsHitTestVisible = false, Margin = new Thickness(0, 0, 12, 0) };
+            var frame = new Border
+            {
+                Width = previewSize.Width, Height = previewSize.Height, CornerRadius = new CornerRadius(6),
+                Background = backdrop, Child = new Viewbox { Margin = new Thickness(3), Child = preview }
+            };
+            DockPanel.SetDock(frame, previewOnRight ? Dock.Right : Dock.Left);
+            content.Children.Add(frame);
+            content.Children.Add(new TextBlock
+            {
+                Text = label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
+                Margin = previewOnRight ? new Thickness(4, 0, 6, 0) : new Thickness(7, 0, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
+            var choice = new RadioButton
+            {
+                Tag = style, GroupName = group, Content = content,
+                Style = (Style)FindResource("DisplayChoice"), IsChecked = current == style
+            };
+            System.Windows.Automation.AutomationProperties.SetName(choice, label);
+            return choice;
+        }
+
+        internal void SyncSharedStyleSelection()
+        {
+            var taskbar = TaskbarBatteryStrip.NormalizeStyle(App.Settings.TaskbarStyle);
+            var edge = TaskbarBatteryStrip.NormalizeStyle(App.Settings.EdgeStyle);
+            foreach (var choice in TaskbarStyleChoices.Children.OfType<RadioButton>())
+                choice.SetCurrentValue(RadioButton.IsCheckedProperty, Equals(choice.Tag, taskbar));
+            foreach (var choice in EdgeStyleChoices.Children.OfType<RadioButton>())
+                choice.SetCurrentValue(RadioButton.IsCheckedProperty, Equals(choice.Tag, edge));
         }
         private void OnPickEdgeColor(object sender, RoutedEventArgs e)
         {

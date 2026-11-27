@@ -76,7 +76,7 @@ namespace MouseDock.Views
             catch { return Colors.WhiteSmoke; }
         }
 
-        private static bool HasCustomColor(AppSettings settings) =>
+        internal static bool HasCustomColor(AppSettings settings) =>
             settings.EdgeGlyphColorCustomized || (!string.IsNullOrWhiteSpace(settings.EdgeGlyphColor) &&
                 !string.Equals(settings.EdgeGlyphColor, "#F5F5F5", StringComparison.OrdinalIgnoreCase));
 

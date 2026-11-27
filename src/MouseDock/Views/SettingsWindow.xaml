@@ -32,7 +32,7 @@
         </Style>
         <SolidColorBrush x:Key="ThemeChoiceBrush" Color="#293A35"/>
 
-        <Style x:Key="EdgeStyleChoice" TargetType="RadioButton">
+        <Style x:Key="DisplayChoice" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Margin" Value="0,0,8,8"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -56,6 +56,7 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Tile" Property="Background" Value="{DynamicResource ThemeChoiceBrush}"/>
+                                <Setter TargetName="Tile" Property="BorderBrush" Value="{DynamicResource ControlOutlineBrush}"/>
                                 <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
@@ -317,13 +318,13 @@
                             </UniformGrid>
                             <TextBlock Text="电量环样式" FontWeight="SemiBold" Margin="0,14,0,5"/>
                             <UniformGrid Columns="2" Margin="0,0,-8,0">
-                                <RadioButton x:Name="RingContinuous" GroupName="BatteryRing" Style="{StaticResource EdgeStyleChoice}" Checked="OnBatteryRingStyleChanged">
+                                <RadioButton x:Name="RingContinuous" GroupName="BatteryRing" Style="{StaticResource DisplayChoice}" Checked="OnBatteryRingStyleChanged">
                                     <StackPanel Orientation="Horizontal">
                                         <Ellipse Width="15" Height="15" Margin="0,0,8,0" Stroke="{DynamicResource ControlAccentBrush}" StrokeThickness="1.7"/>
                                         <TextBlock Text="连续圆环"/>
                                     </StackPanel>
                                 </RadioButton>
-                                <RadioButton x:Name="RingSegmented" GroupName="BatteryRing" Style="{StaticResource EdgeStyleChoice}" Checked="OnBatteryRingStyleChanged">
+                                <RadioButton x:Name="RingSegmented" GroupName="BatteryRing" Style="{StaticResource DisplayChoice}" Checked="OnBatteryRingStyleChanged">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Width="15" Height="15" Margin="0,0,8,0" Stretch="Uniform" Stroke="{DynamicResource ControlAccentBrush}" StrokeThickness="1.7"
                                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 9,1 A 6,6 0 0 1 14,9 M 12,12 A 6,6 0 0 1 4,12 M 2,9 A 6,6 0 0 1 6,1"/>
@@ -355,14 +356,28 @@
                                     </ComboBox>
                                 </Grid>
                             </StackPanel>
-                            <StackPanel x:Name="TaskbarPositionChoiceRow" Orientation="Horizontal" Margin="0,14,0,0">
-                                <TextBlock Text="显示位置" Style="{StaticResource RowText}" Margin="0,0,8,0"/>
-                                <ComboBox x:Name="TaskbarPositionChoice" Width="120" SelectedValuePath="Tag"
-                                          AutomationProperties.Name="任务栏显示位置" SelectionChanged="OnTaskbarPositionChanged">
-                                    <ComboBoxItem Content="跟随图标" Tag="follow"/>
-                                    <ComboBoxItem Content="固定靠右" Tag="tray"/>
-                                    <ComboBoxItem Content="手动位置" Tag="manual"/>
-                                </ComboBox>
+                            <StackPanel x:Name="TaskbarPositionChoiceRow" Margin="0,16,0,0">
+                                <TextBlock x:Name="TaskbarPositionTitle" Text="任务栏显示位置" FontWeight="SemiBold"/>
+                                <UniformGrid x:Name="TaskbarPositionChoices" Columns="3" Margin="0,8,-8,-8" AutomationProperties.LabeledBy="{Binding ElementName=TaskbarPositionTitle}">
+                                    <RadioButton GroupName="TaskbarPosition" Tag="follow" Style="{StaticResource DisplayChoice}" Checked="OnTaskbarPositionChanged" AutomationProperties.Name="跟随图标">
+                                        <StackPanel Margin="3,3,10,3">
+                                            <TextBlock Text="跟随图标" FontWeight="SemiBold"/>
+                                            <TextBlock Text="随应用图标移动" FontSize="11" Opacity="0.75" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton GroupName="TaskbarPosition" Tag="tray" Style="{StaticResource DisplayChoice}" Checked="OnTaskbarPositionChanged" AutomationProperties.Name="固定靠右">
+                                        <StackPanel Margin="3,3,10,3">
+                                            <TextBlock Text="固定靠右" FontWeight="SemiBold"/>
+                                            <TextBlock Text="贴近系统托盘" FontSize="11" Opacity="0.75" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton GroupName="TaskbarPosition" Tag="manual" Style="{StaticResource DisplayChoice}" Checked="OnTaskbarPositionChanged" AutomationProperties.Name="手动位置">
+                                        <StackPanel Margin="3,3,10,3">
+                                            <TextBlock Text="手动位置" FontWeight="SemiBold"/>
+                                            <TextBlock Text="按百分比定位" FontSize="11" Opacity="0.75" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                </UniformGrid>
                             </StackPanel>
                             <Grid x:Name="TaskbarIconOffsetRow" Margin="0,10,0,0">
                                 <Grid.ColumnDefinitions>
@@ -398,8 +413,8 @@
                                 <TextBlock x:Name="TaskbarOffsetValue" Grid.Column="2" TextAlignment="Right" Style="{StaticResource RowText}" Opacity="0.65"/>
                             </Grid>
                             <StackPanel x:Name="TaskbarStylePanel" Margin="0,14,0,0">
-                                <TextBlock Text="任务栏样式" Style="{StaticResource RowText}"/>
-                                <UniformGrid x:Name="TaskbarStyleChoices" Columns="3" Margin="0,6,0,0"/>
+                                <TextBlock Text="任务栏样式" FontWeight="SemiBold"/>
+                                <UniformGrid x:Name="TaskbarStyleChoices" Columns="2" Margin="0,8,-8,0"/>
                                 <Grid Margin="0,10,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
