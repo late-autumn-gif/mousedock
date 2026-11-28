@@ -329,6 +329,9 @@ namespace MouseDock
 
         internal static void RestoreStartupSurface()
         {
+            // Login starts through the tray without activation. A surface hidden in
+            // the previous session should not stay hidden on the next login.
+            if (QuietStartup && Settings.AutoStart) Settings.SurfaceHidden = false;
             SyncSurfaceFlags();
             if (!Settings.SurfaceHidden) ApplySurface();
         }

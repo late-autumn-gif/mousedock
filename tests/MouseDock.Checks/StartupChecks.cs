@@ -47,7 +47,7 @@ internal static class StartupChecks
             if (app.Windows.Count != 0)
                 throw new InvalidOperationException("A hidden startup must not create any surface or settings window.");
 
-            settings.SurfaceHidden = false;
+            settings.AutoStart = true;
             App.RestoreStartupSurface();
             Window? surface = mode switch
             {
@@ -59,6 +59,8 @@ internal static class StartupChecks
             int expectedWindows = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? 2 : 1;
             if (surface?.IsVisible != true || app.Windows.Count != expectedWindows)
                 throw new InvalidOperationException($"Startup must create only the saved {mode} surface and any required taskbar overflow.");
+            if (settings.SurfaceHidden)
+                throw new InvalidOperationException("Login startup retained the last session's hidden state.");
             if (App.SettingsView != null)
                 throw new InvalidOperationException("Startup must not create settings.");
             if (surface.ShowActivated)
@@ -117,7 +119,7 @@ internal static class StartupChecks
                 }
                 throw new InvalidOperationException($"Pinned surface stayed transparent: mode={mode}, taskbar={anchor}, bounds={anchorArgs[0]}.");
             }
-            Console.WriteLine($"PASS startup restores {mode} before and after device discovery without opening settings.");
+            Console.WriteLine($"PASS login startup restores {mode} from a hidden previous session before and after device discovery.");
             return 0;
         }
         catch (Exception ex)
