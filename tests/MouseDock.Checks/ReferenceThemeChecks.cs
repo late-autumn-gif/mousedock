@@ -8,6 +8,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MouseDock.Models;
 using MouseDock.Services;
+using MouseDock.Views;
+using App = MouseDock.App;
+using Forms = System.Windows.Forms;
 
 internal static class ReferenceThemeChecks
 {
@@ -53,6 +56,61 @@ internal static class ReferenceThemeChecks
         Require(settings.Clone().SelectedDeviceIds.SequenceEqual(new[] { "r98" }) &&
             settings.Clone().DockBackground == "own.png",
             "Appearance cloning altered existing preferences.");
+    }
+
+    internal static void AppearanceMode()
+    {
+        foreach (var preset in ThemePreset.Presets)
+        {
+            var light = Palette.ResolvePreset(preset.Id, "light");
+            var dark = Palette.ResolvePreset(preset.Id, "dark");
+            Require(light.IsLight && !dark.IsLight && light.Id == preset.Id && dark.Id == preset.Id &&
+                light.BgTop != dark.BgTop, $"The {preset.Id} day/night variants are not distinct.");
+        }
+        using var fixture = new AppearanceFixture();
+        fixture.Settings.ThemeId = "amber";
+        fixture.Settings.ThemeColors["accent"] = "#289A88";
+        fixture.Set("Theme", Palette.ResolveTheme(fixture.Settings));
+        var window = new SettingsWindow { ShowActivated = false, ShowInTaskbar = false };
+        fixture.Set("SettingsView", window);
+        window.Show();
+        window.SelectSection("appearance");
+        var modes = ((Panel)window.FindName("ThemeModeChoices")).Children.OfType<RadioButton>().ToArray();
+        RadioButton Choice(string mode) => modes.Single(choice => Equals(choice.Tag, mode));
+        Require(Choice("theme").IsChecked == true && !App.Theme.IsLight, "Existing settings lost the preset default.");
+        Choice("light").IsChecked = true;
+        Require(App.Theme.IsLight && SettingsStore.Load().Clone().AppearanceMode == "light",
+            "Settings did not apply or save daytime mode.");
+        Capture("day");
+        var wpf = App.CreateQuickMenu(window).Items.OfType<MenuItem>().Single(item => Equals(item.Header, "外观模式"));
+        var darkMenu = wpf.Items.OfType<MenuItem>().ToArray();
+        Require(darkMenu[0].IsChecked, "The context menu did not reflect the settings selection.");
+        darkMenu[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Require(!App.Theme.IsLight && Choice("dark").IsChecked == true &&
+            SettingsStore.Load().AppearanceMode == "dark", "The context menu did not update Settings.");
+        Capture("night");
+
+        using var tray = (Forms.ContextMenuStrip)typeof(App).GetMethod("CreateTrayMenu", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, [null])!;
+        var trayMode = tray.Items.OfType<Forms.ToolStripMenuItem>().Single(item => item.Text == "外观模式");
+        ((Forms.ToolStripMenuItem)trayMode.DropDownItems[0]).PerformClick();
+        var saved = SettingsStore.Load();
+        Require(App.Theme.IsLight && Choice("light").IsChecked == true && saved.ThemeId == "amber" &&
+            saved.AppearanceMode == "light" && saved.ThemeColors["accent"] == "#289A88",
+            "The tray selection lost the current preset or custom colors.");
+
+        void Capture(string mode)
+        {
+            TaskbarEmbeddingChecks.Pump(440);
+            var root = (FrameworkElement)window.Content;
+            var bitmap = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(root);
+            Directory.CreateDirectory("artifacts");
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = File.Create($"artifacts/appearance-{mode}.png");
+            encoder.Save(output);
+        }
     }
 
     internal static void Crop()

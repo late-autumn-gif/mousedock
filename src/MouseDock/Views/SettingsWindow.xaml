@@ -542,7 +542,19 @@
                             <StackPanel x:Name="TrayDeviceRows" Margin="24,3,0,0"/>
                             <CheckBox x:Name="TrayHoverCheck" Content="托盘悬停预览" Checked="OnTrayHoverChanged" Unchecked="OnTrayHoverChanged"/>
                         </StackPanel>
-                    </Border></StackPanel><StackPanel x:Name="PageAppearance" Visibility="Collapsed"><TextBlock Text="外观" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="选择主题，再按窗口或组件调整配色。" FontSize="13" Opacity="0.7" Margin="0,6,0,12"/><Grid Margin="0,14,0,10"><TextBlock Text="主题配色" FontSize="13" FontWeight="SemiBold"/><TextBlock x:Name="CurrentThemeText" HorizontalAlignment="Right" FontSize="11" Foreground="{DynamicResource TextBrush}" Opacity="0.75"/></Grid>
+                    </Border></StackPanel><StackPanel x:Name="PageAppearance" Visibility="Collapsed">
+                    <TextBlock Text="外观" FontSize="22" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="ThemeModeLabel" Text="外观模式" FontWeight="SemiBold" Margin="0,14,0,8"/>
+                    <UniformGrid x:Name="ThemeModeChoices" Columns="3" Margin="0,0,-8,0"
+                                 AutomationProperties.LabeledBy="{Binding ElementName=ThemeModeLabel}">
+                        <RadioButton GroupName="ThemeMode" Tag="light" Content="浅色（日间）" MinHeight="38" Style="{StaticResource DisplayChoice}" Checked="OnThemeModeChanged"/>
+                        <RadioButton GroupName="ThemeMode" Tag="dark" Content="深色（夜间）" MinHeight="38" Style="{StaticResource DisplayChoice}" Checked="OnThemeModeChanged"/>
+                        <RadioButton GroupName="ThemeMode" Tag="theme" Content="跟随主题" MinHeight="38" Style="{StaticResource DisplayChoice}" Checked="OnThemeModeChanged"/>
+                    </UniformGrid>
+                    <Grid Margin="0,14,0,10">
+                        <TextBlock Text="主题配色" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="CurrentThemeText" HorizontalAlignment="Right" FontSize="11" Foreground="{DynamicResource TextBrush}" Opacity="0.75"/>
+                    </Grid>
 <ListBox x:Name="ThemeList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnThemeSelected">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ListBox.ItemsPanel>
 <ListBox.Template>

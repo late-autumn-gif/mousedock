@@ -145,6 +145,7 @@ internal static class Program
             ("Custom palettes correct contrast while retaining raw colors", AppearanceColorChecks.Contrast),
             ("Battery state colors update ordinary icons and character plates", BatteryColorChecks.LiveStatus),
             ("Reference themes preserve exact dark/light palettes and legacy choices", ReferenceThemeChecks.Themes),
+            ("Appearance mode switches and persists from Settings and both menus", ReferenceThemeChecks.AppearanceMode),
             ("Reference themes retain picture settings across clone and restart", ReferenceThemeChecks.Preferences),
             ("Reference themes crop portrait and landscape images without gaps", ReferenceThemeChecks.Crop),
             ("Reference themes import tint and cancel picture drafts", ReferenceThemeChecks.Background),

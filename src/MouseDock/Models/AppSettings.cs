@@ -8,6 +8,7 @@ namespace MouseDock.Models
         public int Version { get; set; } = 6;
 
         public string ThemeId { get; set; } = "resident";
+        public string AppearanceMode { get; set; } = "theme";
 
         // 自定义背景（取主色）与手动覆盖
         public string CustomBackground { get; set; } = ""; // 设置窗口的背景图
@@ -170,6 +171,7 @@ namespace MouseDock.Models
             return new AppSettings
             {
                 ThemeId = ThemeId,
+                AppearanceMode = AppearanceMode,
                 CustomBackground = CustomBackground,
                 CustomSurface = CustomSurface,
                 ThemeColors = new(ThemeColors ?? new()),

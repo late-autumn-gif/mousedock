@@ -31,6 +31,52 @@ public partial class App
         return item;
     }
 
+    private static readonly (string Mode, string Label)[] AppearanceModes =
+    [
+        ("light", "浅色（日间）"), ("dark", "深色（夜间）"), ("theme", "跟随主题")
+    ];
+
+    internal static void SetAppearanceMode(string mode)
+    {
+        mode = Palette.NormalizeThemeMode(mode);
+        if (Settings.AppearanceMode == mode) return;
+        Settings.AppearanceMode = mode;
+        RefreshTheme();
+        SettingsView?.SyncThemeOptions();
+        SaveSettings();
+    }
+
+    internal static MenuItem CreateAppearanceMenu()
+    {
+        var menu = new MenuItem { Header = "外观模式" };
+        var selected = Palette.NormalizeThemeMode(Settings.AppearanceMode);
+        foreach (var (mode, label) in AppearanceModes)
+        {
+            var item = MenuAction(label, () => SetAppearanceMode(mode));
+            item.IsChecked = selected == mode;
+            menu.Items.Add(item);
+        }
+        return menu;
+    }
+
+    private static Forms.ToolStripMenuItem CreateTrayAppearanceMenu()
+    {
+        var menu = new Forms.ToolStripMenuItem("外观模式");
+        foreach (var (mode, label) in AppearanceModes)
+        {
+            var item = new Forms.ToolStripMenuItem(label) { Tag = mode };
+            item.Click += (_, _) => SetAppearanceMode(mode);
+            menu.DropDownItems.Add(item);
+        }
+        menu.DropDownOpening += (_, _) =>
+        {
+            var selected = Palette.NormalizeThemeMode(Settings.AppearanceMode);
+            foreach (Forms.ToolStripMenuItem item in menu.DropDownItems)
+                item.Checked = Equals(item.Tag, selected);
+        };
+        return menu;
+    }
+
     internal static void RescanDevices()
     {
         // AutoDetectSource enumerates current HID, system and Bluetooth endpoints on

@@ -657,7 +657,7 @@ internal static class AuditChecks
         var sections = menu.Items.Cast<object>().Select(item => item is MenuItem command ? (string)command.Header : "|");
         Require(sections.SequenceEqual(new[] {
             "桌宠角色", "显示设备", "桌宠大小", "|",
-            "锁定位置", "减少动态效果", "键鼠动作联动", "满电提醒（全局）", "|",
+            "外观模式", "锁定位置", "减少动态效果", "键鼠动作联动", "满电提醒（全局）", "|",
             "刷新设备", "切换输入设备", "切换输出设备", "|", "设置…", "隐藏桌宠"
         }), $"{character} must expose only the condensed, grouped desktop-pet commands.");
         var characters = (MenuItem)menu.Items[0];

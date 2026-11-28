@@ -89,15 +89,7 @@ namespace MouseDock.Views
             {
                 var s = App.Settings;
 
-                var rows = ThemePreset.Presets
-                    .Select(p => MakeRow(ReferenceThemes.Resolve(p.Id, "") ?? p))
-                    .ToList();
-
-                ThemeList.ItemsSource = rows;
-                var current = rows.FirstOrDefault(r => r.Id == s.ThemeId) ?? rows[2];
-                ThemeList.SelectedItem = current;
-                CurrentThemeText.Text = "当前 · " + current.Name;
-                foreach (var r in rows) r.IsSelected = r == current;
+                SyncThemeOptions();
                 UpdateLowBatterySwatch();
                 UpdateChargingSwatch();
 
@@ -319,6 +311,31 @@ namespace MouseDock.Views
             else settings.TrayColors = editor.Draft;
             App.RefreshTheme();
             App.SaveSettings();
+        }
+
+        internal void SyncThemeOptions()
+        {
+            bool loading = _loading;
+            _loading = true;
+            try
+            {
+                var s = App.Settings;
+                var mode = Palette.NormalizeThemeMode(s.AppearanceMode);
+                foreach (var choice in ThemeModeChoices.Children.OfType<RadioButton>())
+                    choice.IsChecked = Equals(choice.Tag, mode);
+                var rows = ThemePreset.Presets.Select(p => MakeRow(Palette.ResolvePreset(p.Id, mode))).ToList();
+                var current = rows.FirstOrDefault(row => string.Equals(row.Id, s.ThemeId, StringComparison.OrdinalIgnoreCase)) ?? rows[2];
+                current.IsSelected = true;
+                ThemeList.ItemsSource = rows;
+                ThemeList.SelectedItem = current;
+                CurrentThemeText.Text = "当前 · " + current.Name;
+            }
+            finally { _loading = loading; }
+        }
+
+        private void OnThemeModeChanged(object sender, RoutedEventArgs e)
+        {
+            if (!_loading && sender is RadioButton { Tag: string mode }) App.SetAppearanceMode(mode);
         }
 
         private void OnThemeSelected(object sender, SelectionChangedEventArgs e)

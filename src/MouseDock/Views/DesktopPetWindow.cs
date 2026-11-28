@@ -775,6 +775,7 @@ internal sealed class DesktopPetWindow : Window
         ContextMenu.Items.Add(sizes);
 
         ContextMenu.Items.Add(new Separator());
+        ContextMenu.Items.Add(App.CreateAppearanceMenu());
         Add(ContextMenu.Items, "锁定位置", () => { _settings.DesktopPetLocked = !_settings.DesktopPetLocked; App.SaveSettings(); }, _settings.DesktopPetLocked);
         Add(ContextMenu.Items, "减少动态效果", () => { _settings.DesktopPetReduceMotion = !_settings.DesktopPetReduceMotion; _actionUntil = 0; SaveAndRefresh(); }, _settings.DesktopPetReduceMotion);
         Add(ContextMenu.Items, "键鼠动作联动", () =>

@@ -452,6 +452,7 @@ namespace MouseDock
             var picker = new TraySurfacePicker(SetSurface);
             menu.Items.Add(picker);
             menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add(CreateTrayAppearanceMenu());
             var pin = new WinForms.ToolStripMenuItem("始终置顶");
             pin.Click += (_, _) => { Settings.AlwaysOnTop = !Settings.AlwaysOnTop; ApplyWindowBehavior(); SaveSettings(); SettingsView?.Reload(); };
             menu.Items.Add(pin);
@@ -884,6 +885,7 @@ namespace MouseDock
             var menu = CreateThemedMenu(owner, themeBackground: owner is MiniWindow);
             AddSurfaceChoices(menu.Items);
             menu.Items.Add(new Separator());
+            menu.Items.Add(CreateAppearanceMenu());
             if (owner is DockWindow dock)
             {
                 menu.Items.Add(dock.CreateWallpaperMenu());

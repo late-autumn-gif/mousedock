@@ -50,10 +50,31 @@ namespace MouseDock.Services
 
         public static Color WithAlpha(Color c, byte alpha) => Color.FromArgb(alpha, c.R, c.G, c.B);
 
+        internal static string NormalizeThemeMode(string mode) => mode is "light" or "dark" ? mode : "theme";
+
+        internal static ThemePreset ResolvePreset(string id, string mode)
+        {
+            mode = NormalizeThemeMode(mode);
+            if (ReferenceThemes.Resolve(id, mode) is { } reference) return reference;
+            var preset = ThemePreset.ById(id);
+            if (mode == "theme" || preset.IsLight == (mode == "light")) return preset;
+
+            var paired = preset.Id switch
+            {
+                "mint" => ReferenceThemes.Resolve("reference-mint", "light"),
+                "frost" => ReferenceThemes.Resolve("ocean", "light"),
+                "cloud" => ThemePreset.ById("dusk").Clone(),
+                _ => ThemePreset.ById("cloud").Clone()
+            };
+            paired.Id = preset.Id;
+            paired.Name = preset.Name;
+            return paired;
+        }
+
         /// <summary>根据预设及自定义颜色解析主题。</summary>
         public static ThemePreset ResolveTheme(AppSettings settings)
         {
-            var preset = ReferenceThemes.Resolve(settings.ThemeId, "") ?? ThemePreset.ById(settings.ThemeId);
+            var preset = ResolvePreset(settings.ThemeId, settings.AppearanceMode);
             var theme = AppearanceColors.Apply(preset, settings.ThemeColors);
             if (AppearanceColors.TryColor(AppearanceColors.LowBatteryOverride(settings), out var low))
                 theme.Low = low;

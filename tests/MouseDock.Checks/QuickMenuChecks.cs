@@ -11,7 +11,7 @@ internal static class QuickMenuChecks
     {
         using var fixture = new AppearanceFixture();
         string[] modes = ["dock", "mini", "icon", "taskbar", "edge", "pet"];
-        string[] labels = ["主面板", "迷你窗", "悬浮图标", "任务栏电量", "屏幕右侧电量", "桌宠", "刷新设备", "切换输入设备", "切换输出设备", "设置…", "退出"];
+        string[] labels = ["主面板", "迷你窗", "悬浮图标", "任务栏电量", "屏幕右侧电量", "桌宠", "外观模式", "刷新设备", "切换输入设备", "切换输出设备", "设置…", "退出"];
         var owner = new Window { Width = 200, Height = 100, ShowInTaskbar = false, ShowActivated = false };
         owner.Show();
         try
