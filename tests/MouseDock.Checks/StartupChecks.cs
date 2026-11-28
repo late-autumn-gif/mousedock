@@ -88,6 +88,12 @@ internal static class StartupChecks
                 if (!surface.IsVisible || app.Windows.OfType<Window>().Count(w => w.IsVisible) != 1)
                     throw new InvalidOperationException("Switching back to pet must hide every other display mode.");
             }
+            if (mode == "taskbar" && App.Taskbar.Opacity <= 0 && !App.Taskbar.UsesScreenEdge)
+            {
+                var layoutDeadline = Environment.TickCount64 + 3500;
+                while (App.Taskbar.Opacity <= 0 && !App.Taskbar.UsesScreenEdge && Environment.TickCount64 < layoutDeadline)
+                    TaskbarEmbeddingChecks.Pump(50);
+            }
             var pinnedSurface = mode == "taskbar" && App.Taskbar.UsesScreenEdge ? App.Edge : surface;
             if (mode == "taskbar" && App.Taskbar.UsesScreenEdge && !App.Edge.IsVisible)
                 throw new InvalidOperationException("Automatic taskbar overflow did not show the right-edge surface.");

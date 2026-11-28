@@ -168,6 +168,24 @@ namespace MouseDock.Services
 
         private static bool IsTopmost(IntPtr handle) => (GetWindowLong(handle, -20) & TopmostStyle) != 0;
 
+        internal static bool IsShellFlyoutForeground()
+        {
+            var foreground = GetForegroundWindow();
+            if (foreground == IntPtr.Zero) return false;
+            GetWindowThreadProcessId(foreground, out uint processId);
+            if (processId == 0 || processId == Environment.ProcessId) return false;
+            var name = new StringBuilder(128);
+            GetClassName(foreground, name, name.Capacity);
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
+                return TaskbarPlacement.IsShellSurface(name.ToString(), process.ProcessName);
+            }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
+            catch (System.ComponentModel.Win32Exception) { return false; }
+        }
+
         internal static bool ForegroundCoversPlacement(IntPtr foreground, IntPtr strip, IntPtr taskbar, Rect placement)
         {
             if (foreground == IntPtr.Zero || foreground == strip || foreground == taskbar || !IsWindowVisible(foreground))

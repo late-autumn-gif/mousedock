@@ -364,6 +364,21 @@ internal static class TaskbarFollowChecks
             window.UpdateAnchor();
             Require(!edge.IsVisible && window.Opacity > 0,
                 "Returning to manual placement left the overflow surface visible.");
+            var layoutField = typeof(TaskbarWindow).GetField("_layout", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var reader = layoutField.GetValue(window);
+            try
+            {
+                fixture.Settings.TaskbarFollowIcons = true;
+                layoutField.SetValue(window, null);
+                window.UpdateAnchor();
+                Require(!window.UsesScreenEdge && !edge.IsVisible && fixture.Settings.SurfaceMode == "taskbar",
+                    "Unavailable Explorer geometry must not switch to the right-edge display.");
+            }
+            finally
+            {
+                layoutField.SetValue(window, reader);
+                fixture.Settings.TaskbarFollowIcons = false;
+            }
             setOverflow.Invoke(window, [true]);
             MouseDock.App.SetSurface("edge");
             Require(edge.IsVisible && !window.IsVisible, "Explicit edge mode was hidden by taskbar cleanup.");

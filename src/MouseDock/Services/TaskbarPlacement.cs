@@ -102,11 +102,12 @@ namespace MouseDock.Services
             !maximized && className != "Progman" && className != "WorkerW" &&
             !IsShellSurface(className, processName) && window.Contains(monitor);
 
-        private static bool IsShellSurface(string className, string processName) =>
+        internal static bool IsShellSurface(string className, string processName) =>
             string.Equals(processName, "StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(processName, "SearchHost", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(processName, "SearchApp", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(processName, "ShellExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(processName, "ShellHost", StringComparison.OrdinalIgnoreCase) ||
             (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase) &&
                 (className == "Windows.UI.Core.CoreWindow" || className == "XamlExplorerHostIslandWindow"));
 

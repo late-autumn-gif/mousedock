@@ -294,6 +294,8 @@ internal static class TaskbarEmbeddingChecks
         Require(!Evaluate("Windows.UI.Core.CoreWindow", "StartMenuExperienceHost"), "Start was treated as a game.");
         Require(!Evaluate("Windows.UI.Core.CoreWindow", "SearchHost"), "Search was treated as a game.");
         Require(!Evaluate("XamlExplorerHostIslandWindow", "explorer"), "A shell overlay was treated as a game.");
+        Require(!Evaluate("Windows.UI.Core.CoreWindow", "ShellExperienceHost") &&
+            !Evaluate("Windows.UI.Core.CoreWindow", "ShellHost"), "Quick Settings was treated as a game.");
         Require(Evaluate("Windows.UI.Core.CoreWindow", "FullscreenGame"), "A fullscreen UWP app was excluded.");
         Require(Evaluate("CabinetWClass", "explorer"), "A fullscreen file browser is not a shell overlay.");
     }

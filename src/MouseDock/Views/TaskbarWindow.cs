@@ -30,6 +30,7 @@ namespace MouseDock.Views
         public event EventHandler HostLost;
         public event EventHandler OverflowChanged;
         public bool UsesScreenEdge { get; private set; }
+        private long? _layoutUnavailableSince;
 
         public TaskbarWindow()
         {
@@ -63,6 +64,7 @@ namespace MouseDock.Views
                 else
                 {
                     _anchorTimer.Stop();
+                    _layoutUnavailableSince = null;
                     if (!App.Settings.AlwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
                     SetOverflow(false);
                 }
@@ -175,19 +177,13 @@ namespace MouseDock.Views
             bool useMeasuredLayout = pinToTray || App.Settings.TaskbarFollowIcons;
             if (!TaskbarAnchor.TryGet(out var bounds, out uint edge, out double dpi))
             {
-                if (!alwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
-                Opacity = 0;
-                IsHitTestVisible = false;
-                SetOverflow(useMeasuredLayout && _strip?.DeviceCount > 0);
+                WaitForLayout(useMeasuredLayout && _strip?.DeviceCount > 0);
                 return;
             }
             if (_vertical != (edge == 0 || edge == 2)) { UpdateDevices(); return; }
             if (_strip == null || _strip.DeviceCount == 0)
             {
-                if (!alwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
-                Opacity = 0;
-                IsHitTestVisible = false;
-                SetOverflow(false);
+                WaitForLayout(false);
                 return;
             }
             var contentSize = _vertical ? new Size(_strip.Height, _strip.Width) : new Size(_strip.Width, _strip.Height);
@@ -197,21 +193,27 @@ namespace MouseDock.Views
             {
                 _layout?.Request();
                 double reserve = UsesScreenEdge ? 8 : 0;
-                if (_layout == null || !_layout.TryGet(bounds, edge, out var snapshot, pinToTray) ||
-                    !(pinToTray
+                if (_layout == null || !_layout.TryGet(bounds, edge, out var snapshot, pinToTray))
+                {
+                    WaitForLayout(true);
+                    return;
+                }
+                _layoutUnavailableSince = null;
+                if (!(pinToTray
                         ? TaskbarPlacement.TryPinToTray(bounds, edge, contentSize, dpi, snapshot.Tray,
                             snapshot.Occupied, out placement, reserve)
                         : TaskbarPlacement.TryFollow(bounds, edge, contentSize, dpi, snapshot.Icons, snapshot.Occupied,
                             out placement, reserve, App.Settings.TaskbarIconOffset)))
                 {
-                    if (!alwaysOnTop) TaskbarAnchor.ClearOverlayTopmost(this);
-                    Opacity = 0;
-                    IsHitTestVisible = false;
-                    SetOverflow(true);
+                    SuspendPlacement(overflow: !TaskbarAnchor.IsShellFlyoutForeground());
                     return;
                 }
             }
-            else placement = TaskbarPlacement.Calculate(bounds, edge, contentSize, App.Settings.TaskbarOffset, dpi);
+            else
+            {
+                _layoutUnavailableSince = null;
+                placement = TaskbarPlacement.Calculate(bounds, edge, contentSize, App.Settings.TaskbarOffset, dpi);
+            }
             bool attached = !alwaysOnTop && TaskbarAnchor.AttachToTaskbar(this);
             if (!alwaysOnTop && !attached) TaskbarAnchor.Detach(this);
             TaskbarAnchor.Move(this, placement);
@@ -219,6 +221,25 @@ namespace MouseDock.Views
             Opacity = visible ? 1 : 0;
             IsHitTestVisible = visible;
             SetOverflow(false);
+        }
+
+        private void SuspendPlacement(bool overflow)
+        {
+            if (!Topmost) TaskbarAnchor.ClearOverlayTopmost(this);
+            Opacity = 0;
+            IsHitTestVisible = false;
+            SetOverflow(overflow);
+        }
+
+        private void WaitForLayout(bool allowOverflow)
+        {
+            if (!allowOverflow || TaskbarAnchor.IsShellFlyoutForeground())
+                _layoutUnavailableSince = null;
+            else
+                _layoutUnavailableSince ??= Environment.TickCount64;
+            // Login and shell flyouts can interrupt layout discovery briefly.
+            // Keep a visible fallback for prolonged Explorer failures.
+            SuspendPlacement(_layoutUnavailableSince is long since && Environment.TickCount64 - since >= 1500);
         }
 
         internal void ApplyTopmostPreference()
